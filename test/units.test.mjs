@@ -78,6 +78,11 @@ describe('templates and args', () => {
   })
 })
 
+// Built from pieces so this file does not contain the strings it forbids.
+const author = ['laut', 'aro'].join('')
+const personal = new RegExp('(c:/+users|/home)/+' + author, 'i') // tested on text with backslashes turned into slashes
+const projectNames = new RegExp(['Sam' + 'uel', 'Jo' + 'aco', 'agentes-' + 'samu', author].join('|'), 'i')
+
 describe('the repository itself', () => {
   const files = []
   const walk = dir => {
@@ -106,7 +111,7 @@ describe('the repository itself', () => {
     const offenders = []
     for (const file of files.filter(f => f.includes(`${path.sep}mods${path.sep}`))) {
       const text = readFileSync(file, 'utf8')
-      if (/Samuel|Joaco|agentes-samu|Lautaro/.test(text)) offenders.push(path.relative(ROOT, file))
+      if (projectNames.test(text)) offenders.push(path.relative(ROOT, file))
     }
     assert.deepEqual(offenders, [])
   })

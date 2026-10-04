@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        node: [20, 22]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Tests (incluye el chequeo de rutas personales y de copias compartidas)
+        run: npm test
+      - name: global --dry-run en un HOME temporal
+        run: |
+          export ORCA_STACK_HOME="$(node -p "require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'orca-stack-ci-'))")"
+          node bin/orca-stack.mjs global --dry-run --skip-pi
+          test -z "$(ls -A "$ORCA_STACK_HOME")" || { echo "el dry-run escribió archivos"; exit 1; }
+      - name: init --dry-run en un repo temporal
+        run: |
+          export ORCA_STACK_HOME="$(node -p "require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'orca-stack-ci-'))")"
+          repo="$(node -p "require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'orca-stack-repo-'))")"
+          git init -q "$repo"
+          (cd "$repo" && node "$GITHUB_WORKSPACE/bin/orca-stack.mjs" init --dry-run)
+          test -z "$(ls -A "$repo" | grep -v '^.git$' || true)" || { echo "init --dry-run escribió archivos"; exit 1; }
