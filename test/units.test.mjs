@@ -100,7 +100,7 @@ describe('the repository itself', () => {
     for (const file of files) {
       if (file.endsWith('.png') || file.endsWith('.ico')) continue
       const text = readFileSync(file, 'utf8')
-      if (/C:[\\/]+Users[\\/]+lautaro/i.test(text) || /[\\/]home[\\/]lautaro/i.test(text)) {
+      if (personal.test(text.split(String.fromCharCode(92)).join('/'))) {
         offenders.push(path.relative(ROOT, file))
       }
     }
