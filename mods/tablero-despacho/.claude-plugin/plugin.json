@@ -1,0 +1,6 @@
+{
+  "name": "tablero-despacho",
+  "version": "0.1.0",
+  "description": "Tablero de PRs abiertos, checks, reviews y worktrees, con atajos para pedirle cosas a Claude. Los atajos de despacho aparecen solo si el proyecto declara despacho en .orca-stack.json.",
+  "types": "./types/index.d.ts"
+}

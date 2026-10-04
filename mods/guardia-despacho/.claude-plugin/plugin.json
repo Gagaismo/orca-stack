@@ -1,0 +1,5 @@
+{
+  "name": "guardia-despacho",
+  "version": "0.1.0",
+  "description": "Bloquea o corrige los scripts de despacho y revisión según las reglas del proyecto (.orca-stack.json). Apagado si el proyecto no declara despacho."
+}

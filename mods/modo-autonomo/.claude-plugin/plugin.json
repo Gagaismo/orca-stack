@@ -1,0 +1,6 @@
+{
+  "name": "modo-autonomo",
+  "version": "0.1.0",
+  "description": "Instrucción permanente de trabajo autónomo hasta la meta, con recordatorio anti-parada acotado.",
+  "types": "./types/index.d.ts"
+}

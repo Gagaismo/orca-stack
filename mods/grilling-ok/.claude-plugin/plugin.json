@@ -1,0 +1,6 @@
+{
+  "name": "grilling-ok",
+  "version": "0.1.0",
+  "description": "Responde con un clic (o con un simple ok) a las preguntas Q1…Qn de una sesión de grilling.",
+  "types": "./types/index.d.ts"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "puente-gentle",
+  "version": "0.1.0",
+  "description": "Puente con Gentle Shell (Pi): consulta a otro orquestador como par, con su propia metodología, en los puntos de decisión.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "modelo": {
+      "type": "string",
+      "title": "Modelo de Gentle Shell",
+      "description": "Opcional: fuerza un modelo (proveedor/id). Vacío, Gentle Shell usa el suyo.",
+      "default": ""
+    }
+  }
+}

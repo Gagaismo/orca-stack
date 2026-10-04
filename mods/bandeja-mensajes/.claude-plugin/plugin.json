@@ -1,0 +1,6 @@
+{
+  "name": "bandeja-mensajes",
+  "version": "0.1.0",
+  "description": "Bandeja de mensajes salientes: captura los borradores que redacta Claude y permite copiarlos o guardarlos.",
+  "types": "./types/index.d.ts"
+}

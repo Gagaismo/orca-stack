@@ -1,0 +1,6 @@
+{
+  "name": "reloj-cache",
+  "version": "0.1.0",
+  "description": "Muestra cuánto falta para que venza el caché del prompt y ofrece /compactar-ya.",
+  "types": "./types/index.d.ts"
+}
