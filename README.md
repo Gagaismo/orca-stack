@@ -49,6 +49,7 @@ Son plugins de Claude Code que se recargan en caliente (`.claude-plugin/plugin.j
 - Node.js 20 o más nuevo (Pi pide Node 22.19 o más nuevo).
 - Git y [GitHub CLI](https://cli.github.com) (`gh`), para el tablero y para el puente.
 - [Claude Code](https://claude.com/claude-code), para los mods.
+- En Windows, el `postinstall` de `gentle-pi` compila el binario de gentle-ai con Go (1.25.10 o más nuevo): si `pi install` de gentle-pi falla, revisá que `go` esté en el `PATH`.
 
 `global` **detecta** estas herramientas, no las instala; si faltan, imprime el comando oficial de cada una:
 [Orca](https://github.com/stablyai/orca), [engram](https://github.com/Gentleman-Programming/engram), [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) y [Pi](https://github.com/earendil-works/pi).

@@ -65,6 +65,17 @@ export const resolveGentleSkills = L => {
   return null
 }
 
+// The few lines of a failed npm/pi run that say why (npm prints a long cleanup trace first).
+export const failureReason = result => {
+  const lines = `${result.stderr}\n${result.stdout}`
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+  const errors = lines.filter(line => /^(npm )?error\b/i.test(line) && !/complete log/i.test(line))
+
+  return (errors.length > 0 ? errors : lines).slice(-3).join(' | ').slice(0, 400)
+}
+
 export const printInstallHint = (ctx, key, title) => {
   ctx.say(`  ${title} no está instalado. Instalación oficial:`)
   for (const line of INSTALL_HINTS[key]) {
@@ -106,7 +117,7 @@ export const setupPi = (ctx, { skipPi }) => {
     if (result.status === 0) {
       ctx.state.pi.packagesInstalled = [...new Set([...ctx.state.pi.packagesInstalled, `${pkg.name}@${pkg.version}`])]
     } else {
-      ctx.say(`  ✖ falló pi install npm:${pkg.name}@${pkg.version}: ${(result.stderr || result.stdout).trim().split('\n')[0]}`)
+      ctx.say(`  ✖ falló pi install npm:${pkg.name}@${pkg.version}: ${failureReason(result)}`)
     }
   }
 
@@ -129,7 +140,7 @@ export const setupPi = (ctx, { skipPi }) => {
     if (result.status === 0) {
       ctx.state.pi.npmGlobalInstalled = true
     } else {
-      ctx.say(`  ✖ falló npm i -g gentle-pi@${PINNED.gentlePi}: ${(result.stderr || result.stdout).trim().split('\n')[0]}`)
+      ctx.say(`  ✖ falló npm i -g gentle-pi@${PINNED.gentlePi}: ${failureReason(result)}`)
     }
   }
 }
