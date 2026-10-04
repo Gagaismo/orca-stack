@@ -101,7 +101,7 @@ export const removeCommand = async flags => {
     if (typeof current === 'string') {
       const { value, removed: count } = removePluginDirs(current, st.settings.pluginDirsAdded)
       if (count > 0) {
-        if (value === '' && st.settings.createdKey) {
+        if (value === '') {
           delete data.env.CLAUDE_CODE_PLUGIN_DIRS
         } else {
           data.env.CLAUDE_CODE_PLUGIN_DIRS = value
@@ -194,7 +194,7 @@ export const removeCommand = async flags => {
   } else {
     ctx.act(`borro ${show(ctx.L.state)}`)
   }
-  ctx.say(`\n${dryRun ? 'Se desharían' : 'Deshechos'} ${removed} archivos. Los respaldos *.bak-orca-stack-* se conservan.`)
+  ctx.say(`\n${dryRun ? 'Se desharían' : 'Deshechos'} ${removed} archivos. Los respaldos de ~/.orca-stack/backups se conservan.`)
 
   return 0
 }

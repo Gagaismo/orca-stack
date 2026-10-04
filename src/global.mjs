@@ -97,20 +97,22 @@ const installMods = ctx => {
   const createdKey = next.env.CLAUDE_CODE_PLUGIN_DIRS === undefined
   const merged = mergePluginDirs(next.env.CLAUDE_CODE_PLUGIN_DIRS, dirs)
   next.env.CLAUDE_CODE_PLUGIN_DIRS = merged.value
-  if (original !== null && deepEqual(data, next)) {
+  const unchanged = original !== null && deepEqual(data, next)
+  let created = false
+  if (unchanged) {
     ctx.say(`  CLAUDE_CODE_PLUGIN_DIRS ya incluye los ${names.length} mods`)
-
-    return
+  } else {
+    created = ctx.writeShared(file, stringifySettings(next, original), `${ctx.show(file)} (CLAUDE_CODE_PLUGIN_DIRS +${merged.added.length})`).created
   }
-  const result = ctx.writeShared(file, stringifySettings(next, original), `${ctx.show(file)} (CLAUDE_CODE_PLUGIN_DIRS +${merged.added.length})`)
   if (!ctx.dryRun) {
+    // Claim every mod dir this install owns, also the ones that were already listed (orphans of an aborted run).
     const prev = ctx.state.settings
     ctx.state.settings = {
       file,
-      pluginDirsAdded: [...new Set([...(prev?.pluginDirsAdded ?? []), ...merged.added])],
-      createdFile: prev ? prev.createdFile : result.created,
-      createdEnv: prev ? prev.createdEnv : createdEnv,
-      createdKey: prev ? prev.createdKey : createdKey,
+      pluginDirsAdded: [...new Set([...(prev?.pluginDirsAdded ?? []), ...dirs])],
+      createdFile: prev ? prev.createdFile : created,
+      createdEnv: prev ? prev.createdEnv : !unchanged && createdEnv,
+      createdKey: prev ? prev.createdKey : !unchanged && createdKey,
     }
   }
 }
@@ -121,17 +123,14 @@ const installClaudeMd = ctx => {
   const original = readTextIfExists(file)
   const vars = stackVars(ctx.L)
   const next = upsertBlock(original ?? '', policyBlock({ policyPath: vars.POLICY_PATH, briefsPath: vars.BRIEFS_PATH }))
+  let created = false
   if (next === original) {
     ctx.say('  el bloque orca-stack ya está al día')
-
-    return
+  } else {
+    created = ctx.writeShared(file, next, `bloque orca-stack en ${ctx.show(file)}`).created
   }
-  const result = ctx.writeShared(file, next, `bloque orca-stack en ${ctx.show(file)}`)
   if (!ctx.dryRun) {
-    ctx.state.claudeMd = {
-      file,
-      createdFile: ctx.state.claudeMd ? ctx.state.claudeMd.createdFile : result.created,
-    }
+    ctx.state.claudeMd = { file, createdFile: ctx.state.claudeMd ? ctx.state.claudeMd.createdFile : created }
   }
 }
 
@@ -209,23 +208,54 @@ const printManualSteps = (ctx, { skipPi }) => {
   ctx.say(`Config del proyecto:   npx github:Gagaismo/orca-stack init   (crea ${PROJECT_CONFIG})`)
 }
 
+// Everything that could abort the run half-way is checked here, before the first write.
+export const preflight = ctx => {
+  const settings = readTextIfExists(ctx.L.settings)
+  const data = parseSettings(settings ?? '', ctx.L.settings)
+  if (data.env !== undefined && (data.env === null || typeof data.env !== 'object' || Array.isArray(data.env))) {
+    throw new Error(`${ctx.L.settings}: "env" no es un objeto. No lo toqué.`)
+  }
+  const md = readTextIfExists(ctx.L.claudeMd)
+  if (md !== null) {
+    upsertBlock(md, 'x') // throws on unbalanced, reordered or duplicated markers
+  }
+}
+
 export const globalCommand = async flags => {
-  const ctx = createCtx({ dryRun: flags.dryRun, home: homeDir() })
+  const ctx = createCtx({ dryRun: flags.dryRun, force: flags.force, home: homeDir() })
   ctx.say(
-    `orca-stack global${flags.dryRun ? ' (simulación: no se escribe nada)' : ''}\n` +
+    `orca-stack global${flags.dryRun ? ' (simulación: no se escribe nada)' : ''}
+` +
       `Destino: ${ctx.home}`,
   )
-  installPolicyDocs(ctx)
-  installWrappers(ctx)
-  installSkills(ctx)
-  installMods(ctx)
-  installClaudeMd(ctx)
-  setupPi(ctx, { skipPi: flags.skipPi })
-  installPersonalConfig(ctx, { humano: flags.humano })
-  if (ctx.save()) {
-    ctx.say(`\nEstado guardado en ${ctx.show(ctx.L.state)}`)
+  preflight(ctx)
+  try {
+    installPolicyDocs(ctx)
+    installWrappers(ctx)
+    installSkills(ctx)
+    installMods(ctx)
+    installClaudeMd(ctx)
+    setupPi(ctx, { skipPi: flags.skipPi })
+    installPersonalConfig(ctx, { humano: flags.humano })
+  } finally {
+    // Whatever was written is recorded, even when a step threw, so `remove` can always undo it.
+    if (ctx.save()) {
+      ctx.say(`
+Estado guardado en ${ctx.show(ctx.L.state)}`)
+    }
   }
   detectTools(ctx)
   printManualSteps(ctx, { skipPi: flags.skipPi })
+  if (ctx.skipped.length > 0) {
+    ctx.say(`
+⚠ ${ctx.skipped.length} archivos existentes que no son de orca-stack quedaron como estaban. Para reemplazarlos (con respaldo): orca-stack global --force`)
+  }
+  if (ctx.failures > 0) {
+    ctx.say(`
+✖ ${ctx.failures} paso(s) fallaron; revisá los mensajes de arriba.`)
+
+    return 1
+  }
+
   return 0
 }

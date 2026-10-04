@@ -1,6 +1,7 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { backupTarget } from './backup.mjs'
 import { layout, sha256, timestamp, tilde, packageVersion } from './util.mjs'
 
 export const emptyState = () => ({
@@ -12,8 +13,7 @@ export const emptyState = () => ({
   dirsCreated: [],
   mods: [],
   skills: [],
-  generatedDirs: [], // dirs the Claude Code engine writes inside mods; safe to delete with the mod
-  settings: null, // { file, pluginDirsAdded, createdFile, createdEnv, createdKey, backups }
+  settings: null, // { file, pluginDirsAdded, createdFile, createdEnv, createdKey }
   claudeMd: null, // { file, createdFile }
   config: null, // { file, sha256 }
   pi: { packagesInstalled: [], npmGlobalInstalled: false },
@@ -33,7 +33,7 @@ export const loadState = home => {
 }
 
 // The effect layer: every write goes through here so --dry-run can narrate instead of act.
-export const createCtx = ({ dryRun = false, home, out = console.log } = {}) => {
+export const createCtx = ({ dryRun = false, force = false, home, out = console.log } = {}) => {
   const L = layout(home)
   const stamp = timestamp()
   const state = loadState(home) ?? emptyState()
@@ -44,30 +44,30 @@ export const createCtx = ({ dryRun = false, home, out = console.log } = {}) => {
 
   const ctx = {
     dryRun,
+    force,
     home,
     L,
     state,
+    skipped: [], // files that already existed, were not ours and were left alone
+    failures: 0, // steps that printed a ✖
     say: msg => out(msg),
     act: msg => out(`${prefix}${msg}`),
     show,
 
-    backupPath(file) {
-      let candidate = `${file}.bak-orca-stack-${stamp}`
-      for (let n = 2; existsSync(candidate); n += 1) {
-        candidate = `${file}.bak-orca-stack-${stamp}-${n}`
-      }
-
-      return candidate
+    fail(msg) {
+      ctx.failures += 1
+      out(`  ✖ ${msg}`)
     },
 
-    // Copies a file aside before it is modified. Returns the backup path (or null when nothing to save).
+    // Copies a file into ~/.orca-stack/backups/<stamp>/ before it is modified. Returns the backup path.
     backup(file) {
       if (!existsSync(file)) {
         return null
       }
-      const target = ctx.backupPath(file)
+      const target = backupTarget(home, stamp, file)
       ctx.act(`respaldo de ${show(file)} -> ${show(target)}`)
       if (!dryRun) {
+        mkdirSync(path.dirname(target), { recursive: true })
         copyFileSync(file, target)
         state.backups.push(target)
       }
@@ -92,7 +92,8 @@ export const createCtx = ({ dryRun = false, home, out = console.log } = {}) => {
       }
     },
 
-    // Writes a file we own. status: 'created' | 'updated' | 'unchanged'.
+    // Writes a file we own. status: 'created' | 'updated' | 'unchanged' | 'skipped'.
+    // A file that exists, differs and is not ours is left alone unless --force.
     writeOwned(file, content, { mode, label } = {}) {
       const data = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8')
       const hash = sha256(data)
@@ -100,13 +101,20 @@ export const createCtx = ({ dryRun = false, home, out = console.log } = {}) => {
       const current = exists ? readFileSync(file) : null
       const prev = state.files[file]
       if (current && sha256(current) === hash) {
-        if (!prev) {
-          // Identical file we did not put there: leave it alone and do not claim it.
-          return 'unchanged'
+        // Identical: claim it (an earlier aborted run may have left it orphaned).
+        if (!dryRun) {
+          state.files[file] = prev
+            ? { ...prev, sha256: hash }
+            : { sha256: hash, backup: null, existedBefore: true }
         }
-        prev.sha256 = hash
 
         return 'unchanged'
+      }
+      if (exists && !prev && !force) {
+        ctx.skipped.push(file)
+        out(`  ⚠ ${show(file)} ya existe y no es de orca-stack: lo dejo como está (usá --force para reemplazarlo, con respaldo)`)
+
+        return 'skipped'
       }
       const status = exists ? 'updated' : 'created'
       ctx.act(`${exists ? 'actualizo' : 'creo'} ${label ?? show(file)}`)

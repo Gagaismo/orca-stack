@@ -123,14 +123,16 @@ describe('global', () => {
     assert.equal(read(claudeMdPath()), before + after.replace(/^\n/, '\n'))
   })
 
-  test('a different pre-existing policy file is backed up and restored by remove', () => {
+  test('with --force a different pre-existing file is backed up (outside its folder) and restored by remove', () => {
     const file = path.join(home, 'orca', 'stack', 'ORCA-STACK.md')
-    write(file, 'mi versión\n')
-    cli(home, ['global', '--skip-pi'])
-    assert.notEqual(read(file), 'mi versión\n')
-    assert.equal(backups(home).filter(b => b.includes('ORCA-STACK.md')).length, 1)
+    write(file, 'mi versión')
+    cli(home, ['global', '--skip-pi', '--force'])
+    assert.notEqual(read(file), 'mi versión')
+    const saved = backups(home).filter(b => b.includes('ORCA-STACK.md'))
+    assert.equal(saved.length, 1)
+    assert.ok(saved[0].startsWith('.orca-stack/backups/'), saved[0])
     cli(home, ['remove'])
-    assert.equal(read(file), 'mi versión\n')
+    assert.equal(read(file), 'mi versión')
   })
 
   test('install then remove leaves the home as it was, apart from backups', () => {
@@ -142,7 +144,7 @@ describe('global', () => {
     assert.deepEqual(snapshot(home), dry, 'remove --dry-run changes nothing')
     const removed = cli(home, ['remove'])
     assert.equal(removed.status, 0, removed.out)
-    const left = Object.keys(snapshot(home)).filter(name => !name.includes('.bak-orca-stack-'))
+    const left = Object.keys(snapshot(home)).filter(name => !name.includes('.orca-stack/backups/'))
     assert.deepEqual(
       left.filter(name => !name.endsWith('/')),
       [],

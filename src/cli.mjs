@@ -18,6 +18,7 @@ Comandos:
 
 Opciones:
   --dry-run        (global, init, remove) Muestra cada acción sin escribir nada.
+  --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
   --humano <nombre> (global) Nombre que usan los mods para hablarte (por defecto: git config user.name).
@@ -30,7 +31,7 @@ Variables de entorno:
 `
 
 const COMMAND_HELP = {
-  global: `orca-stack global [--dry-run] [--skip-pi] [--humano <nombre>]
+  global: `orca-stack global [--dry-run] [--force] [--skip-pi] [--humano <nombre>]
 
 Instala a nivel usuario:
   1. ~/orca/stack/ORCA-STACK.md y ROLE-BRIEFS.md
@@ -59,16 +60,17 @@ Sale con código 1 si hay alguna falla (✖). Los avisos (⚠) no cambian el có
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
 Borra los archivos que instaló \`global\`, restaura los que había reemplazado, quita sus entradas de
-CLAUDE_CODE_PLUGIN_DIRS y su bloque de ~/.claude/CLAUDE.md. Los respaldos *.bak-orca-stack-* se conservan.
+CLAUDE_CODE_PLUGIN_DIRS y su bloque de ~/.claude/CLAUDE.md. Los respaldos de ~/.orca-stack/backups se conservan.
 `,
 }
 
 export const parseArgs = argv => {
-  const flags = { dryRun: false, skipPi: false, offline: false, withPi: false, humano: undefined, help: false, version: false }
+  const flags = { dryRun: false, force: false, skipPi: false, offline: false, withPi: false, humano: undefined, help: false, version: false }
   const rest = []
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--dry-run') flags.dryRun = true
+    else if (arg === '--force') flags.force = true
     else if (arg === '--skip-pi') flags.skipPi = true
     else if (arg === '--offline') flags.offline = true
     else if (arg === '--with-pi') flags.withPi = true

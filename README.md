@@ -13,7 +13,7 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 
 ## Qué instala
 
-`global` (idempotente; todo archivo que modifica se respalda antes como `<archivo>.bak-orca-stack-<fecha>`):
+`global` (idempotente; todo archivo que modifica se respalda antes en `~/.orca-stack/backups/<fecha>/` (nunca al lado del archivo, para que ningún agente cargue el respaldo)):
 
 | Qué | Dónde |
 | --- | --- |
@@ -57,17 +57,18 @@ Son plugins de Claude Code que se recargan en caliente (`.claude-plugin/plugin.j
 ## Uso
 
 ```text
-orca-stack global [--dry-run] [--skip-pi] [--humano <nombre>]
+orca-stack global [--dry-run] [--force] [--skip-pi] [--humano <nombre>]
 orca-stack init   [--dry-run]
 orca-stack doctor [--offline] [--skip-pi]
 orca-stack remove [--dry-run] [--with-pi]
 ```
 
 - `--dry-run` cuenta cada acción sin escribir nada.
+- `--force` reemplaza archivos que ya existían y no son de orca-stack (por ejemplo, una skill tuya llamada igual). Sin `--force` se saltean con un aviso ⚠ y quedan como estaban; con `--force` se respaldan antes.
 - `--skip-pi` no toca Pi (útil si todavía no lo instalaste).
 - `--humano` fija cómo te nombran los mods; si no lo pasás, sale de `git config user.name`.
 - `doctor` hace sondeos reales y sale con código 1 si hay una falla (✖). Los avisos (⚠) no cambian el código.
-- `remove` borra lo que `global` creó, restaura lo que había reemplazado, saca sus entradas de `CLAUDE_CODE_PLUGIN_DIRS` y su bloque de `CLAUDE.md`. Los respaldos se quedan. Los paquetes de Pi solo se sacan con `--with-pi`. Si editaste `~/.orca-stack/config.json`, se conserva.
+- `remove` borra lo que `global` creó, restaura lo que había reemplazado, saca sus entradas de `CLAUDE_CODE_PLUGIN_DIRS` y su bloque de `CLAUDE.md`. Los respaldos (`~/.orca-stack/backups/<fecha>/`) se quedan. Los paquetes de Pi solo se sacan con `--with-pi`, y solo los que no tenías antes de instalar. Si editaste `~/.orca-stack/config.json`, se conserva.
 - Para probar sin tocar tu carpeta personal: `ORCA_STACK_HOME=/ruta/temporal orca-stack global`.
 
 ### `doctor`

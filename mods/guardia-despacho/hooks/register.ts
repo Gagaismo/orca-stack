@@ -14,6 +14,9 @@ const hostOf = ($: EngineInterface): Host => ({
   now: () => $.clock.now(),
 })
 
+// Ignored-rule notes are shown once per load, not on every command.
+let noted = false
+
 type Judgement = { deny: string } | { command: string } | undefined
 
 const judge = async ($: EngineInterface, command: string, shell: Shell): Promise<Judgement> => {
@@ -21,6 +24,10 @@ const judge = async ($: EngineInterface, command: string, shell: Shell): Promise
   const rules = buildRules(await currentConfig(hostOf($)))
   if (rules === undefined) {
     return undefined
+  }
+  if (rules.notes.length > 0 && !noted) {
+    noted = true
+    $.ui.toast(`guardia-despacho: ${rules.notes.join(' ')}`)
   }
   const verdict = inspect(command, await $.clock.now(), rules, shell)
   if (verdict.kind === 'deny') {

@@ -52,7 +52,7 @@ describe('init', () => {
     const second = run()
     assert.equal(second.status, 0, second.out)
     assert.deepEqual(snapshot(repo), before)
-    assert.deepEqual(backups(repo), [])
+    assert.deepEqual(backups(home), [])
     const ignore = read(path.join(repo, '.gitignore')).split(/\r?\n/).filter(line => line === '.orca-stack.local.json')
     assert.equal(ignore.length, 1)
   })
@@ -64,7 +64,7 @@ describe('init', () => {
     const agents = read(path.join(repo, 'AGENTS.md'))
     assert.ok(agents.startsWith('# Contrato\n\nReglas propias.\n'))
     assert.equal(read(path.join(repo, '.gitignore')), 'node_modules/\n.orca-stack.local.json\n')
-    assert.equal(backups(repo).filter(b => b.includes('AGENTS.md')).length, 1)
+    assert.equal(backups(home).filter(b => b.includes('AGENTS.md')).length, 1)
   })
 
   test('a CLAUDE.md that only points at AGENTS.md gets the short pointer', () => {

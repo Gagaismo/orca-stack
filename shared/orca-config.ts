@@ -112,28 +112,31 @@ export const repoRoot = async (host: Host): Promise<string | undefined> => {
   }
 }
 
-// Never throws: a missing or broken layer is skipped.
-export const loadConfig = async (host: Host): Promise<StackConfig> => {
-  const home = await homeOf(host)
-  const root = await repoRoot(host)
-
-  return mergeConfig(
+const loadFor = async (host: Host, home: string | undefined, root: string | undefined): Promise<StackConfig> =>
+  mergeConfig(
     home === undefined ? undefined : await readLayer(host, `${home}/.orca-stack/config.json`),
     root === undefined ? undefined : await readLayer(host, `${root}/.orca-stack.json`),
     root === undefined ? undefined : await readLayer(host, `${root}/.orca-stack.local.json`),
   )
-}
 
-// loadConfig with a short memory, for hooks that run on every tool call.
-let remembered: { at: number; config: StackConfig } | undefined
+// Never throws: a missing or broken layer is skipped.
+export const loadConfig = async (host: Host): Promise<StackConfig> =>
+  loadFor(host, await homeOf(host), await repoRoot(host))
+
+// loadConfig with a short memory, for hooks that run on every tool call. The memory is keyed by the
+// resolved home and repo root, so switching to another checkout never serves the previous one's rules.
+let remembered: { key: string; at: number; config: StackConfig } | undefined
 
 export const currentConfig = async (host: Host, maxAgeMs = 30_000): Promise<StackConfig> => {
+  const home = await homeOf(host)
+  const root = await repoRoot(host)
+  const key = `${home ?? ''}|${root ?? ''}`
   const now = await host.now()
-  if (remembered !== undefined && now - remembered.at < maxAgeMs) {
+  if (remembered !== undefined && remembered.key === key && now - remembered.at < maxAgeMs) {
     return remembered.config
   }
-  const config = await loadConfig(host)
-  remembered = { at: now, config }
+  const config = await loadFor(host, home, root)
+  remembered = { key, at: now, config }
 
   return config
 }

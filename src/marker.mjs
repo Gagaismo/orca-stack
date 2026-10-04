@@ -5,6 +5,12 @@ const eolOf = text => (text.includes('\r\n') ? '\r\n' : '\n')
 const locate = text => {
   const begin = text.indexOf(MARKER_BEGIN)
   const end = text.indexOf(MARKER_END)
+  const count = marker => text.split(marker).length - 1
+  if (count(MARKER_BEGIN) > 1 || count(MARKER_END) > 1) {
+    throw new Error(
+      `Hay más de un bloque ${MARKER_BEGIN} / ${MARKER_END} (duplicados). Dejá uno solo a mano y volvé a correr el comando.`,
+    )
+  }
   if (begin === -1 && end === -1) {
     return null
   }

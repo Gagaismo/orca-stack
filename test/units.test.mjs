@@ -30,6 +30,14 @@ describe('marker blocks', () => {
     assert.ok(!/[^\r]\n/.test(out), 'no bare LF')
   })
 
+  test('refuses duplicated markers', () => {
+    const twice = `${buildBlock('a')}
+${buildBlock('b')}
+`
+    assert.throws(() => upsertBlock(twice, 'x'), /duplicados/)
+    assert.throws(() => removeBlock(twice), /duplicados/)
+  })
+
   test('refuses unbalanced markers instead of guessing', () => {
     assert.throws(() => upsertBlock(`${MARKER_BEGIN}\nsin fin`, 'x'), /incompletos/)
     assert.throws(() => removeBlock(`${MARKER_END}\n${MARKER_BEGIN}`), /incompletos/)

@@ -8,7 +8,16 @@ export type Rules = {
   review: string | undefined // basename of the review script (despacho.revisar)
   blocks: Block[]
   model: string | undefined // guardia.modeloClaude
+  notes: string[] // rules that were ignored, and why (shown once as a toast)
 }
+
+// Config comes from a committed file of a possibly untrusted repo: whatever ends up inside a rewritten
+// shell command or is matched against a command must be plain.
+const SAFE_MODEL = /^[A-Za-z0-9._:-]+$/
+const SAFE_PATH = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/
+
+export const isSafePath = (value: unknown): value is string =>
+  typeof value === 'string' && SAFE_PATH.test(value) && !value.split('/').includes('..')
 
 export type Shell = 'bash' | 'powershell'
 export type Verdict =
@@ -16,7 +25,7 @@ export type Verdict =
   | { kind: 'deny'; reason: string }
   | { kind: 'rewrite'; command: string }
 
-const baseName = (path: string): string => path.split(/[\/]/).pop() ?? path
+const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path
 
 // "2026-10-29" -> local midnight of that day; an agent is blocked while now < that instant.
 export const parseUntil = (date: string): number | undefined => {
@@ -24,8 +33,14 @@ export const parseUntil = (date: string): number | undefined => {
   if (match === null) {
     return undefined
   }
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  const at = new Date(year, month - 1, day)
+  // Round trip: 2026-02-30 would silently become 2026-03-02.
+  if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== day) {
+    return undefined
+  }
 
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime()
+  return at.getTime()
 }
 
 export const blockReason = (agent: string, until: string, motivo: string | undefined): string =>
@@ -36,29 +51,51 @@ export const modelReason = (model: string): string =>
 
 // The guard is OFF (undefined) unless the project config declares despacho.script.
 export const buildRules = (config: StackConfig): Rules | undefined => {
+  const notes: string[] = []
   const script = config.despacho?.script
-  if (typeof script !== 'string' || script.trim() === '') {
+  if (script === undefined) {
     return undefined
   }
+  if (!isSafePath(script)) {
+    return undefined // guard off: an odd script path is never matched against commands
+  }
   const revisar = config.despacho?.revisar
+  const hasReview = revisar !== undefined && revisar !== ''
+  if (hasReview && !isSafePath(revisar)) {
+    notes.push('despacho.revisar ignorado: tiene que ser una ruta relativa simple.')
+  }
   const blocks: Block[] = []
   for (const rule of config.guardia?.bloquear ?? []) {
     const untilMs = typeof rule?.hasta === 'string' ? parseUntil(rule.hasta) : undefined
-    if (typeof rule?.agente === 'string' && rule.agente !== '' && untilMs !== undefined) {
-      blocks.push({
-        agent: rule.agente.toLowerCase(),
-        untilMs,
-        reason: blockReason(rule.agente, rule.hasta, rule.motivo),
-      })
+    if (typeof rule?.agente !== 'string' || rule.agente === '') {
+      continue
     }
+    if (untilMs === undefined) {
+      notes.push(`Regla de ${rule.agente} ignorada: la fecha "hasta" no es una fecha AAAA-MM-DD válida.`)
+      continue
+    }
+    blocks.push({
+      agent: rule.agente.toLowerCase(),
+      untilMs,
+      reason: blockReason(rule.agente, rule.hasta, rule.motivo),
+    })
   }
   const model = config.guardia?.modeloClaude
+  let safeModel: string | undefined
+  if (typeof model === 'string' && model.trim() !== '') {
+    if (SAFE_MODEL.test(model.trim())) {
+      safeModel = model.trim()
+    } else {
+      notes.push('guardia.modeloClaude ignorado: solo admite letras, números y . _ : -')
+    }
+  }
 
   return {
     dispatch: baseName(script),
-    review: typeof revisar === 'string' && revisar.trim() !== '' ? baseName(revisar) : undefined,
+    review: hasReview && isSafePath(revisar) ? baseName(revisar) : undefined,
     blocks,
-    model: typeof model === 'string' && model.trim() !== '' ? model.trim() : undefined,
+    model: safeModel,
+    notes,
   }
 }
 

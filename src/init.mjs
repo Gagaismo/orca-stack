@@ -1,10 +1,11 @@
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { copyToBackup } from './backup.mjs'
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { removeBlock, upsertBlock } from './marker.mjs'
 import { policyBlock } from './templates.mjs'
-import { readTextIfExists, run, timestamp, which } from './util.mjs'
+import { homeDir, readTextIfExists, run, timestamp, tilde, which } from './util.mjs'
 
 // Portable pointers: never an absolute user path.
 const POLICY = '~/orca/stack/ORCA-STACK.md'
@@ -36,70 +37,75 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
 
     return 1
   }
+  const home = homeDir()
   const prefix = dryRun ? '[simulación] ' : ''
   const stamp = timestamp()
   console.log(`orca-stack init${dryRun ? ' (simulación: no se escribe nada)' : ''}\nProyecto: ${root}\n`)
 
-  const writeText = (file, content, verb) => {
-    console.log(`${prefix}${verb} ${path.relative(root, file) || file}`)
+  // Plan first: every file is computed (and every marker validated) before the first write,
+  // so a broken AGENTS.md or CLAUDE.md can never leave the project half-wired.
+  const plan = []
+  const block = (name, body, fallbackWhenMissing) => {
+    const file = path.join(root, name)
+    const original = readTextIfExists(file)
+    const next = fallbackWhenMissing && original === null ? fallbackWhenMissing(body) : upsertBlock(original ?? '', body)
+    if (next === original) {
+      console.log(`${name}: el bloque orca-stack ya está al día`)
+    } else {
+      plan.push({ file, name, content: next, verb: original === null ? 'creo' : 'actualizo' })
+    }
+  }
+  const missing = (name, content, text) => {
+    if (existsSync(path.join(root, name))) {
+      console.log(`${name}: ya existe, no se toca`)
+    } else {
+      plan.push({ file: path.join(root, name), name, content: text(content), verb: 'creo' })
+    }
+  }
+
+  try {
+    block('AGENTS.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, agentsPointer: true }))
+
+    const claudeText = readTextIfExists(path.join(root, 'CLAUDE.md'))
+    const short = policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, short: true })
+    if (claudeText === null) {
+      block('CLAUDE.md', short, body => `Leé \`AGENTS.md\`: es el contrato de trabajo de este repo.\n\n${upsertBlock('', body)}`)
+    } else if (isPointerOnly(claudeText)) {
+      block('CLAUDE.md', short)
+    } else {
+      block('CLAUDE.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, agentsPointer: true }))
+    }
+  } catch (error) {
+    console.error(`✖ ${error.message}\nNo escribí nada.`)
+
+    return 1
+  }
+
+  missing(PROJECT_CONFIG, null, () => JSON.stringify({ version: 1 }, null, 2) + '\n')
+  missing(PROJECT_LOCAL_CONFIG, null, () => JSON.stringify({ mensajes: { destinatarios: [] } }, null, 2) + '\n')
+
+  const ignore = path.join(root, '.gitignore')
+  const ignoreText = readTextIfExists(ignore)
+  if ((ignoreText ?? '').split(/\r?\n/).some(line => line.trim() === PROJECT_LOCAL_CONFIG)) {
+    console.log(`.gitignore: ya ignora ${PROJECT_LOCAL_CONFIG}`)
+  } else {
+    const text = ignoreText ?? ''
+    const eol = text.includes('\r\n') ? '\r\n' : '\n'
+    const base = text === '' || text.endsWith('\n') ? text : text + eol
+    plan.push({ file: ignore, name: '.gitignore', content: `${base}${PROJECT_LOCAL_CONFIG}${eol}`, verb: ignoreText === null ? 'creo' : 'actualizo' })
+  }
+
+  for (const { file, name, content, verb } of plan) {
+    console.log(`${prefix}${verb} ${name}`)
     if (dryRun) {
-      return
+      continue
     }
     if (existsSync(file)) {
-      copyFileSync(file, `${file}.bak-orca-stack-${stamp}`)
+      const saved = copyToBackup(home, stamp, file)
+      console.log(`  respaldo -> ${tilde(saved, home)}`)
     }
     mkdirSync(path.dirname(file), { recursive: true })
     writeFileSync(file, content)
-  }
-
-  const upsertFile = (name, body) => {
-    const file = path.join(root, name)
-    const original = readTextIfExists(file)
-    const next = upsertBlock(original ?? '', body)
-    if (next === original) {
-      console.log(`${name}: el bloque orca-stack ya está al día`)
-
-      return
-    }
-    writeText(file, next, original === null ? 'creo' : 'actualizo')
-  }
-
-  upsertFile('AGENTS.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, agentsPointer: true }))
-
-  const claudeMd = path.join(root, 'CLAUDE.md')
-  const claudeText = readTextIfExists(claudeMd)
-  if (claudeText === null) {
-    // New CLAUDE.md: point at AGENTS.md, which carries the contract.
-    const file = claudeMd
-    const body = policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, short: true })
-    writeText(file, `Leé \`AGENTS.md\`: es el contrato de trabajo de este repo.\n\n${upsertBlock('', body)}`, 'creo')
-  } else if (isPointerOnly(claudeText)) {
-    upsertFile('CLAUDE.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, short: true }))
-  } else {
-    upsertFile('CLAUDE.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, agentsPointer: true }))
-  }
-
-  const config = path.join(root, PROJECT_CONFIG)
-  if (existsSync(config)) {
-    console.log(`${PROJECT_CONFIG}: ya existe, no se toca`)
-  } else {
-    writeText(config, JSON.stringify({ version: 1 }, null, 2) + '\n', 'creo')
-  }
-  const local = path.join(root, PROJECT_LOCAL_CONFIG)
-  if (existsSync(local)) {
-    console.log(`${PROJECT_LOCAL_CONFIG}: ya existe, no se toca`)
-  } else {
-    writeText(local, JSON.stringify({ mensajes: { destinatarios: [] } }, null, 2) + '\n', 'creo')
-  }
-
-  const ignore = path.join(root, '.gitignore')
-  const ignoreText = readTextIfExists(ignore) ?? ''
-  if (ignoreText.split(/\r?\n/).some(line => line.trim() === PROJECT_LOCAL_CONFIG)) {
-    console.log(`.gitignore: ya ignora ${PROJECT_LOCAL_CONFIG}`)
-  } else {
-    const eol = ignoreText.includes('\r\n') ? '\r\n' : '\n'
-    const base = ignoreText === '' || ignoreText.endsWith('\n') ? ignoreText : ignoreText + eol
-    writeText(ignore, `${base}${PROJECT_LOCAL_CONFIG}${eol}`, ignoreText === '' && !existsSync(ignore) ? 'creo' : 'actualizo')
   }
 
   console.log(

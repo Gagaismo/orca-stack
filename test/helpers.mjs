@@ -58,7 +58,8 @@ export const write = (file, text) => {
 
 export const read = file => readFileSync(file, 'utf8')
 
-export const backups = dir => Object.keys(snapshot(dir)).filter(name => name.includes('.bak-orca-stack-'))
+export const backups = dir =>
+  Object.keys(snapshot(dir)).filter(name => name.includes('.orca-stack/backups/') && !name.endsWith('/'))
 
 export const git = (cwd, ...args) =>
   spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: path.join(cwd, '..', 'none') } })

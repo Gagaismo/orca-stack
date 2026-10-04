@@ -109,15 +109,18 @@ export const setupPi = (ctx, { skipPi }) => {
       ctx.say(`  ${pkg.name}@${pkg.version} ya está instalado`)
       continue
     }
-    ctx.act(`pi install npm:${pkg.name}@${pkg.version}`)
+    ctx.act(`ejecuto: pi install npm:${pkg.name}@${pkg.version}${have ? ` (ya tenías la ${have}; no se va a registrar como instalado por orca-stack)` : ''}`)
     if (ctx.dryRun) {
       continue
     }
     const result = run(bin, ['install', `npm:${pkg.name}@${pkg.version}`], { timeout: 300_000 })
     if (result.status === 0) {
-      ctx.state.pi.packagesInstalled = [...new Set([...ctx.state.pi.packagesInstalled, `${pkg.name}@${pkg.version}`])]
+      // Only what was absent before this run is ours to remove later.
+      if (have === null) {
+        ctx.state.pi.packagesInstalled = [...new Set([...ctx.state.pi.packagesInstalled, `${pkg.name}@${pkg.version}`])]
+      }
     } else {
-      ctx.say(`  ✖ falló pi install npm:${pkg.name}@${pkg.version}: ${failureReason(result)}`)
+      ctx.fail(`falló pi install npm:${pkg.name}@${pkg.version}: ${failureReason(result)}`)
     }
   }
 
@@ -134,13 +137,15 @@ export const setupPi = (ctx, { skipPi }) => {
 
     return
   }
-  ctx.act(`npm i -g gentle-pi@${PINNED.gentlePi}`)
+  ctx.act(`ejecuto: npm i -g gentle-pi@${PINNED.gentlePi}${globalVersion ? ` (ya tenías la ${globalVersion}; no se va a registrar como instalado por orca-stack)` : ''}`)
   if (!ctx.dryRun) {
     const result = run(npm, ['i', '-g', `gentle-pi@${PINNED.gentlePi}`], { timeout: 300_000 })
     if (result.status === 0) {
-      ctx.state.pi.npmGlobalInstalled = true
+      if (globalVersion === null) {
+        ctx.state.pi.npmGlobalInstalled = true
+      }
     } else {
-      ctx.say(`  ✖ falló npm i -g gentle-pi@${PINNED.gentlePi}: ${failureReason(result)}`)
+      ctx.fail(`falló npm i -g gentle-pi@${PINNED.gentlePi}: ${failureReason(result)}`)
     }
   }
 }

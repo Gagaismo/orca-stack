@@ -57,6 +57,7 @@ export const cmdWrapper = agent => {
     '@echo off',
     `rem Generado por orca-stack (${agent}). Se regenera con "orca-stack global"; no lo edites a mano.`,
     'setlocal',
+    'set "NoDefaultCurrentDirectoryInExePath=1"',
     `set "ORCA_STACK_MODE=${STACK_LEVELS.mode}"`,
     `set "ORCA_STACK_CAVEMAN_LEVEL=${STACK_LEVELS.caveman}"`,
     `set "ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}"`,
