@@ -1,0 +1,32 @@
+{
+  "name": "orca-stack",
+  "version": "0.1.0",
+  "description": "Instala el stack de agentes: política de Orca, skills, wrappers de proveedores, Pi con Gentle Shell y mods de Claude Code.",
+  "type": "module",
+  "bin": {
+    "orca-stack": "bin/orca-stack.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "assets",
+    "mods",
+    "shared",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node scripts/run-tests.mjs",
+    "test:mods": "node scripts/test-mods.mjs",
+    "sync-shared": "node scripts/sync-shared.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gagaismo/orca-stack.git"
+  },
+  "keywords": ["orca", "claude-code", "pi", "agents"]
+}
