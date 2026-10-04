@@ -80,7 +80,12 @@ export type Host = {
 }
 
 export const homeOf = async (host: Host): Promise<string | undefined> => {
-  const home = await host.home()
+  let home: string | undefined
+  try {
+    home = await host.home()
+  } catch {
+    home = undefined
+  }
 
   return home === undefined || home === '' ? undefined : slashed(home)
 }
