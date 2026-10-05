@@ -16,12 +16,6 @@ Provider instruction files point here for the durable policy.
 - **Caveman (modular)**: communication compression. Orca Auto applies it when
   the work is token-heavy, but never compresses code, commands, paths, exact
   errors, decisions, risks, uncertainty, tests, or acceptance evidence.
-- **TestSprite (QA layer)**: runtime verification only. It executes the product
-  (real browser E2E and API checks) through the `testsprite` CLI or MCP and
-  reports failures; it never replaces Matt's `/code-review` (standards + spec),
-  never plans, and never edits code. Default scope is the current diff; full
-  suites run on `main`; targeted reruns after a bugfix. It spends cloud credits
-  (~0.5 per frontend run, ~0.2 per backend run), so runs are deliberate.
 - **GentleAI / Engram**: persistent memory and lifecycle bookkeeping only. It is
   not a competing planner, SDD system, or worker scheduler.
 - **Claude / Codex / Antigravity**: execution providers attached to Orca. Provider
@@ -35,8 +29,7 @@ Provider instruction files point here for the durable policy.
 4. Specialized skill for the current role.
 5. Ponytail implementation policy.
 6. Caveman communication policy.
-7. TestSprite verification policy (runtime evidence; it cannot waive a review).
-8. Provider defaults.
+7. Provider defaults.
 
 A lower layer cannot cancel, replace, or broaden a higher layer. If a generic
 minimalism rule conflicts with an explicit requirement, preserve the requirement.
@@ -65,30 +58,6 @@ domain modeling, explicit spec obligations, ADR decisions, security, validation,
 accessibility, data-loss handling, or required tests. `ponytail-review` is a
 second-pass complexity review after correctness/spec review; it reports only and
 never applies changes. `ponytail-audit` is opt-in and repo-wide.
-
-## Verification contract (TestSprite)
-
-`/code-review` and TestSprite answer different questions and run side by side
-before a PR closes: the review asks whether the diff is correct against the
-standards and the spec; TestSprite asks whether the running product works.
-
-This contract applies when the project has a runnable TestSprite target. A
-project whose `AGENTS.md` declares that there is none skips TestSprite and uses
-the verification its brief names; that is not a gap to report.
-
-- **Diff before PR**: the implementation worker runs the repo's
-  `testsprite-verify` skill against the changed flows (scope: diff) with the app
-  running locally, reads `testsprite test failure get`, fixes, and reruns until
-  exit 0 or documents the failure as a known gap. Missing credentials mean the
-  PR is reported as *unverified by TestSprite*, never as passing.
-- **Full run on `main`**: only the coordinator (or CI) triggers a full suite,
-  after merges of a wave, never per ticket.
-- **Bugfix**: targeted `testsprite test rerun <ids>` of the affected tests.
-- **Credits**: one TestSprite project per repo (`.testsprite/config.json`, versioned);
-  workers never create projects. Prefer reusing existing tests over generating
-  new plans. Docs-only or config-only changes skip TestSprite.
-- TestSprite output is evidence for the PR (test ids, verdicts, report path);
-  it is pasted verbatim, never summarized by Caveman.
 
 ## Communication contract
 

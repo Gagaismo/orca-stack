@@ -45,9 +45,7 @@ do not spawn workers or ask the human. The ticket's acceptance criteria and
 failure modes are the TDD slice list: each one ends with a test that proves it.
 Use the Orca preamble `ask` only for a real blocker; in a project-script handoff
 (no preamble), ask where the brief says. Before opening the PR, verify the
-changed flows: with TestSprite when the project has a runnable target (repo
-skill `testsprite-verify`, scope diff, app running locally), otherwise with the
-verification the project brief names. Put the evidence in the PR, one row per
+changed flows with the verification the project brief names. Put the evidence in the PR, one row per
 criterion and failure mode with the exact test name and its passing output, or
 state what is unverified and why. Report files changed, tests run, and
 remaining risk.
@@ -65,9 +63,7 @@ its criterion. Report only what blocks (file:line, the problem, how to reproduce
 it or which criterion it breaks, the fix) and at most three suggestions; no
 lists of what is fine. On a re-review, read only the delta since the last
 reviewed commit and confirm the previous blockers. The project's own review
-rules, if any, take precedence. This review owns correctness, not minimalism. It
-runs in parallel with TestSprite's runtime verification when the project has a
-runnable target, and neither replaces the other.
+rules, if any, take precedence. This review owns correctness, not minimalism.
 
 ## Ponytail reviewer
 
@@ -88,13 +84,3 @@ settlement, and cleanup.
 Orca's mailbox and exact lifecycle IDs; never treat timeout/contact loss as proof
 of death; never release an unsettled worker; finish with per-task outcome and
 evidence.
-
-## QA verification worker (TestSprite)
-
-**Mission:** verify the named flows at runtime with TestSprite against the app
-under test (local port or deployed URL): reuse or create tests, run them, read
-failures, and write a findings report with test ids, verdicts and repro steps.
-
-**Rules:** no source edits, no planning, no new TestSprite projects; scope is
-the diff or the listed flows unless the coordinator says "full". Report exact
-CLI output and the report path; never mark a flow as passing without exit 0.
