@@ -232,9 +232,19 @@ export const doctorCommand = async flags => {
   const root = projectRootOf(process.cwd())
   if (root) {
     const committed = checkJson(path.join(root, PROJECT_CONFIG), PROJECT_CONFIG)
-    checkJson(path.join(root, PROJECT_LOCAL_CONFIG), PROJECT_LOCAL_CONFIG)
+    const local = checkJson(path.join(root, PROJECT_LOCAL_CONFIG), PROJECT_LOCAL_CONFIG)
+    // Same layering as the mods' mergeConfig: objects merge key by key, anything else (null included) replaces.
+    const isPlain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+    const despacho = [personal, committed, local].reduce((acc, layer) => {
+      const value = layer?.despacho
+      if (value === undefined) {
+        return acc
+      }
+
+      return isPlain(acc) && isPlain(value) ? { ...acc, ...value } : value
+    }, undefined)
     for (const key of ['script', 'revisar']) {
-      const rel = committed?.despacho?.[key]
+      const rel = isPlain(despacho) ? despacho[key] : undefined
       if (typeof rel === 'string' && !existsSync(path.join(root, rel))) {
         add('warn', `despacho.${key}`, `${rel} no existe en el proyecto`)
       }

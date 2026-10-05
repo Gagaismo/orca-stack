@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 
-import { backups, cleanup, cli, read, snapshot, tempDir, write } from './helpers.mjs'
+import { backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const MODS = ['bandeja-mensajes', 'grilling-ok', 'guardia-despacho', 'modo-autonomo', 'puente-gentle', 'reloj-cache', 'tablero-despacho']
 
@@ -225,6 +225,24 @@ describe('doctor', () => {
     const result = cli(home, ['doctor', '--offline', '--skip-pi'])
     assert.equal(result.status, 1)
     assert.match(result.out, /✖ bandeja-mensajes - no está en env\.CLAUDE_CODE_PLUGIN_DIRS/)
+  })
+
+  test('checks despacho with the same layering as the mods (committed, then local)', () => {
+    cli(home, ['global', '--skip-pi'])
+    const repo = path.join(tempDir('repo'), 'proyecto')
+    write(path.join(repo, 'README.md'), '# proyecto\n')
+    git(repo, 'init', '-q', '-b', 'main')
+    const doctor = () => cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo })
+    try {
+      write(path.join(repo, '.orca-stack.local.json'), '{"despacho":{"script":"scripts/despachar.sh"}}\n')
+      assert.match(doctor().out, /⚠ despacho\.script - scripts\/despachar\.sh no existe en el proyecto/)
+
+      write(path.join(repo, '.orca-stack.json'), '{"version":1,"despacho":{"script":"scripts/despachar.sh"}}\n')
+      write(path.join(repo, '.orca-stack.local.json'), '{"despacho":null}\n')
+      assert.doesNotMatch(doctor().out, /despacho\.script/)
+    } finally {
+      cleanup(path.dirname(repo))
+    }
   })
 
   test('reads the Orca agent overrides without writing', () => {
