@@ -3,11 +3,13 @@
 Instala de una vez el stack de agentes que uso para trabajar con [Orca](https://github.com/stablyai/orca): la política del stack, las skills propias, los wrappers de proveedores, Pi con Gentle Shell y los mods de Claude Code. Todo en un comando, con respaldo de lo que toca y con vuelta atrás.
 
 ```bash
-npx github:Gagaismo/orca-stack#v0.1.0 global     # instalación a nivel usuario
-npx github:Gagaismo/orca-stack#v0.1.0 init       # cablea el proyecto actual
-npx github:Gagaismo/orca-stack#v0.1.0 doctor     # verifica que todo funcione de verdad
-npx github:Gagaismo/orca-stack#v0.1.0 remove     # deshace lo que instaló global
+npx github:Gagaismo/orca-stack#v0.2.0 global     # instalación a nivel usuario
+npx github:Gagaismo/orca-stack#v0.2.0 init       # cablea el proyecto actual
+npx github:Gagaismo/orca-stack#v0.2.0 doctor     # verifica que todo funcione de verdad
+npx github:Gagaismo/orca-stack#v0.2.0 remove     # deshace lo que instaló global
 ```
+
+¿Primera vez, o un proyecto nuevo o ya empezado? Seguí la [guía de setup](docs/guia-setup.md): tiene un cuestionario que dice qué configurar en cada caso.
 
 Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 
@@ -80,6 +82,7 @@ No se queda en "el archivo existe":
 - sondea con un `pi -p` corto (con tiempo máximo) si falta el `/login` (se omite con `--offline`);
 - verifica que las skills de gentle-pi se resuelvan igual que lo hace `puente-gentle` en ejecución (primero la carpeta de Pi, después `npm root -g`);
 - comprueba que cada mod esté en `CLAUDE_CODE_PLUGIN_DIRS`;
+- combina las tres capas de configuración igual que los mods y avisa si un script de `despacho` no existe;
 - detecta `engram`, `gentle-ai`, `gh` y Orca, y **solo lee** `orca-data.json` de los perfiles de Orca para decirte si los overrides de los agentes apuntan a los wrappers. Nunca lo escribe.
 
 ## Configuración en tres capas
@@ -129,7 +132,7 @@ Los mods leen su configuración al ejecutarse, de tres archivos. Cada capa pisa 
 }
 ```
 
-`<repo>/.orca-stack.local.json` (local, ignorado por git):
+`<repo>/.orca-stack.local.json` (local, ignorado por git; `init` lo crea vacío):
 
 ```json
 {
