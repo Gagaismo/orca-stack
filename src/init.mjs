@@ -82,7 +82,8 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
   }
 
   missing(PROJECT_CONFIG, null, () => JSON.stringify({ version: 1 }, null, 2) + '\n')
-  missing(PROJECT_LOCAL_CONFIG, null, () => JSON.stringify({ mensajes: { destinatarios: [] } }, null, 2) + '\n')
+  // Empty on purpose: a list here would replace the committed and personal ones (lists are not merged).
+  missing(PROJECT_LOCAL_CONFIG, null, () => '{}\n')
 
   const ignore = path.join(root, '.gitignore')
   const ignoreText = readTextIfExists(ignore)
