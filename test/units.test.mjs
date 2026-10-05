@@ -89,7 +89,7 @@ describe('templates and args', () => {
 // Built from pieces so this file does not contain the strings it forbids.
 const author = ['laut', 'aro'].join('')
 const personal = new RegExp('(c:/+users|/home)/+' + author, 'i') // tested on text with backslashes turned into slashes
-const projectNames = new RegExp(['Sam' + 'uel', 'Jo' + 'aco', 'agentes-' + 'samu', author].join('|'), 'i')
+const projectNames = new RegExp(['Sam' + 'uel', 'Jo' + 'aco', 'agentes-' + 'samu', 'Gluco' + 'Meal', author].join('|'), 'i')
 
 describe('the repository itself', () => {
   const files = []
@@ -115,9 +115,11 @@ describe('the repository itself', () => {
     assert.deepEqual(offenders, [])
   })
 
-  test('the mods carry no project-specific names or paths', () => {
+  test('the mods, the docs and the README carry no project-specific names', () => {
     const offenders = []
-    for (const file of files.filter(f => f.includes(`${path.sep}mods${path.sep}`))) {
+    const published = f =>
+      f.includes(`${path.sep}mods${path.sep}`) || f.includes(`${path.sep}docs${path.sep}`) || f === path.join(ROOT, 'README.md')
+    for (const file of files.filter(published)) {
       const text = readFileSync(file, 'utf8')
       if (projectNames.test(text)) offenders.push(path.relative(ROOT, file))
     }
