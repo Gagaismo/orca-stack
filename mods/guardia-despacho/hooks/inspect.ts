@@ -177,16 +177,59 @@ export const inspect = (command: string, nowMs: number, rules: Rules, shell: She
 // ---- worktree removal ---------------------------------------------------------------------------
 // `orca worktree rm` also deletes the local branch, even with commits that exist nowhere else.
 
-export type Removal = { by: 'path' | 'branch' | 'name' | 'issue' | 'none'; value: string }
+export type Removal = { by: 'path' | 'branch' | 'name' | 'issue' | 'none' | 'opaque'; value: string }
 export type Worktree = { path: string; branch: string | undefined }
 export type RunGit = (argv: string[]) => Promise<{ exitCode: number; stdout: string }>
 
-const tokensOf = (segment: string): string[] =>
-  (segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map(unquote).filter(token => token !== '&')
+// Splits on the shell separators that sit outside quotes: `bash -c 'cd x; orca worktree rm y'` is one segment.
+const splitSegments = (command: string): string[] => {
+  const segments: string[] = []
+  let current = ''
+  let quote = ''
+  for (let i = 0; i < command.length; i += 1) {
+    const ch = command[i] ?? ''
+    if (quote !== '') {
+      current += ch
+      quote = ch === quote ? '' : quote
+    } else if (ch === '"' || ch === "'") {
+      current += ch
+      quote = ch
+    } else if (ch === ';' || ch === '\n' || ch === '\r' || ch === '|' || (ch === '&' && command[i + 1] === '&')) {
+      segments.push(current)
+      current = ''
+      i += (ch === '|' || ch === '&') && command[i + 1] === ch ? 1 : 0
+    } else {
+      current += ch
+    }
+  }
+  segments.push(current)
+
+  return segments
+}
+
+type Token = { text: string; quoted: boolean }
+
+const tokensOf = (segment: string): Token[] =>
+  (segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? [])
+    .map((raw): Token => {
+      const quoted = raw.startsWith('"') || raw.startsWith("'")
+
+      // Block and call punctuation glued to a word (`{orca`, `rm)`) is not part of it.
+      return { text: unquote(quoted ? raw : raw.replace(/^[{(]+|[})]+$/g, '')), quoted }
+    })
+    .filter(token => token.text !== '' && token.text !== '&')
+
+const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'pwsh', 'powershell', 'cmd', 'iex', 'invoke-expression'])
+const SHELL_FLAG = /^(-[a-z]*c|-command|-c|\/c|-encodedcommand|-ec|-e)$/i
+const NESTED = /\borca(\.exe|\.cmd)?\s+worktree\s+rm\b|\bgit(\.exe)?\b[^|;&]*\bworktree\s+remove\b/i
+const bare = (token: string): string => baseName(token).replace(/\.(exe|cmd|ps1)$/i, '').toLowerCase()
 
 const selectorOf = (value: string | undefined): Removal => {
   if (value === undefined || value === '') {
     return { by: 'none', value: '' }
+  }
+  if (/[$`%*?]/.test(value)) {
+    return { by: 'none', value } // a loop variable or glob: the target cannot be known
   }
   const at = value.indexOf(':')
   const kind = at > 0 ? value.slice(0, at) : ''
@@ -204,28 +247,39 @@ const selectorOf = (value: string | undefined): Removal => {
   return { by: 'path', value: kind === 'path' ? rest : value }
 }
 
-// Every `orca worktree rm` / `git worktree remove` in the command (bash and PowerShell forms).
+// Every `orca worktree rm` / `git worktree remove` in the command, wherever it sits in a segment (after `do`, `then`,
+// `{`, `sudo`, `xargs`...). A shell given the removal as text (`bash -c`, `pwsh -Command`) is opaque: denied.
 export const worktreeRemovals = (command: string): Removal[] => {
   const found: Removal[] = []
-  for (const segment of command.split(SEPARATOR)) {
+  for (const segment of splitSegments(command)) {
     const tokens = tokensOf(segment)
-    let i = 0
-    while (i < tokens.length && (ENV_ASSIGN.test(tokens[i] ?? '') || WRAPPERS.has(tokens[i] ?? ''))) {
-      i += 1
-    }
-    const word = baseName(tokens[i] ?? '').replace(/\.(exe|cmd|ps1)$/i, '')
-    const args = tokens.slice(i + 1)
-    if (word === 'orca' && args[0] === 'worktree' && args[1] === 'rm') {
-      const flag = args.findIndex(arg => arg === '--worktree' || arg.startsWith('--worktree='))
-      const raw = args[flag]
-      found.push(selectorOf(flag === -1 ? undefined : raw?.startsWith('--worktree=') ? raw.slice(11) : args[flag + 1]))
-    } else if (word === 'git') {
-      let j = 0
-      while (j < args.length && args[j] !== 'worktree') {
-        j += args[j] === '-C' || args[j] === '-c' ? 2 : 1
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i]
+      if (token === undefined || token.quoted) {
+        continue
       }
-      if (args[j] === 'worktree' && args[j + 1] === 'remove') {
-        found.push(selectorOf(args.slice(j + 2).find(arg => !arg.startsWith('-'))))
+      const word = bare(token.text)
+      const args = tokens.slice(i + 1)
+      const texts = args.map(arg => arg.text)
+      if (SHELLS.has(word)) {
+        const flag = args.findIndex(arg => !arg.quoted && SHELL_FLAG.test(arg.text))
+        const encoded = flag !== -1 && /^-(encodedcommand|ec)$/i.test(texts[flag] ?? '')
+        if (encoded || (flag !== -1 && texts.slice(flag + 1).some(text => NESTED.test(text))) || (word === 'iex' || word === 'invoke-expression') && texts.some(text => NESTED.test(text))) {
+          found.push({ by: 'opaque', value: segment.trim() })
+        }
+      } else if (word === 'orca' && !args[0]?.quoted && texts[0] === 'worktree' && texts[1] === 'rm') {
+        const rest = texts.slice(2)
+        const flag = rest.findIndex(arg => arg === '--worktree' || arg.startsWith('--worktree='))
+        const raw = rest[flag]
+        found.push(selectorOf(flag === -1 ? undefined : raw?.startsWith('--worktree=') ? raw.slice(11) : rest[flag + 1]))
+      } else if (word === 'git') {
+        let j = 0
+        while (j < texts.length && texts[j] !== 'worktree') {
+          j += texts[j] === '-C' || texts[j] === '-c' ? 2 : 1
+        }
+        if (texts[j] === 'worktree' && texts[j + 1] === 'remove') {
+          found.push(selectorOf(texts.slice(j + 2).find(arg => !arg.startsWith('-'))))
+        }
       }
     }
   }
@@ -256,8 +310,6 @@ const find = (removal: Removal, list: Worktree[]): Worktree | undefined => {
       return list.find(one => one.branch === removal.value)
     case 'path':
       return list.find(one => norm(one.path) === value || norm(one.path).endsWith(`/${value.replace(/^(\.\.?\/)+/, '')}`))
-    case 'issue':
-      return list.find(one => tail(one.path) === `issue-${value}`)
     case 'name':
       return list.find(one => tail(one.path) === value || one.branch === removal.value)
     default:
@@ -275,6 +327,40 @@ export const unmergedReason = (branch: string, commits: string[]): string =>
 export const unresolvedReason = (why: string): string =>
   `No pude comprobar si el worktree tiene commits sin publicar (${why}). ${PERMISSION}`
 
+// The worktree Orca links to issue N, among the worktrees of this repo. A string is the reason it cannot be told.
+const linkedWorktrees = async (git: RunGit, issue: string, list: Worktree[]): Promise<Worktree | string> => {
+  try {
+    const out = await git(['orca', 'worktree', 'ps', '--json'])
+    if (out.exitCode !== 0) {
+      return 'orca worktree ps falló'
+    }
+    const all = (JSON.parse(out.stdout) as { result?: { worktrees?: { path?: string; linkedIssue?: unknown }[] } }).result?.worktrees ?? []
+    const mine = all.filter(one => String(one.linkedIssue) === issue && list.some(known => norm(known.path) === norm(one.path ?? '')))
+    const hit = mine.length === 1 ? list.find(known => norm(known.path) === norm(mine[0]?.path ?? '')) : undefined
+
+    return hit ?? `no encuentro un worktree enlazado al issue ${issue}`
+  } catch {
+    return 'no pude consultar a Orca'
+  }
+}
+
+// Changes that exist only in the working tree are lost too. Untracked .atl/ is Gentle AI's skill registry cache.
+const uncommitted = async (git: RunGit, path: string): Promise<string | undefined> => {
+  try {
+    const status = await git(['git', '-C', path, 'status', '--porcelain'])
+    if (status.exitCode !== 0) {
+      return unresolvedReason(`git status de ${path} falló`)
+    }
+    const dirty = status.stdout.split(/\r?\n/).filter(line => line.trim() !== '' && !/^\?\? \.atl\//.test(line))
+
+    return dirty.length === 0
+      ? undefined
+      : `El worktree ${path} tiene cambios sin commitear (${dirty.slice(0, 5).join(' | ')}). Removerlo los borra. ${PERMISSION} Commiteá o descartá antes, o pedile el OK al humano.`
+  } catch {
+    return unresolvedReason('no pude correr git')
+  }
+}
+
 // undefined: every removal in the command is safe. Anything that cannot be resolved is denied (fail closed).
 export const checkRemovals = async (command: string, git: RunGit): Promise<string | undefined> => {
   const removals = worktreeRemovals(command)
@@ -291,10 +377,29 @@ export const checkRemovals = async (command: string, git: RunGit): Promise<strin
   } catch {
     return unresolvedReason('no pude correr git')
   }
-  for (const removal of removals) {
+  for (const original of removals) {
+    if (original.by === 'opaque') {
+      return unresolvedReason(`un shell anidado (${original.value.slice(0, 80)}) esconde la remoción`)
+    }
+    if (original.by === 'none' && original.value !== '') {
+      return unresolvedReason(`no puedo resolver el selector ${original.value}: es una variable o un patrón`)
+    }
+    let removal = original
+    if (original.by === 'issue') {
+      // Orca resolves `issue:N` by the worktree's linked issue (checked with `orca worktree show`), not by its name.
+      const linked = await linkedWorktrees(git, original.value, list)
+      if (typeof linked === 'string') {
+        return unresolvedReason(linked)
+      }
+      removal = { by: 'path', value: linked.path }
+    }
     const target = find(removal, list)
     if (target === undefined) {
       return unresolvedReason(`no encuentro el worktree ${removal.value === '' ? '(sin selector)' : removal.value}`)
+    }
+    const dirty = await uncommitted(git, target.path)
+    if (dirty !== undefined) {
+      return dirty
     }
     if (target.branch === undefined) {
       continue // detached: nothing to lose, no branch is deleted

@@ -259,10 +259,29 @@ test('worktreeRemovals finds orca and git removals in bash and PowerShell forms 
   }
 })
 
-const fakeGit = (unmerged: string, opts: { listFails?: boolean; logFails?: boolean } = {}) => {
+// Orca links issue 5 to ws/issue-5 and issue 7 to ws/issue-6 (the folder name says nothing about the link).
+const PS = JSON.stringify({
+  result: {
+    worktrees: [
+      { path: 'C:/r/ws/issue-5', linkedIssue: 5 },
+      { path: 'C:/r/ws/issue-6', linkedIssue: 7 },
+      { path: 'C:/other/repo/issue-9', linkedIssue: 9 },
+    ],
+  },
+})
+
+type FakeOpts = { listFails?: boolean; logFails?: boolean; dirty?: string; statusFails?: boolean; psFails?: boolean }
+
+const fakeGit = (unmerged: string, opts: FakeOpts = {}) => {
   const calls: string[][] = []
   const git = async (argv: string[]) => {
     calls.push(argv)
+    if (argv[0] === 'orca') {
+      return { exitCode: opts.psFails === true ? 1 : 0, stdout: PS }
+    }
+    if (argv[3] === 'status') {
+      return { exitCode: opts.statusFails === true ? 128 : 0, stdout: opts.dirty ?? '' }
+    }
     if (argv[2] === 'list') {
       return { exitCode: opts.listFails === true ? 1 : 0, stdout: PORCELAIN }
     }
@@ -278,7 +297,7 @@ test('a worktree whose branch has commits outside every remote is denied, naming
   const reason = await checkRemovals('orca worktree rm --worktree issue:5', git)
   expect(reason).toBe(unmergedReason('me/5-fix', ['abc1234 feat: algo', 'def5678 fix: otro']))
   expect(reason).toContain('OK del humano')
-  expect(calls[1]).toEqual(['git', 'log', 'refs/heads/me/5-fix', '--not', '--remotes', '--oneline'])
+  expect(calls.find(call => call[1] === 'log')).toEqual(['git', 'log', 'refs/heads/me/5-fix', '--not', '--remotes', '--oneline'])
   expect(await checkRemovals('git worktree remove C:/r/ws/issue-5', git)).toContain('abc1234')
 })
 
@@ -295,6 +314,8 @@ test('anything git cannot resolve is denied (fail closed)', async () => {
   expect(await checkRemovals('orca worktree rm --worktree issue:5', fakeGit('', { listFails: true }).git)).toContain('No pude')
   expect(await checkRemovals('orca worktree rm --worktree issue:5', fakeGit('', { logFails: true }).git)).toContain('falló')
   expect(await checkRemovals('orca worktree rm --worktree issue:99', fakeGit('').git)).toContain('no encuentro')
+  expect(await checkRemovals('orca worktree rm --worktree issue:5', fakeGit('', { psFails: true }).git)).toContain('orca worktree ps falló')
+  expect(await checkRemovals('git worktree remove C:/r/ws/issue-5', fakeGit('', { statusFails: true }).git)).toContain('git status')
   expect(await checkRemovals('orca worktree rm', fakeGit('').git)).toContain('sin selector')
   const boom = async (): Promise<never> => {
     throw new Error('sin git')
@@ -310,7 +331,7 @@ test('the hook denies a worktree removal through the engine even with no config'
   on('process.run', (_$, e) => ({
     value: {
       exitCode: 0,
-      stdout: e.argv[2] === 'list' ? PORCELAIN : e.argv[0] === 'git' && e.argv[1] === 'log' ? 'abc1234 wip\n' : '/work/repo/.git\n/work/repo\n',
+      stdout: e.argv[0] === 'orca' ? PS : e.argv[3] === 'status' ? '' : e.argv[2] === 'list' ? PORCELAIN : e.argv[0] === 'git' && e.argv[1] === 'log' ? 'abc1234 wip\n' : '/work/repo/.git\n/work/repo\n',
       stderr: '',
       isStdoutTruncated: false,
       isStderrTruncated: false,
@@ -327,4 +348,82 @@ test('the hook denies a worktree removal through the engine even with no config'
   expect(seen).toHaveLength(0)
   await $.tool.call({ tool: 'Bash', command: 'git status' })
   expect(seen).toEqual(['git status'])
+})
+
+test('removals are found anywhere in a segment: loops, if, foreach, sudo, xargs', () => {
+  const forms = [
+    'for w in a b; do orca worktree rm --worktree "$w"; done',
+    'if true; then orca worktree rm --worktree issue:5; fi',
+    'foreach ($w in $x) { orca worktree rm --worktree $w }',
+    'foreach ($w in $x) {orca worktree rm --worktree "$w"}',
+    'sudo orca worktree rm --worktree issue:5',
+    'ls | xargs orca worktree rm',
+    'ls | xargs -n1 git worktree remove',
+    'while read w; do git -C /r worktree remove "$w"; done',
+  ]
+  for (const form of forms) {
+    expect(worktreeRemovals(form).length, form).toBeGreaterThan(0)
+  }
+  // Loop variables cannot be resolved: no target is named.
+  expect(worktreeRemovals('for w in a; do orca worktree rm --worktree "$w"; done')).toEqual([{ by: 'none', value: '$w' }])
+  expect(worktreeRemovals('ls | xargs orca worktree rm')).toEqual([{ by: 'none', value: '' }])
+  expect(worktreeRemovals('if true; then orca worktree rm --worktree issue:5; fi')).toEqual([{ by: 'issue', value: '5' }])
+  for (const quoted of ['echo "orca worktree rm"', `echo 'for w in x; do git worktree remove "$w"; done'`, 'echo "a; orca worktree rm --worktree issue:5"']) {
+    expect(worktreeRemovals(quoted), quoted).toEqual([])
+  }
+})
+
+test('a shell given the removal as text is opaque; -EncodedCommand always is', () => {
+  const opaque = [
+    `bash -c 'for w in a; do orca worktree rm --worktree "$w"; done'`,
+    `sh -lc 'cd x; orca worktree rm --worktree issue:5'`,
+    'pwsh -Command "foreach ($w in $x) { git worktree remove $w }"',
+    'powershell -NoProfile -Command "orca worktree rm --worktree issue:5"',
+    'pwsh -EncodedCommand ZQBjAGgAbwA=',
+    'cmd /c "git worktree remove x"',
+    'iex "orca worktree rm --worktree issue:5"',
+  ]
+  for (const form of opaque) {
+    expect(worktreeRemovals(form).map(one => one.by), form).toEqual(['opaque'])
+  }
+  expect(worktreeRemovals(`bash -c 'ls -la'`)).toEqual([])
+  expect(worktreeRemovals('bash script.sh')).toEqual([])
+})
+
+test('the guard denies every form whose target cannot be resolved', async () => {
+  const forms = [
+    'for w in a b; do orca worktree rm --worktree "$w"; done',
+    'foreach ($w in $x) { orca worktree rm --worktree $w }',
+    'ls | xargs orca worktree rm',
+    `bash -c 'orca worktree rm --worktree issue:5'`,
+    'pwsh -Command "git worktree remove x"',
+    'pwsh -EncodedCommand ZQBjAGgAbwA=',
+  ]
+  for (const form of forms) {
+    expect(await checkRemovals(form, fakeGit('').git), form).toContain('OK del humano')
+  }
+  expect(await checkRemovals('echo "orca worktree rm --worktree issue:5"', fakeGit('').git)).toBeUndefined()
+  // A resolvable target inside an if/then body still gets the usual checks.
+  expect(await checkRemovals('if true; then orca worktree rm --worktree issue:5; fi', fakeGit('abc1234 wip').git)).toContain('abc1234')
+})
+
+test('issue:N is resolved by the linked issue, as Orca does, not by the folder name', async () => {
+  const clean = fakeGit('')
+  // issue:7 is linked to ws/issue-6 (detached, nothing to lose); no folder is called issue-7.
+  expect(await checkRemovals('orca worktree rm --worktree issue:7', clean.git)).toBeUndefined()
+  expect(clean.calls.some(call => call.join(' ') === 'orca worktree ps --json')).toBe(true)
+  // issue:6 has a folder issue-6 but no link: not found, denied.
+  expect(await checkRemovals('orca worktree rm --worktree issue:6', fakeGit('').git)).toContain('no encuentro')
+  // a link in another repo is not this repo's worktree
+  expect(await checkRemovals('orca worktree rm --worktree issue:9', fakeGit('').git)).toContain('no encuentro')
+})
+
+test('uncommitted changes deny the removal; untracked .atl/ does not count', async () => {
+  const dirty = await checkRemovals('orca worktree rm --worktree branch:me/5-fix', fakeGit('', { dirty: ' M src/a.ts\n?? notes.md\n' }).git)
+  expect(dirty).toContain('cambios sin commitear')
+  expect(dirty).toContain('src/a.ts')
+  expect(await checkRemovals('git worktree remove ../ws/issue-6', fakeGit('', { dirty: ' M x\n' }).git)).toContain('cambios sin commitear')
+  const atl = fakeGit('', { dirty: '?? .atl/\n?? .atl/skill-registry.md\n' })
+  expect(await checkRemovals('orca worktree rm --worktree branch:me/5-fix', atl.git)).toBeUndefined()
+  expect(atl.calls.find(call => call[3] === 'status')).toEqual(['git', '-C', 'C:/r/ws/issue-5', 'status', '--porcelain'])
 })
