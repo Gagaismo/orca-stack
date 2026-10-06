@@ -2,13 +2,13 @@
 
 Esta guía deja una máquina y un proyecto listos para trabajar con el stack de agentes: Orca ejecuta, las skills de Matt Pocock definen el método y orca-stack instala la política, los wrappers, Ponytail y los mods de Claude Code. Tiene dos partes. La de la máquina se hace una sola vez. La del proyecto se hace en cada repo y se guía con un cuestionario que cambia según el proyecto arranque de cero o ya esté empezado.
 
-Versión de referencia: `orca-stack v0.2.0` (octubre de 2026). Si sale una versión nueva, cambiá la etiqueta `#v0.2.0` en los comandos. Lo marcado `UNKNOWN / MUST VERIFY` no está confirmado: verificalo antes de darlo por cierto.
+Versión de referencia: `orca-stack v0.3.0` (octubre de 2026). Si sale una versión nueva, cambiá la etiqueta `#v0.3.0` en los comandos. Lo marcado `UNKNOWN / MUST VERIFY` no está confirmado: verificalo antes de darlo por cierto.
 
 ---
 
 ## Ruta rápida
 
-1. **Máquina, una sola vez:** `npx github:Gagaismo/orca-stack#v0.2.0 global`, completá los pasos manuales que imprime y verificá con `doctor`.
+1. **Máquina, una sola vez:** `npx github:Gagaismo/orca-stack#v0.3.0 global`, completá los pasos manuales que imprime y verificá con `doctor`.
 2. **Proyecto:** respondé el cuestionario de la Parte 2 y seguí el recorrido que te toca: **A** si arrancás de cero, **B** si ya está empezado.
 3. **Cierre:** corré la verificación final (Parte 5) y commiteá el setup en una rama propia.
 
@@ -20,13 +20,13 @@ Versión de referencia: `orca-stack v0.2.0` (octubre de 2026). Si sale una versi
 | --- | --- | --- |
 | Orca | Corre los Runs, las Tasks, los worktrees y los workers en paralelo | Instalador oficial (github.com/stablyai/orca) |
 | Skills de Matt Pocock | Son el método: grill, spec, tickets, implement con TDD y review | Claude Code: `claude plugin install mattpocock-skills@claude-plugins-official`. Codex y Antigravity: ver la nota debajo |
-| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, Ponytail y los 7 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.2.0 global` |
+| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, Ponytail y los 7 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.3.0 global` |
 | Gentle Shell (Pi) | Un segundo orquestador al que Claude consulta en las decisiones | Pi con su instalador oficial; los paquetes los instala `global` |
 | Engram | Memoria entre sesiones (no planifica ni decide) | Instalador propio de Engram |
 | gentle-ai | Context7, permisos de Claude Code y skills extra | Instalador propio de gentle-ai |
 | Caveman | Comprime la prosa larga para ahorrar tokens | `claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman` |
 
-Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el único método**. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
+Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con el suyo y puede usar SDD; el SDD de gentle-ai se usa solo si lo pedís. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
 
 **Nota sobre las skills de Matt:**
 - El plugin solo las instala para Claude Code. Si Codex o Antigravity van a usarlas, tienen que estar en `~/.agents/skills` (`UNKNOWN / MUST VERIFY`: el comando exacto está en el README de `mattpocock/skills`).
@@ -49,18 +49,18 @@ Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el úni
 
 ```bash
 # 1. Mirá qué va a hacer, sin escribir nada
-npx github:Gagaismo/orca-stack#v0.2.0 global --dry-run
+npx github:Gagaismo/orca-stack#v0.3.0 global --dry-run
 
 # 2. Instalá (--humano fija cómo te nombran los mods; si no, sale de git config user.name)
-npx github:Gagaismo/orca-stack#v0.2.0 global --humano "Tu nombre"
+npx github:Gagaismo/orca-stack#v0.3.0 global --humano "Tu nombre"
 
 # 3. Verificá, parado en la raíz de un proyecto
-npx github:Gagaismo/orca-stack#v0.2.0 doctor
+npx github:Gagaismo/orca-stack#v0.3.0 doctor
 ```
 
 - `global` respalda todo lo que toca en `~/.orca-stack/backups/<fecha>/` y anota lo que instaló en `~/.orca-stack/state.json`. `remove` lo deshace.
 - Si Pi, gentle-pi o pi-claude-bridge faltan o están en otra versión, `global` instala la versión fijada **aunque no uses `--force`**. Si querés conservar tus versiones de Pi, agregá `--skip-pi`.
-- Al final, `global` sugiere `doctor` e `init` sin la etiqueta de versión. Usalos con `#v0.2.0`.
+- Al final, `global` sugiere `doctor` e `init` sin la etiqueta de versión. Usalos con `#v0.3.0`.
 
 ### Pasos manuales que imprime `global`
 
@@ -269,7 +269,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 2. **Contrato:** creá `AGENTS.md` a partir de la plantilla del Apéndice B, con las respuestas de C4 y del bloque F. **Todavía no crees `CLAUDE.md`.**
 3. **Método:** escribí `/setup-matt-pocock-skills` (B1 a B3). Como todavía no hay `CLAUDE.md`, la skill escribe su sección en `AGENTS.md`, que es lo que querés.
 4. **Punteros:** creá `CLAUDE.md` y `GEMINI.md` con una sola línea: `@AGENTS.md`.
-5. **orca-stack:** `npx github:Gagaismo/orca-stack#v0.2.0 init`. A `CLAUDE.md` le pone un bloque corto, y el bloque completo va en `AGENTS.md`. Además crea `.orca-stack.json`, un `.orca-stack.local.json` vacío y la línea en `.gitignore`.
+5. **orca-stack:** `npx github:Gagaismo/orca-stack#v0.3.0 init`. A `CLAUDE.md` le pone un bloque corto, y el bloque completo, con el contrato de trabajo, va en `AGENTS.md`. Además crea `.orca-stack.json`, un `.orca-stack.local.json` vacío y la línea en `.gitignore`.
 6. **Config de los mods:** completá los dos `.orca-stack*.json` con las respuestas de D y E. Si no despachás con scripts y no tenés destinatarios, no hay nada que agregar.
 7. **Worktrees:** creá `orca.yaml` y `.worktreeinclude` (C1 a C3).
 8. **Orquestación:** agregá `docs/agents/orchestration.md` y `orca-dag.md` (G).
@@ -327,7 +327,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 
 ## Parte 5: verificación final
 
-- [ ] `npx github:Gagaismo/orca-stack#v0.2.0 doctor`, corrido **desde la raíz del proyecto**, termina con `0 fallas` y cada aviso está entendido.
+- [ ] `npx github:Gagaismo/orca-stack#v0.3.0 doctor`, corrido **desde la raíz del proyecto**, termina con `0 fallas` y cada aviso está entendido.
 - [ ] `AGENTS.md` tiene **un solo** bloque `orca-stack:begin` / `orca-stack:end`, sin restos de `orca-stack:auto`.
 - [ ] `CLAUDE.md` y `GEMINI.md` importan `AGENTS.md`.
 - [ ] `AGENTS.md` nombra los comandos de test y typecheck (C4).
@@ -338,7 +338,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 - [ ] En una sesión nueva de Claude Code aparecen los mods (por ejemplo `/tablero` y `/pi`).
 - [ ] `git diff --cached` no tiene secretos, `.env` ni datos reales.
 
-`doctor` no revisa `AGENTS.md`, las skills de Matt ni `orca.yaml`: esos puntos se miran a mano.
+`doctor` avisa si `AGENTS.md` o `CLAUDE.md` todavía tienen el bloque viejo `orca-stack:auto` y si `.orca-stack.json` no tiene `"setup": "completo"` (en ese caso, abrí una sesión de Claude en el checkout principal: ofrece el setup con `orca-setup`). No revisa el resto de `AGENTS.md`, las skills de Matt ni `orca.yaml`: esos puntos se miran a mano.
 
 ---
 
@@ -402,7 +402,7 @@ Vas a configurar este repo con el stack de agentes orca-stack, siguiendo la guí
 
 ## Engineering method
 
-This repo uses Matt Pocock's engineering skills as the single process authority:
+This repo uses Matt Pocock's engineering skills as the default process authority:
 
 `/grill-with-docs` -> `/domain-modeling` -> `CONTEXT.md` + ADRs -> `/to-spec` ->
 `/to-tickets` -> `/implement` (TDD) -> `/code-review` -> commit
@@ -410,7 +410,7 @@ This repo uses Matt Pocock's engineering skills as the single process authority:
 - Planning ends at `/to-tickets`. `/implement` does not re-debate the plan; if the
   ticket is wrong, escalate instead of reinterpreting it.
 - Do not start or propose Gentle AI SDD, superpowers, or gstack planning/review
-  flows. Any injected section that mentions "optional SDD" is overridden by this file.
+  flows unless the human asks for them explicitly. Any injected section that mentions "optional SDD" is overridden by this file.
 - Parallel execution is handled by Orca. See `docs/agents/orca-dag.md`.
 
 ## Source of truth

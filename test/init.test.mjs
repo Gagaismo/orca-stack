@@ -40,10 +40,31 @@ describe('init', () => {
       assert.doesNotMatch(text, /[A-Z]:\\Users\\|\/Users\/|\/home\//, file)
     }
     assert.match(read(path.join(repo, 'CLAUDE.md')), /AGENTS\.md/)
+    assert.ok(read(path.join(repo, 'CLAUDE.md')).split('\n').length < 15, 'CLAUDE.md keeps the short block')
     assert.deepEqual(JSON.parse(read(path.join(repo, '.orca-stack.json'))), { version: 1 })
     // Empty: any list here would replace the committed and personal ones (lists are not merged).
     assert.deepEqual(JSON.parse(read(path.join(repo, '.orca-stack.local.json'))), {})
     assert.ok(read(path.join(repo, '.gitignore')).split(/\r?\n/).includes('.orca-stack.local.json'))
+  })
+
+  test('AGENTS.md carries the full work contract and the policy lines; the contract is the same in every project', () => {
+    const result = run()
+    assert.match(result.out, /el bloque orca-stack ahora lleva el contrato de trabajo completo/)
+    const text = read(path.join(repo, 'AGENTS.md'))
+    assert.ok(text.includes('### Qué rol tenés'))
+    assert.ok(text.includes('## BLOQUEA'))
+    assert.ok(text.includes('### Política del stack'))
+    assert.doesNotMatch(text, /gpt-6|2026-10/)
+    const other = path.join(tempDir('repo'), 'otro')
+    write(path.join(other, 'README.md'), '# otro\n')
+    git(other, 'init', '-q', '-b', 'main')
+    try {
+      cli(home, ['init'], { cwd: other })
+      assert.equal(read(path.join(other, 'AGENTS.md')), text)
+    } finally {
+      cleanup(path.dirname(other))
+    }
+    assert.doesNotMatch(run().out, /contrato de trabajo completo/, 'quiet when nothing changes')
   })
 
   test('is idempotent and never overwrites an existing config', () => {
@@ -75,7 +96,7 @@ describe('init', () => {
     run()
     const text = read(path.join(repo, 'CLAUDE.md'))
     assert.equal(imports(text), 1)
-    assert.doesNotMatch(text, /Orca runtime\/active Dispatch/, 'the policy is loaded once, through AGENTS.md')
+    assert.doesNotMatch(text, /Política canónica/, 'the policy is loaded once, through AGENTS.md')
   })
 
   test('an existing CLAUDE.md keeps its content and gets the import inside the block', () => {
@@ -85,7 +106,7 @@ describe('init', () => {
     assert.ok(text.startsWith('# CLAUDE.md\n\nEl contrato de trabajo es AGENTS.md. Leelo entero.\n'))
     const block = text.slice(text.indexOf('<!-- orca-stack:begin -->'))
     assert.equal(imports(block), 1)
-    assert.doesNotMatch(block, /Orca runtime\/active Dispatch/, 'short block')
+    assert.doesNotMatch(block, /Política canónica/, 'short block')
   })
 
   test('a CLAUDE.md with many rules also gets the short block, not the policy twice', () => {
@@ -93,7 +114,7 @@ describe('init', () => {
     run()
     const text = read(path.join(repo, 'CLAUDE.md'))
     assert.equal(imports(text), 1)
-    assert.doesNotMatch(text, /Orca runtime\/active Dispatch/)
+    assert.doesNotMatch(text, /Política canónica/)
   })
 
   test('a CLAUDE.md that already imports AGENTS.md is not given a second import', () => {

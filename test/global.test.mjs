@@ -50,6 +50,8 @@ describe('global', () => {
     const dirs = JSON.parse(read(settingsPath())).env.CLAUDE_CODE_PLUGIN_DIRS.split(path.delimiter)
     assert.deepEqual(dirs, MODS.map(m => path.join(home, '.claude', 'mods', m)))
     assert.match(read(claudeMdPath()), /<!-- orca-stack:begin -->[\s\S]*<!-- orca-stack:end -->/)
+    assert.match(read(claudeMdPath()), /Política canónica/)
+    assert.doesNotMatch(read(claudeMdPath()), /### Qué rol tenés|## BLOQUEA/, 'the global block never carries the project work contract')
     assert.deepEqual(JSON.parse(read(path.join(home, '.orca-stack', 'config.json'))), { humano: 'Ana' })
     assert.equal(JSON.parse(read(path.join(home, '.orca-stack', 'state.json'))).tool, 'orca-stack')
   })
@@ -109,7 +111,7 @@ describe('global', () => {
     let text = read(claudeMdPath())
     assert.ok(text.startsWith(before))
     // someone edits inside the block and adds a foreign block after it
-    text = text.replace('Canonical policy', 'EDITADO') + after
+    text = text.replace('Política canónica', 'EDITADO') + after
     write(claudeMdPath(), text)
     const result = cli(home, ['global', '--skip-pi'])
     assert.equal(result.status, 0, result.out)
@@ -240,6 +242,28 @@ describe('doctor', () => {
       write(path.join(repo, '.orca-stack.json'), '{"version":1,"despacho":{"script":"scripts/despachar.sh"}}\n')
       write(path.join(repo, '.orca-stack.local.json'), '{"despacho":null}\n')
       assert.doesNotMatch(doctor().out, /despacho\.script/)
+    } finally {
+      cleanup(path.dirname(repo))
+    }
+  })
+
+  test('warns about a legacy block and a pending setup, and stays quiet once both are fixed', () => {
+    cli(home, ['global', '--skip-pi'])
+    const repo = path.join(tempDir('repo'), 'proyecto')
+    write(path.join(repo, 'README.md'), '# proyecto\n')
+    git(repo, 'init', '-q', '-b', 'main')
+    const doctor = () => cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo })
+    try {
+      write(path.join(repo, 'AGENTS.md'), '<!-- orca-stack:auto -->\nviejo\n<!-- /orca-stack:auto -->\n')
+      write(path.join(repo, '.orca-stack.json'), '{"version":1}\n')
+      const warned = doctor()
+      assert.match(warned.out, /⚠ AGENTS\.md: bloque orca-stack viejo - corré `orca-stack init` para migrarlo/)
+      assert.match(warned.out, /⚠ \.orca-stack\.json: setup pendiente - abrí una sesión de Claude en el checkout principal/)
+
+      write(path.join(repo, 'AGENTS.md'), '# Contrato\n')
+      write(path.join(repo, '.orca-stack.json'), '{"version":1,"setup":"completo"}\n')
+      const clean = doctor()
+      assert.doesNotMatch(clean.out, /bloque orca-stack viejo|setup pendiente/)
     } finally {
       cleanup(path.dirname(repo))
     }

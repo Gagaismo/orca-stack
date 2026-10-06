@@ -9,7 +9,7 @@ description: >-
 
 Read `{{POLICY_PATH}}` before making lifecycle or
 cross-provider decisions. It is the canonical local policy. Orca owns lifecycle;
-Matt Pocock owns engineering methodology; Ponytail only minimizes an approved
+Matt Pocock's skills are the default methodology (Pi follows its own); Ponytail only minimizes an approved
 implementation; Caveman only compresses optional prose; Engram only stores
 memory. A worker executes its brief, never starts a competing workflow or waits
 for the human, and reports explicit evidence before settlement.

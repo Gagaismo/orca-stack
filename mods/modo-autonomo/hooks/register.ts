@@ -13,14 +13,14 @@ export const instructions = (target: string): string =>
     `Modo autónomo activo. Meta: ${target}.`,
     'Trabajá de forma autónoma hasta alcanzar la meta, sin esperar a que el usuario te empuje.',
     'Mantené un Monitor corriendo para vigilar los PRs, las reviews y los workers despachados.',
-    'Cuando una review vuelve sin bloqueos, mergeá y desplegá.',
+    'Cuando un PR cumple la condición de merge del contrato del proyecto, mergeá; desplegá solo si el contrato dice cómo.',
     'No frenes a pedir confirmaciones que el usuario ya autorizó en este modo.',
     'Pará solo ante decisiones que son genuinamente del usuario: credenciales, gastar plata, mensajes a clientes o acciones destructivas.',
     `Cuando la meta esté cumplida, escribí exactamente ${DONE_TOKEN} en tu mensaje final para apagar el modo.`,
   ].join('\n')
 
 export const reminder = (target: string): string =>
-  `Modo autónomo activo (meta: ${target}). No te detengas: seguí con el siguiente paso, revisá los monitores y avanzá hacia la meta. Si ya la alcanzaste, escribí exactamente ${DONE_TOKEN} en tu mensaje final.`
+  `Modo autónomo activo (meta: ${target}). Todavía no marcaste la meta como cumplida: si queda trabajo, seguí con él; si está cumplida, escribí ${DONE_TOKEN} en tu mensaje final.`
 
 const show = async ($: EngineInterface): Promise<void> => {
   const { value: on = false } = await $.state.get(isOn)

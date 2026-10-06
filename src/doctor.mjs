@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
+import { LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { loadState } from './ctx.mjs'
 import { stackVars } from './global.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
@@ -249,6 +249,9 @@ export const doctorCommand = async flags => {
         add('warn', `despacho.${key}`, `${rel} no existe en el proyecto`)
       }
     }
+    for (const { label, detail } of projectWarnings(root, committed)) {
+      add('warn', label, detail)
+    }
   }
 
   const fails = results.filter(r => r.level === 'fail').length
@@ -256,6 +259,25 @@ export const doctorCommand = async flags => {
   console.log(`\n${results.length - fails - warns} bien, ${warns} avisos, ${fails} fallas`)
 
   return fails > 0 ? 1 : 0
+}
+
+// Project-level warnings: a legacy pointer block still in place, or a setup nobody has finished.
+export const projectWarnings = (root, config) => {
+  const found = []
+  for (const name of ['AGENTS.md', 'CLAUDE.md']) {
+    const file = path.join(root, name)
+    if (existsSync(file) && readFileSync(file, 'utf8').includes(LEGACY_BEGIN)) {
+      found.push({ label: `${name}: bloque orca-stack viejo`, detail: 'corré `orca-stack init` para migrarlo' })
+    }
+  }
+  if (config && typeof config === 'object' && config.setup !== 'completo') {
+    found.push({
+      label: `${PROJECT_CONFIG}: setup pendiente`,
+      detail: 'abrí una sesión de Claude en el checkout principal: va a ofrecer el setup (`orca-setup`)',
+    })
+  }
+
+  return found
 }
 
 const projectRootOf = cwd => {

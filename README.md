@@ -3,10 +3,10 @@
 Instala de una vez el stack de agentes que uso para trabajar con [Orca](https://github.com/stablyai/orca): la política del stack, las skills propias, los wrappers de proveedores, Pi con Gentle Shell y los mods de Claude Code. Todo en un comando, con respaldo de lo que toca y con vuelta atrás.
 
 ```bash
-npx github:Gagaismo/orca-stack#v0.2.0 global     # instalación a nivel usuario
-npx github:Gagaismo/orca-stack#v0.2.0 init       # cablea el proyecto actual
-npx github:Gagaismo/orca-stack#v0.2.0 doctor     # verifica que todo funcione de verdad
-npx github:Gagaismo/orca-stack#v0.2.0 remove     # deshace lo que instaló global
+npx github:Gagaismo/orca-stack#v0.3.0 global     # instalación a nivel usuario
+npx github:Gagaismo/orca-stack#v0.3.0 init       # cablea el proyecto actual
+npx github:Gagaismo/orca-stack#v0.3.0 doctor     # verifica que todo funcione de verdad
+npx github:Gagaismo/orca-stack#v0.3.0 remove     # deshace lo que instaló global
 ```
 
 ¿Primera vez, o un proyecto nuevo o ya empezado? Seguí la [guía de setup](docs/guia-setup.md): tiene un cuestionario que dice qué configurar en cada caso.
@@ -21,7 +21,7 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 | --- | --- |
 | Política del stack: `ORCA-STACK.md` y `ROLE-BRIEFS.md` | `~/orca/stack/` |
 | Wrappers `claude-orca-stack`, `codex-orca-stack`, `agy-orca-stack` (`.cmd` en Windows, `.sh` en el resto), cada uno con `--orca-stack-self-test` | `~/orca/stack/scripts/` |
-| Skills propias: `orca-stack-policy`, `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | `~/.claude/skills/` y `~/.agents/skills/` |
+| Skills propias: `orca-stack-policy`, `orca-setup`, `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | `~/.claude/skills/` y `~/.agents/skills/` |
 | Siete mods de Claude Code (ver abajo) y sus rutas en `env.CLAUDE_CODE_PLUGIN_DIRS` | `~/.claude/mods/` y `~/.claude/settings.json` |
 | Bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` que apunta a la política | `~/.claude/CLAUDE.md` |
 | Pi: `gentle-pi@4.0.0` y `pi-claude-bridge@0.9.1` con `pi install`, más `npm i -g gentle-pi@4.0.0` (comando `gentle-shell`) | `~/.pi/agent/` y npm global |
@@ -67,6 +67,8 @@ orca-stack remove [--dry-run] [--with-pi]
 
 - `--dry-run` cuenta cada acción sin escribir nada.
 - `--force` reemplaza archivos que ya existían y no son de orca-stack (por ejemplo, una skill tuya llamada igual). Sin `--force` se saltean con un aviso ⚠ y quedan como estaban; con `--force` se respaldan antes.
+- `init` escribe en el `AGENTS.md` del proyecto el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` con el contrato de trabajo completo (`assets/stack/CONTRATO.md`, igual en todos los proyectos) y las líneas de la política; a `CLAUDE.md` le pone un bloque corto con `@AGENTS.md`. Además crea `.orca-stack.json` y `.orca-stack.local.json` si faltan y agrega este último a `.gitignore`. Es idempotente y respalda lo que modifica. Los valores propios de cada proyecto no van en el bloque: viven en `.orca-stack.json`.
+- `orca-setup` es la skill con la que la sesión de `main` entrevista al humano, en una sola ronda, para completar `.orca-stack.json` (`"setup": "completo"`). La ofrece sola cuando falta y `doctor` avisa si quedó pendiente.
 - `--skip-pi` no toca Pi (útil si todavía no lo instalaste).
 - `--humano` fija cómo te nombran los mods; si no lo pasás, sale de `git config user.name`.
 - `doctor` hace sondeos reales y sale con código 1 si hay una falla (✖). Los avisos (⚠) no cambian el código.
@@ -117,7 +119,7 @@ Los mods leen su configuración al ejecutarse, de tres archivos. Cada capa pisa 
 }
 ```
 
-`<repo>/.orca-stack.json` (reglas compartidas; `init` lo crea con `{ "version": 1 }`):
+`<repo>/.orca-stack.json` (reglas compartidas; `init` lo crea con `{ "version": 1 }` y el setup completa el resto):
 
 ```json
 {
@@ -131,6 +133,19 @@ Los mods leen su configuración al ejecutarse, de tres archivos. Cada capa pisa 
   }
 }
 ```
+
+Las claves del contrato de trabajo, que escribe `orca-setup` y que el bloque de `AGENTS.md` manda a leer:
+
+| Clave | Qué guarda |
+| --- | --- |
+| `setup` | `"completo"` cuando el setup ya se hizo |
+| `modo` | `"multiagente"` o `"un-agente"` |
+| `ramaBase` | La rama contra la que se abren los PRs |
+| `agentes` | Qué agentes usa el repo, con modelo y esfuerzo; `preguntarAntes` lista los que necesitan el OK del humano |
+| `verificacion` | `{ "suite", "typecheck" }`: los comandos exactos |
+| `merge` | Si `main` mergea sola cuando se cumple la condición de merge |
+| `despliegue` | `{ "despues": false }`, o el comando y cómo se verifica |
+| `idioma` | Idioma del código, los commits y los PRs |
 
 `<repo>/.orca-stack.local.json` (local, ignorado por git; `init` lo crea vacío):
 
@@ -160,7 +175,7 @@ Al terminar, `global` imprime la lista con tus rutas exactas. Resumen:
 ## Qué NO instala, y por qué
 
 - **Binarios de terceros** (Orca, engram, gentle-ai, Pi, `gh`): son de otros proyectos con su propio ciclo de versiones y firmas. Se detectan y se imprime cómo instalarlos.
-- **Las skills de Matt Pocock** (`mattpocock/skills`): es la metodología de ingeniería del stack y la mantiene su autor. Se instala desde su origen: `claude plugin install mattpocock-skills@claude-plugins-official`.
+- **Las skills de Matt Pocock** (`mattpocock/skills`): es la metodología de ingeniería por defecto del stack (Pi trabaja con la suya) y la mantiene su autor. Se instala desde su origen: `claude plugin install mattpocock-skills@claude-plugins-official`.
 - **Caveman** (`JuliusBrussee/caveman`, Apache-2.0): se instala desde su origen: `claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman`.
 - **Los hooks de ciclo de vida completos de Ponytail y Caveman**: duplicarían el control que ya tienen Orca y los proveedores (ver `ORCA-STACK.md`, sección "Deliberate exclusions").
 - **Credenciales y datos locales**: nada de `auth.json`, `models.json`, `~/.claude.json`, bases de engram ni datos de la aplicación de Orca.
