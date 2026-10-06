@@ -220,8 +220,11 @@ const tokensOf = (segment: string): Token[] =>
     .filter(token => token.text !== '' && token.text !== '&')
 
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'pwsh', 'powershell', 'cmd', 'iex', 'invoke-expression'])
-const SHELL_FLAG = /^(-[a-z]*c|-command|-c|\/c|-encodedcommand|-ec|-e)$/i
-const NESTED = /\borca(\.exe|\.cmd)?\s+worktree\s+rm\b|\bgit(\.exe)?\b[^|;&]*\bworktree\s+remove\b/i
+const SHELL_FLAG = /^(-[a-z]*c|-c(o(m(m(a(n(d)?)?)?)?)?)?|\/c)$/i
+// PowerShell takes any prefix of -EncodedCommand (-e, -en, -enc, ...) and its alias -ec.
+const isEncoded = (flag: string): boolean => /^-e/i.test(flag) && ('encodedcommand'.startsWith(flag.slice(1).toLowerCase()) || flag.toLowerCase() === '-ec')
+// The executable may be quoted inside the text: & 'C:\...\orca.exe' worktree rm
+const NESTED = /\borca(\.exe|\.cmd)?['"]?\s+worktree\s+rm\b|\bgit(\.exe)?['"]?[^|;&]*\bworktree\s+remove\b/i
 const bare = (token: string): string => baseName(token).replace(/\.(exe|cmd|ps1)$/i, '').toLowerCase()
 
 const selectorOf = (value: string | undefined): Removal => {
@@ -255,19 +258,21 @@ export const worktreeRemovals = (command: string): Removal[] => {
     const tokens = tokensOf(segment)
     for (let i = 0; i < tokens.length; i += 1) {
       const token = tokens[i]
-      if (token === undefined || token.quoted) {
+      if (token === undefined) {
         continue
       }
+      // A quoted executable counts (`& "C:\Program Files\Orca\orca.exe" worktree rm`); quoted text such as
+      // "orca worktree rm" has a bare name that is not `orca`, so an echo still passes.
       const word = bare(token.text)
       const args = tokens.slice(i + 1)
       const texts = args.map(arg => arg.text)
       if (SHELLS.has(word)) {
         const flag = args.findIndex(arg => !arg.quoted && SHELL_FLAG.test(arg.text))
-        const encoded = flag !== -1 && /^-(encodedcommand|ec)$/i.test(texts[flag] ?? '')
+        const encoded = (word === 'pwsh' || word === 'powershell') && args.some(arg => !arg.quoted && isEncoded(arg.text))
         if (encoded || (flag !== -1 && texts.slice(flag + 1).some(text => NESTED.test(text))) || (word === 'iex' || word === 'invoke-expression') && texts.some(text => NESTED.test(text))) {
           found.push({ by: 'opaque', value: segment.trim() })
         }
-      } else if (word === 'orca' && !args[0]?.quoted && texts[0] === 'worktree' && texts[1] === 'rm') {
+      } else if (word === 'orca' && texts[0] === 'worktree' && texts[1] === 'rm') {
         const rest = texts.slice(2)
         const flag = rest.findIndex(arg => arg === '--worktree' || arg.startsWith('--worktree='))
         const raw = rest[flag]
@@ -301,19 +306,22 @@ export const parseWorktrees = (porcelain: string): Worktree[] =>
 
 const norm = (path: string): string => path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 
-// undefined: no worktree matches. A worktree without a branch (detached) has `branch` undefined.
-const find = (removal: Removal, list: Worktree[]): Worktree | undefined => {
+// Every worktree the selector can mean. A worktree without a branch (detached) has `branch` undefined.
+const find = (removal: Removal, list: Worktree[]): Worktree[] => {
   const value = norm(removal.value)
   const tail = (path: string): string => norm(path).split('/').pop() ?? ''
   switch (removal.by) {
     case 'branch':
-      return list.find(one => one.branch === removal.value)
-    case 'path':
-      return list.find(one => norm(one.path) === value || norm(one.path).endsWith(`/${value.replace(/^(\.\.?\/)+/, '')}`))
+      return list.filter(one => one.branch === removal.value)
+    case 'path': {
+      const exact = list.filter(one => norm(one.path) === value)
+
+      return exact.length > 0 ? exact : list.filter(one => norm(one.path).endsWith(`/${value.replace(/^(\.\.?\/)+/, '')}`))
+    }
     case 'name':
-      return list.find(one => tail(one.path) === value || one.branch === removal.value)
+      return list.filter(one => tail(one.path) === value || one.branch === removal.value)
     default:
-      return undefined
+      return []
   }
 }
 
@@ -393,9 +401,13 @@ export const checkRemovals = async (command: string, git: RunGit): Promise<strin
       }
       removal = { by: 'path', value: linked.path }
     }
-    const target = find(removal, list)
+    const matches = find(removal, list)
+    const target = matches[0]
     if (target === undefined) {
       return unresolvedReason(`no encuentro el worktree ${removal.value === '' ? '(sin selector)' : removal.value}`)
+    }
+    if (matches.length > 1) {
+      return unresolvedReason(`${removal.value} puede ser más de un worktree (${matches.map(one => one.path).join(' | ')})`)
     }
     const dirty = await uncommitted(git, target.path)
     if (dirty !== undefined) {

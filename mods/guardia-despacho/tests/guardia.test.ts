@@ -270,7 +270,7 @@ const PS = JSON.stringify({
   },
 })
 
-type FakeOpts = { listFails?: boolean; logFails?: boolean; dirty?: string; statusFails?: boolean; psFails?: boolean }
+type FakeOpts = { listFails?: boolean; logFails?: boolean; dirty?: string; statusFails?: boolean; psFails?: boolean; porcelain?: string }
 
 const fakeGit = (unmerged: string, opts: FakeOpts = {}) => {
   const calls: string[][] = []
@@ -283,7 +283,7 @@ const fakeGit = (unmerged: string, opts: FakeOpts = {}) => {
       return { exitCode: opts.statusFails === true ? 128 : 0, stdout: opts.dirty ?? '' }
     }
     if (argv[2] === 'list') {
-      return { exitCode: opts.listFails === true ? 1 : 0, stdout: PORCELAIN }
+      return { exitCode: opts.listFails === true ? 1 : 0, stdout: opts.porcelain ?? PORCELAIN }
     }
 
     return { exitCode: opts.logFails === true ? 128 : 0, stdout: unmerged }
@@ -426,4 +426,40 @@ test('uncommitted changes deny the removal; untracked .atl/ does not count', asy
   const atl = fakeGit('', { dirty: '?? .atl/\n?? .atl/skill-registry.md\n' })
   expect(await checkRemovals('orca worktree rm --worktree branch:me/5-fix', atl.git)).toBeUndefined()
   expect(atl.calls.find(call => call[3] === 'status')).toEqual(['git', '-C', 'C:/r/ws/issue-5', 'status', '--porcelain'])
+})
+
+test('a quoted executable is still a removal; quoted text is not', async () => {
+  const bs = String.fromCharCode(92)
+  const forms = [
+    `& "C:${bs}Program Files${bs}Orca${bs}orca.exe" worktree rm --worktree branch:x`,
+    `& "C:${bs}Program Files${bs}Git${bs}cmd${bs}git.exe" worktree remove ..${bs}ws${bs}x`,
+    '"orca" worktree rm --worktree branch:x',
+    `pwsh -Command "& 'C:${bs}Program Files${bs}Orca${bs}orca.exe' worktree rm --worktree branch:x"`,
+  ]
+  for (const form of forms) {
+    expect(worktreeRemovals(form).length, form).toBeGreaterThan(0)
+    expect(await checkRemovals(form, fakeGit('').git), form).toContain('OK del humano')
+  }
+  expect(worktreeRemovals(forms[0] ?? '')).toEqual([{ by: 'branch', value: 'x' }])
+  expect(worktreeRemovals('echo "orca worktree rm --worktree branch:x"')).toEqual([])
+})
+
+test('every -EncodedCommand abbreviation is denied, and -ExecutionPolicy is not one', () => {
+  for (const flag of ['-e', '-en', '-enc', '-enco', '-encodedc', '-EncodedCommand', '-ec', '-EC']) {
+    expect(worktreeRemovals(`pwsh ${flag} ZQBjAGgAbwA=`).map(one => one.by), flag).toEqual(['opaque'])
+    expect(worktreeRemovals(`powershell -NoProfile ${flag} ZQBjAGgAbwA=`).map(one => one.by), flag).toEqual(['opaque'])
+  }
+  expect(worktreeRemovals('pwsh -ExecutionPolicy Bypass -File x.ps1')).toEqual([])
+  expect(worktreeRemovals('bash -e script.sh')).toEqual([])
+})
+
+test('path and name selectors must resolve to exactly one worktree', async () => {
+  const porcelain = PORCELAIN + '\nworktree C:/r/other/issue-5\nHEAD ddd\nbranch refs/heads/other/5\n'
+  const two = fakeGit('', { porcelain })
+  expect(await checkRemovals('git worktree remove issue-5', two.git)).toContain('más de un worktree')
+  expect(await checkRemovals('orca worktree rm --worktree name:issue-5', two.git)).toContain('más de un worktree')
+  // an exact path still resolves to one
+  expect(await checkRemovals('git worktree remove C:/r/ws/issue-5', fakeGit('', { porcelain }).git)).toBeUndefined()
+  // a single suffix match is fine
+  expect(await checkRemovals('git worktree remove ../ws/issue-6', fakeGit('').git)).toBeUndefined()
 })
