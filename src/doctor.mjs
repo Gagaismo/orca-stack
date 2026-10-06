@@ -267,7 +267,7 @@ export const projectWarnings = (root, config) => {
   for (const name of ['AGENTS.md', 'CLAUDE.md']) {
     const file = path.join(root, name)
     if (existsSync(file) && readFileSync(file, 'utf8').includes(LEGACY_BEGIN)) {
-      found.push({ label: `${name}: bloque orca-stack viejo`, detail: 'corré `orca-stack init` para migrarlo' })
+      found.push({ label: `${name}: bloque orca-stack viejo`, detail: '`orca-stack init` lo migra y además agrega el contrato de trabajo completo a AGENTS.md; si no querés ese cambio, no lo corras' })
     }
   }
   if (config && typeof config === 'object' && config.setup !== 'completo') {

@@ -134,14 +134,15 @@ Los mods leen su configuración al ejecutarse, de tres archivos. Cada capa pisa 
 }
 ```
 
-Las claves del contrato de trabajo, que escribe `orca-setup` y que el bloque de `AGENTS.md` manda a leer:
+Las claves del contrato de trabajo, que escribe `orca-setup` y que el bloque de `AGENTS.md` manda a leer (se fusionan las tres capas, personal → proyecto → local):
 
 | Clave | Qué guarda |
 | --- | --- |
 | `setup` | `"completo"` cuando el setup ya se hizo |
 | `modo` | `"multiagente"` o `"un-agente"` |
 | `ramaBase` | La rama contra la que se abren los PRs |
-| `agentes` | Qué agentes usa el repo, con modelo y esfuerzo; `preguntarAntes` lista los que necesitan el OK del humano |
+| `agentes` | Qué agentes usa el repo (`usa`) y cuáles necesitan el OK del humano (`preguntarAntes`). Los modelos y esfuerzos (`agentes.modelos`) viven en `~/.orca-stack/config.json`, por máquina |
+| `review` | Solo en modo `un-agente`: `"subagente"` (por defecto) o `"humano"` |
 | `verificacion` | `{ "suite", "typecheck" }`: los comandos exactos |
 | `merge` | Si `main` mergea sola cuando se cumple la condición de merge |
 | `despliegue` | `{ "despues": false }`, o el comando y cómo se verifica |
