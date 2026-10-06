@@ -125,7 +125,24 @@ export const shWrapper = agent => {
 
 export const wrapperContent = (agent, win) => (win ? cmdWrapper(agent) : shWrapper(agent))
 
-// The block placed in CLAUDE.md / AGENTS.md. policyPath/briefsPath are shown as given.
+// The policy lines shared by every block. policyPath/briefsPath are shown as given.
+const policyLines = ({ policyPath, briefsPath, agentsPointer }) => [
+  `Política canónica: \`${policyPath}\` (se puede cambiar con \`$ORCA_STACK_POLICY_PATH\`). Briefs por rol: \`${briefsPath}\`.`,
+  'Si faltan, corré `npx github:Gagaismo/orca-stack global`.',
+  '',
+  '- El runtime de Orca y el Dispatch activo manejan el ciclo de vida, la delegación, los workers, el cierre y la limpieza. Un worker ejecuta su brief: no arranca otro flujo de trabajo ni espera al humano.',
+  '- Las skills de Matt Pocock son la metodología por defecto. Gentle Shell (Pi) trabaja con la suya y puede usar SDD. El SDD de gentle-ai se usa solo cuando el humano lo pide explícitamente. Ponytail se aplica en el trabajo de implementación con el nivel configurado, pero nunca contra un requisito explícito.',
+  '- Respetá los requisitos explícitos de la spec, el ticket y los ADRs, y también la validación, la seguridad, la accesibilidad, el manejo de errores, la protección contra pérdida de datos y los tests que se piden: son lo que el humano espera recibir.',
+  '- Caveman sigue el ajuste Auto/Off del stack y comprime solo prosa pesada en tokens. Conservá el código, los comandos, las rutas, los errores exactos, las decisiones, los riesgos, las dudas, los tests y la evidencia de aceptación.',
+  '- Engram es solo memoria: no es autoridad ni planificador. Para las reglas de cada rol, leé la política canónica.',
+  ...(agentsPointer
+    ? [
+        '- Las reglas de los mods de Claude Code para este proyecto están en `.orca-stack.json` (se commitea) y `.orca-stack.local.json` (local, ignorado por git); las personales, en `~/.orca-stack/config.json`.',
+      ]
+    : []),
+]
+
+// The block placed in CLAUDE.md / AGENTS.md. `agentsPointer` is the project AGENTS.md block, which carries the work contract.
 export const policyBlock = ({ policyPath, briefsPath, short = false, agentsPointer = false, importAgents = false }) => {
   if (short) {
     return [
@@ -135,22 +152,10 @@ export const policyBlock = ({ policyPath, briefsPath, short = false, agentsPoint
       `The stack policy is \`${policyPath}\`; the orca-stack block in \`AGENTS.md\` summarises it.`,
     ].join('\n')
   }
+  const lines = policyLines({ policyPath, briefsPath, agentsPointer })
+  if (agentsPointer) {
+    return [readAsset('stack', 'CONTRATO.md').replace(/\s+$/, ''), '', '### Política del stack', '', ...lines].join('\n')
+  }
 
-  return [
-    '## Orca stack integration',
-    '',
-    `Canonical policy: \`${policyPath}\` (override with \`$ORCA_STACK_POLICY_PATH\`). Role briefs: \`${briefsPath}\`.`,
-    'If the file is missing, run `npx github:Gagaismo/orca-stack global`.',
-    '',
-    '- Orca runtime/active Dispatch owns lifecycle, delegation, worker ownership, settlement, and cleanup; workers execute their brief and never start a competing workflow or wait for the human.',
-    '- Matt Pocock skills remain the only engineering methodology; use Ponytail automatically for implementation work at the configured level, but never against explicit requirements.',
-    '- Preserve explicit spec/ticket/ADR requirements, validation, security, accessibility, error handling, data-loss protection, and required tests.',
-    '- Caveman follows the stack Auto/Off setting and compresses token-heavy prose only. Preserve code, commands, paths, exact errors, decisions, risks, uncertainty, tests, and acceptance evidence.',
-    '- Engram is memory only, not a planner or scheduler. Read the canonical policy for role-specific rules.',
-    ...(agentsPointer
-      ? [
-          '- Claude Code mod rules for this project live in `.orca-stack.json` (committed) and `.orca-stack.local.json` (local, gitignored); personal ones in `~/.orca-stack/config.json`.',
-        ]
-      : []),
-  ].join('\n')
+  return ['## Orca stack integration', '', ...lines].join('\n')
 }

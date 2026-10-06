@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { copyToBackup } from './backup.mjs'
-import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
+import { LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, MARKER_END, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { removeBlock, upsertBlock } from './marker.mjs'
 import { policyBlock } from './templates.mjs'
 import { homeDir, readTextIfExists, run, timestamp, tilde, which } from './util.mjs'
@@ -19,6 +19,19 @@ const projectRoot = cwd => {
   const result = run(git, ['rev-parse', '--show-toplevel'], { cwd, timeout: 15_000, env: process.env })
 
   return result.status === 0 ? path.resolve(result.stdout.trim()) : null
+}
+
+// Length of the orca-stack block (current or legacy) inside text; 0 when there is none.
+const blockSize = text => {
+  for (const [open, close] of [[MARKER_BEGIN, MARKER_END], [LEGACY_BEGIN, LEGACY_END]]) {
+    const begin = text.indexOf(open)
+    const end = text.indexOf(close)
+    if (begin !== -1 && end > begin) {
+      return end + close.length - begin
+    }
+  }
+
+  return 0
 }
 
 // Claude Code stops loading AGENTS.md on its own once a CLAUDE.md exists: the import is what loads the contract.
@@ -47,7 +60,7 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
     if (next === original) {
       console.log(`${name}: el bloque orca-stack ya está al día`)
     } else {
-      plan.push({ file, name, content: next, verb: original === null ? 'creo' : 'actualizo' })
+      plan.push({ file, name, content: next, verb: original === null ? 'creo' : 'actualizo', grew: blockSize(next) > blockSize(original ?? '') })
     }
   }
   const missing = (name, content, text) => {
@@ -84,8 +97,11 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
     plan.push({ file: ignore, name: '.gitignore', content: `${base}${PROJECT_LOCAL_CONFIG}${eol}`, verb: ignoreText === null ? 'creo' : 'actualizo' })
   }
 
-  for (const { file, name, content, verb } of plan) {
+  for (const { file, name, content, verb, grew } of plan) {
     console.log(`${prefix}${verb} ${name}`)
+    if (grew && name === 'AGENTS.md') {
+      console.log('  el bloque orca-stack ahora lleva el contrato de trabajo completo')
+    }
     if (dryRun) {
       continue
     }

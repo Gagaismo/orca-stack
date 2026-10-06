@@ -16,8 +16,11 @@ Provider instruction files point here for the durable policy.
 - **Caveman (modular)**: communication compression. Orca Auto applies it when
   the work is token-heavy, but never compresses code, commands, paths, exact
   errors, decisions, risks, uncertainty, tests, or acceptance evidence.
-- **GentleAI / Engram**: persistent memory and lifecycle bookkeeping only. It is
-  not a competing planner, SDD system, or worker scheduler.
+- **Engram**: persistent memory only. It is not an authority or a scheduler.
+- **Gentle Shell (Pi)**: another engineer on the team with its own methodology
+  (it may use SDD). It implements tickets, reviews with Judgment Day, and is
+  consulted as a peer. gentle-ai's SDD is available to Claude sessions on
+  explicit request.
 - **Claude / Codex / Antigravity**: execution providers attached to Orca. Provider
   choice never changes lifecycle authority.
 
@@ -52,7 +55,8 @@ do not wait for Orca receipts that will not come.
 
 ## Methodology contract
 
-Matt's workflow remains the only project methodology. Ponytail may reduce the
+Matt's workflow is the default methodology for Claude, Codex and Antigravity
+sessions; Pi follows its own. Ponytail may reduce the
 implementation footprint inside an approved ticket; it may not remove research,
 domain modeling, explicit spec obligations, ADR decisions, security, validation,
 accessibility, data-loss handling, or required tests. `ponytail-review` is a
@@ -69,11 +73,11 @@ controls that the official Orca UI does not provide.
 
 ## Provider routing
 
-- **Codex**: default implementation/review worker through Orca when assigned.
-- **Antigravity (`agy`)**: Gemini worker through Orca when assigned; send it a
-  file path for multiline briefs rather than a multiline terminal prompt.
-- **Claude Code**: use only when explicitly assigned or requested; do not create
-  Claude sub-agents implicitly.
+- **Who implements and who reviews** is the project's role table in `AGENTS.md`
+  plus `.orca-stack.json`. Models and quotas live in personal config.
+- **Antigravity (`agy`)**: send it a file path for multiline briefs rather than
+  a multiline terminal prompt, because each newline is sent as Enter and would
+  split the brief into several submissions.
 - **Engram**: use the installed MCP/plugin integrations; save decisions,
   discoveries, fixes, and session summaries without treating memory as authority.
 
