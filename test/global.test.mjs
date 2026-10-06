@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 
-import { backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
+import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const MODS = ['bandeja-mensajes', 'grilling-ok', 'guardia-despacho', 'modo-autonomo', 'puente-gentle', 'reloj-cache', 'tablero-despacho']
 
@@ -247,6 +247,17 @@ describe('doctor', () => {
     }
   })
 
+  test('the machine-specific launchers live in the rendered ORCA-STACK.md, not in the project contract', () => {
+    cli(home, ['global', '--skip-pi'])
+    const policy = read(path.join(home, 'orca', 'stack', 'ORCA-STACK.md'))
+    assert.match(policy, /Launching agents for a manual dispatch/)
+    assert.doesNotMatch(policy, /{{[A-Z_]+}}/)
+    assert.match(policy, /claude-orca-stack/)
+    assert.match(policy, /model_provider=cc/)
+    const contract = read(path.join(ROOT, 'assets', 'stack', 'CONTRATO.md'))
+    assert.doesNotMatch(contract, /model_provider=cc|orca-stack.cmd|auth.json/)
+  })
+
   test('warns about a legacy block and a pending setup, and stays quiet once both are fixed', () => {
     cli(home, ['global', '--skip-pi'])
     const repo = path.join(tempDir('repo'), 'proyecto')
@@ -257,7 +268,7 @@ describe('doctor', () => {
       write(path.join(repo, 'AGENTS.md'), '<!-- orca-stack:auto -->\nviejo\n<!-- /orca-stack:auto -->\n')
       write(path.join(repo, '.orca-stack.json'), '{"version":1}\n')
       const warned = doctor()
-      assert.match(warned.out, /⚠ AGENTS\.md: bloque orca-stack viejo - corré `orca-stack init` para migrarlo/)
+      assert.match(warned.out, /⚠ AGENTS\.md: bloque orca-stack viejo - `orca-stack init` lo migra y además agrega el contrato de trabajo completo/)
       assert.match(warned.out, /⚠ \.orca-stack\.json: setup pendiente - abrí una sesión de Claude en el checkout principal/)
 
       write(path.join(repo, 'AGENTS.md'), '# Contrato\n')

@@ -55,6 +55,8 @@ describe('init', () => {
     assert.ok(text.includes('## BLOQUEA'))
     assert.ok(text.includes('### Política del stack'))
     assert.doesNotMatch(text, /gpt-6|2026-10/)
+    assert.ok(text.includes('Commit: <sha>') && text.includes('Verificado por main:'))
+    assert.doesNotMatch(text, /model_provider=cc|auth.json/, 'launchers live in ORCA-STACK.md')
     const other = path.join(tempDir('repo'), 'otro')
     write(path.join(other, 'README.md'), '# otro\n')
     git(other, 'init', '-q', '-b', 'main')

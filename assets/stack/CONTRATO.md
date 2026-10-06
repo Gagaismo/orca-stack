@@ -2,19 +2,20 @@
 
 Este bloque lo mantiene orca-stack y describe cómo trabajan los agentes en este repo. Las reglas del proyecto que están fuera del bloque valen por encima de él cuando nombran la regla que cambian. Es igual en todos los proyectos: lo que cambia de un repo a otro vive en `.orca-stack.json` y se lee de ahí, no de este texto. Al final del bloque están las rutas de la política general y de los briefs por rol.
 
-Los encabezados `## Evidencia`, `## Desvíos del ticket`, `## BLOQUEA` y `## SUGERENCIAS`, y las líneas `Implementador: <agente>` y `Revisor: <agente>`, son marcas fijas del protocolo: no se traducen aunque el resto del texto vaya en otro idioma, porque la sesión de `main` las busca literalmente.
+Los encabezados `## Evidencia`, `## Desvíos del ticket`, `## BLOQUEA` y `## SUGERENCIAS`, y las líneas `Implementador: <agente>`, `Revisor: <agente>`, `Commit: <sha>`, `Verificado por main: hallazgos <n,…> corregidos en <sha>` y `Decidido por main: <hallazgo> — <razón>`, son marcas fijas del protocolo: no se traducen aunque el resto del texto vaya en otro idioma, porque la sesión de `main` las busca literalmente.
 
 ### Configuración del proyecto
 
-Los valores propios de este repo están en `.orca-stack.json`, en la raíz. Leelo antes de decidir algo que dependa de ellos; cuando este contrato dice "lo que fijó el setup", se refiere a estas claves:
+La configuración sale de tres capas que se fusionan en este orden, y las posteriores pisan a las anteriores: `~/.orca-stack/config.json` (personal, por máquina, no se commitea), `.orca-stack.json` en la raíz del repo (reglas del proyecto, se commitea) y `.orca-stack.local.json` (local, ignorado por git). Las claves de objeto se fusionan una por una; una lista de una capa reemplaza a la de la anterior. Leé las tres antes de decidir algo que dependa de ellas. Cuando este contrato dice "lo que fijó el setup", se refiere a estas claves y a la capa donde suele vivir cada una:
 
 | Clave | Qué guarda |
 |---|---|
 | `setup` | `"completo"` cuando el setup ya se hizo |
 | `modo` | `"multiagente"` (Orca despacha workers) o `"un-agente"` |
 | `ramaBase` | la rama contra la que se abren los PRs |
-| `agentes` | qué agentes usa este repo, con su modelo y esfuerzo; `preguntarAntes` lista los que necesitan el OK del humano antes de despacharse |
+| `agentes` | en `.orca-stack.json`: `usa` (qué agentes usa este repo), `preguntarAntes` (los que necesitan el OK del humano antes de despacharse) y las excepciones del proyecto. El inventario de modelos y esfuerzos (`agentes.modelos`) vive en la config personal, porque depende de la máquina y de las cuentas de cada persona |
 | `verificacion` | `{ "suite": "...", "typecheck": "..." }`: los comandos exactos, con los flags que el repo necesite para terminar |
+| `review` | solo en modo `un-agente`: quién hace el review de registro, `"subagente"` (por defecto) o `"humano"` |
 | `merge` | si `main` mergea sola cuando se cumple la condición de merge |
 | `despliegue` | `{ "despues": false }`, o el comando y cómo se verifica |
 | `idioma` | el idioma del código, los commits y los PRs |
@@ -50,7 +51,7 @@ Nadie revisa su propio PR y un worktree de ticket nunca revisa. Preferí que rev
 
 ### Modo `un-agente`
 
-Cuando `modo` es `"un-agente"` no hay workers: la misma sesión planifica e implementa, y los pasos de despacho de este contrato no aplican. El review que cuenta lo hace igual un contexto distinto del que escribió el código: un subagente de contexto limpio, de otra familia de modelos si hay una disponible, con el mismo formato `## BLOQUEA` / `## SUGERENCIAS` y antes de mergear. Si el setup nombró al humano como revisor, el review lo hace él. Sin un review hecho por otro contexto no se mergea, porque quien escribió el código comparte con él todos sus puntos ciegos.
+Cuando `modo` es `"un-agente"` no hay workers: la misma sesión planifica e implementa, y los pasos de despacho de este contrato no aplican. El review que cuenta lo hace igual un contexto distinto del que escribió el código: un subagente de contexto limpio, de otra familia de modelos si hay una disponible, con el mismo formato `## BLOQUEA` / `## SUGERENCIAS` y antes de mergear. La sesión de `main` publica ese review con `--body-file`, con las primeras líneas `Revisor: subagente (<modelo>)` y `Commit: <sha>`; la línea `Implementador:` del PR nombra al agente de esa sesión. Si `review` es `"humano"`, el review lo hace el humano y `main` solo registra su veredicto con las mismas líneas. Sin un review hecho por otro contexto no se mergea, porque quien escribió el código comparte con él todos sus puntos ciegos.
 
 ### Permisos
 
@@ -66,8 +67,8 @@ Se pregunta: lo irreversible (reescribir historia, force push, borrar ramas o is
 4. Despachá (ver "Despacho manual"). Asigná el issue antes de crear el worktree: el assignee es el cerrojo que evita despachar dos veces. Un issue que ya tiene assignee está tomado aunque el assignee sea tu propia cuenta, porque todas las sesiones y los workers usan la misma cuenta de `gh`. Por la misma razón, en cada repo trabaja una sola sesión de `main`.
 5. Vigilá los PRs y los workers con un Monitor de fondo (`gh pr list`, `orca worktree ps --json`). Antes de rearmar un Monitor, matá el anterior: si sigue vivo, le roba los eventos al nuevo.
 6. Con un PR nuevo, despachá el review a un agente que no sea el autor.
-7. Mergeá solo si se cumplen las tres cosas, verificadas con `gh pr view <n> --comments` y `gh pr checks <n>`: hay un comentario de review con `## BLOQUEA` en `nada`; su línea `Revisor:` nombra un agente distinto del de la línea `Implementador:` del PR; y la CI está en verde o, si el repo no tiene CI, el review dice que el revisor corrió la suite completa en verde. Además, `merge` en `.orca-stack.json` tiene que decir que `main` mergea sola; si no, le pedís el merge al humano. Si falta algo, no mergeás: despachás lo que falte.
-8. Un PR rebota una sola vez. La segunda ronda lee solo el delta. Si el rebote fue mecánico (idioma, un nombre, un test que faltaba), el autor lo corrige y vos verificás el arreglo leyendo `gh pr diff` contra los hallazgos, sin pedir otro review; nunca lo arreglás vos. Un bloqueo `inferido` podés mandarlo a refutar antes de rebotar. Lo que siga en pie después de la segunda ronda lo decidís vos.
+7. Mergeá solo si se cumplen estas cosas, verificadas con `gh pr view <n> --comments` y `gh pr checks <n>`: (a) hay un comentario de review con `## BLOQUEA` en `nada` y su línea `Revisor:` nombra un agente distinto del de la línea `Implementador:` del PR, o, como alternativa a ese review limpio cuando el PR rebotó, un comentario publicado por `main` con `--body-file` y la línea `Verificado por main: hallazgos <n,…> corregidos en <sha>` (rebote mecánico, ver el paso 8) o, para cada hallazgo que siga en pie después de la segunda ronda, una línea `Decidido por main: <hallazgo> — <razón>`; (b) esos comentarios llevan una línea `Commit: <sha>` igual al `headRefOid` que muestra `gh pr view <n> --json headRefOid`: un review limpio de un commit anterior no cuenta, porque aprobó otro código; (c) la CI está en verde o, si el repo no tiene CI, el review dice que el revisor corrió la suite completa en verde. Además, `merge` tiene que decir que `main` mergea sola; si no, le pedís el merge al humano. Si falta algo, no mergeás: despachás lo que falte.
+8. Un PR rebota una sola vez. La segunda ronda lee solo el delta. Si el rebote fue mecánico (idioma, un nombre, un test que faltaba), el autor lo corrige y vos verificás el arreglo leyendo `gh pr diff` contra los hallazgos, sin pedir otro review; nunca lo arreglás vos. Dejás constancia con un comentario tuyo que lleve `Verificado por main: hallazgos <n,…> corregidos en <sha>` y `Commit: <sha>`. Un bloqueo `inferido` podés mandarlo a refutar antes de rebotar. Lo que siga en pie después de la segunda ronda lo decidís vos, y lo dejás escrito con una línea `Decidido por main: <hallazgo> — <razón>` por hallazgo, más `Commit: <sha>`.
 9. Después del merge: si la rama base no es la rama por defecto del repo, `Closes #` no cierra el issue y lo cerrás a mano. Integrá lo que el PR propuso bajo `## Propuesta para CONTEXT.md` o `## Propuesta de ADR`, marcá el worktree como terminado y desplegá solo si `despliegue` dice cómo; después verificá el despliegue como ahí se indica. Con `{ "despues": false }` no se despliega.
 
 ### Verificación
@@ -80,12 +81,7 @@ Hasta que exista `orca-stack despachar`, se despacha a mano y se trata como un h
 
 1. Escribí el brief en un archivo fuera del repo (por ejemplo `~/orca/briefs/<repo>-<n>.md`): el número de issue, que lo lea con `--comments`, el agente que lo implementa, los comandos de `verificacion`, que pregunte comentando en el issue y que termine abriendo el PR contra `ramaBase` (`gh pr create --base <ramaBase> --body-file ...`) con el formato de abajo.
 2. `orca worktree create --name <repo>-<n> --issue <n> --base-branch origin/<ramaBase> --no-parent --json` desde este checkout; la ruta del worktree nuevo sale del JSON. `--no-parent` evita que la rama nueva salga de un feature a medio hacer.
-3. `orca terminal create --worktree path:<ruta> --title <agente> --command "<lanzador>" --json`. La terminal de Orca es PowerShell en Windows, y el lanzador usa el wrapper del stack:
-   - claude: `& "$HOME\orca\stack\scripts\claude-orca-stack.cmd" --dangerously-skip-permissions`
-   - agy: `& "$HOME\orca\stack\scripts\agy-orca-stack.cmd" --dangerously-skip-permissions`
-   - codex-cc: `$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME\.pi\agent\auth.json" | ConvertFrom-Json).commandcode.key; & "$HOME\orca\stack\scripts\codex-orca-stack.cmd" -c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses --model <modelo> -c model_reasoning_effort="<esfuerzo>" -c approval_policy="never" -c sandbox_mode="danger-full-access"`. El modelo y el esfuerzo son los de revisión o de implementación que fija `.orca-stack.json` (`agentes`) según para qué lo despaches; el resto del comando no cambia. La key se lee dentro de la terminal y no aparece en el comando ni en el brief. Si Command Code rechaza el pedido (401, 403 `MODEL_NOT_IN_PLAN`, 429), lo vas a ver en la pantalla después del brief.
-
-   Sumá `--model <modelo>` a claude o agy si `agentes` fija uno. agy arranca preguntando si confiás en la carpeta: contestá con Enter. Antes de mandar el brief, confirmá con `orca terminal read --terminal <handle>` que el TUI del agente está arriba; si el brief cae en la shell, se ejecuta como comando.
+3. `orca terminal create --worktree path:<ruta> --title <agente> --command "<lanzador>" --json`. Lanzá el agente con su lanzador de la política del stack (`~/orca/stack/ORCA-STACK.md`, sección "Launching agents for a manual dispatch"): ahí están los comandos de cada agente para la terminal de Orca, que es PowerShell en Windows. Sumá `--model <modelo>` a claude o agy si la config fija uno. agy arranca preguntando si confiás en la carpeta: contestá con Enter. Antes de mandar el brief, confirmá con `orca terminal read --terminal <handle>` que el TUI del agente está arriba; si el brief cae en la shell, se ejecuta como comando.
 4. Mandá una sola línea con `orca terminal send --terminal <handle> --text "Leé y seguí el brief de <ruta del archivo>" --enter`. El brief va en un archivo porque cada salto de línea que mandás por la terminal se convierte en un Enter.
 
 El revisor se despacha igual, en un worktree propio cuyo nombre empiece con `revision` y creado desde `origin/<ramaBase>`, con un brief que nombra el PR, el agente que lo implementó y el formato de review de abajo.
@@ -110,6 +106,7 @@ Escribí el review en un archivo UTF-8 y publicalo con `gh pr review <n> --comme
 
 ```
 Revisor: <agente>
+Commit: <sha>
 
 ## BLOQUEA
 1. `archivo:línea` (introducido|empeorado, concreta|inferida): el problema en una frase. Cómo se reproduce o qué criterio incumple. El arreglo, en una línea.

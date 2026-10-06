@@ -32,8 +32,8 @@ Hacé todas las preguntas juntas, numeradas, cada una con tu recomendación ya r
 
 Las preguntas:
 
-1. **Modo**: `multiagente` (Orca despacha workers) o `un-agente` (una sesión planifica e implementa y la revisa un subagente de contexto limpio, o el humano).
-2. **Agentes y modelos**: cuáles se usan y con qué modelo y esfuerzo. Por defecto, los de la config personal; si no hay, claude, agy, codex, codex-cc y pi como en la tabla del contrato. codex-cc gasta créditos: si implementa, va en `preguntarAntes`.
+1. **Modo**: `multiagente` (Orca despacha workers) o `un-agente` (una sesión planifica e implementa). Si es `un-agente`, preguntá también quién hace el review de registro, que se guarda en `review`: `"subagente"` (de contexto limpio, de otra familia de modelos si hay; es lo recomendado) o `"humano"`.
+2. **Agentes y modelos**: qué agentes usa este repo (`agentes.usa`) y cuáles necesitan el OK del humano antes de despacharse (`agentes.preguntarAntes`). Proponé los modelos y esfuerzos desde la config personal; si no hay, claude, agy, codex, codex-cc y pi como en la tabla del contrato. codex-cc gasta créditos: si implementa, va en `preguntarAntes`.
 3. **Rama base**: contra cuál se abren los PRs.
 4. **Merge**: si `main` mergea sola cuando se cumple la condición de merge del contrato, o si pide el merge al humano.
 5. **Verificación**: los comandos exactos de suite y typecheck. Detectalos y pedí solo la confirmación, incluidos los flags que el repo necesite para terminar (por ejemplo `--forceExit` en jest).
@@ -43,7 +43,8 @@ Las preguntas:
 
 ## 3. Escribí lo decidido
 
-- Fusioná las respuestas en `.orca-stack.json` con estas claves: `modo`, `ramaBase`, `agentes` (con `preguntarAntes`), `verificacion` (`{ "suite", "typecheck" }`), `merge`, `despliegue` (`{ "despues": false }` o el comando y su verificación) e `idioma`. Conservá las claves que ya había y `version`.
+- Fusioná en `.orca-stack.json` solo las decisiones del repo: `modo`, `review` (si el modo es `un-agente`), `ramaBase`, `agentes.usa` y `agentes.preguntarAntes`, `verificacion` (`{ "suite", "typecheck" }`), `merge`, `despliegue` (`{ "despues": false }` o el comando y su verificación) e `idioma`. Conservá las claves que ya había y `version`.
+- Los modelos y esfuerzos (`agentes.modelos`) son de la máquina, no del repo: salen de `~/.orca-stack/config.json`. Si el humano cambia alguno, escribilo ahí y nunca en el archivo que se commitea, porque otra persona o máquina tiene otras cuentas y otros modelos. Una excepción local va en `.orca-stack.local.json`.
 - Ponele `"setup": "completo"` al final, recién cuando todo lo demás quedó escrito: así un setup cortado a la mitad se vuelve a ofrecer.
 - Editá las reglas en conflicto fuera del bloque orca-stack solo como decidió el humano. No toques el contenido entre `<!-- orca-stack:begin -->` y `<!-- orca-stack:end -->`: lo regenera `orca-stack init`.
 - Cerrá con un resumen corto de lo que quedó configurado y de lo que cambiaste en las reglas del proyecto.

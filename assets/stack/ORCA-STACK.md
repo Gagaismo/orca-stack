@@ -74,12 +74,30 @@ controls that the official Orca UI does not provide.
 ## Provider routing
 
 - **Who implements and who reviews** is the project's role table in `AGENTS.md`
-  plus `.orca-stack.json`. Models and quotas live in personal config.
+  plus `.orca-stack.json`. Models, efforts and quotas live in personal config
+  (`~/.orca-stack/config.json`, `agentes.modelos`); the committed
+  `.orca-stack.json` only says which agents the repo uses.
 - **Antigravity (`agy`)**: send it a file path for multiline briefs rather than
   a multiline terminal prompt, because each newline is sent as Enter and would
   split the brief into several submissions.
 - **Engram**: use the installed MCP/plugin integrations; save decisions,
   discoveries, fixes, and session summaries without treating memory as authority.
+
+## Launching agents for a manual dispatch
+
+Use these commands as the `--command` of `orca terminal create`. The Orca
+terminal is PowerShell on Windows, and the wrappers below are the ones this
+machine installed. Model and effort come from personal config
+(`~/.orca-stack/config.json`, `agentes.modelos`), never from the project.
+
+- claude: `& "{{WRAPPER_CLAUDE}}" --dangerously-skip-permissions`
+- agy: `& "{{WRAPPER_AGY}}" --dangerously-skip-permissions`
+- codex-cc: `$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME\.pi\agent\auth.json" | ConvertFrom-Json).commandcode.key; & "{{WRAPPER_CODEX}}" -c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses --model <modelo> -c model_reasoning_effort="<esfuerzo>" -c approval_policy="never" -c sandbox_mode="danger-full-access"`
+  Use the review model and effort to review and the implementation ones to
+  implement; the rest of the command does not change. The key is read inside
+  the terminal, so it never appears in the command or in the brief. If Command
+  Code rejects the request (401, 403 `MODEL_NOT_IN_PLAN`, 429), it shows on
+  the screen after the brief.
 
 ## Official Orca integration (preferred)
 
