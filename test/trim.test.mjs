@@ -47,7 +47,25 @@ describe('trimReviewSections', () => {
     const plain = '## Engram Persistent Memory\n#### Native Checking Contract\nbody\n'
     assert.deepEqual(trimReviewSections(plain), { text: plain, removed: 0 })
     const broken = fixture('\n').replace('#### Cost and Context Balance', '#### Something else')
-    assert.deepEqual(trimReviewSections(broken), { text: broken, removed: 0 })
+    const result = trimReviewSections(broken)
+    assert.equal(result.text, broken)
+    assert.equal(result.removed, 0)
+    assert.match(result.skipped, /no tiene un encabezado donde termine/)
+  })
+
+  test('is all-or-nothing: an unknown heading inside the text to remove, or an open fence, changes nothing', () => {
+    const cases = {
+      'an inserted heading before Cost and Context Balance': [fixture('\n').replace('#### Cost and Context Balance', '#### X\nx body\n#### Cost and Context Balance'), /encabezado que no reconozco: #### X/],
+      'an unknown heading inside a shorter section': [fixture('\n').replace('gate body', '##### Deeper\ngate body'), /##### Deeper/],
+      'an unbalanced fence': [fixture('\n').replace('# not a heading, inside a fence\n```', '# not a heading, inside a fence'), /sin cerrar/],
+    }
+    for (const [name, [text, why]] of Object.entries(cases)) {
+      const result = trimReviewSections(text)
+      assert.equal(result.text, text, name)
+      assert.equal(result.removed, 0, name)
+      assert.match(result.skipped, why, name)
+    }
+    assert.equal(trimReviewSections(fixture('\n')).skipped, undefined)
   })
 })
 
@@ -91,6 +109,17 @@ describe('global trims the gentle-ai review sections', () => {
     assert.equal(result.status, 0, result.out)
     assert.match(result.out, /\[simulación\] actualizo .*sin las secciones de review/)
     assert.deepEqual(snapshot(home), before)
+  })
+
+  test('a block that changed shape is left alone and global says why', () => {
+    fakeGentle(bin, 'off')
+    const changed = fixture('\n').replace('#### Cost and Context Balance', '#### X\nx body\n#### Cost and Context Balance')
+    write(claudeMd(), changed)
+    const result = cli(home, ['global', '--skip-pi', '--humano', 'Ana'], { env: withPath(bin) })
+    assert.equal(result.status, 0, result.out)
+    assert.match(result.out, /se omite y no toco nada: el texto de gentle-ai cambió de forma \(.*#### X/)
+    assert.ok(read(claudeMd()).includes('#### X'))
+    assert.ok(read(claudeMd()).includes('Native Checking Contract'))
   })
 
   test('RDD on: skips and says why', () => {

@@ -17,11 +17,26 @@ export const REVIEW_SECTIONS = new Set([
   '### Concurrent Reviewer Group (MANDATORY)',
 ])
 
+// Headings that belong to the Review Execution Contract's own subtree (`# Native Compact Review Orchestration` and the
+// authority-first markers). Anything else found inside what would be removed means gentle-ai's text changed shape.
+const CONTRACT_SUBTREE = new Set([
+  '# Native Compact Review Orchestration',
+  '## Entry rule',
+  '## Atomic lifecycle',
+  '### Cross-repository lifecycle root',
+  '## Capture and correction',
+  '## Consent and immutable inspection',
+  '### Authority-First Terminal Procedure',
+  '### Continue after a stop reason code',
+  '## Delivery follows ordinary repository policy',
+])
+
 const levelOf = line => /^(#{1,6})\s/.exec(line)?.[1].length ?? 0
 
-// Pure: removes the review sections from the gentle-ai block. Each one runs from its heading to the next
-// heading of level 4 or higher that is not itself in the list. Returns { text, removed } (removed in bytes).
-// A text without the block, or one where the Review Execution Contract has no end, comes back unchanged.
+// Pure and all-or-nothing: removes the review sections from the gentle-ai block, or changes nothing. Each section runs from
+// its heading to the next heading of level 4 or higher that is not itself in the list. If a section has no end, if the text
+// to remove holds a heading that is neither a listed section nor part of the contract's known subtree, or if a code fence is
+// left open, it returns the text unchanged with `skipped` saying why. Returns { text, removed (bytes), skipped? }.
 export const trimReviewSections = text => {
   const begin = text.indexOf(BLOCK_BEGIN)
   const end = text.indexOf(BLOCK_END)
@@ -33,6 +48,7 @@ export const trimReviewSections = text => {
   let skipping = false
   let until = null // set while inside the Review Execution Contract
   let fenced = false
+  let unknown = null
   for (const line of text.slice(from, end).split('\n')) {
     const title = line.trimEnd()
     if (/^\s*```/.test(line)) {
@@ -45,6 +61,8 @@ export const trimReviewSections = text => {
         until = null
       } else if (title === REVIEW_CONTRACT) {
         until = REVIEW_CONTRACT_END
+      } else if (!REVIEW_SECTIONS.has(title) && !(until !== null && CONTRACT_SUBTREE.has(title))) {
+        unknown ??= title
       }
     }
     if (!skipping && heading && REVIEW_SECTIONS.has(title)) {
@@ -55,8 +73,15 @@ export const trimReviewSections = text => {
       kept.push(line)
     }
   }
-  if (until !== null) {
-    return { text, removed: 0 }
+  const skip = skipped => ({ text, removed: 0, skipped })
+  if (fenced) {
+    return skip('hay un bloque de código sin cerrar')
+  }
+  if (skipping) {
+    return skip('una sección de review no tiene un encabezado donde termine')
+  }
+  if (unknown !== null) {
+    return skip(`entre las secciones a sacar hay un encabezado que no reconozco: ${unknown}`)
   }
   const next = text.slice(0, from) + kept.join('\n') + text.slice(end)
 

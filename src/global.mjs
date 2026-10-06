@@ -153,7 +153,12 @@ const trimGentleReview = ctx => {
 
     return
   }
-  const { text, removed } = trimReviewSections(original)
+  const { text, removed, skipped } = trimReviewSections(original)
+  if (skipped !== undefined) {
+    ctx.say(`  se omite y no toco nada: el texto de gentle-ai cambió de forma (${skipped})`)
+
+    return
+  }
   if (removed === 0) {
     ctx.say('  ya están recortadas (o gentle-ai no las escribió)')
 
