@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { INSTALL_HINTS, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
+import { rddMode, trimReviewSections } from './gentle.mjs'
 import { upsertBlock } from './marker.mjs'
 import { orcaInstalled } from './orca.mjs'
 import { setupPi } from './pi.mjs'
@@ -134,6 +135,35 @@ const installClaudeMd = ctx => {
   }
 }
 
+// With RDD off, gentle-ai's review sections are dead weight in every session: cut them (with a backup).
+// `gentle-ai sync` writes them back, so this step has to run again after each sync.
+const trimGentleReview = ctx => {
+  ctx.say('\nSecciones de review de gentle-ai en CLAUDE.md')
+  const file = ctx.L.claudeMd
+  const original = readTextIfExists(file)
+  const bin = which('gentle-ai')
+  if (original === null || !bin) {
+    ctx.say(`  se omite: ${original === null ? 'no hay ~/.claude/CLAUDE.md' : 'gentle-ai no está instalado'}`)
+
+    return
+  }
+  const mode = rddMode(bin)
+  if (mode !== 'off') {
+    ctx.say(`  se omite: el desarrollo guiado por recibos (RDD) está ${mode === 'on' ? 'prendido' : 'en un estado que no pude leer'}`)
+
+    return
+  }
+  const { text, removed } = trimReviewSections(original)
+  if (removed === 0) {
+    ctx.say('  ya están recortadas (o gentle-ai no las escribió)')
+
+    return
+  }
+  const kb = (removed / 1024).toFixed(1)
+  ctx.writeShared(file, text, `${ctx.show(file)} (sin las secciones de review de gentle-ai: -${kb} KB)`)
+  ctx.say(`  ${kb} KB menos en cada sesión. \`gentle-ai sync\` las restaura: volvé a correr \`orca-stack global\` después de cada sync.`)
+}
+
 const gitUserName = () => {
   const git = which('git')
   if (!git) {
@@ -235,6 +265,7 @@ export const globalCommand = async flags => {
     installSkills(ctx)
     installMods(ctx)
     installClaudeMd(ctx)
+    trimGentleReview(ctx)
     setupPi(ctx, { skipPi: flags.skipPi })
     installPersonalConfig(ctx, { humano: flags.humano })
   } finally {
