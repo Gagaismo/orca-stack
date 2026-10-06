@@ -68,6 +68,14 @@ describe('trimReviewSections', () => {
     }
     assert.equal(trimReviewSections(fixture('\n')).skipped, undefined)
   })
+
+  test('a balanced fence inside the removed text may hold `# comment` lines', () => {
+    const text = fixture('\n').replace('// not a heading, inside a fence', '# a shell comment\n// not a heading, inside a fence')
+    const result = trimReviewSections(text)
+    assert.equal(result.skipped, undefined)
+    assert.ok(result.removed > 0)
+    assert.ok(!result.text.includes('# a shell comment'))
+  })
 })
 
 describe('global trims the gentle-ai review sections', () => {
