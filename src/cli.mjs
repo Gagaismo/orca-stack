@@ -2,6 +2,7 @@ import { doctorCommand } from './doctor.mjs'
 import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
 import { removeCommand } from './remove.mjs'
+import { sesionesCommand } from './sesiones.mjs'
 import { packageVersion } from './util.mjs'
 
 const USAGE = `orca-stack ${packageVersion()}: instala el stack de agentes (política de Orca, skills, wrappers, Pi + Gentle Shell y mods de Claude Code).
@@ -21,6 +22,8 @@ Opciones:
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
+  --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
+  --limite <n>     (sesiones) Cuántas sesiones mostrar (por defecto: 10).
   --humano <nombre> (global) Nombre que usan los mods para hablarte (por defecto: git config user.name).
   --with-pi        (remove) También desinstala los paquetes de Pi y gentle-pi global que instaló \`global\`.
   -v, --version    Muestra la versión.
@@ -57,6 +60,14 @@ las versiones de Pi y sus paquetes con las fijadas, sondea el login de Pi, compr
 CLAUDE_CODE_PLUGIN_DIRS y lee (solo lectura) la configuración de Orca para ver si los agentes apuntan a los wrappers.
 Sale con código 1 si hay alguna falla (✖). Los avisos (⚠) no cambian el código de salida.
 `,
+  sesiones: `orca-stack sesiones [--desde <AAAA-MM-DD>] [--limite <n>]
+
+Lista, de solo lectura, las sesiones recientes de agentes en esta máquina: transcripciones de Claude Code
+(~/.claude/projects y, si está, la carpeta de agentes.pi.claudeConfigDir), sesiones de Pi (~/.pi/agent/sessions) y
+conversaciones de agy (~/.gemini/antigravity-cli; necesita Node 22.13 o más nuevo). De cada una muestra herramienta,
+carpeta, inicio y fin, llamadas, tus mensajes, las llamadas con error y los resultados de más de 15k caracteres.
+Sirve de entrada para \`/retro\`.
+`,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
 Borra los archivos que instaló \`global\`, restaura los que había reemplazado, quita sus entradas de
@@ -65,7 +76,7 @@ CLAUDE_CODE_PLUGIN_DIRS y su bloque de ~/.claude/CLAUDE.md. Los respaldos de ~/.
 }
 
 export const parseArgs = argv => {
-  const flags = { dryRun: false, force: false, skipPi: false, offline: false, withPi: false, humano: undefined, help: false, version: false }
+  const flags = { dryRun: false, force: false, skipPi: false, offline: false, withPi: false, humano: undefined, desde: undefined, limite: undefined, help: false, version: false }
   const rest = []
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
@@ -80,6 +91,12 @@ export const parseArgs = argv => {
       flags.humano = argv[i + 1] ?? ''
       i += 1
     } else if (arg.startsWith('--humano=')) flags.humano = arg.slice('--humano='.length)
+    else if (arg === '--desde' || arg === '--limite') {
+      flags[arg.slice(2)] = argv[i + 1] ?? ''
+      i += 1
+    } else if (arg.startsWith('--desde=') || arg.startsWith('--limite=')) {
+      flags[arg.slice(2, arg.indexOf('='))] = arg.slice(arg.indexOf('=') + 1)
+    }
     else if (arg.startsWith('-')) throw new Error(`Opción desconocida: ${arg}`)
     else rest.push(arg)
   }
@@ -125,6 +142,8 @@ export const main = async argv => {
         return await doctorCommand(flags)
       case 'remove':
         return await removeCommand(flags)
+      case 'sesiones':
+        return await sesionesCommand(flags)
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 
