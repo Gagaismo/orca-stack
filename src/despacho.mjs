@@ -4,7 +4,7 @@ import path from 'node:path'
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
-import { homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
+import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
 
 export const AGENTS = ['claude', 'agy', 'codex', 'codex-cc', 'pi']
 const CODEX_FAMILY = ['codex', 'codex-cc']
@@ -62,12 +62,12 @@ export const modelFor = (config, agent, mode) => {
 const psQuote = text => `'${text.replace(/'/g, "''")}'`
 const shQuote = text => `'${text.replace(/'/g, "'\\''")}'`
 
-// The command typed into the Orca terminal. PowerShell on Windows (the Orca terminal there), POSIX sh elsewhere.
-// win is the target shell, not the host: PowerShell on win32 (Orca's terminal there), POSIX elsewhere. Paths follow it.
+// The command typed into the Orca terminal. `win` is the target shell, not the host: PowerShell on win32 (Orca's
+// terminal there), POSIX elsewhere. Paths follow it.
 export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills }) => {
   const { model, effort } = modelFor(config, agent, mode)
   const P = win ? path.win32 : path.posix
-  const wrapper = P.join(home, 'orca', 'stack', 'scripts', wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
+  const wrapper = P.join(home, ...SCRIPTS_REL, wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
   const bin = (win ? '& ' : '') + `"${wrapper}"`
   if (agent === 'claude' || agent === 'agy') return `${bin} --dangerously-skip-permissions${model ? ` --model ${model}` : ''}`
   if (agent === 'codex' || agent === 'codex-cc') {
