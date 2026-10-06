@@ -134,8 +134,8 @@ Si no hay tiempo para todo, respondé A1, B1, C1, C3, C4 y F1. Con eso alcanza p
 
 **A4. ¿Quedaron restos de otros flujos o de instalaciones anteriores?** [Empezado]
 - Por qué importa: los métodos que compiten confunden a los agentes, y los bloques viejos del stack se duplican con el nuevo.
-- Buscá: carpetas `openspec/` o instrucciones `sdd-*` (Gentle AI SDD), superpowers, gstack, bloques `<!-- orca-stack:auto -->`, secciones "Orca stack integration" sin marcadores y secciones de verificación con TestSprite (ya no forma parte de la política).
-- Acción: sacalos **antes** de `init`, en un commit aparte o con `git stash`, nunca borrando a ciegas. En `AGENTS.md` dejá escrito que el método de Matt anula cualquier sección inyectada que proponga "optional SDD".
+- Buscá: carpetas `openspec/` o instrucciones `sdd-*` (Gentle AI SDD), superpowers, gstack, secciones "Orca stack integration" sin marcadores y secciones de verificación con TestSprite (ya no forma parte de la política).
+- Acción: sacalos **antes** de `init`, en un commit aparte o con `git stash`, nunca borrando a ciegas. Los bloques `<!-- orca-stack:auto -->` no hace falta sacarlos: `init` los reemplaza por el bloque actual. En `AGENTS.md` dejá escrito que el método de Matt es el de por defecto y que el SDD de Gentle AI se usa solo cuando se pide explícitamente.
 
 **A5. ¿Hay trabajo en curso: ramas abiertas, PRs o worktrees de Orca?** [Empezado]
 - Por qué importa: si el setup se commitea en la rama de un ticket, se mezcla con ese trabajo.
@@ -269,7 +269,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 2. **Contrato:** creá `AGENTS.md` a partir de la plantilla del Apéndice B, con las respuestas de C4 y del bloque F. **Todavía no crees `CLAUDE.md`.**
 3. **Método:** escribí `/setup-matt-pocock-skills` (B1 a B3). Como todavía no hay `CLAUDE.md`, la skill escribe su sección en `AGENTS.md`, que es lo que querés.
 4. **Punteros:** creá `CLAUDE.md` y `GEMINI.md` con una sola línea: `@AGENTS.md`.
-5. **orca-stack:** `npx github:Gagaismo/orca-stack#v0.2.0 init`. Como `CLAUDE.md` es solo un puntero, le pone un bloque corto, y el bloque completo va en `AGENTS.md`. Además crea `.orca-stack.json`, un `.orca-stack.local.json` vacío y la línea en `.gitignore`.
+5. **orca-stack:** `npx github:Gagaismo/orca-stack#v0.2.0 init`. A `CLAUDE.md` le pone un bloque corto, y el bloque completo va en `AGENTS.md`. Además crea `.orca-stack.json`, un `.orca-stack.local.json` vacío y la línea en `.gitignore`.
 6. **Config de los mods:** completá los dos `.orca-stack*.json` con las respuestas de D y E. Si no despachás con scripts y no tenés destinatarios, no hay nada que agregar.
 7. **Worktrees:** creá `orca.yaml` y `.worktreeinclude` (C1 a C3).
 8. **Orquestación:** agregá `docs/agents/orchestration.md` y `orca-dag.md` (G).
@@ -282,7 +282,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 1. **Rama:** creá una rama aparte desde `main` (A5).
 2. **Inventario:** listá todas las instrucciones para agentes y los restos de otros flujos (A3 y A4). Mirá cada diff antes de tocar nada.
 3. **Limpieza:** sacá los bloques viejos y los métodos que compiten, con commit aparte o `git stash`. No borres a ciegas.
-4. **Consolidación:** dejá `AGENTS.md` como contrato y `CLAUDE.md` y `GEMINI.md` como `@AGENTS.md`. Si `CLAUDE.md` necesita reglas propias, que no pase de 12 líneas con contenido: con más, `init` le pone el bloque completo de la política además del de `AGENTS.md` y Claude la carga dos veces. Si necesitás más, pasalas a otro archivo e importalo.
+4. **Consolidación:** dejá `AGENTS.md` como contrato y `CLAUDE.md` y `GEMINI.md` como `@AGENTS.md`. Las reglas que valgan solo para Claude pueden quedar en `CLAUDE.md`. `init` le pone un bloque corto con `@AGENTS.md` si todavía no lo importa: Claude Code deja de leer `AGENTS.md` por su cuenta en cuanto existe un `CLAUDE.md`.
 5. **Método:** escribí `/setup-matt-pocock-skills`. La skill edita `CLAUDE.md` si existe. Cuando te muestre el borrador, pedile explícitamente que lo escriba en `AGENTS.md` (o movelo vos después), para que Codex también lo lea. Respeta lo que ya haya en `docs/agents/`.
 6. **Dominio:** una sesión de `/domain-modeling` con vos sobre el código (B5).
 7. **orca-stack:** primero `init --dry-run` y después `init`. Si avisa marcadores duplicados o incompletos, arreglalos a mano y volvé a correrlo.
@@ -657,7 +657,7 @@ Tickets close on merge.
 | Pregunta | Respuesta | Dónde quedó |
 | --- | --- | --- |
 | A1 | Empezado: app con historial, issues y una instalación anterior del stack | Recorrido B |
-| A4 | Bloques `orca-stack:auto` viejos en `AGENTS.md`, `CLAUDE.md` y `GEMINI.md` | Guardados con `git stash` antes de `init` |
+| A4 | Bloques `orca-stack:auto` viejos en `AGENTS.md`, `CLAUDE.md` y `GEMINI.md` | `init` los reemplazó por el bloque actual |
 | B1 | GitHub Issues con dependencias nativas | `docs/agents/issue-tracker.md` |
 | B3 | Un solo contexto | `CONTEXT.md` + `docs/adr/` |
 | C1 y C2 | npm; antes compartía `node_modules` y además corría `npm ci` | `orca.yaml` sin `sharedDirectories`, con `setup: npm ci` |

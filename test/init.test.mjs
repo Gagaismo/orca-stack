@@ -68,20 +68,53 @@ describe('init', () => {
     assert.equal(backups(home).filter(b => b.includes('AGENTS.md')).length, 1)
   })
 
-  test('a CLAUDE.md that only points at AGENTS.md gets the short pointer', () => {
+  // Claude Code skips its own AGENTS.md loading once a CLAUDE.md exists, so the import is what loads the contract.
+  const imports = text => text.split(/\r?\n/).filter(line => line.trim() === '@AGENTS.md').length
+
+  test('a new CLAUDE.md imports AGENTS.md instead of asking to read it', () => {
+    run()
+    const text = read(path.join(repo, 'CLAUDE.md'))
+    assert.equal(imports(text), 1)
+    assert.doesNotMatch(text, /Orca runtime\/active Dispatch/, 'the policy is loaded once, through AGENTS.md')
+  })
+
+  test('an existing CLAUDE.md keeps its content and gets the import inside the block', () => {
     write(path.join(repo, 'CLAUDE.md'), '# CLAUDE.md\n\nEl contrato de trabajo es AGENTS.md. Leelo entero.\n')
     run()
     const text = read(path.join(repo, 'CLAUDE.md'))
-    assert.ok(text.startsWith('# CLAUDE.md'))
+    assert.ok(text.startsWith('# CLAUDE.md\n\nEl contrato de trabajo es AGENTS.md. Leelo entero.\n'))
     const block = text.slice(text.indexOf('<!-- orca-stack:begin -->'))
-    assert.ok(block.split('\n').length < 8, 'short block')
-    assert.match(block, /AGENTS\.md/)
+    assert.equal(imports(block), 1)
+    assert.doesNotMatch(block, /Orca runtime\/active Dispatch/, 'short block')
   })
 
-  test('a CLAUDE.md with real content gets the full block', () => {
+  test('a CLAUDE.md with many rules also gets the short block, not the policy twice', () => {
     write(path.join(repo, 'CLAUDE.md'), Array.from({ length: 20 }, (_, i) => `Regla ${i}`).join('\n') + '\n')
     run()
-    assert.match(read(path.join(repo, 'CLAUDE.md')), /Orca runtime\/active Dispatch/)
+    const text = read(path.join(repo, 'CLAUDE.md'))
+    assert.equal(imports(text), 1)
+    assert.doesNotMatch(text, /Orca runtime\/active Dispatch/)
+  })
+
+  test('a CLAUDE.md that already imports AGENTS.md is not given a second import', () => {
+    write(path.join(repo, 'CLAUDE.md'), '@AGENTS.md\n')
+    run()
+    assert.equal(imports(read(path.join(repo, 'CLAUDE.md'))), 1)
+  })
+
+  test('migrates the legacy orca-stack:auto block instead of adding a second one', () => {
+    const legacy = '<!-- orca-stack:auto -->\n## Orca Stack integration\n\nRead C:\\Users\\x\\orca\\stack\\ORCA-STACK.md.\n<!-- /orca-stack:auto -->\n'
+    write(path.join(repo, 'AGENTS.md'), `# Contrato\n\n${legacy}\n## TestSprite\n`)
+    write(path.join(repo, 'CLAUDE.md'), `# CLAUDE.md\n\n${legacy}`)
+    const result = run()
+    assert.equal(result.status, 0, result.out)
+    for (const file of ['AGENTS.md', 'CLAUDE.md']) {
+      const text = read(path.join(repo, file))
+      assert.doesNotMatch(text, /orca-stack:auto/, file)
+      assert.doesNotMatch(text, /C:\\Users/, file)
+      assert.equal(text.split('<!-- orca-stack:begin -->').length, 2, file)
+    }
+    assert.match(read(path.join(repo, 'AGENTS.md')), /<!-- orca-stack:end -->\n\n## TestSprite\n$/)
   })
 
   test('fails clearly outside a git repo', () => {
