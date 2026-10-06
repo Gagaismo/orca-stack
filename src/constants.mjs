@@ -27,6 +27,10 @@ export const MARKER_END = '<!-- orca-stack:end -->'
 export const LEGACY_BEGIN = '<!-- orca-stack:auto -->'
 export const LEGACY_END = '<!-- /orca-stack:auto -->'
 
+// Oldest version of the Matt Pocock plugin the work contract works with, and the skills it relies on.
+export const MATT_MIN_VERSION = '1.3.1'
+export const MATT_REQUIRED_SKILLS = ['pr', 'implement-spec', 'retro']
+
 export const PROJECT_CONFIG = '.orca-stack.json'
 export const PROJECT_LOCAL_CONFIG = '.orca-stack.local.json'
 
@@ -52,7 +56,14 @@ export const INSTALL_HINTS = {
     'Windows, Linux y macOS: https://github.com/stablyai/orca/releases/latest',
   ],
   gh: ['https://cli.github.com (después: gh auth login)'],
-  mattpocock: ['claude plugin install mattpocock-skills@claude-plugins-official'],
+  // Matt's own marketplace ships the current version under the same plugin name (the official one pins an old sha),
+  // so /mattpocock-skills:<skill> keeps working.
+  mattpocock: [
+    'claude plugin marketplace add mattpocock/skills',
+    'claude plugin install mattpocock-skills@mattpocock',
+  ],
+  // For codex and agy, which read ~/.agents/skills.
+  mattpocockAgents: ["npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y"],
   caveman: [
     'claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman',
     'Otras formas (todos los agentes): npx skills add JuliusBrussee/caveman -g',

@@ -12,6 +12,7 @@ export type StackConfig = {
   humano?: string
   mensajes?: { destinatarios?: string[] }
   despacho?: { script?: string; revisar?: string }
+  riesgo?: string[] // path globs whose change needs a second review (pi) before merging
   guardia?: {
     bloquear?: { agente: string; hasta: string; motivo?: string }[]
     modeloClaude?: string

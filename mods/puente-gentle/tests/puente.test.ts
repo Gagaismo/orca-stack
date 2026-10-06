@@ -6,7 +6,11 @@ import {
   MARCO,
   buildArgs,
   changeName,
+  globToRegExp,
+  hasPiReview,
   merges,
+  piClaudeConfigDir,
+  riskyFile,
   parsePiArgs,
   parseStream,
   remember,
@@ -178,7 +182,7 @@ for (const tool of ['Bash', 'PowerShell'] as const) {
     await boot($)
     const denied = await $.tool.call({ tool, command: 'gh pr merge 612 --squash' } as never)
     expect(denied.deny).toBe('PR #612 grande (450 líneas): consultá a Gentle Shell (tema pr-612) antes de mergear.')
-    expect(w.calls[0]!.argv).toEqual(['gh', 'pr', 'view', '612', '--json', 'additions,deletions'])
+    expect(w.calls[0]!.argv).toEqual(['gh', 'pr', 'view', '612', '--json', 'additions,deletions,files,headRefOid,comments,reviews'])
 
     await consult($, { tema: 'pr-612', planteo: 'p', pregunta: 'q' })
     const allowed = await $.tool.call({ tool, command: 'gh pr merge 612 --squash' } as never)
@@ -356,4 +360,131 @@ test('with no Gentle Shell skills anywhere the consult still runs, without --ski
   const piCall = w.calls.find(call => call.argv[0] === 'node')!
   expect(piCall.argv).toContain('--no-skills')
   expect(piCall.argv).not.toContain('--skill')
+})
+
+const BS = String.fromCharCode(92)
+
+test('globToRegExp: * stays in a segment, ** crosses them, **/ may match nothing, a trailing / is a prefix', () => {
+  const m = (glob: string, path: string) => globToRegExp(glob).test(path)
+  expect(m('src/auth/**', 'src/auth/login/form.ts')).toBe(true)
+  expect(m('src/auth/*', 'src/auth/login/form.ts')).toBe(false)
+  expect(m('**/migrations/**', 'db/migrations/001.sql')).toBe(true)
+  expect(m('**/migrations/**', 'migrations/001.sql')).toBe(true)
+  expect(m('package-lock.json', 'package-lock.json')).toBe(true)
+  expect(m('package-lock.json', 'xpackage-lock.json')).toBe(false)
+  expect(m('*.lock', 'yarn.lock')).toBe(true)
+  expect(m('db/m?.sql', 'db/m1.sql')).toBe(true)
+  expect(m('deploy/', 'deploy/a/b.yml')).toBe(true)
+  expect(m('a.b+c', 'a.b+c')).toBe(true)
+  expect(m('a.b', 'axb')).toBe(false)
+  const win = ['db', 'migrations', '1.sql'].join(BS)
+  expect(riskyFile(['x.ts', win], ['**/migrations/**'])).toBe(win)
+  expect(riskyFile(['x.ts'], ['', '  '])).toBeUndefined()
+})
+
+test('hasPiReview wants Revisor: pi and the head commit among the first lines of one body', () => {
+  const oid = 'abc1234def5678abc1234def5678abc1234def56'
+  expect(hasPiReview([`Revisor: pi\nCommit: ${oid}\n\n## BLOQUEA\nnada`], oid)).toBe(true)
+  expect(hasPiReview(['Revisor: pi\r\nCommit: abc1234\r\n'], oid)).toBe(true)
+  expect(hasPiReview([`Revisor: agy\nCommit: ${oid}`], oid)).toBe(false)
+  expect(hasPiReview(['Revisor: pi\nCommit: 1111111'], oid)).toBe(false)
+  expect(hasPiReview(['Revisor: pi'], oid)).toBe(false)
+  expect(hasPiReview([`Revisor: pi\n\n\n\n\n\nCommit: ${oid}`], oid)).toBe(false)
+  expect(hasPiReview(['Revisor: pi', `Commit: ${oid}`], oid)).toBe(false) // two bodies: both lines must be in one
+})
+
+const OID = 'abc1234def5678abc1234def5678abc1234def56'
+// The engine may resolve paths for the host OS: offer the config under every spelling.
+const RISK_CONFIG = JSON.stringify({ riesgo: ['**/migrations/**', 'package-lock.json'] })
+const RISK_FILES = {
+  'C:/w/repo/.orca-stack.json': RISK_CONFIG,
+  [['C:', 'w', 'repo', '.orca-stack.json'].join(BS)]: RISK_CONFIG,
+  '/w/repo/.orca-stack.json': RISK_CONFIG,
+}
+const pr =
+  (paths: string[], extra: Record<string, unknown> = {}): ((argv: readonly string[]) => Run) =>
+  argv =>
+    argv[0] === 'gh'
+      ? {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            additions: 10,
+            deletions: 5,
+            files: paths.map(path => ({ path })),
+            headRefOid: OID,
+            comments: [],
+            reviews: [],
+            ...extra,
+          }),
+          stderr: '',
+        }
+      : argv[0] === 'git'
+        ? { exitCode: 0, stdout: 'C:/w/repo/.git\nC:/w/repo\n', stderr: '' }
+        : ok()
+
+for (const tool of ['Bash', 'PowerShell'] as const) {
+  test(`${tool}: a PR touching a riesgo path needs a pi review of its head commit`, async ($, on) => {
+    const w = setup(on, pr(['src/a.ts', 'db/migrations/001.sql']), {}, { files: RISK_FILES })
+    await boot($)
+    const denied = await $.tool.call({ tool, command: 'gh pr merge 7 --squash' } as never)
+    expect(denied.deny).toBe(
+      'PR #7 toca una ruta de riesgo (db/migrations/001.sql): falta un review de pi sobre el commit abc1234. Corré `orca-stack revisar 7 pi` y mergeá cuando el review esté limpio.',
+    )
+    expect(w.calls[0]!.argv.slice(0, 5)).toEqual(['gh', 'pr', 'view', '7', '--json'])
+  })
+}
+
+test('riesgo: a pi review on the head commit (review body or comment) lets it through; an old commit does not', async ($, on) => {
+  let extra: Record<string, unknown> = { reviews: [{ body: `Revisor: pi\nCommit: ${OID}\n\n## BLOQUEA\nnada` }] }
+  setup(on, argv => pr(['package-lock.json'], extra)(argv), {}, { files: RISK_FILES })
+  await boot($)
+  const merge = () => $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)
+  expect((await merge()).deny).toBeUndefined()
+  extra = { comments: [{ body: 'Revisor: pi\nCommit: abc1234' }] }
+  expect((await merge()).deny).toBeUndefined()
+  extra = { reviews: [{ body: 'Revisor: pi\nCommit: 0000000' }] }
+  expect((await merge()).deny).toContain('ruta de riesgo')
+})
+
+test('riesgo: untouched paths and an odd gh answer pass', async ($, on) => {
+  let run = pr(['src/a.ts'])
+  setup(on, argv => run(argv), {}, { files: RISK_FILES })
+  await boot($)
+  const merge = () => $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)
+  expect((await merge()).deny).toBeUndefined()
+  run = pr(['package-lock.json'], { files: 'nope' })
+  expect((await merge()).deny).toBeUndefined()
+})
+
+test('riesgo: the size rule still comes first and is unchanged', async ($, on) => {
+  setup(on, pr(['db/migrations/1.sql'], { additions: 500, deletions: 0 }), {}, { files: RISK_FILES })
+  await boot($)
+  const denied = await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)
+  expect(denied.deny).toContain('grande (500 líneas)')
+})
+
+test('piClaudeConfigDir reads only agentes.pi.claudeConfigDir and expands ~', () => {
+  const cfg = (dir: unknown) => JSON.stringify({ agentes: { pi: { claudeConfigDir: dir } } })
+  expect(piClaudeConfigDir(cfg(['D:', 'claude-pi'].join(BS)), 'x')).toBe(['D:', 'claude-pi'].join(BS))
+  expect(piClaudeConfigDir(cfg('~/.claude-pi'), ['C:', 'Users', 't'].join(BS))).toBe(['C:', 'Users', 't', '.claude-pi'].join(BS))
+  expect(piClaudeConfigDir(cfg('~'), '/home/t')).toBe('/home/t')
+  for (const bad of [undefined, '', 'no json', cfg(''), cfg(3), JSON.stringify({ agentes: {} })]) {
+    expect(piClaudeConfigDir(bad, '/home/t')).toBeUndefined()
+  }
+})
+
+test('with agentes.pi.claudeConfigDir the consult runs pi with CLAUDE_CONFIG_DIR', async ($, on) => {
+  const file = ['C:', 'Users', 'tester', '.orca-stack', 'config.json'].join(BS)
+  const dir = ['C:', 'Users', 'tester', '.claude-pi'].join(BS)
+  const w = setup(on, () => ok('hola'), {}, { files: { [file]: JSON.stringify({ agentes: { pi: { claudeConfigDir: dir } } }) } })
+  await boot($)
+  await consult($, { tema: 'a', planteo: 'p', pregunta: 'q' })
+  expect(w.calls[0]!.init.env?.CLAUDE_CONFIG_DIR).toBe(dir)
+})
+
+test('without that key the consult does not set CLAUDE_CONFIG_DIR', async ($, on) => {
+  const w = setup(on, () => ok('hola'))
+  await boot($)
+  await consult($, { tema: 'a', planteo: 'p', pregunta: 'q' })
+  expect(w.calls[0]!.init.env).not.toHaveProperty('CLAUDE_CONFIG_DIR')
 })

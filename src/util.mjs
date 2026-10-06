@@ -17,10 +17,13 @@ export const homeDir = () => process.env.ORCA_STACK_HOME || os.homedir()
 export const platform = () => process.env.ORCA_STACK_PLATFORM || process.platform
 export const isWindows = () => platform() === 'win32'
 
+// Where the wrappers live, relative to the home: shared with the launchers, which build it for the target platform.
+export const SCRIPTS_REL = ['orca', 'stack', 'scripts']
+
 export const layout = (home = homeDir()) => ({
   home,
   stackDir: path.join(home, 'orca', 'stack'),
-  scriptsDir: path.join(home, 'orca', 'stack', 'scripts'),
+  scriptsDir: path.join(home, ...SCRIPTS_REL),
   claudeDir: path.join(home, '.claude'),
   agentsDir: path.join(home, '.agents'),
   settings: path.join(home, '.claude', 'settings.json'),

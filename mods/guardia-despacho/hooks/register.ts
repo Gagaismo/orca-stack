@@ -2,7 +2,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { currentConfig } from './orca-config'
 import type { Host } from './orca-config'
-import { buildRules, inspect } from './inspect'
+import { buildRules, checkRemovals, inspect } from './inspect'
 import type { Shell } from './inspect'
 
 // The engine's `$` cannot cross an import: the config module gets these closures instead.
@@ -20,6 +20,11 @@ let noted = false
 type Judgement = { deny: string } | { command: string } | undefined
 
 const judge = async ($: EngineInterface, command: string, shell: Shell): Promise<Judgement> => {
+  // Always on, with or without despacho: removing a worktree can destroy unpublished commits.
+  const unsafe = await checkRemovals(command, argv => $.process.run(argv, { timeoutMs: 10_000 }))
+  if (unsafe !== undefined) {
+    return { deny: unsafe }
+  }
   // OFF unless the project config declares `despacho`.
   const rules = buildRules(await currentConfig(hostOf($)))
   if (rules === undefined) {

@@ -250,9 +250,9 @@ describe('doctor', () => {
   test('the machine-specific launchers live in the rendered ORCA-STACK.md, not in the project contract', () => {
     cli(home, ['global', '--skip-pi'])
     const policy = read(path.join(home, 'orca', 'stack', 'ORCA-STACK.md'))
-    assert.match(policy, /Launching agents for a manual dispatch/)
+    assert.match(policy, /## Launching agents/)
     assert.doesNotMatch(policy, /{{[A-Z_]+}}/)
-    for (const agent of ['claude:', 'agy:', 'codex:', 'codex-cc:']) assert.ok(policy.includes(`- ${agent}`), agent)
+    for (const agent of ['claude:', 'agy:', 'codex:', 'codex-cc:', 'pi (Gentle Shell):']) assert.ok(policy.includes(`- ${agent}`), agent)
     assert.match(policy, /claude-orca-stack/)
     assert.match(policy, /model_provider=cc/)
     const contract = read(path.join(ROOT, 'assets', 'stack', 'CONTRATO.md'))

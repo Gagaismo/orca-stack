@@ -2,13 +2,13 @@
 
 Esta guía deja una máquina y un proyecto listos para trabajar con el stack de agentes: Orca ejecuta, las skills de Matt Pocock definen el método y orca-stack instala la política, los wrappers, Ponytail y los mods de Claude Code. Tiene dos partes. La de la máquina se hace una sola vez. La del proyecto se hace en cada repo y se guía con un cuestionario que cambia según el proyecto arranque de cero o ya esté empezado.
 
-Versión de referencia: `orca-stack v0.3.0` (octubre de 2026). Si sale una versión nueva, cambiá la etiqueta `#v0.3.0` en los comandos. Lo marcado `UNKNOWN / MUST VERIFY` no está confirmado: verificalo antes de darlo por cierto.
+Versión de referencia: `orca-stack v0.4.0` (octubre de 2026). Si sale una versión nueva, cambiá la etiqueta `#v0.4.0` en los comandos. Lo marcado `UNKNOWN / MUST VERIFY` no está confirmado: verificalo antes de darlo por cierto.
 
 ---
 
 ## Ruta rápida
 
-1. **Máquina, una sola vez:** `npx github:Gagaismo/orca-stack#v0.3.0 global`, completá los pasos manuales que imprime y verificá con `doctor`.
+1. **Máquina, una sola vez:** `npx github:Gagaismo/orca-stack#v0.4.0 global`, completá los pasos manuales que imprime y verificá con `doctor`.
 2. **Proyecto:** respondé el cuestionario de la Parte 2 y seguí el recorrido que te toca: **A** si arrancás de cero, **B** si ya está empezado.
 3. **Cierre:** corré la verificación final (Parte 5) y commiteá el setup en una rama propia.
 
@@ -19,8 +19,8 @@ Versión de referencia: `orca-stack v0.3.0` (octubre de 2026). Si sale una versi
 | Pieza | Qué hace | Quién la instala |
 | --- | --- | --- |
 | Orca | Corre los Runs, las Tasks, los worktrees y los workers en paralelo | Instalador oficial (github.com/stablyai/orca) |
-| Skills de Matt Pocock | Son el método: grill, spec, tickets, implement con TDD y review | Claude Code: `claude plugin install mattpocock-skills@claude-plugins-official`. Codex y Antigravity: ver la nota debajo |
-| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, Ponytail y los 7 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.3.0 global` |
+| Skills de Matt Pocock | Son el método: grill, spec, tickets, implement con TDD y review | Claude Code: `claude plugin marketplace add mattpocock/skills` y `claude plugin install mattpocock-skills@mattpocock` (versión 1.3.1 o más nueva). Codex y Antigravity: ver la nota debajo |
+| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, Ponytail y los 7 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.4.0 global` |
 | Gentle Shell (Pi) | Un segundo orquestador al que Claude consulta en las decisiones | Pi con su instalador oficial; los paquetes los instala `global` |
 | Engram | Memoria entre sesiones (no planifica ni decide) | Instalador propio de Engram |
 | gentle-ai | Context7, permisos de Claude Code y skills extra | Instalador propio de gentle-ai |
@@ -29,7 +29,9 @@ Versión de referencia: `orca-stack v0.3.0` (octubre de 2026). Si sale una versi
 Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con el suyo y puede usar SDD; el SDD de gentle-ai se usa solo si lo pedís. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
 
 **Nota sobre las skills de Matt:**
-- El plugin solo las instala para Claude Code. Si Codex o Antigravity van a usarlas, tienen que estar en `~/.agents/skills` (`UNKNOWN / MUST VERIFY`: el comando exacto está en el README de `mattpocock/skills`).
+- El plugin solo las instala para Claude Code. Si Codex o Antigravity van a usarlas, tienen que estar en `~/.agents/skills`: `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`.
+- Instalá el plugin desde el marketplace del propio Matt (`mattpocock/skills`), no desde el oficial: el oficial fija una versión vieja (1.2.3). Matt publica la 1.3.1 con el mismo nombre de plugin, así que `/mattpocock-skills:<skill>` sigue andando. La 1.3 agrega `pr` (cuerpos de PR con evidencia y riesgo de merge), `implement-spec` (implementa una spec con sus tickets en una rama de integración) y `retro` (mirar las sesiones pasadas y proponer mejoras), quita `resolving-merge-conflicts` y solo busca `GLOSSARY.md` en lugar de `CONTEXT.md`.
+- Para alimentar `/retro` con las sesiones de todos los agentes (Claude Code, Pi y agy), corré `orca-stack sesiones`: lista las recientes en un formato compacto (`--desde <AAAA-MM-DD>`, `--limite <n>`).
 - Elegí **una sola vía por proveedor**. Si las tenés como plugin y también sueltas en `~/.claude/skills`, quedan duplicadas.
 - Casi todas (`/setup-matt-pocock-skills`, `/wayfinder`, `/grill-with-docs`, `/to-spec`, `/to-tickets`, `/triage`, `/implement`) **solo se activan cuando una persona escribe el comando**: un agente no las puede invocar por su cuenta. En Codex se escriben con `$` en vez de `/`.
 
@@ -49,18 +51,18 @@ Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el mét
 
 ```bash
 # 1. Mirá qué va a hacer, sin escribir nada
-npx github:Gagaismo/orca-stack#v0.3.0 global --dry-run
+npx github:Gagaismo/orca-stack#v0.4.0 global --dry-run
 
 # 2. Instalá (--humano fija cómo te nombran los mods; si no, sale de git config user.name)
-npx github:Gagaismo/orca-stack#v0.3.0 global --humano "Tu nombre"
+npx github:Gagaismo/orca-stack#v0.4.0 global --humano "Tu nombre"
 
 # 3. Verificá, parado en la raíz de un proyecto
-npx github:Gagaismo/orca-stack#v0.3.0 doctor
+npx github:Gagaismo/orca-stack#v0.4.0 doctor
 ```
 
 - `global` respalda todo lo que toca en `~/.orca-stack/backups/<fecha>/` y anota lo que instaló en `~/.orca-stack/state.json`. `remove` lo deshace.
 - Si Pi, gentle-pi o pi-claude-bridge faltan o están en otra versión, `global` instala la versión fijada **aunque no uses `--force`**. Si querés conservar tus versiones de Pi, agregá `--skip-pi`.
-- Al final, `global` sugiere `doctor` e `init` sin la etiqueta de versión. Usalos con `#v0.3.0`.
+- Al final, `global` sugiere `doctor` e `init` sin la etiqueta de versión. Usalos con `#v0.4.0`.
 
 ### Pasos manuales que imprime `global`
 
@@ -68,16 +70,20 @@ npx github:Gagaismo/orca-stack#v0.3.0 doctor
 2. Abrí `pi` y corré `/login`. Sin login, Gentle Shell no responde.
 3. Corré `gh auth login` (lo necesitan el tablero de PRs y el puente).
 4. Corré `gentle-ai sync`.
-5. Instalá las skills de Matt Pocock y Caveman con los comandos del mapa.
+5. Instalá las skills de Matt Pocock (Claude Code con el marketplace de Matt y, para agy y codex, `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`) y Caveman con los comandos del mapa.
 6. Reiniciá Claude Code: los mods se cargan en las sesiones nuevas.
 
 Además, instalá lo que `global` marque como faltante.
 
 **Resultado esperado de `doctor`:** **0 fallas** (✖), y cada aviso (⚠) leído y entendido. Es normal ver algún aviso, por ejemplo un perfil de Orca sin override o una versión de Pi distinta de la probada. Corrélo desde la raíz de un proyecto: así también revisa sus `.orca-stack*.json` y que existan sus scripts de despacho.
 
+### Qué hace `global` con el `CLAUDE.md` de gentle-ai
+
+Si gentle-ai está instalado y su desarrollo guiado por recibos (RDD) está apagado (`gentle-ai review mode status` empieza con `receipt-driven development: off`), `global` saca de `~/.claude/CLAUDE.md` las secciones de review del bloque `gentle-ai:sdd-orchestrator`: no hacen nada con RDD apagado y se cargan igual en cada sesión (unos 26 KB). Hace respaldo, es idempotente, respeta `--dry-run` e imprime cuántos KB sacó. Si RDD está prendido o gentle-ai no está, lo omite y dice por qué. **`gentle-ai sync` las vuelve a escribir**, así que después de cada sync corré `orca-stack global` de nuevo; `doctor` avisa si volvieron.
+
 ### Qué va en la configuración personal
 
-`~/.orca-stack/config.json` vale para **todos** tus proyectos, así que ahí va solo lo tuyo: `humano` (cómo te nombran los mods). Todo lo que nombra personas, scripts o proveedores de un proyecto (destinatarios de mensajes, scripts de despacho, bloqueos, modelo obligatorio) va en la configuración de **ese** proyecto. Si no, aparece en cada setup nuevo y hay que apagarlo a mano.
+`~/.orca-stack/config.json` vale para **todos** tus proyectos, así que ahí va solo lo tuyo: `humano` (cómo te nombran los mods), los modelos y esfuerzos de cada agente (`agentes.modelos`) y la cuenta de Claude que usa pi (`agentes.pi.claudeConfigDir`). Todo lo que nombra personas, scripts o proveedores de un proyecto (destinatarios de mensajes, scripts de despacho, bloqueos, modelo obligatorio) va en la configuración de **ese** proyecto. Si no, aparece en cada setup nuevo y hay que apagarlo a mano.
 
 ### Si la máquina ya tenía una instalación anterior
 
@@ -91,7 +97,7 @@ Pasa si el stack se armó a mano antes de que existiera el instalador. El `--dry
 4. Corré `global --dry-run --force` y leé la lista completa. Que corra `pi install` o `npm i -g gentle-pi` es esperable si tus versiones no coinciden con las fijadas.
 5. Corré `global --force`. Todo lo que reemplaza queda respaldado.
 6. **Revisá `CLAUDE_CODE_PLUGIN_DIRS`** en `~/.claude/settings.json`. `global` conserva las entradas que ya había: si un mod viejo vivía en otra carpeta, queda cargado junto al nuevo. Dejá solo los 7 mods de `~/.claude/mods/`.
-7. **Revisá si las skills de Matt están duplicadas** (como plugin y sueltas) y dejá una sola vía.
+7. **Revisá si las skills de Matt están duplicadas** (como plugin y sueltas) y dejá una sola vía. `doctor` lo avisa, con el comando `npx skills remove <nombres> -g -a claude-code -y`.
 8. **Borrá los instaladores viejos** (por ejemplo, un script que copiaba los mods a mano): si alguien los corre, vuelven a copiar los mods anteriores encima de los nuevos.
 9. Corré `doctor`.
 
@@ -155,22 +161,22 @@ Si no hay tiempo para todo, respondé A1, B1, C1, C3, C4 y F1. Con eso alcanza p
 - Acción: `docs/agents/triage-labels.md`.
 
 **B3. ¿El dominio es uno solo o hay varios contextos?** [Ambos; solo si hay señales de monorepo: `pnpm-workspace.yaml`, `workspaces` en `package.json` o `packages/*` con código propio]
-- Opciones: **Uno solo: un `CONTEXT.md` y `docs/adr/` en la raíz** (lo que `/setup-matt-pocock-skills` escribe sin preguntar si no hay monorepo) · Varios: un `CONTEXT-MAP.md` que apunta a un `CONTEXT.md` por paquete.
+- Opciones: **Uno solo: un `GLOSSARY.md` y `docs/adr/` en la raíz** (lo que `/setup-matt-pocock-skills` escribe sin preguntar si no hay monorepo) · Varios: un `GLOSSARY-MAP.md` que apunta a un `GLOSSARY.md` por paquete.
 - Acción: `docs/agents/domain.md`.
 
 **B4. ¿Qué tan claro está lo que hay que construir?** [Ambos]
 - Por qué importa: define con qué skill arranca el trabajo real. La escribe la persona, no el agente.
 - Opciones:
   - Idea grande y difusa que no entra en una sesión: **`/wayfinder`** (arma un mapa de tickets de decisión).
-  - Idea clara pero sin los detalles decididos: **`/grill-with-docs`** (entrevista y deja `CONTEXT.md` y ADRs).
+  - Idea clara pero sin los detalles decididos: **`/grill-with-docs`** (entrevista y deja `GLOSSARY.md` y ADRs).
   - Decidido, pero sin spec escrita: **`/to-spec`**.
   - Ya hay una spec acordada: **`/to-tickets`**.
   - [Empezado] Hay un backlog sin ordenar: **`/triage`**.
 - Acción: es el primer comando después del setup (último paso del recorrido).
 
 **B5. ¿Hay vocabulario del dominio y decisiones tomadas que no estén escritas?** [Empezado]
-- Por qué importa: los agentes respetan lo que está en `CONTEXT.md` y en los ADRs, no lo que "todos saben".
-- Opciones: **Una sesión de `/domain-modeling` con vos, recorriendo el código** (recomendada). La skill construye `CONTEXT.md` de a poco, a medida que se resuelven términos con una persona, y propone ADRs solo para decisiones que lo valen. No es una siembra automática · Dejarlo para el primer `/grill-with-docs`.
+- Por qué importa: los agentes respetan lo que está en `GLOSSARY.md` y en los ADRs, no lo que "todos saben".
+- Opciones: **Una sesión de `/domain-modeling` con vos, recorriendo el código** (recomendada). La skill construye `GLOSSARY.md` de a poco, a medida que se resuelven términos con una persona, y propone ADRs solo para decisiones que lo valen. No es una siembra automática · Dejarlo para el primer `/grill-with-docs`.
 - Si el conocimiento lo tiene otra persona, `/to-questionnaire` arma un cuestionario para que esa persona lo complete.
 
 ### Bloque C: toolchain y worktrees
@@ -206,6 +212,7 @@ Si no hay tiempo para todo, respondé A1, B1, C1, C3, C4 y F1. Con eso alcanza p
 - Opciones:
   - **No, despacho con `orca orchestration`** (recomendada): no declares nada.
   - Sí: `despacho.script` y `despacho.revisar` en el `.orca-stack.json` del proyecto. El brief del script tiene que decir dónde pregunta el worker (normalmente un comentario en el issue) y cómo cierra (normalmente un PR abierto).
+- Con `orca-stack despachar <issue> <agente>` y `orca-stack revisar <pr> <agente>` no hace falta ningún script propio: crean el worktree en Orca, escriben el brief y lanzan el agente (probalos con `--dry-run`).
 - No pongas `despacho` en la capa personal aunque uses los mismos nombres en varios repos: aparecería en todos tus proyectos y tendrías que apagarlo con `"despacho": null` en cada uno que no lo usa.
 
 **D3. ¿Hay algún proveedor sin cuota o vetado por un tiempo?** [Ambos; solo si D2 = Sí]
@@ -245,7 +252,7 @@ Cómo te nombran los agentes (`humano`) es de la máquina, no del proyecto: se f
 - Acción: nombralos en `AGENTS.md`, en conocimiento externo: sus APIs se consultan en Context7, y lo que no se pueda confirmar se marca `UNKNOWN / MUST VERIFY`.
 
 **F5. ¿Hay fuentes que hoy se contradicen (README viejo, wiki, issues desactualizados)?** [Empezado]
-- Acción: escribí en `AGENTS.md` la jerarquía de verdad: código, después ADRs, después `CONTEXT.md` y `docs/agents/`, después la spec, después el ticket, después Engram y por último la conversación.
+- Acción: escribí en `AGENTS.md` la jerarquía de verdad: código, después ADRs, después `GLOSSARY.md` y `docs/agents/`, después la spec, después el ticket, después Engram y por último la conversación.
 
 ### Bloque G: ejecución con Orca
 
@@ -269,7 +276,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 2. **Contrato:** creá `AGENTS.md` a partir de la plantilla del Apéndice B, con las respuestas de C4 y del bloque F. **Todavía no crees `CLAUDE.md`.**
 3. **Método:** escribí `/setup-matt-pocock-skills` (B1 a B3). Como todavía no hay `CLAUDE.md`, la skill escribe su sección en `AGENTS.md`, que es lo que querés.
 4. **Punteros:** creá `CLAUDE.md` y `GEMINI.md` con una sola línea: `@AGENTS.md`.
-5. **orca-stack:** `npx github:Gagaismo/orca-stack#v0.3.0 init`. A `CLAUDE.md` le pone un bloque corto, y el bloque completo, con el contrato de trabajo, va en `AGENTS.md`. Además crea `.orca-stack.json`, un `.orca-stack.local.json` vacío y la línea en `.gitignore`.
+5. **orca-stack:** `npx github:Gagaismo/orca-stack#v0.4.0 init`. A `CLAUDE.md` le pone un bloque corto, y el bloque completo, con el contrato de trabajo, va en `AGENTS.md`. Además crea `.orca-stack.json`, un `.orca-stack.local.json` vacío y la línea en `.gitignore`.
 6. **Config de los mods:** completá los dos `.orca-stack*.json` con las respuestas de D y E. Si no despachás con scripts y no tenés destinatarios, no hay nada que agregar.
 7. **Worktrees:** creá `orca.yaml` y `.worktreeinclude` (C1 a C3).
 8. **Orquestación:** agregá `docs/agents/orchestration.md` y `orca-dag.md` (G).
@@ -309,7 +316,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 - Cada capa pisa a la anterior. **Los objetos se combinan clave por clave; las listas se reemplazan enteras.**
 - Una lista vacía también pisa: `"destinatarios": []` en el local reemplaza la lista de las otras capas.
 - `null` apaga una clave heredada: `"despacho": null` apaga la guardia y los atajos del tablero en ese repo.
-- Sin `despacho`, `guardia.bloquear` y `guardia.modeloClaude` no hacen nada.
+- Sin `despacho`, `guardia.bloquear` y `guardia.modeloClaude` no hacen nada. La protección de worktrees (rechaza `orca worktree rm` y `git worktree remove` si la rama tiene commits que no están en ningún remoto) no depende de `despacho`.
 - Una sesión dentro de un worktree de Orca lee la configuración del checkout principal.
 - `doctor` combina las tres capas igual que los mods y avisa si un script de `despacho` no existe.
 
@@ -322,23 +329,25 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 | `despacho.script`, `despacho.revisar` | guardia-despacho, tablero-despacho | `.orca-stack.json` del proyecto |
 | `guardia.bloquear` | guardia-despacho | `.orca-stack.local.json` si es temporal; `.orca-stack.json` si es regla del proyecto |
 | `guardia.modeloClaude` | guardia-despacho | `.orca-stack.json` del proyecto |
+| `riesgo` | puente-gentle | `.orca-stack.json` del proyecto: globs de las rutas cuyo cambio no se deshace con un revert. Un PR que toca alguna no se mergea sin un review de pi sobre su último commit (`orca-stack revisar <n> pi`) |
+| `agentes.pi.claudeConfigDir` | puente-gentle | Personal. Carpeta de config de Claude con otra cuenta para pi; el puente lanza pi con `CLAUDE_CONFIG_DIR=<carpeta>`. El login se hace una vez a mano: en PowerShell, `$env:CLAUDE_CONFIG_DIR="<carpeta>"; claude` y después `/login` |
 
 ---
 
 ## Parte 5: verificación final
 
-- [ ] `npx github:Gagaismo/orca-stack#v0.3.0 doctor`, corrido **desde la raíz del proyecto**, termina con `0 fallas` y cada aviso está entendido.
+- [ ] `npx github:Gagaismo/orca-stack#v0.4.0 doctor`, corrido **desde la raíz del proyecto**, termina con `0 fallas` y cada aviso está entendido.
 - [ ] `AGENTS.md` tiene **un solo** bloque `orca-stack:begin` / `orca-stack:end`, sin restos de `orca-stack:auto`.
 - [ ] `CLAUDE.md` y `GEMINI.md` importan `AGENTS.md`.
 - [ ] `AGENTS.md` nombra los comandos de test y typecheck (C4).
 - [ ] `git check-ignore -v .orca-stack.local.json` confirma que está ignorado.
-- [ ] `~/.orca-stack/config.json` no tiene nada de este proyecto (solo `humano`).
+- [ ] `~/.orca-stack/config.json` no tiene nada de este proyecto (solo `humano`, `agentes.modelos` y `agentes.pi.claudeConfigDir`).
 - [ ] Existen `docs/agents/issue-tracker.md` y `docs/agents/domain.md`, y `triage-labels.md` si usás `/triage`.
 - [ ] Orca crea un worktree y el setup de `orca.yaml` termina sin errores, sin tocar el `node_modules` del checkout principal.
 - [ ] En una sesión nueva de Claude Code aparecen los mods (por ejemplo `/tablero` y `/pi`).
 - [ ] `git diff --cached` no tiene secretos, `.env` ni datos reales.
 
-`doctor` avisa si `AGENTS.md` o `CLAUDE.md` todavía tienen el bloque viejo `orca-stack:auto` y si `.orca-stack.json` no tiene `"setup": "completo"` (en ese caso, abrí una sesión de Claude en el checkout principal: ofrece el setup con `orca-setup`). No revisa el resto de `AGENTS.md`, las skills de Matt ni `orca.yaml`: esos puntos se miran a mano.
+`doctor` avisa si `AGENTS.md` o `CLAUDE.md` todavía tienen el bloque viejo `orca-stack:auto` y si `.orca-stack.json` no tiene `"setup": "completo"` (en ese caso, abrí una sesión de Claude en el checkout principal: ofrece el setup con `orca-setup`). También avisa de la deriva: el plugin de Matt por debajo de 1.3.1, skills duplicadas entre el plugin y `~/.claude/skills`, `pr`, `implement-spec` o `retro` ausentes de `~/.agents/skills` y las secciones de review de gentle-ai que volvieron a `~/.claude/CLAUDE.md` con RDD apagado. No revisa el resto de `AGENTS.md` ni `orca.yaml`: esos puntos se miran a mano.
 
 ---
 
@@ -372,7 +381,7 @@ Vas a configurar este repo con el stack de agentes orca-stack, siguiendo la guí
 "Guía de setup: stack de agentes con orca-stack" (pegada abajo o en <ruta>).
 
 1. Explorá antes de preguntar: git remote, AGENTS.md / CLAUDE.md / GEMINI.md,
-   docs/agents/, CONTEXT.md, docs/adr/, lockfiles, .gitignore, .env.example,
+   docs/agents/, GLOSSARY.md, docs/adr/, lockfiles, .gitignore, .env.example,
    orca.yaml, restos de otros flujos (openspec/, sdd-*, orca-stack:auto) y ramas abiertas.
 2. Decidí con A1 si es el Recorrido A (desde cero) o B (empezado) y decímelo con la evidencia.
 3. Hacé las preguntas del cuestionario de a una, con la opción recomendada primero.
@@ -404,7 +413,7 @@ Vas a configurar este repo con el stack de agentes orca-stack, siguiendo la guí
 
 This repo uses Matt Pocock's engineering skills as the default process authority:
 
-`/grill-with-docs` -> `/domain-modeling` -> `CONTEXT.md` + ADRs -> `/to-spec` ->
+`/grill-with-docs` -> `/domain-modeling` -> `GLOSSARY.md` + ADRs -> `/to-spec` ->
 `/to-tickets` -> `/implement` (TDD) -> `/code-review` -> commit
 
 - Planning ends at `/to-tickets`. `/implement` does not re-debate the plan; if the
@@ -415,7 +424,7 @@ This repo uses Matt Pocock's engineering skills as the default process authority
 
 ## Source of truth
 
-1. Current code  2. ADRs (`docs/adr/`)  3. `CONTEXT.md` and `docs/agents/*`
+1. Current code  2. ADRs (`docs/adr/`)  3. `GLOSSARY.md` and `docs/agents/*`
 4. Spec  5. Ticket  6. Engram memory  7. Conversation history
 
 ## External knowledge
@@ -555,7 +564,7 @@ How engineering skills behave when this repo runs inside Orca.
 - For a blocking question, use the exact `ask` command from the injected preamble,
   with concrete options and the recommended one first. On timeout, resume the same
   question with `--resume <message_id>`.
-- Non-blocking doubts: pick the option most consistent with ADRs and `CONTEXT.md`,
+- Non-blocking doubts: pick the option most consistent with ADRs and `GLOSSARY.md`,
   note it in the commit body and the `worker_done` summary, and continue.
 - If the ticket contradicts an ADR, do not reinterpret it: escalate, or finish
   with `--outcome failed` and explain why.
@@ -659,7 +668,7 @@ Tickets close on merge.
 | A1 | Empezado: app con historial, issues y una instalación anterior del stack | Recorrido B |
 | A4 | Bloques `orca-stack:auto` viejos en `AGENTS.md`, `CLAUDE.md` y `GEMINI.md` | `init` los reemplazó por el bloque actual |
 | B1 | GitHub Issues con dependencias nativas | `docs/agents/issue-tracker.md` |
-| B3 | Un solo contexto | `CONTEXT.md` + `docs/adr/` |
+| B3 | Un solo contexto | `GLOSSARY.md` + `docs/adr/` |
 | C1 y C2 | npm; antes compartía `node_modules` y además corría `npm ci` | `orca.yaml` sin `sharedDirectories`, con `setup: npm ci` |
 | C3 | `.env`, `.env.local` | `.worktreeinclude` |
 | D2 | Sin scripts de despacho (se despacha con `orca orchestration`) | Nada que declarar |
