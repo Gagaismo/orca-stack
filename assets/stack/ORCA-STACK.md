@@ -83,25 +83,37 @@ controls that the official Orca UI does not provide.
 - **Engram**: use the installed MCP/plugin integrations; save decisions,
   discoveries, fixes, and session summaries without treating memory as authority.
 
-## Launching agents for a manual dispatch
+## Launching agents
 
-Use these commands as the `--command` of `orca terminal create`. They are
-written for the Orca terminal on Windows, which is PowerShell; in a POSIX shell
-drop the leading `& ` and set the key with `export CMD_API_KEY=...`. The wrappers
-below are the ones this machine installed. Model and effort come from personal config
-(`~/.orca-stack/config.json`, `agentes.modelos`), never from the project.
+Do not launch agents by hand: from the main checkout, `orca-stack despachar <issue> <agent>` and
+`orca-stack revisar <pr> <agent>` create the worktree with `orca worktree create` (so it shows up in Orca), write the
+brief from a template, check that every repo path the brief cites exists in the worktree, launch the agent
+in an Orca terminal and send it the brief. They refuse to start when the issue is assigned, the agent is
+not in `agentes.usa`, a worktree or a live agent already exists, or the reviewer wrote the PR. If one fails,
+show its error; do not rebuild the dispatch by hand.
+
+Reference, the launcher each agent gets as the `--command` of `orca terminal create`. They are written for the Orca
+terminal on Windows, which is PowerShell; in a POSIX shell the leading `& ` is dropped and the key is set with
+`export CMD_API_KEY=...`. Model and effort come from personal config (`~/.orca-stack/config.json`,
+`agentes.modelos`), never from the project; without them each agent uses its launcher's default.
 
 - claude: `& "{{WRAPPER_CLAUDE}}" --dangerously-skip-permissions`
 - agy: `& "{{WRAPPER_AGY}}" --dangerously-skip-permissions`
-- codex: `& "{{WRAPPER_CODEX}}" --model <modelo> -c model_reasoning_effort="<esfuerzo>" -c approval_policy="never" -c sandbox_mode="danger-full-access"`
+- codex: `& "{{WRAPPER_CODEX}}" --model <model> -c model_reasoning_effort="<effort>" -c approval_policy="never" -c sandbox_mode="danger-full-access"`
   Nobody answers approval prompts in an unattended worker, so the approval and
   sandbox flags are required.
-- codex-cc: `$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME\.pi\agent\auth.json" | ConvertFrom-Json).commandcode.key; & "{{WRAPPER_CODEX}}" -c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses --model <modelo> -c model_reasoning_effort="<esfuerzo>" -c approval_policy="never" -c sandbox_mode="danger-full-access"`
+- codex-cc: `$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME.piagentauth.json" | ConvertFrom-Json).commandcode.key; & "{{WRAPPER_CODEX}}" -c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses --model <model> -c model_reasoning_effort="<effort>" -c approval_policy="never" -c sandbox_mode="danger-full-access"`
   Use the review model and effort to review and the implementation ones to
   implement; the rest of the command does not change. The key is read inside
   the terminal, so it never appears in the command or in the brief. If Command
   Code rejects the request (401, 403 `MODEL_NOT_IN_PLAN`, 429), it shows on
   the screen after the brief.
+- pi (Gentle Shell): headless, no TUI, so the brief goes in the prompt and nothing is sent afterwards. The command clears
+  the Orca and `ORCA_STACK_*` variables (the same list the pi consult bridge clears), sets `ENGRAM_DATA_DIR` to
+  Gentle Shell's own engram, `GENTLE_PI_AUTONOMOUS_MODE=1` and, when personal config sets it, `CLAUDE_CONFIG_DIR`
+  from `agentes.pi.claudeConfigDir`, then runs `pi -p --no-skills --skill <gentle-pi skills> --session-id <id> --tools <tools> "Read and carry out the brief in <path>. Non-interactive: never wait for user input."`
+  Tools: `read,bash,edit,write,grep,find,ls` to implement, `read,bash,grep,find,ls` to review. Unlike the consult
+  bridge, this one can run git, gh and the suite.
 
 ## Official Orca integration (preferred)
 

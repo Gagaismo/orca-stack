@@ -8,6 +8,8 @@ npx github:Gagaismo/orca-stack#v0.4.0 init       # cablea el proyecto actual
 npx github:Gagaismo/orca-stack#v0.4.0 doctor     # verifica que todo funcione de verdad
 npx github:Gagaismo/orca-stack#v0.4.0 remove     # deshace lo que instaló global
 npx github:Gagaismo/orca-stack#v0.4.0 sesiones   # lista las sesiones recientes de Claude, Pi y agy (para `/retro`)
+npx github:Gagaismo/orca-stack#v0.4.0 despachar 12 agy   # desde el checkout principal: despacha el ticket #12 al agente
+npx github:Gagaismo/orca-stack#v0.4.0 revisar 15 pi      # despacha el review del PR #15
 ```
 
 ¿Primera vez, o un proyecto nuevo o ya empezado? Seguí la [guía de setup](docs/guia-setup.md): tiene un cuestionario que dice qué configurar en cada caso.
@@ -67,6 +69,8 @@ orca-stack init   [--dry-run]
 orca-stack doctor [--offline] [--skip-pi]
 orca-stack remove [--dry-run] [--with-pi]
 orca-stack sesiones [--desde <AAAA-MM-DD>] [--limite <n>]
+orca-stack despachar <issue> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
+orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
 ```
 
 - `--dry-run` cuenta cada acción sin escribir nada.
@@ -74,6 +78,7 @@ orca-stack sesiones [--desde <AAAA-MM-DD>] [--limite <n>]
 - `init` escribe en el `AGENTS.md` del proyecto el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` con el contrato de trabajo completo (`assets/stack/CONTRATO.md`, igual en todos los proyectos) y las líneas de la política; a `CLAUDE.md` le pone un bloque corto con `@AGENTS.md`. Además crea `.orca-stack.json` y `.orca-stack.local.json` si faltan y agrega este último a `.gitignore`. Es idempotente y respalda lo que modifica. Los valores propios de cada proyecto no van en el bloque: viven en `.orca-stack.json`.
 - `orca-setup` es la skill con la que la sesión de `main` entrevista al humano, en una sola ronda, para completar `.orca-stack.json` (`"setup": "completo"`). La ofrece sola cuando falta y `doctor` avisa si quedó pendiente.
 - `sesiones` es de solo lectura: lista las sesiones recientes de Claude Code (`~/.claude/projects` y, si está, la carpeta de `agentes.pi.claudeConfigDir`), de Pi (`~/.pi/agent/sessions`) y de agy (`~/.gemini/antigravity-cli`, solo con Node 22.13 o más nuevo). Por sesión muestra la herramienta, la carpeta, inicio y fin, las llamadas, tus mensajes, las llamadas con error y los resultados de más de 15k caracteres. Es la entrada para quien corre `/retro` de Matt: `--desde` fija el día de inicio (por defecto, los últimos 2 días) y `--limite` cuántas sesiones (por defecto, 10).
+- `despachar` y `revisar` (agentes: claude, agy, codex, codex-cc, pi) corren desde el checkout principal de un repo con el setup completo. Se niegan si el agente no está en `agentes.usa`, si está en `agentes.preguntarAntes` (repetí con `--confirmado` cuando el humano dijo que sí), si el issue está cerrado o asignado, si el revisor es el implementador del PR (línea `Implementador:`) o si codex y codex-cc se revisan entre sí, o si ya hay un worktree o un agente vivo para ese ticket. Si pasa todo: asignan el issue, crean el worktree con `orca worktree create` (así lo ve Orca), escriben el brief en `~/orca/briefs/` desde `assets/stack/brief-ticket.md` o `brief-revision.md`, comprueban que cada ruta que cita exista en el worktree, lanzan el agente en una terminal de Orca y le mandan el brief. Pi corre sin TUI (`pi -p`), así que sí puede ejecutar git, gh y la suite. `--nota` agrega texto al brief y `--dry-run` muestra el plan y el brief sin escribir nada. Los modelos salen de `agentes.modelos` de tu config personal: un texto, `{ "modelo", "esfuerzo" }` o `{ "implementar": {…}, "revisar": {…} }` por agente.
 - `--skip-pi` no toca Pi (útil si todavía no lo instalaste).
 - `--humano` fija cómo te nombran los mods; si no lo pasás, sale de `git config user.name`.
 - `doctor` hace sondeos reales y sale con código 1 si hay una falla (✖). Los avisos (⚠) no cambian el código.
@@ -153,7 +158,7 @@ Las claves del contrato de trabajo, que escribe `orca-setup` y que el bloque de 
 | `merge` | Si `main` mergea sola cuando se cumple la condición de merge |
 | `despliegue` | `{ "despues": false }`, o el comando y cómo se verifica |
 | `idioma` | Idioma del código, los commits y los PRs |
-| `riesgo` | Lista de globs de rutas cuyo cambio no se deshace con un revert (migraciones, auth, deploy, dependencias). `puente-gentle` no deja mergear un PR que toca alguna hasta que tenga un review de pi sobre su último commit (`Revisor: pi` y `Commit: <sha>`, de `orca-stack revisar <n> pi`, que llega en esta misma versión) |
+| `riesgo` | Lista de globs de rutas cuyo cambio no se deshace con un revert (migraciones, auth, deploy, dependencias). `puente-gentle` no deja mergear un PR que toca alguna hasta que tenga un review de pi sobre su último commit (`Revisor: pi` y `Commit: <sha>`, de `orca-stack revisar <n> pi`) |
 | `agentes.pi.claudeConfigDir` | Solo en `~/.orca-stack/config.json`: carpeta de config de Claude con otra cuenta para pi. El puente lanza pi con `CLAUDE_CONFIG_DIR=<carpeta>`, y así pi y `main` no se quedan sin cuota juntos. El login se hace una vez a mano: `$env:CLAUDE_CONFIG_DIR="<carpeta>"; claude` y `/login` |
 
 `<repo>/.orca-stack.local.json` (local, ignorado por git; `init` lo crea vacío):

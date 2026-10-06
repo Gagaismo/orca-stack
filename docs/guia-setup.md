@@ -212,6 +212,7 @@ Si no hay tiempo para todo, respondé A1, B1, C1, C3, C4 y F1. Con eso alcanza p
 - Opciones:
   - **No, despacho con `orca orchestration`** (recomendada): no declares nada.
   - Sí: `despacho.script` y `despacho.revisar` en el `.orca-stack.json` del proyecto. El brief del script tiene que decir dónde pregunta el worker (normalmente un comentario en el issue) y cómo cierra (normalmente un PR abierto).
+- Con `orca-stack despachar <issue> <agente>` y `orca-stack revisar <pr> <agente>` no hace falta ningún script propio: crean el worktree en Orca, escriben el brief y lanzan el agente (probalos con `--dry-run`).
 - No pongas `despacho` en la capa personal aunque uses los mismos nombres en varios repos: aparecería en todos tus proyectos y tendrías que apagarlo con `"despacho": null` en cada uno que no lo usa.
 
 **D3. ¿Hay algún proveedor sin cuota o vetado por un tiempo?** [Ambos; solo si D2 = Sí]
@@ -328,7 +329,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 | `despacho.script`, `despacho.revisar` | guardia-despacho, tablero-despacho | `.orca-stack.json` del proyecto |
 | `guardia.bloquear` | guardia-despacho | `.orca-stack.local.json` si es temporal; `.orca-stack.json` si es regla del proyecto |
 | `guardia.modeloClaude` | guardia-despacho | `.orca-stack.json` del proyecto |
-| `riesgo` | puente-gentle | `.orca-stack.json` del proyecto: globs de las rutas cuyo cambio no se deshace con un revert. Un PR que toca alguna no se mergea sin un review de pi sobre su último commit (`orca-stack revisar <n> pi`, que llega en esta misma versión) |
+| `riesgo` | puente-gentle | `.orca-stack.json` del proyecto: globs de las rutas cuyo cambio no se deshace con un revert. Un PR que toca alguna no se mergea sin un review de pi sobre su último commit (`orca-stack revisar <n> pi`) |
 | `agentes.pi.claudeConfigDir` | puente-gentle | Personal. Carpeta de config de Claude con otra cuenta para pi; el puente lanza pi con `CLAUDE_CONFIG_DIR=<carpeta>`. El login se hace una vez a mano: en PowerShell, `$env:CLAUDE_CONFIG_DIR="<carpeta>"; claude` y después `/login` |
 
 ---
