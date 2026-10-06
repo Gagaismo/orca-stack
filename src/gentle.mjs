@@ -80,7 +80,7 @@ export const trimReviewSections = text => {
   // A fence that opens and closes inside the removed range hides its `# comment` lines (level 1); one left open there does not.
   let inside = false
   const flagged = removedLines.map(line => {
-    inside = /^s*```/.test(line) ? !inside : inside
+    inside = /^\s*```/.test(line) ? !inside : inside
 
     return { title: line.trimEnd(), inFence: inside }
   })
