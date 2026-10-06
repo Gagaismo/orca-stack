@@ -16,14 +16,20 @@ import {
   clock,
   consultEnv,
   engramDir,
+  hasPiReview,
   interpret,
+  joinPath,
   launcherPath,
   loadMemoria,
   merges,
   parsePiArgs,
+  piClaudeConfigDir,
   piPrompt,
+  prFacts,
   prSize,
   remember,
+  riskReason,
+  riskyFile,
   section,
   skillsInGlobal,
   skillsInPi,
@@ -104,6 +110,20 @@ const gentleSkills = async ($: EngineInterface): Promise<string | undefined> => 
   return undefined
 }
 
+// Personal config only: where Pi's Claude provider gets its credentials (a separate account from this session's).
+const claudeConfigDir = async ($: EngineInterface): Promise<string | undefined> => {
+  const home = await homeDir($)
+  if (home === '') {
+    return undefined
+  }
+  const file = joinPath(home, '.orca-stack', 'config.json')
+  try {
+    return piClaudeConfigDir((await $.fs.exists(file)) ? await $.fs.read(file) : undefined, home)
+  } catch {
+    return undefined
+  }
+}
+
 const consult = async (
   $: EngineInterface,
   modelo: string,
@@ -117,7 +137,7 @@ const consult = async (
     const prefix = await launcher($)
     const skills = await gentleSkills($)
     const run = await $.process.run([...prefix, ...buildArgs(tema, modelo, buildMessage(planteo, pregunta), skills)], {
-      env: consultEnv(engramDir(await homeDir($))),
+      env: consultEnv(engramDir(await homeDir($)), await claudeConfigDir($)),
       // Pi in print mode waits for stdin to close: an open stdin hangs it forever.
       stdin: '',
       timeoutMs: TIMEOUT_MS,
@@ -152,26 +172,34 @@ const textResult = (text: string) => ({ result: text })
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 
-// Big PRs need a consult before they merge.
+// Big PRs need a consult before they merge; PRs touching a `riesgo` path need a pi review of their head commit.
+const PR_FIELDS = 'additions,deletions,files,headRefOid,comments,reviews'
+
 const gate = async ($: EngineInterface, command: string) => {
   for (const merge of merges(command)) {
-    const tema = `pr-${merge.number}`
-    if ((await load($))[tema]?.length) {
-      continue
-    }
-    let total: number | undefined
+    let stdout: string | undefined
     try {
-      const argv = ['gh', 'pr', 'view', merge.number, '--json', 'additions,deletions']
+      const argv = ['gh', 'pr', 'view', merge.number, '--json', PR_FIELDS]
       if (merge.repo !== undefined) {
         argv.push('-R', merge.repo)
       }
       const run = await $.process.run(argv, { timeoutMs: 30000 })
-      total = run.exitCode === 0 ? prSize(run.stdout) : undefined
+      stdout = run.exitCode === 0 ? run.stdout : undefined
     } catch {
-      total = undefined
+      stdout = undefined
     }
-    if (total !== undefined && total > BIG_PR_LINES) {
+    if (stdout === undefined) {
+      continue
+    }
+    const total = prSize(stdout)
+    if (total !== undefined && total > BIG_PR_LINES && !(await load($))[`pr-${merge.number}`]?.length) {
       return { deny: bigPrReason(merge.number, total) }
+    }
+    const globs = (await loadConfig(hostOf($))).riesgo
+    const facts = Array.isArray(globs) && globs.length > 0 ? prFacts(stdout) : undefined
+    const risky = facts === undefined ? undefined : riskyFile(facts.files, globs ?? [])
+    if (facts !== undefined && risky !== undefined && !hasPiReview(facts.bodies, facts.headRefOid)) {
+      return { deny: riskReason(merge.number, risky, facts.headRefOid) }
     }
   }
 

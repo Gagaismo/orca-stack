@@ -12,10 +12,37 @@ export const ORCA_VARS_CLEARED = [
   'ORCA_STACK_CAVEMAN_LEVEL',
 ] as const
 
-export const consultEnv = (engramPath: string): Record<string, string> => ({
+// claudeConfigDir: the Claude account Pi's provider (pi-claude-bridge) uses; unset = the host's own.
+export const consultEnv = (engramPath: string, claudeConfigDir?: string): Record<string, string> => ({
   ENGRAM_DATA_DIR: engramPath,
   ...Object.fromEntries(ORCA_VARS_CLEARED.map(name => [name, ''])),
+  ...(claudeConfigDir === undefined ? {} : { CLAUDE_CONFIG_DIR: claudeConfigDir }),
 })
+
+// agentes.pi.claudeConfigDir from the text of the PERSONAL config (~/.orca-stack/config.json) only:
+// a committed project file must not redirect where Pi's credentials come from. A leading ~ is the home.
+export const piClaudeConfigDir = (personalConfig: string | undefined, home: string): string | undefined => {
+  if (personalConfig === undefined) {
+    return undefined
+  }
+  let dir: unknown
+  try {
+    dir = (JSON.parse(personalConfig.replace(/^﻿/, '')) as { agentes?: { pi?: { claudeConfigDir?: unknown } } })
+      .agentes?.pi?.claudeConfigDir
+  } catch {
+    return undefined
+  }
+  if (typeof dir !== 'string' || dir.trim() === '') {
+    return undefined
+  }
+  const value = dir.trim()
+
+  if (value === '~') {
+    return home
+  }
+
+  return value.startsWith('~/') || value.startsWith('~\\') ? joinPath(home, value.slice(2)) : value
+}
 // Paths are built with the separator the base already uses (C:\Users\x on Windows, /home/x elsewhere).
 export const joinPath = (base: string, ...parts: string[]): string => {
   const sep = base.includes('\\') ? '\\' : '/'
@@ -321,6 +348,88 @@ export const prSize = (stdout: string): number | undefined => {
 
   return undefined
 }
+
+// ---- risk-path trigger ------------------------------------------------------------------------
+
+// Minimal glob: * and ? stay inside one path segment, ** crosses segments, `**/` may match nothing,
+// a trailing / means "everything under". Node 20 has no path.matchesGlob.
+export const globToRegExp = (glob: string): RegExp => {
+  const g = glob.endsWith('/') ? `${glob}**` : glob
+  let out = ''
+  for (let i = 0; i < g.length; i += 1) {
+    const ch = g[i] ?? ''
+    if (ch === '*' && g[i + 1] === '*') {
+      i += 1
+      if (g[i + 1] === '/') {
+        i += 1
+        out += '(?:.*/)?'
+      } else {
+        out += '.*'
+      }
+    } else if (ch === '*') {
+      out += '[^/]*'
+    } else if (ch === '?') {
+      out += '[^/]'
+    } else {
+      out += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    }
+  }
+
+  return new RegExp(`^${out}$`)
+}
+
+export const riskyFile = (files: string[], globs: string[]): string | undefined => {
+  const patterns = globs.filter(one => typeof one === 'string' && one.trim() !== '').map(one => globToRegExp(one.trim()))
+
+  return files.find(file => patterns.some(pattern => pattern.test(file.replace(/\\/g, '/'))))
+}
+
+export type PrFacts = { files: string[]; headRefOid: string; bodies: string[] }
+
+// `gh pr view --json files,headRefOid,comments,reviews`: `gh pr review --comment` bodies live in `reviews`,
+// plain PR comments in `comments`.
+export const prFacts = (stdout: string): PrFacts | undefined => {
+  try {
+    const data = JSON.parse(stdout) as {
+      files?: { path?: unknown }[]
+      headRefOid?: unknown
+      comments?: { body?: unknown }[]
+      reviews?: { body?: unknown }[]
+    }
+    if (typeof data.headRefOid !== 'string' || !Array.isArray(data.files)) {
+      return undefined
+    }
+    const bodies = [...(data.comments ?? []), ...(data.reviews ?? [])]
+      .map(one => one?.body)
+      .filter((body): body is string => typeof body === 'string')
+
+    return {
+      files: data.files.map(one => one?.path).filter((path): path is string => typeof path === 'string'),
+      headRefOid: data.headRefOid,
+      bodies,
+    }
+  } catch {
+    return undefined
+  }
+}
+
+// A pi review of exactly this commit: `Revisor: pi` and `Commit: <sha>` among the first lines of one body
+// (the sha may be abbreviated to 7+ characters).
+export const hasPiReview = (bodies: string[], headRefOid: string): boolean =>
+  bodies.some(body => {
+    const head = body.split(/\r?\n/).slice(0, 5).map(line => line.trim())
+    const commit = head.map(line => /^Commit:\s*([0-9a-f]{7,40})$/i.exec(line)?.[1]).find(sha => sha !== undefined)
+
+    return (
+      head.some(line => /^Revisor:\s*pi$/i.test(line)) &&
+      commit !== undefined &&
+      headRefOid.toLowerCase().startsWith(commit.toLowerCase())
+    )
+  })
+
+export const riskReason = (n: string, file: string, headRefOid: string): string =>
+  `PR #${n} toca una ruta de riesgo (${file}): falta un review de pi sobre el commit ${headRefOid.slice(0, 7)}. ` +
+  `Corré \`orca-stack revisar ${n} pi\` y mergeá cuando el review esté limpio.`
 
 // ---- SDD auto-consult -------------------------------------------------------
 
