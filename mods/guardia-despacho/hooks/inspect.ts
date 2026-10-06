@@ -224,9 +224,12 @@ const SHELL_FLAG = /^(-[a-z]*c|[-/]c(o(m(m(a(n(d)?)?)?)?)?)?)$/i
 // PowerShell takes any prefix of -EncodedCommand (-e, -en, -enc, ...) and its alias -ec.
 // PowerShell also takes `/` as a flag prefix.
 const isEncoded = (flag: string): boolean => /^[-/]e/i.test(flag) && ('encodedcommand'.startsWith(flag.slice(1).toLowerCase()) || flag.slice(1).toLowerCase() === 'ec')
-const PS_VALUE_FLAGS = ['executionpolicy', 'ep', 'version', 'windowstyle', 'inputformat', 'outputformat', 'configurationname', 'workingdirectory', 'settingsfile', 'custommodulepath']
+const PS_VALUE_FLAGS = ['executionpolicy', 'ep', 'version', 'windowstyle', 'inputformat', 'outputformat', 'configurationname', 'psconsolefile']
+const PWSH_VALUE_FLAGS = [...PS_VALUE_FLAGS, 'workingdirectory', 'settingsfile', 'custommodulepath']
 // Windows PowerShell 5.1 runs the first positional argument as -Command text; `-File` and `-ExecutionPolicy x` do not.
-const psPositionalText = (args: Token[]): string => {
+// In PowerShell 7 (pwsh) that first positional is -File; treating it as command text anyway is deliberate: it fails toward blocking.
+const psPositionalText = (args: Token[], pwsh: boolean): string => {
+  const valueFlags = pwsh ? PWSH_VALUE_FLAGS : PS_VALUE_FLAGS
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]
     const flag = arg !== undefined && !arg.quoted && /^[-/][a-z]+$/i.test(arg.text) ? arg.text.slice(1).toLowerCase() : undefined
@@ -236,7 +239,7 @@ const psPositionalText = (args: Token[]): string => {
     if ('file'.startsWith(flag)) {
       return ''
     }
-    i += PS_VALUE_FLAGS.some(full => full.startsWith(flag)) ? 1 : 0
+    i += valueFlags.some(full => full.startsWith(flag)) ? 1 : 0
   }
 
   return ''
@@ -288,7 +291,7 @@ export const worktreeRemovals = (command: string): Removal[] => {
         const flag = args.findIndex(arg => !arg.quoted && SHELL_FLAG.test(arg.text))
         const ps = word === 'pwsh' || word === 'powershell'
         const encoded = ps && args.some(arg => !arg.quoted && isEncoded(arg.text))
-        const positional = ps && flag === -1 && NESTED.test(psPositionalText(args))
+        const positional = ps && NESTED.test(psPositionalText(args, word === 'pwsh'))
         if (encoded || positional || (flag !== -1 && texts.slice(flag + 1).some(text => NESTED.test(text))) || (word === 'iex' || word === 'invoke-expression') && texts.some(text => NESTED.test(text))) {
           found.push({ by: 'opaque', value: segment.trim() })
         }
