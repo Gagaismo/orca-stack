@@ -1,3 +1,4 @@
+import { despacharCommand, revisarCommand } from './despacho.mjs'
 import { doctorCommand } from './doctor.mjs'
 import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
@@ -16,12 +17,17 @@ Comandos:
   init      Cablea el proyecto actual (git): AGENTS.md, CLAUDE.md y los archivos .orca-stack*.json.
   doctor    Verifica la instalación con sondeos reales y sale con código 1 si hay fallas.
   remove    Deshace lo que instaló \`global\`, según ~/.orca-stack/state.json.
+  despachar Despacha un ticket a un agente: worktree en Orca, brief y lanzamiento (desde el checkout principal).
+  revisar   Despacha el review de un PR a un agente que no sea su autor.
+  sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
 
 Opciones:
-  --dry-run        (global, init, remove) Muestra cada acción sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar) Muestra cada acción sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
+  --nota <texto>   (despachar, revisar) Texto que se agrega al brief.
+  --confirmado     (despachar, revisar) El humano dijo que sí a un agente de agentes.preguntarAntes.
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
   --limite <n>     (sesiones) Cuántas sesiones mostrar (por defecto: 10).
   --humano <nombre> (global) Nombre que usan los mods para hablarte (por defecto: git config user.name).
@@ -69,6 +75,19 @@ conversaciones de agy (~/.gemini/antigravity-cli; necesita Node 22.13 o más nue
 carpeta, inicio y fin, llamadas, tus mensajes, las llamadas con error y los resultados de más de 15k caracteres.
 Sirve de entrada para \`/retro\`.
 `,
+  despachar: `orca-stack despachar <issue> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
+
+Desde el checkout principal del repo (agentes: claude, agy, codex, codex-cc, pi). Se niega si el setup está pendiente, si el
+agente no está en agentes.usa, si está en agentes.preguntarAntes sin --confirmado, si el issue está cerrado o asignado, o si ya hay
+un worktree o un agente vivo para ese ticket. Asigna el issue, crea el worktree con \`orca worktree create\`, escribe el brief en
+~/orca/briefs, comprueba que cada ruta que cita exista en el worktree, lanza el agente en una terminal de Orca y le manda el brief.
+Con --dry-run muestra el plan y el brief y no escribe nada.
+`,
+  revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
+
+Igual que despachar, para un review: worktree revision-<pr> parado en la rama del PR. Se niega si el agente es el implementador del PR
+(línea \`Implementador:\`) o si codex y codex-cc se revisan entre sí.
+`,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
 Borra los archivos que instaló \`global\`, restaura los que había reemplazado, quita sus entradas de
@@ -77,11 +96,16 @@ CLAUDE_CODE_PLUGIN_DIRS y su bloque de ~/.claude/CLAUDE.md. Los respaldos de ~/.
 }
 
 export const parseArgs = argv => {
-  const flags = { dryRun: false, force: false, skipPi: false, offline: false, withPi: false, humano: undefined, desde: undefined, limite: undefined, help: false, version: false }
+  const flags = { nota: undefined, confirmado: false, dryRun: false, force: false, skipPi: false, offline: false, withPi: false, humano: undefined, desde: undefined, limite: undefined, help: false, version: false }
   const rest = []
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--dry-run') flags.dryRun = true
+    else if (arg === '--confirmado') flags.confirmado = true
+    else if (arg === '--nota') {
+      flags.nota = argv[i + 1] ?? ''
+      i += 1
+    } else if (arg.startsWith('--nota=')) flags.nota = arg.slice('--nota='.length)
     else if (arg === '--force') flags.force = true
     else if (arg === '--skip-pi') flags.skipPi = true
     else if (arg === '--offline') flags.offline = true
@@ -117,7 +141,7 @@ export const main = async argv => {
 
     return 2
   }
-  const { command, flags } = parsed
+  const { command, flags, rest } = parsed
   if (flags.version) {
     console.log(packageVersion())
 
@@ -145,6 +169,10 @@ export const main = async argv => {
         return await removeCommand(flags)
       case 'sesiones':
         return await sesionesCommand(flags)
+      case 'despachar':
+        return await despacharCommand(flags, rest[1], rest[2])
+      case 'revisar':
+        return await revisarCommand(flags, rest[1], rest[2])
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 
