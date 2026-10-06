@@ -140,12 +140,13 @@ describe('briefs', () => {
     for (const part of ['Revisor: agy', 'Commit: abc123', 'written by codex', '## BLOQUEA', '## SUGERENCIAS', 'Standards', 'git checkout origin/<base> -- <files>', 'git checkout HEAD -- .', 'gh pr review 9 --comment --body-file', '--base-branch origin/feat/x', '--name revision-9']) assert.ok(text.includes(part), part)
   })
 
-  test('a cited path that is not in the worktree aborts without launching', async () => {
+  test('a cited path that is not in the base tree aborts a real run with zero writes', async () => {
     const env = fakeIo()
     await assert.rejects(run('ticket', { n: '7', agent: 'agy', nota: 'Seguí `.agents/skills/impeccable/SKILL.md`.' }, env), /\.agents\/skills\/impeccable\/SKILL\.md/)
     assert.equal(env.written.length, 0)
+    assert.deepEqual(env.calls.filter(c => c[0] === 'gh' && c[2] === 'edit'), [])
+    assert.deepEqual(env.calls.filter(c => c[0] === 'orca' && c[1] === 'worktree' && c[2] === 'create'), [])
     assert.ok(!env.calls.some(c => c[1] === 'terminal'))
-    assert.ok(!env.calls.some(c => c[1] === 'rm'))
   })
 
   test('citedPaths skips commands, refs, urls and fenced blocks', () => {

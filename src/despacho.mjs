@@ -254,6 +254,20 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   }
 
   if (!dryRun) io.sh('git', ['fetch', 'origin'], { cwd: root })
+  const briefFor = branch => renderBrief(kind, {
+    REPO: repo, AGENT: agent, BASE: base, BRANCH: branch, VERIFICATION: verificationBlock(config),
+    ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
+  }, nota)
+  // Validate the cited paths against the tree the worktree will be created from, before any side effect.
+  const tree = io.sh('git', ['ls-tree', '-r', '--name-only', startRef], { cwd: root })
+  if (tree.status === 0) {
+    const files = new Set(tree.stdout.split(/\r?\n/).filter(Boolean))
+    const missing = missingPaths(briefFor(name), p => files.has(p) || [...files].some(f => f.startsWith(`${p}/`)))
+    if (missing.length > 0) {
+      throw new Error(`El brief cita rutas que no existen en ${startRef}; no asigné ni creé nada:\n${missing.map(p => `  - ${p}`).join('\n')}\nUna ruta ignorada por git no llega a un worktree: citá algo que esté versionado.`)
+    }
+  } else if (dryRun) say(`⚠ No pude listar ${startRef}: la validación de rutas del brief se hace al despachar.`)
+  else throw new Error(`No pude listar ${startRef} para validar las rutas del brief: ${(tree.stderr || tree.stdout).trim()}`)
   if (!review) act('gh', ['issue', 'edit', String(n), '--add-assignee', '@me'], { cwd: root })
   const createArgs = ['worktree', 'create', '--name', name, '--base-branch', startRef, '--no-parent', ...(review ? [] : ['--issue', String(n)]), '--json']
   let worktree = '<worktree>'
@@ -267,22 +281,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       if (!worktree) throw new Error('orca worktree create no devolvió la ruta del worktree.')
     }
 
-    const brief = renderBrief(kind, {
-      REPO: repo, AGENT: agent, BASE: base, BRANCH: branch, VERIFICATION: verificationBlock(config),
-      ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
-    }, nota)
-    let has
-    if (dryRun) {
-      const tree = io.sh('git', ['ls-tree', '-r', '--name-only', startRef], { cwd: root })
-      const files = new Set(tree.stdout.split(/\r?\n/).filter(Boolean))
-      has = tree.status === 0 ? p => files.has(p) || [...files].some(f => f.startsWith(`${p}/`)) : null
-      if (!has) say(`⚠ No pude listar ${startRef}: la validación de rutas del brief se hace al despachar.`)
-    } else has = p => io.exists(path.join(worktree, p))
-    const missing = has ? missingPaths(brief, has) : []
-    if (missing.length > 0) {
-      throw new Error(`El brief cita rutas que no existen en el worktree${dryRun ? ` (${startRef})` : ''}; no lanzo nada y no borro nada:\n${missing.map(p => `  - ${p}`).join('\n')}\nUna ruta ignorada por git no llega a un worktree: citá algo que esté versionado.`)
-    }
-
+    const brief = briefFor(branch)
     say(`${dryRun ? '[simulación] ' : ''}brief -> ${briefPath}`)
     if (!dryRun) {
       io.mkdirp(path.dirname(briefPath))
