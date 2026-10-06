@@ -50,6 +50,15 @@ describe('doctor: drift warnings', () => {
     assert.match(out, /⚠ secciones de review de gentle-ai.*orca-stack global/)
   })
 
+  test('a gentle-ai block that changed shape warns that trimming is paused, with the reason', () => {
+    fakeGentle(bin, 'off')
+    plugin('1.3.1', ['tdd'])
+    write(path.join(home, '.claude', 'CLAUDE.md'), fixture('\n').replace('#### Cost and Context Balance', '#### X\nx body\n#### Cost and Context Balance'))
+    const out = doctor()
+    assert.match(out, /⚠ texto de gentle-ai en ~\/\.claude\/CLAUDE\.md - cambió de forma y el recorte .* en pausa.*#### X/)
+    assert.doesNotMatch(out, /secciones de review de gentle-ai/)
+  })
+
   test('a current plugin without duplicates, full agent skills and trimmed or RDD-on CLAUDE.md are clean', () => {
     fakeGentle(bin, 'on')
     plugin('1.3.1', ['tdd'])

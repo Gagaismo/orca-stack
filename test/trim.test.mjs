@@ -57,7 +57,8 @@ describe('trimReviewSections', () => {
     const cases = {
       'an inserted heading before Cost and Context Balance': [fixture('\n').replace('#### Cost and Context Balance', '#### X\nx body\n#### Cost and Context Balance'), /encabezado que no reconozco: #### X/],
       'an unknown heading inside a shorter section': [fixture('\n').replace('gate body', '##### Deeper\ngate body'), /##### Deeper/],
-      'an unbalanced fence': [fixture('\n').replace('# not a heading, inside a fence\n```', '# not a heading, inside a fence'), /sin cerrar/],
+      'an unbalanced fence': [fixture('\n').replace('// not a heading, inside a fence\n```', '// not a heading, inside a fence'), /sin cerrar/],
+      'a fence opened in the removed text and closed later in kept text': [fixture('\n').replace('gate body', '```\n#### Hidden\ngate body').replace('cost body', 'cost body\n```'), /#### Hidden/],
     }
     for (const [name, [text, why]] of Object.entries(cases)) {
       const result = trimReviewSections(text)

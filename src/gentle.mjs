@@ -49,6 +49,7 @@ export const trimReviewSections = text => {
   let until = null // set while inside the Review Execution Contract
   let fenced = false
   let unknown = null
+  const removedLines = []
   for (const line of text.slice(from, end).split('\n')) {
     const title = line.trimEnd()
     if (/^\s*```/.test(line)) {
@@ -69,10 +70,14 @@ export const trimReviewSections = text => {
       skipping = true
       until = title === REVIEW_CONTRACT ? REVIEW_CONTRACT_END : null
     }
-    if (!skipping) {
+    if (skipping) {
+      removedLines.push(line)
+    } else {
       kept.push(line)
     }
   }
+  // Second pass, ignoring fences: an unbalanced fence closed later in kept text hides headings from the first one.
+  unknown ??= removedLines.map(line => line.trimEnd()).find(title => levelOf(title) > 0 && !REVIEW_SECTIONS.has(title) && !CONTRACT_SUBTREE.has(title)) ?? null
   const skip = skipped => ({ text, removed: 0, skipped })
   if (fenced) {
     return skip('hay un bloque de código sin cerrar')

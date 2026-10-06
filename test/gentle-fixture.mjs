@@ -51,7 +51,7 @@ export const fixture = eol =>
     'table',
     '<!-- authority-first-terminal-procedure:end -->',
     '```',
-    '# not a heading, inside a fence',
+    '// not a heading, inside a fence',
     '```',
     '## Delivery follows ordinary repository policy',
     '### Concurrent Reviewer Group (MANDATORY)',

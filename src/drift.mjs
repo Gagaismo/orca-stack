@@ -77,11 +77,19 @@ export const driftWarnings = L => {
   }
   const gentle = which('gentle-ai')
   const md = existsSync(L.claudeMd) ? readFileSync(L.claudeMd, 'utf8') : ''
-  if (gentle && trimReviewSections(md).removed > 0 && rddMode(gentle) === 'off') {
-    found.push({
-      label: 'secciones de review de gentle-ai en ~/.claude/CLAUDE.md',
-      detail: 'siguen presentes con RDD apagado y se cargan en cada sesión: corré `orca-stack global` de nuevo (gentle-ai sync las restaura)',
-    })
+  const trim = gentle ? trimReviewSections(md) : null
+  if (trim && (trim.removed > 0 || trim.skipped !== undefined) && rddMode(gentle) === 'off') {
+    found.push(
+      trim.skipped === undefined
+        ? {
+            label: 'secciones de review de gentle-ai en ~/.claude/CLAUDE.md',
+            detail: 'siguen presentes con RDD apagado y se cargan en cada sesión: corré `orca-stack global` de nuevo (gentle-ai sync las restaura)',
+          }
+        : {
+            label: 'texto de gentle-ai en ~/.claude/CLAUDE.md',
+            detail: `cambió de forma y el recorte de sus secciones de review está en pausa (no se toca nada): ${trim.skipped}`,
+          },
+    )
   }
 
   return found
