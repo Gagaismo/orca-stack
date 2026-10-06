@@ -117,6 +117,38 @@ describe('despachar: refusals', () => {
   })
 })
 
+describe('despachar: failures along the way', () => {
+  test('a failed git fetch aborts before any write', async () => {
+    const env = fakeIo({ 'git fetch': { status: 1, stdout: '', stderr: 'fatal: no remote' } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), /git fetch origin falló.*fatal: no remote/)
+    assert.deepEqual(env.calls.filter(c => (c[0] === 'gh' && c[2] === 'edit') || (c[0] === 'orca' && c[2] === 'create')), [])
+    assert.equal(env.written.length, 0)
+  })
+
+  test('an abort after the worktree exists lists what was left and how to recover', async () => {
+    const env = fakeIo({ 'orca terminal create': { status: 1, stdout: '', stderr: 'boom' } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), /boom/)
+    const text = env.out.join('\n')
+    assert.ok(text.includes('quedó a medias'))
+    assert.ok(text.includes('el issue #7 asignado') && text.includes(`el worktree ${worktree}`) && text.includes('el brief '))
+    assert.ok(text.includes(`orca worktree rm --worktree path:${worktree}`) && text.includes('OK del humano'))
+    assert.ok(text.includes('gh issue edit 7 --remove-assignee @me') && text.includes('rechazar el despacho'))
+  })
+
+  test('an abort right after assigning only lists the assignee', async () => {
+    const env = fakeIo({ 'orca worktree create': { status: 1, stdout: '', stderr: 'no repo' } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), /no repo/)
+    const text = env.out.join('\n')
+    assert.ok(text.includes('el issue #7 asignado') && !text.includes('el worktree') && !text.includes('orca worktree rm'))
+  })
+
+  test('the implementer line is compared case-insensitively and trimmed', async () => {
+    const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('Implementador:   AGY  \n'))), /nadie revisa su propio PR/)
+    await assert.rejects(run('review', { n: '9', agent: 'codex', confirmado: true }, fakeIo(pr('implementador: Codex-CC'))), /comparten modelo/)
+  })
+})
+
 describe('briefs', () => {
   test('ticket brief keeps markers literal, verification verbatim and the nota', async () => {
     const env = fakeIo()

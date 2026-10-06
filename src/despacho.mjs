@@ -210,9 +210,9 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   let sha
   if (review) {
     const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'headRefName,headRefOid,body,number'], { cwd: root }), 'gh pr view'), 'gh pr view')
-    implementer = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]
+    implementer = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim().toLowerCase()
     if (!implementer) throw new Error(`El PR #${n} no tiene la línea "Implementador: <agente>": sin ella no puedo comprobar que el revisor sea otro.`)
-    if (implementer === agent) throw new Error(`${agent} implementó el PR #${n}: nadie revisa su propio PR.`)
+    if (implementer === agent.trim().toLowerCase()) throw new Error(`${agent} implementó el PR #${n}: nadie revisa su propio PR.`)
     if (CODEX_FAMILY.includes(agent) && CODEX_FAMILY.includes(implementer)) throw new Error(`${agent} no revisa PRs de ${implementer}: comparten modelo y puntos ciegos.`)
     branchOfPr = pr.headRefName
     sha = pr.headRefOid
@@ -253,7 +253,10 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     return dryRun ? { status: 0, stdout: '', stderr: '' } : ok(io.sh(cmd, argv, opts), `${cmd} ${argv[0]}`)
   }
 
-  if (!dryRun) io.sh('git', ['fetch', 'origin'], { cwd: root })
+  if (!dryRun) {
+    const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
+    if (fetched.status !== 0) throw new Error(`git fetch origin falló, no asigné ni creé nada: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
+  }
   const briefFor = branch => renderBrief(kind, {
     REPO: repo, AGENT: agent, BASE: base, BRANCH: branch, VERIFICATION: verificationBlock(config),
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
@@ -268,7 +271,11 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     }
   } else if (dryRun) say(`⚠ No pude listar ${startRef}: la validación de rutas del brief se hace al despachar.`)
   else throw new Error(`No pude listar ${startRef} para validar las rutas del brief: ${(tree.stderr || tree.stdout).trim()}`)
-  if (!review) act('gh', ['issue', 'edit', String(n), '--add-assignee', '@me'], { cwd: root })
+  const left = { assigned: false, worktree: null, brief: null }
+  if (!review) {
+    act('gh', ['issue', 'edit', String(n), '--add-assignee', '@me'], { cwd: root })
+    left.assigned = !dryRun
+  }
   const createArgs = ['worktree', 'create', '--name', name, '--base-branch', startRef, '--no-parent', ...(review ? [] : ['--issue', String(n)]), '--json']
   let worktree = '<worktree>'
   let branch = name
@@ -279,6 +286,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       worktree = deepFind(json.result ?? json, ['path', 'worktreePath'])
       branch = (deepFind(json.result ?? json, ['branch']) ?? name).replace(/^refs\/heads\//, '')
       if (!worktree) throw new Error('orca worktree create no devolvió la ruta del worktree.')
+      left.worktree = worktree
     }
 
     const brief = briefFor(branch)
@@ -286,6 +294,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     if (!dryRun) {
       io.mkdirp(path.dirname(briefPath))
       io.writeFile(briefPath, brief)
+      left.brief = briefPath
     }
     say(`Lanzador (${agent}): ${launcher}`)
     const term = act('orca', ['terminal', 'create', '--worktree', `path:${worktree}`, '--title', agent, '--command', launcher, '--json'])
@@ -305,7 +314,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
 
     return 0
   } catch (error) {
-    if (!dryRun && !review) say(`El issue #${n} quedó asignado; si no se despachó nada, soltalo con: gh issue edit ${n} --remove-assignee @me`)
+    if (!dryRun) say(leftover(left, n, base))
     throw error
   }
 }
@@ -314,3 +323,20 @@ const command = kind => async (flags, n, agent) =>
   dispatch(kind, { n, agent, nota: flags.nota, dryRun: flags.dryRun, confirmado: flags.confirmado })
 export const despacharCommand = command('ticket')
 export const revisarCommand = command('review')
+
+// What a failed dispatch left behind and how to recover: the idempotence lock refuses a retry while the worktree exists.
+export const leftover = ({ assigned, worktree, brief }, n, base) => {
+  if (!assigned && !worktree && !brief) return 'No quedó nada a medias.'
+  const lines = ['El despacho quedó a medias. Quedó:']
+  if (assigned) lines.push(`  - el issue #${n} asignado`)
+  if (worktree) lines.push(`  - el worktree ${worktree}`)
+  if (brief) lines.push(`  - el brief ${brief}`)
+  lines.push(worktree ? 'Un reintento va a rechazar el despacho mientras el worktree exista. Para recuperar:' : 'Para recuperar:')
+  if (worktree) {
+    lines.push('  - seguí a mano: lanzá el agente en ese worktree y mandale el brief; o')
+    lines.push(`  - con el OK del humano, \`orca worktree rm --worktree path:${worktree}\` (borra también la rama local: antes mirá que \`git branch --no-merged origin/${base}\` no la liste)`)
+  }
+  if (assigned) lines.push(`  - soltá el issue con \`gh issue edit ${n} --remove-assignee @me\``)
+
+  return lines.join('\n')
+}
