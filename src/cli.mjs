@@ -42,6 +42,7 @@ Instala a nivel usuario:
   3. Skills propias en ~/.claude/skills y ~/.agents/skills
   4. Mods en ~/.claude/mods y sus rutas en env.CLAUDE_CODE_PLUGIN_DIRS de ~/.claude/settings.json
   5. Bloque <!-- orca-stack:begin --> en ~/.claude/CLAUDE.md
+     Con el RDD de gentle-ai apagado, saca de ese archivo sus secciones de review (\`gentle-ai sync\` las restaura: volvé a correr \`global\`)
   6. Pi: gentle-pi y pi-claude-bridge con \`pi install\` + gentle-pi global (omitido con --skip-pi)
   7. ~/.orca-stack/state.json (para \`remove\`) y ~/.orca-stack/config.json (capa personal)
 
