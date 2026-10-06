@@ -173,3 +173,145 @@ export const inspect = (command: string, nowMs: number, rules: Rules, shell: She
 
   return wasRewritten ? { kind: 'rewrite', command: parts.join('') } : { kind: 'pass' }
 }
+
+// ---- worktree removal ---------------------------------------------------------------------------
+// `orca worktree rm` also deletes the local branch, even with commits that exist nowhere else.
+
+export type Removal = { by: 'path' | 'branch' | 'name' | 'issue' | 'none'; value: string }
+export type Worktree = { path: string; branch: string | undefined }
+export type RunGit = (argv: string[]) => Promise<{ exitCode: number; stdout: string }>
+
+const tokensOf = (segment: string): string[] =>
+  (segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map(unquote).filter(token => token !== '&')
+
+const selectorOf = (value: string | undefined): Removal => {
+  if (value === undefined || value === '') {
+    return { by: 'none', value: '' }
+  }
+  const at = value.indexOf(':')
+  const kind = at > 0 ? value.slice(0, at) : ''
+  const rest = value.slice(at + 1)
+  if (kind === 'branch') {
+    return { by: 'branch', value: rest.replace(/^refs\/heads\//, '') }
+  }
+  if (kind === 'issue' || kind === 'name') {
+    return { by: kind, value: rest }
+  }
+  if (kind === 'id') {
+    return { by: 'path', value: rest.includes('::') ? rest.slice(rest.indexOf('::') + 2) : rest }
+  }
+  // `path:<p>` or a bare path (git worktree remove <p>). A Windows drive letter is not a selector kind.
+  return { by: 'path', value: kind === 'path' ? rest : value }
+}
+
+// Every `orca worktree rm` / `git worktree remove` in the command (bash and PowerShell forms).
+export const worktreeRemovals = (command: string): Removal[] => {
+  const found: Removal[] = []
+  for (const segment of command.split(SEPARATOR)) {
+    const tokens = tokensOf(segment)
+    let i = 0
+    while (i < tokens.length && (ENV_ASSIGN.test(tokens[i] ?? '') || WRAPPERS.has(tokens[i] ?? ''))) {
+      i += 1
+    }
+    const word = baseName(tokens[i] ?? '').replace(/\.(exe|cmd|ps1)$/i, '')
+    const args = tokens.slice(i + 1)
+    if (word === 'orca' && args[0] === 'worktree' && args[1] === 'rm') {
+      const flag = args.findIndex(arg => arg === '--worktree' || arg.startsWith('--worktree='))
+      const raw = args[flag]
+      found.push(selectorOf(flag === -1 ? undefined : raw?.startsWith('--worktree=') ? raw.slice(11) : args[flag + 1]))
+    } else if (word === 'git') {
+      let j = 0
+      while (j < args.length && args[j] !== 'worktree') {
+        j += args[j] === '-C' || args[j] === '-c' ? 2 : 1
+      }
+      if (args[j] === 'worktree' && args[j + 1] === 'remove') {
+        found.push(selectorOf(args.slice(j + 2).find(arg => !arg.startsWith('-'))))
+      }
+    }
+  }
+
+  return found
+}
+
+export const parseWorktrees = (porcelain: string): Worktree[] =>
+  porcelain
+    .split(/\r?\n\r?\n/)
+    .map(block => {
+      const lines = block.split(/\r?\n/)
+      const path = lines.find(line => line.startsWith('worktree '))?.slice(9)
+      const branch = lines.find(line => line.startsWith('branch '))?.slice(7).replace(/^refs\/heads\//, '')
+
+      return path === undefined ? undefined : { path, branch }
+    })
+    .filter((one): one is Worktree => one !== undefined)
+
+const norm = (path: string): string => path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+
+// undefined: no worktree matches. A worktree without a branch (detached) has `branch` undefined.
+const find = (removal: Removal, list: Worktree[]): Worktree | undefined => {
+  const value = norm(removal.value)
+  const tail = (path: string): string => norm(path).split('/').pop() ?? ''
+  switch (removal.by) {
+    case 'branch':
+      return list.find(one => one.branch === removal.value)
+    case 'path':
+      return list.find(one => norm(one.path) === value || norm(one.path).endsWith(`/${value.replace(/^(\.\.?\/)+/, '')}`))
+    case 'issue':
+      return list.find(one => tail(one.path) === `issue-${value}`)
+    case 'name':
+      return list.find(one => tail(one.path) === value || one.branch === removal.value)
+    default:
+      return undefined
+  }
+}
+
+const PERMISSION = 'Remover un worktree necesita el OK del humano (CONTRATO.md, "Permisos").'
+
+export const unmergedReason = (branch: string, commits: string[]): string =>
+  `La rama ${branch} tiene ${commits.length} commit(s) que no están en ningún remoto: ${commits.slice(0, 5).join(' | ')}. ` +
+  `Remover su worktree borra también la rama local y esos commits se pierden. ${PERMISSION} ` +
+  'Pusheá la rama antes, o pedile el OK al humano.'
+
+export const unresolvedReason = (why: string): string =>
+  `No pude comprobar si el worktree tiene commits sin publicar (${why}). ${PERMISSION}`
+
+// undefined: every removal in the command is safe. Anything that cannot be resolved is denied (fail closed).
+export const checkRemovals = async (command: string, git: RunGit): Promise<string | undefined> => {
+  const removals = worktreeRemovals(command)
+  if (removals.length === 0) {
+    return undefined
+  }
+  let list: Worktree[]
+  try {
+    const out = await git(['git', 'worktree', 'list', '--porcelain'])
+    if (out.exitCode !== 0) {
+      return unresolvedReason('git worktree list falló')
+    }
+    list = parseWorktrees(out.stdout)
+  } catch {
+    return unresolvedReason('no pude correr git')
+  }
+  for (const removal of removals) {
+    const target = find(removal, list)
+    if (target === undefined) {
+      return unresolvedReason(`no encuentro el worktree ${removal.value === '' ? '(sin selector)' : removal.value}`)
+    }
+    if (target.branch === undefined) {
+      continue // detached: nothing to lose, no branch is deleted
+    }
+    try {
+      const log = await git(['git', 'log', `refs/heads/${target.branch}`, '--not', '--remotes', '--oneline'])
+      if (log.exitCode !== 0) {
+        return unresolvedReason(`git log de ${target.branch} falló`)
+      }
+      const commits = log.stdout.split(/\r?\n/).filter(line => line.trim() !== '')
+      if (commits.length > 0) {
+        return unmergedReason(target.branch, commits)
+      }
+    } catch {
+      return unresolvedReason('no pude correr git')
+    }
+  }
+
+  return undefined
+}

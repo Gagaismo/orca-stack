@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { currentConfig, forgetConfig } from '../hooks/orca-config'
-import { buildRules, inspect, modelReason, parseUntil } from '../hooks/inspect'
+import { buildRules, checkRemovals, inspect, modelReason, parseUntil, unmergedReason, worktreeRemovals } from '../hooks/inspect'
 
 const CODEX_REASON = 'Codex no tiene cuota: despachá a claude o agy.'
 const MODEL = 'claude-sonnet-5-5'
@@ -237,4 +237,94 @@ test('the config memory is keyed by repo root: another checkout never gets the p
   expect(a.despacho?.script).toBe('a.sh')
   expect(b.despacho?.script).toBe('b.sh')
   forgetConfig()
+})
+
+const PORCELAIN =
+  'worktree C:/r/repo\nHEAD aaa\nbranch refs/heads/main\n\n' +
+  'worktree C:/r/ws/issue-5\nHEAD bbb\nbranch refs/heads/me/5-fix\n\n' +
+  'worktree C:/r/ws/issue-6\nHEAD ccc\ndetached\n'
+
+test('worktreeRemovals finds orca and git removals in bash and PowerShell forms only', () => {
+  expect(worktreeRemovals('orca worktree rm --worktree branch:me/5-fix --json')).toEqual([{ by: 'branch', value: 'me/5-fix' }])
+  expect(worktreeRemovals('orca worktree rm --worktree=issue:5')).toEqual([{ by: 'issue', value: '5' }])
+  const bs = String.fromCharCode(92)
+  expect(worktreeRemovals(`orca.cmd worktree rm --worktree "path:C:${bs}r${bs}ws${bs}issue-5"`)).toEqual([
+    { by: 'path', value: `C:${bs}r${bs}ws${bs}issue-5` },
+  ])
+  expect(worktreeRemovals('git -C ../repo worktree remove -f C:/r/ws/issue-5')).toEqual([{ by: 'path', value: 'C:/r/ws/issue-5' }])
+  expect(worktreeRemovals(`cd x; & git worktree remove ..${bs}ws${bs}issue-5`)).toEqual([{ by: 'path', value: `..${bs}ws${bs}issue-5` }])
+  expect(worktreeRemovals('orca worktree rm')).toEqual([{ by: 'none', value: '' }])
+  for (const line of ['orca worktree ps --json', 'git worktree list', 'echo "orca worktree rm"', 'grep -r "git worktree remove" docs/']) {
+    expect(worktreeRemovals(line)).toEqual([])
+  }
+})
+
+const fakeGit = (unmerged: string, opts: { listFails?: boolean; logFails?: boolean } = {}) => {
+  const calls: string[][] = []
+  const git = async (argv: string[]) => {
+    calls.push(argv)
+    if (argv[2] === 'list') {
+      return { exitCode: opts.listFails === true ? 1 : 0, stdout: PORCELAIN }
+    }
+
+    return { exitCode: opts.logFails === true ? 128 : 0, stdout: unmerged }
+  }
+
+  return { git, calls }
+}
+
+test('a worktree whose branch has commits outside every remote is denied, naming them', async () => {
+  const { git, calls } = fakeGit('abc1234 feat: algo\ndef5678 fix: otro\n')
+  const reason = await checkRemovals('orca worktree rm --worktree issue:5', git)
+  expect(reason).toBe(unmergedReason('me/5-fix', ['abc1234 feat: algo', 'def5678 fix: otro']))
+  expect(reason).toContain('OK del humano')
+  expect(calls[1]).toEqual(['git', 'log', 'refs/heads/me/5-fix', '--not', '--remotes', '--oneline'])
+  expect(await checkRemovals('git worktree remove C:/r/ws/issue-5', git)).toContain('abc1234')
+})
+
+test('a published branch, a detached worktree and non-removals pass', async () => {
+  const clean = fakeGit('')
+  expect(await checkRemovals('orca worktree rm --worktree branch:me/5-fix', clean.git)).toBeUndefined()
+  expect(await checkRemovals('git worktree remove ../ws/issue-6', fakeGit('x y').git)).toBeUndefined()
+  const none = fakeGit('x y')
+  expect(await checkRemovals('orca worktree ps --json && git status', none.git)).toBeUndefined()
+  expect(none.calls).toEqual([])
+})
+
+test('anything git cannot resolve is denied (fail closed)', async () => {
+  expect(await checkRemovals('orca worktree rm --worktree issue:5', fakeGit('', { listFails: true }).git)).toContain('No pude')
+  expect(await checkRemovals('orca worktree rm --worktree issue:5', fakeGit('', { logFails: true }).git)).toContain('falló')
+  expect(await checkRemovals('orca worktree rm --worktree issue:99', fakeGit('').git)).toContain('no encuentro')
+  expect(await checkRemovals('orca worktree rm', fakeGit('').git)).toContain('sin selector')
+  const boom = async (): Promise<never> => {
+    throw new Error('sin git')
+  }
+  expect(await checkRemovals('git worktree remove x', boom)).toContain('no pude correr git')
+})
+
+test('the hook denies a worktree removal through the engine even with no config', async ($, on) => {
+  forgetConfig()
+  mock.clock(on, { now: BEFORE })
+  mock.env(on, { HOME: '/home/u' })
+  on('fs.exists', () => ({ value: false }))
+  on('process.run', (_$, e) => ({
+    value: {
+      exitCode: 0,
+      stdout: e.argv[2] === 'list' ? PORCELAIN : e.argv[0] === 'git' && e.argv[1] === 'log' ? 'abc1234 wip\n' : '/work/repo/.git\n/work/repo\n',
+      stderr: '',
+      isStdoutTruncated: false,
+      isStderrTruncated: false,
+    },
+  }))
+  const seen: string[] = []
+  on('tool.call', { tool: 'Bash' }, (_$, e) => {
+    seen.push(e.command)
+
+    return { result: { stdout: '', stderr: '', interrupted: false } as never }
+  })
+  const out = await $.tool.call({ tool: 'Bash', command: 'orca worktree rm --worktree issue:5' })
+  expect(out.deny).toContain('abc1234 wip')
+  expect(seen).toHaveLength(0)
+  await $.tool.call({ tool: 'Bash', command: 'git status' })
+  expect(seen).toEqual(['git status'])
 })
