@@ -38,6 +38,20 @@ ${buildBlock('b')}
     assert.throws(() => removeBlock(twice), /duplicados/)
   })
 
+  test('migrates a legacy orca-stack:auto block in place', () => {
+    const legacy = 'antes\n\n<!-- orca-stack:auto -->\n## Viejo\nC:\\Users\\x\\ORCA-STACK.md\n<!-- /orca-stack:auto -->\n\ndespués\n'
+    assert.equal(upsertBlock(legacy, 'nuevo'), `antes\n\n${buildBlock('nuevo')}\n\ndespués\n`)
+  })
+
+  test('drops a legacy block when the current block already exists', () => {
+    const both = `${buildBlock('actual')}\n\n<!-- orca-stack:auto -->\nviejo\n<!-- /orca-stack:auto -->\n`
+    assert.equal(upsertBlock(both, 'nuevo'), `${buildBlock('nuevo')}\n`)
+  })
+
+  test('refuses an unbalanced legacy block', () => {
+    assert.throws(() => upsertBlock('<!-- orca-stack:auto -->\nsin fin\n', 'x'), /incompletos/)
+  })
+
   test('refuses unbalanced markers instead of guessing', () => {
     assert.throws(() => upsertBlock(`${MARKER_BEGIN}\nsin fin`, 'x'), /incompletos/)
     assert.throws(() => removeBlock(`${MARKER_END}\n${MARKER_BEGIN}`), /incompletos/)
@@ -95,7 +109,8 @@ describe('the repository itself', () => {
   const files = []
   const walk = dir => {
     for (const name of readdirSync(dir)) {
-      if (['.git', 'node_modules'].includes(name)) continue
+      // .atl is the local skill registry gentle-ai writes (gitignored, holds the user's paths).
+      if (['.git', 'node_modules', '.atl'].includes(name)) continue
       const full = path.join(dir, name)
       if (statSync(full).isDirectory()) walk(full)
       else files.push(full)

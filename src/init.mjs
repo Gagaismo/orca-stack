@@ -21,13 +21,8 @@ const projectRoot = cwd => {
   return result.status === 0 ? path.resolve(result.stdout.trim()) : null
 }
 
-// A CLAUDE.md that only says "read AGENTS.md" gets a short pointer instead of the full block.
-export const isPointerOnly = text => {
-  const outside = removeBlock(text).text
-  const lines = outside.split(/\r?\n/).filter(line => line.trim() !== '')
-
-  return lines.length <= 12 && /AGENTS\.md/.test(outside)
-}
+// Claude Code stops loading AGENTS.md on its own once a CLAUDE.md exists: the import is what loads the contract.
+const importsAgents = text => removeBlock(text).text.split(/\r?\n/).some(line => line.trim() === '@AGENTS.md')
 
 export const initCommand = async (flags, cwd = process.cwd()) => {
   const dryRun = flags.dryRun
@@ -45,10 +40,10 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
   // Plan first: every file is computed (and every marker validated) before the first write,
   // so a broken AGENTS.md or CLAUDE.md can never leave the project half-wired.
   const plan = []
-  const block = (name, body, fallbackWhenMissing) => {
+  const block = (name, body) => {
     const file = path.join(root, name)
     const original = readTextIfExists(file)
-    const next = fallbackWhenMissing && original === null ? fallbackWhenMissing(body) : upsertBlock(original ?? '', body)
+    const next = upsertBlock(original ?? '', body)
     if (next === original) {
       console.log(`${name}: el bloque orca-stack ya está al día`)
     } else {
@@ -66,15 +61,8 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
   try {
     block('AGENTS.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, agentsPointer: true }))
 
-    const claudeText = readTextIfExists(path.join(root, 'CLAUDE.md'))
-    const short = policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, short: true })
-    if (claudeText === null) {
-      block('CLAUDE.md', short, body => `Leé \`AGENTS.md\`: es el contrato de trabajo de este repo.\n\n${upsertBlock('', body)}`)
-    } else if (isPointerOnly(claudeText)) {
-      block('CLAUDE.md', short)
-    } else {
-      block('CLAUDE.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, agentsPointer: true }))
-    }
+    const claudeText = readTextIfExists(path.join(root, 'CLAUDE.md')) ?? ''
+    block('CLAUDE.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, short: true, importAgents: !importsAgents(claudeText) }))
   } catch (error) {
     console.error(`✖ ${error.message}\nNo escribí nada.`)
 

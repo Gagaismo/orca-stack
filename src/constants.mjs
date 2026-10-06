@@ -23,6 +23,9 @@ export const STACK_LEVELS = { mode: 'auto', caveman: 'full', ponytail: 'full' }
 
 export const MARKER_BEGIN = '<!-- orca-stack:begin -->'
 export const MARKER_END = '<!-- orca-stack:end -->'
+// Written by the stack before orca-stack existed; init and global migrate it to the current markers.
+export const LEGACY_BEGIN = '<!-- orca-stack:auto -->'
+export const LEGACY_END = '<!-- /orca-stack:auto -->'
 
 export const PROJECT_CONFIG = '.orca-stack.json'
 export const PROJECT_LOCAL_CONFIG = '.orca-stack.local.json'

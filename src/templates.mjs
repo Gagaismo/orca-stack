@@ -126,11 +126,12 @@ export const shWrapper = agent => {
 export const wrapperContent = (agent, win) => (win ? cmdWrapper(agent) : shWrapper(agent))
 
 // The block placed in CLAUDE.md / AGENTS.md. policyPath/briefsPath are shown as given.
-export const policyBlock = ({ policyPath, briefsPath, short = false, agentsPointer = false }) => {
+export const policyBlock = ({ policyPath, briefsPath, short = false, agentsPointer = false, importAgents = false }) => {
   if (short) {
     return [
       '## Orca stack integration',
       '',
+      ...(importAgents ? ['@AGENTS.md', ''] : []),
       `The stack policy is \`${policyPath}\`; the orca-stack block in \`AGENTS.md\` summarises it.`,
     ].join('\n')
   }
