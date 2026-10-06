@@ -220,9 +220,27 @@ const tokensOf = (segment: string): Token[] =>
     .filter(token => token.text !== '' && token.text !== '&')
 
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'pwsh', 'powershell', 'cmd', 'iex', 'invoke-expression'])
-const SHELL_FLAG = /^(-[a-z]*c|-c(o(m(m(a(n(d)?)?)?)?)?)?|\/c)$/i
+const SHELL_FLAG = /^(-[a-z]*c|[-/]c(o(m(m(a(n(d)?)?)?)?)?)?)$/i
 // PowerShell takes any prefix of -EncodedCommand (-e, -en, -enc, ...) and its alias -ec.
-const isEncoded = (flag: string): boolean => /^-e/i.test(flag) && ('encodedcommand'.startsWith(flag.slice(1).toLowerCase()) || flag.toLowerCase() === '-ec')
+// PowerShell also takes `/` as a flag prefix.
+const isEncoded = (flag: string): boolean => /^[-/]e/i.test(flag) && ('encodedcommand'.startsWith(flag.slice(1).toLowerCase()) || flag.slice(1).toLowerCase() === 'ec')
+const PS_VALUE_FLAGS = ['executionpolicy', 'ep', 'version', 'windowstyle', 'inputformat', 'outputformat', 'configurationname', 'workingdirectory', 'settingsfile', 'custommodulepath']
+// Windows PowerShell 5.1 runs the first positional argument as -Command text; `-File` and `-ExecutionPolicy x` do not.
+const psPositionalText = (args: Token[]): string => {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]
+    const flag = arg !== undefined && !arg.quoted && /^[-/][a-z]+$/i.test(arg.text) ? arg.text.slice(1).toLowerCase() : undefined
+    if (flag === undefined) {
+      return args.slice(i).map(one => one.text).join(' ')
+    }
+    if ('file'.startsWith(flag)) {
+      return ''
+    }
+    i += PS_VALUE_FLAGS.some(full => full.startsWith(flag)) ? 1 : 0
+  }
+
+  return ''
+}
 // The executable may be quoted inside the text: & 'C:\...\orca.exe' worktree rm
 const NESTED = /\borca(\.exe|\.cmd)?['"]?\s+worktree\s+rm\b|\bgit(\.exe)?['"]?[^|;&]*\bworktree\s+remove\b/i
 const bare = (token: string): string => baseName(token).replace(/\.(exe|cmd|ps1)$/i, '').toLowerCase()
@@ -268,8 +286,10 @@ export const worktreeRemovals = (command: string): Removal[] => {
       const texts = args.map(arg => arg.text)
       if (SHELLS.has(word)) {
         const flag = args.findIndex(arg => !arg.quoted && SHELL_FLAG.test(arg.text))
-        const encoded = (word === 'pwsh' || word === 'powershell') && args.some(arg => !arg.quoted && isEncoded(arg.text))
-        if (encoded || (flag !== -1 && texts.slice(flag + 1).some(text => NESTED.test(text))) || (word === 'iex' || word === 'invoke-expression') && texts.some(text => NESTED.test(text))) {
+        const ps = word === 'pwsh' || word === 'powershell'
+        const encoded = ps && args.some(arg => !arg.quoted && isEncoded(arg.text))
+        const positional = ps && flag === -1 && NESTED.test(psPositionalText(args))
+        if (encoded || positional || (flag !== -1 && texts.slice(flag + 1).some(text => NESTED.test(text))) || (word === 'iex' || word === 'invoke-expression') && texts.some(text => NESTED.test(text))) {
           found.push({ by: 'opaque', value: segment.trim() })
         }
       } else if (word === 'orca' && texts[0] === 'worktree' && texts[1] === 'rm') {
