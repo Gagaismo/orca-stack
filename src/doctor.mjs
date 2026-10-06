@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import { LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { loadState } from './ctx.mjs'
+import { driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
 import { installedPackageVersion, piBinary, piModulesDir, piVersion, resolveGentleSkills } from './pi.mjs'
@@ -178,6 +179,16 @@ export const doctorCommand = async flags => {
     add(auth === null || auth.status === 0 ? 'ok' : 'warn', 'gh', auth === null ? '' : auth.status === 0 ? 'autenticado' : 'sin sesión: `gh auth login`')
   } else {
     add('warn', 'gh', 'no se encontró (el tablero de PRs lo usa)')
+  }
+
+  // Drift: things that were right once and went stale
+  section('Deriva')
+  const drift = driftWarnings(L)
+  for (const { label, detail } of drift) {
+    add('warn', label, detail)
+  }
+  if (drift.length === 0) {
+    add('ok', 'skills de Matt y secciones de gentle-ai', 'sin deriva')
   }
 
   // Orca (read-only)

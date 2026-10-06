@@ -230,7 +230,8 @@ const printManualSteps = (ctx, { skipPi }) => {
     step('Instalar Orca (si todavía no lo tenés)', INSTALL_HINTS.orca)
   }
   step('Skills de terceros (se instalan desde su origen, no vienen en este paquete)', [
-    `Matt Pocock:  ${INSTALL_HINTS.mattpocock[0]}`,
+    `Matt Pocock (Claude):  ${INSTALL_HINTS.mattpocock.join(' && ')}`,
+    `Matt Pocock (agy, codex):  ${INSTALL_HINTS.mattpocockAgents[0]}`,
     `Caveman:      ${INSTALL_HINTS.caveman[0]}`,
   ])
   step('Reiniciá Claude Code: los mods se cargan en las sesiones nuevas')
