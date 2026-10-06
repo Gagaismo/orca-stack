@@ -77,7 +77,15 @@ export const trimReviewSections = text => {
     }
   }
   // Second pass, ignoring fences: an unbalanced fence closed later in kept text hides headings from the first one.
-  unknown ??= removedLines.map(line => line.trimEnd()).find(title => levelOf(title) > 0 && !REVIEW_SECTIONS.has(title) && !CONTRACT_SUBTREE.has(title)) ?? null
+  // A fence that opens and closes inside the removed range hides its `# comment` lines (level 1); one left open there does not.
+  let inside = false
+  const flagged = removedLines.map(line => {
+    inside = /^\s*```/.test(line) ? !inside : inside
+
+    return { title: line.trimEnd(), inFence: inside }
+  })
+  const balanced = !inside
+  unknown ??= flagged.find(({ title, inFence }) => !(balanced && inFence && levelOf(title) === 1) && levelOf(title) > 0 && !REVIEW_SECTIONS.has(title) && !CONTRACT_SUBTREE.has(title))?.title ?? null
   const skip = skipped => ({ text, removed: 0, skipped })
   if (fenced) {
     return skip('hay un bloque de código sin cerrar')

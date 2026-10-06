@@ -225,7 +225,7 @@ const printManualSteps = (ctx, { skipPi }) => {
     step('Pi: abrí `pi` y corré /login para conectar tu cuenta (sin eso Gentle Shell no responde)')
   }
   step('GitHub CLI: `gh auth login` (el tablero de PRs y el puente lo necesitan)')
-  step('`gentle-ai sync` para que gentle-ai reconcilie sus bloques en tus agentes')
+  step('Después de cada `gentle-ai sync`, volvé a correr `orca-stack global` (la sync restaura las secciones de review recortadas)')
   for (const [bin, title] of [['engram', 'engram'], ['gentle-ai', 'gentle-ai']]) {
     if (!which(bin)) {
       step(`Instalar ${title}`, INSTALL_HINTS[bin])

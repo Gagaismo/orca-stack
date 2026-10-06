@@ -453,6 +453,15 @@ test('every -EncodedCommand abbreviation is denied, and -ExecutionPolicy is not 
   expect(worktreeRemovals('bash -e script.sh')).toEqual([])
 })
 
+test('PowerShell: the first positional argument is command text, and / is a flag prefix', () => {
+  for (const form of ['powershell "orca worktree rm --worktree branch:x"', 'pwsh /Command "orca worktree rm --worktree branch:x"', 'powershell /enc ZQBjAGgAbwA=', 'pwsh -NoProfile -ExecutionPolicy Bypass "orca worktree rm --worktree branch:x"', 'powershell "orca worktree rm --worktree branch:x" -c', 'powershell -s "orca worktree rm --worktree branch:x"']) {
+    expect(worktreeRemovals(form).map(one => one.by), form).toEqual(['opaque'])
+  }
+  for (const form of ['powershell -File build.ps1', 'powershell -ExecutionPolicy Bypass -File build.ps1', 'powershell build.ps1', 'powershell "echo hi"']) {
+    expect(worktreeRemovals(form), form).toEqual([])
+  }
+})
+
 test('path and name selectors must resolve to exactly one worktree', async () => {
   const porcelain = PORCELAIN + '\nworktree C:/r/other/issue-5\nHEAD ddd\nbranch refs/heads/other/5\n'
   const two = fakeGit('', { porcelain })
