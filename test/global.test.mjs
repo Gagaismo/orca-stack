@@ -252,6 +252,7 @@ describe('doctor', () => {
     const policy = read(path.join(home, 'orca', 'stack', 'ORCA-STACK.md'))
     assert.match(policy, /Launching agents for a manual dispatch/)
     assert.doesNotMatch(policy, /{{[A-Z_]+}}/)
+    for (const agent of ['claude:', 'agy:', 'codex:', 'codex-cc:']) assert.ok(policy.includes(`- ${agent}`), agent)
     assert.match(policy, /claude-orca-stack/)
     assert.match(policy, /model_provider=cc/)
     const contract = read(path.join(ROOT, 'assets', 'stack', 'CONTRATO.md'))
