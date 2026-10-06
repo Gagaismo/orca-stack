@@ -4,7 +4,6 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { citedPaths, dispatch, launcherFor, missingPaths } from '../src/despacho.mjs'
-import { stackVars } from '../src/global.mjs'
 import { layout } from '../src/util.mjs'
 import { cleanup, read, tempDir, write } from './helpers.mjs'
 
@@ -189,13 +188,21 @@ describe('briefs', () => {
 })
 
 describe('launchers', () => {
-  const vars = stackVars(layout('C:\\Users\\me'))
-  const base = { mode: 'ticket', vars, config: {}, win: true, home: 'C:\\Users\\me', briefPath: 'C:\\b.md', session: 'proj-7', skills: 'C:\\skills' }
+  const base = { mode: 'ticket', config: {}, win: true, home: 'C:\\Users\\me', briefPath: 'C:\\b.md', session: 'proj-7', skills: 'C:\\skills' }
 
   test('claude and agy take --model only when configured', () => {
     assert.match(launcherFor({ ...base, agent: 'claude' }), /^& ".*claude-orca-stack\.cmd" --dangerously-skip-permissions$/)
     const config = { agentes: { modelos: { agy: 'gemini-x' } } }
     assert.match(launcherFor({ ...base, agent: 'agy', config }), /agy-orca-stack\.cmd" --dangerously-skip-permissions --model gemini-x$/)
+  })
+
+  test('the target platform, not the host, decides the wrapper and the paths', () => {
+    const posix = { ...base, win: false, home: '/home/me', briefPath: '/b.md', skills: '/s' }
+    assert.equal(launcherFor({ ...posix, agent: 'claude' }), '"/home/me/orca/stack/scripts/claude-orca-stack.sh" --dangerously-skip-permissions')
+    assert.ok(launcherFor({ ...posix, agent: 'codex' }).startsWith('"/home/me/orca/stack/scripts/codex-orca-stack.sh" '))
+    assert.ok(launcherFor({ ...posix, agent: 'codex-cc' }).startsWith('export CMD_API_KEY='))
+    assert.ok(launcherFor({ ...posix, agent: 'pi' }).includes("ENGRAM_DATA_DIR='/home/me/.gentle-shell/engram'"))
+    assert.equal(launcherFor({ ...base, agent: 'claude' }), '& "C:\\Users\\me\\orca\\stack\\scripts\\claude-orca-stack.cmd" --dangerously-skip-permissions')
   })
 
   test('codex and codex-cc use implement or review model and effort', () => {
@@ -215,7 +222,7 @@ describe('launchers', () => {
     assert.ok(ps.includes("$env:GENTLE_PI_AUTONOMOUS_MODE = '1'") && ps.includes("$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\me\\.claude-pi'"))
     assert.ok(ps.endsWith("pi -p --no-skills --skill 'C:\\skills' --session-id proj-7 --tools read,bash,edit,write,grep,find,ls 'Read and carry out the brief in C:\\b.md. Non-interactive: never wait for user input.'"))
     const sh = launcherFor({ ...base, agent: 'pi', win: false, mode: 'review', home: '/h', briefPath: '/b.md', skills: '/s' })
-    assert.ok(sh.startsWith('unset ORCA_AGENT_HOOK_ENDPOINT ') && sh.includes(`export ENGRAM_DATA_DIR='${path.join('/h', '.gentle-shell', 'engram')}' GENTLE_PI_AUTONOMOUS_MODE='1';`))
+    assert.ok(sh.startsWith('unset ORCA_AGENT_HOOK_ENDPOINT ') && sh.includes("export ENGRAM_DATA_DIR='/h/.gentle-shell/engram' GENTLE_PI_AUTONOMOUS_MODE='1';"))
     assert.ok(sh.includes('--tools read,bash,grep,find,ls') && !sh.includes('CLAUDE_CONFIG_DIR'))
   })
 

@@ -2,9 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
-import { stackVars } from './global.mjs'
 import { resolveGentleSkills } from './pi.mjs'
-import { readAsset, render } from './templates.mjs'
+import { readAsset, render, wrapperFile } from './templates.mjs'
 import { homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
 
 export const AGENTS = ['claude', 'agy', 'codex', 'codex-cc', 'pi']
@@ -19,7 +18,6 @@ const ORCA_VARS_CLEARED = [
   'ORCA_STACK_AGENT', 'ORCA_STACK_MODE', 'ORCA_STACK_POLICY_PATH', 'ORCA_STACK_PONYTAIL_LEVEL',
   'ORCA_STACK_CAVEMAN_LEVEL',
 ]
-const engramDir = home => path.join(home, '.gentle-shell', 'engram')
 const PI_TOOLS = { ticket: 'read,bash,edit,write,grep,find,ls', review: 'read,bash,grep,find,ls' }
 const PATH_EXTENSIONS = /\.(md|json|mjs|cjs|js|ts|tsx|jsx|py|sh|ps1|ya?ml|toml|txt|html|css|sql|go|rs|cs|java|kt|rb)$/i
 
@@ -65,9 +63,12 @@ const psQuote = text => `'${text.replace(/'/g, "''")}'`
 const shQuote = text => `'${text.replace(/'/g, "'\\''")}'`
 
 // The command typed into the Orca terminal. PowerShell on Windows (the Orca terminal there), POSIX sh elsewhere.
-export const launcherFor = ({ agent, mode, vars, config, win, home, briefPath, session, skills }) => {
+// win is the target shell, not the host: PowerShell on win32 (Orca's terminal there), POSIX elsewhere. Paths follow it.
+export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills }) => {
   const { model, effort } = modelFor(config, agent, mode)
-  const bin = (win ? '& ' : '') + `"${{ claude: vars.WRAPPER_CLAUDE, agy: vars.WRAPPER_AGY }[agent] ?? vars.WRAPPER_CODEX}"`
+  const P = win ? path.win32 : path.posix
+  const wrapper = P.join(home, 'orca', 'stack', 'scripts', wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
+  const bin = (win ? '& ' : '') + `"${wrapper}"`
   if (agent === 'claude' || agent === 'agy') return `${bin} --dangerously-skip-permissions${model ? ` --model ${model}` : ''}`
   if (agent === 'codex' || agent === 'codex-cc') {
     const flags = `${model ? ` --model ${model}` : ''}${effort ? ` -c model_reasoning_effort="${effort}"` : ''} -c approval_policy="never" -c sandbox_mode="danger-full-access"`
@@ -84,7 +85,7 @@ export const launcherFor = ({ agent, mode, vars, config, win, home, briefPath, s
   const q = win ? psQuote : shQuote
   const prompt = `Read and carry out the brief in ${briefPath}. Non-interactive: never wait for user input.`
   const cmd = `pi -p --no-skills --skill ${q(skills)} --session-id ${session} --tools ${PI_TOOLS[mode]} ${q(prompt)}`
-  const set = [['ENGRAM_DATA_DIR', engramDir(home)], ['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
+  const set = [['ENGRAM_DATA_DIR', P.join(home, '.gentle-shell', 'engram')], ['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
   if (win) {
     return [`Remove-Item ${ORCA_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
   }
@@ -241,12 +242,11 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   } else say('⚠ Orca no contesta: no pude comprobar si ya hay un agente vivo.')
 
   const win = io.win
-  const vars = stackVars(layout(io.home))
   const mode = review ? 'review' : 'ticket'
   const session = `${repo}-${review ? `revision-${n}` : n}`
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corré `orca-stack global`.')
-  const launcher = launcherFor({ agent, mode, vars, config, win, home: io.home, briefPath, session, skills })
+  const launcher = launcherFor({ agent, mode, config, win, home: io.home, briefPath, session, skills })
   const act = (cmd, argv, opts = {}) => {
     say(`${dryRun ? '[simulación] ' : ''}${cmd} ${argv.map(a => (/[\s"]/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
 
