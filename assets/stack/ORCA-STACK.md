@@ -111,9 +111,9 @@ terminal on Windows, which is PowerShell; in a POSIX shell the leading `& ` is d
 - pi (Gentle Shell): headless, no TUI, so the brief goes in the prompt and nothing is sent afterwards. The command clears
   the Orca and `ORCA_STACK_*` variables (the same list the pi consult bridge clears), sets `ENGRAM_DATA_DIR` to
   Gentle Shell's own engram, `GENTLE_PI_AUTONOMOUS_MODE=1` and, when personal config sets it, `CLAUDE_CONFIG_DIR`
-  from `agentes.pi.claudeConfigDir`, then runs `pi -p --no-skills --skill <gentle-pi skills> --session-id <id> --tools <tools> "Read and carry out the brief in <path>. Non-interactive: never wait for user input."`
-  Tools: `read,bash,edit,write,grep,find,ls` to implement, `read,bash,grep,find,ls` to review. Unlike the consult
-  bridge, this one can run git, gh and the suite.
+  from `agentes.pi.claudeConfigDir`, then runs `pi -p --no-skills --skill <gentle-pi skills> --session-id <id> [--tools <tools>] "Read and carry out the brief in <path>. Non-interactive: never wait for user input."`
+  Tools: no `--tools` to implement, so gentle-pi keeps its subagents, SDD and engram tools; `read,bash,grep,find,ls` to
+  review. Unlike the consult bridge, this one can run git, gh and the suite.
 
 ## Official Orca integration (preferred)
 
