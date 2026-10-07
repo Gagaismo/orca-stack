@@ -220,10 +220,10 @@ describe('launchers', () => {
     assert.ok(ps.includes('Env:ORCA_STACK_CAVEMAN_LEVEL -ErrorAction SilentlyContinue'))
     assert.ok(ps.includes("$env:ENGRAM_DATA_DIR = 'C:\\Users\\me\\.gentle-shell\\engram'"))
     assert.ok(ps.includes("$env:GENTLE_PI_AUTONOMOUS_MODE = '1'") && ps.includes("$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\me\\.claude-pi'"))
-    assert.ok(ps.endsWith("pi -p --no-skills --skill 'C:\\skills' --session-id proj-7 --tools read,bash,edit,write,grep,find,ls 'Read and carry out the brief in C:\\b.md. Non-interactive: never wait for user input.'"))
+    assert.ok(ps.endsWith("pi -p --no-skills --skill 'C:\\skills' --session-id proj-7 --tools 'read,bash,edit,write,grep,find,ls' 'Read and carry out the brief in C:\\b.md. Non-interactive: never wait for user input.'"))
     const sh = launcherFor({ ...base, agent: 'pi', win: false, mode: 'review', home: '/h', briefPath: '/b.md', skills: '/s' })
     assert.ok(sh.startsWith('unset ORCA_AGENT_HOOK_ENDPOINT ') && sh.includes("export ENGRAM_DATA_DIR='/h/.gentle-shell/engram' GENTLE_PI_AUTONOMOUS_MODE='1';"))
-    assert.ok(sh.includes('--tools read,bash,grep,find,ls') && !sh.includes('CLAUDE_CONFIG_DIR'))
+    assert.ok(sh.includes("--tools 'read,bash,grep,find,ls'") && !sh.includes('CLAUDE_CONFIG_DIR'))
   })
 
   test('the Claude account of pi comes from the personal layer only', async () => {
