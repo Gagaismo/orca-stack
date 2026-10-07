@@ -18,7 +18,9 @@ const ORCA_VARS_CLEARED = [
   'ORCA_STACK_AGENT', 'ORCA_STACK_MODE', 'ORCA_STACK_POLICY_PATH', 'ORCA_STACK_PONYTAIL_LEVEL',
   'ORCA_STACK_CAVEMAN_LEVEL',
 ]
-const PI_TOOLS = { ticket: 'read,bash,edit,write,grep,find,ls', review: 'read,bash,grep,find,ls' }
+// Only a review closes pi's tools (read-only). A ticket gets all of them: an allowlist would also drop gentle-pi's
+// subagents, SDD and engram tools.
+const PI_TOOLS = { review: 'read,bash,grep,find,ls' }
 const PATH_EXTENSIONS = /\.(md|json|mjs|cjs|js|ts|tsx|jsx|py|sh|ps1|ya?ml|toml|txt|html|css|sql|go|rs|cs|java|kt|rb)$/i
 
 const isPlain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -84,7 +86,8 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   // take this pane for a second agent and the stack markers do not leak into Gentle Shell.
   const q = win ? psQuote : shQuote
   const prompt = `Read and carry out the brief in ${briefPath}. Non-interactive: never wait for user input.`
-  const cmd = `pi -p --no-skills --skill ${q(skills)} --session-id ${session} --tools ${q(PI_TOOLS[mode])} ${q(prompt)}`
+  const tools = PI_TOOLS[mode] ? ` --tools ${q(PI_TOOLS[mode])}` : ''
+  const cmd = `pi -p --no-skills --skill ${q(skills)} --session-id ${session}${tools} ${q(prompt)}`
   const set = [['ENGRAM_DATA_DIR', P.join(home, '.gentle-shell', 'engram')], ['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
   if (win) {
     return [`Remove-Item ${ORCA_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
@@ -165,7 +168,9 @@ const waitForTui = async (io, handle, agent, tries = 45) => {
   for (let i = 0; i < tries; i += 1) {
     await io.sleep(2000)
     const res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])
-    const text = res.status === 0 ? JSON.stringify(parseJson(res, 'orca terminal read')) : ''
+    // Only the screen: the rest of the reply (the request id, the cursors) changes on every read.
+    const tail = res.status === 0 ? parseJson(res, 'orca terminal read').result?.terminal?.tail : undefined
+    const text = Array.isArray(tail) ? tail.join('\n') : typeof tail === 'string' ? tail : ''
     if (agent === 'agy' && !trusted && /trust/i.test(text)) {
       io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
       trusted = true
@@ -223,13 +228,16 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     if ((issue.assignees ?? []).length > 0) throw new Error(`El issue #${n} ya tiene assignee (${issue.assignees.map(a => a.login).join(', ')}): está tomado.`)
   }
 
-  const name = review ? `revision-${n}` : `${repo}-${n}`
-  const briefPath = path.join(io.home, 'orca', 'briefs', `${repo}-${review ? `revision-${n}` : n}.md`)
+  // A review is named after its reviewer too: risk paths ask for more than one review of the same PR.
+  const name = review ? `revision-${n}-${agent}` : `${repo}-${n}`
+  const session = review ? `${repo}-${name}` : name
+  const briefPath = path.join(io.home, 'orca', 'briefs', `${session}.md`)
   const startRef = `origin/${review ? branchOfPr : base}`
 
-  // Idempotence lock: an existing worktree for this branch/name, or a live agent in it.
+  // Idempotence lock: an existing worktree for this branch/name, or a live agent in it. A prunable entry is a worktree
+  // whose folder is gone (`orca worktree rm` leaves one until `git worktree prune`): it does not count.
   const listed = ok(io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root }), 'git worktree list').stdout
-  const taken = listed.split(/\r?\n/).filter(l => l.startsWith('worktree ') || l.startsWith('branch ')).map(l => l.replace(/^(worktree|branch) /, ''))
+  const taken = listed.split(/\r?\n\s*\r?\n/).filter(entry => !/^prunable\b/m.test(entry)).join('\n').split(/\r?\n/).filter(l => l.startsWith('worktree ') || l.startsWith('branch ')).map(l => l.replace(/^(worktree|branch) /, ''))
   if (taken.some(t => t.replace(/\\/g, '/').split('/').pop() === name)) throw new Error(`Ya hay un worktree para ${name}. No despacho dos veces: revisalo con \`orca worktree ps\`.`)
   const ps = io.sh('orca', ['worktree', 'ps', '--json'])
   if (ps.status === 0) {
@@ -243,7 +251,6 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
 
   const win = io.win
   const mode = review ? 'review' : 'ticket'
-  const session = `${repo}-${review ? `revision-${n}` : n}`
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corré `orca-stack global`.')
   const launcher = launcherFor({ agent, mode, config, win, home: io.home, briefPath, session, skills })

@@ -62,7 +62,7 @@ const fakeIo = (over = {}, { config = PROJECT } = {}) => {
       if (args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })
       if (args.join(' ').startsWith('worktree create')) return json({ result: { worktree: { path: worktree, branch: 'refs/heads/proj-7' } } })
       if (args[0] === 'terminal' && args[1] === 'create') return json({ result: { terminal: { handle: 'term_1' } } })
-      if (args[0] === 'terminal' && args[1] === 'read') return json({ result: { text: 'ready' } })
+      if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'], latestCursor: calls.length } } })
       return okRes()
     },
   }
@@ -103,6 +103,9 @@ describe('despachar: refusals', () => {
   test('existing worktree (git) and live agent (orca)', async () => {
     const git = fakeIo({ 'git worktree': okRes(`worktree ${root}\nworktree C:/x/proj-7\nbranch refs/heads/proj-7\n`) })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, git), /Ya hay un worktree para proj-7/)
+    // `orca worktree rm` leaves the entry as prunable until `git worktree prune`: it is not taken.
+    const pruned = fakeIo({ 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/proj-7\nHEAD abc\nbranch refs/heads/proj-7\nprunable gitdir file points to non-existent location\n`) })
+    await run('ticket', { n: '7', agent: 'agy', dryRun: true }, pruned)
     const live = fakeIo({ 'orca worktree ps': json({ result: { worktrees: [{ repo: 'proj', path: 'C:/other/place', linkedIssue: 7, agents: [{ state: 'working' }] }] } }) })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, live), /agente vivo/)
     assert.deepEqual(live.writes(), [])
@@ -113,6 +116,28 @@ describe('despachar: refusals', () => {
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('x\nImplementador: agy\n'))), /nadie revisa su propio PR/)
     await assert.rejects(run('review', { n: '9', agent: 'codex-cc', confirmado: true }, fakeIo(pr('Implementador: codex\n'))), /comparten modelo/)
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('sin línea'))), /no tiene la línea "Implementador/)
+  })
+})
+
+describe('revisar: one worktree per reviewer', () => {
+  const pr = over => fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }), ...over })
+
+  test('a second reviewer of the same PR gets its own worktree, brief and session', async () => {
+    const taken = { 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/revision-9-agy\nbranch refs/heads/revision-9-agy\n`) }
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, pr(taken)), /Ya hay un worktree para revision-9-agy/)
+    const env = pr(taken)
+    await run('review', { n: '9', agent: 'pi', dryRun: true }, env)
+    const text = env.out.join('\n')
+    for (const part of ['--name revision-9-pi', 'proj-revision-9-pi.md', '--session-id proj-revision-9-pi']) assert.ok(text.includes(part), part)
+  })
+})
+
+describe('despachar: the TUI wait', () => {
+  test('a still screen is stable even though every read carries a new request id', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'claude' }, env)
+    const sent = env.calls.find(c => c[1] === 'terminal' && c[2] === 'send')
+    assert.ok(sent?.includes('--text') && sent.some(a => String(a).startsWith('Read and follow the brief in ')))
   })
 })
 
@@ -168,7 +193,7 @@ describe('briefs', () => {
     const env = fakeIo({ 'gh pr': json({ headRefName: 'feat/x', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) })
     await run('review', { n: '9', agent: 'agy', dryRun: true }, env)
     const text = env.out.join('\n')
-    for (const part of ['Revisor: agy', 'Commit: abc123', 'written by codex', '## BLOQUEA', '## SUGERENCIAS', 'Standards', 'git checkout origin/<base> -- <files>', 'git checkout HEAD -- .', 'gh pr review 9 --comment --body-file', '--base-branch origin/feat/x', '--name revision-9']) assert.ok(text.includes(part), part)
+    for (const part of ['Revisor: agy', 'Commit: abc123', 'written by codex', '## BLOQUEA', '## SUGERENCIAS', 'Standards', 'git checkout origin/<base> -- <files>', 'git checkout HEAD -- .', 'gh pr review 9 --comment --body-file', '--base-branch origin/feat/x', '--name revision-9-agy', 'proj-revision-9-agy.md']) assert.ok(text.includes(part), part)
   })
 
   test('a cited path that is not in the base tree aborts a real run with zero writes', async () => {
@@ -220,7 +245,8 @@ describe('launchers', () => {
     assert.ok(ps.includes('Env:ORCA_STACK_CAVEMAN_LEVEL -ErrorAction SilentlyContinue'))
     assert.ok(ps.includes("$env:ENGRAM_DATA_DIR = 'C:\\Users\\me\\.gentle-shell\\engram'"))
     assert.ok(ps.includes("$env:GENTLE_PI_AUTONOMOUS_MODE = '1'") && ps.includes("$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\me\\.claude-pi'"))
-    assert.ok(ps.endsWith("pi -p --no-skills --skill 'C:\\skills' --session-id proj-7 --tools 'read,bash,edit,write,grep,find,ls' 'Read and carry out the brief in C:\\b.md. Non-interactive: never wait for user input.'"))
+    assert.ok(ps.endsWith("pi -p --no-skills --skill 'C:\\skills' --session-id proj-7 'Read and carry out the brief in C:\\b.md. Non-interactive: never wait for user input.'"))
+    assert.ok(!ps.includes('--tools'), "a ticket keeps all of pi's tools: subagents, SDD, engram")
     const sh = launcherFor({ ...base, agent: 'pi', win: false, mode: 'review', home: '/h', briefPath: '/b.md', skills: '/s' })
     assert.ok(sh.startsWith('unset ORCA_AGENT_HOOK_ENDPOINT ') && sh.includes("export ENGRAM_DATA_DIR='/h/.gentle-shell/engram' GENTLE_PI_AUTONOMOUS_MODE='1';"))
     assert.ok(sh.includes("--tools 'read,bash,grep,find,ls'") && !sh.includes('CLAUDE_CONFIG_DIR'))
