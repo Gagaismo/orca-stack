@@ -34,7 +34,7 @@ export const FAMILIES = {
   "fixed": { "pi": "claude" },
   "defaults": { "claude": "claude", "codex": "gpt", "agy": "gemini" },
   "patterns": [
-    ["claude", "^(claude|opus|sonnet|haiku|fable)\\b"],
+    ["claude", "^(claude|opus|sonnet|haiku|fable)"],
     ["gpt", "^(gpt|codex|o\\d)"],
     ["gemini", "^gemini"],
     ["glm", "^glm"]

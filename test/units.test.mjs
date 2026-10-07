@@ -160,7 +160,7 @@ describe('the repository itself', () => {
     assert.deepEqual(JSON.parse(literal), FAMILIES)
   })
 
-  // The mod runs the same cases against shared/orca-config.ts (its copy is mods/puente-gentle/tests/familias.json).
+  // The mod runs the same cases against shared/orca-config.ts (its copy is mods/puente-gentle/tests/familias.ts).
   test('familyOf and blockOf answer shared/familias.json', () => {
     const cases = JSON.parse(readFileSync(path.join(ROOT, 'shared', 'familias.json'), 'utf8'))
     for (const c of cases.familyOf) assert.equal(familyOf(c.config, c.agent, c.mode).family ?? null, c.family, JSON.stringify(c))

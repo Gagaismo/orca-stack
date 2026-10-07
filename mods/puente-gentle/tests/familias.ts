@@ -14,6 +14,8 @@ export default {
     { "config": { "agentes": { "modelos": { "agy": "claude-sonnet-5-5" } } }, "agent": "agy", "mode": "review", "family": "claude" },
     { "config": { "agentes": { "modelos": { "agy": { "implementar": { "modelo": "gemini-3.8-flash-high" }, "escalar": { "modelo": "gemini-3.1-pro-high" } } } } }, "agent": "agy", "mode": "review", "family": "gemini" },
     { "config": { "agentes": { "modelos": { "claude": "opus" } } }, "agent": "claude", "mode": "ticket", "family": "claude" },
+    { "config": { "agentes": { "modelos": { "claude": "opusplan" } } }, "agent": "claude", "mode": "ticket", "family": "claude" },
+    { "config": { "agentes": { "modelos": { "codex": { "implementar": null, "modelo": "gemini-x" } } } }, "agent": "codex", "mode": "ticket", "family": "gpt" },
     { "config": { "agentes": { "modelos": { "codex-cc": "deepseek/deepseek-v4" } } }, "agent": "codex-cc", "mode": "review", "family": null },
     { "config": { "agentes": { "modelos": { "codex": "openai/oss-120b" } } }, "agent": "codex", "mode": "review", "family": null }
   ],

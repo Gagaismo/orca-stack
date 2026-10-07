@@ -472,11 +472,15 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
 
   const own = familyOf(config, 'pi', 'ticket').family
   const covered = new Set<string>()
-  const unknown: string[] = []
+  const skipped: string[] = []
   for (const reviewer of reviewers) {
     const { family, model } = familyOf(config, reviewer, 'review')
-    if (family === undefined) {
-      unknown.push(`${reviewer} (${model ?? 'sin modelo configurado'})`)
+    if (!agents.includes(reviewer)) {
+      skipped.push(`${reviewer}: no es un agente del stack`)
+    } else if (family === undefined && model === undefined) {
+      skipped.push(`${reviewer}: no tiene modelo para revisar en agentes.modelos, así que no sé su familia`)
+    } else if (family === undefined) {
+      skipped.push(`${reviewer}: su modelo ${model} no tiene una familia reconocida (agregá su patrón en FAMILIES)`)
     } else if (family !== own) {
       covered.add(family)
     }
@@ -485,18 +489,20 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
     return undefined
   }
 
-  // Who can still add a family: in agentes.usa, not blocked, with a known family that is neither pi's nor covered.
-  const usa = config.agentes?.usa ?? agents
+  // Who can still add a family: in agentes.usa (as revisar reads it), not blocked, with a known family that is neither
+  // pi's nor covered. Within a family, an agent that needs no OK from the human goes first.
+  const usa = config.agentes?.usa ?? []
   const ask = config.agentes?.preguntarAntes ?? []
   const options = new Map<string, string>()
   for (const agent of agents) {
     const { family } = familyOf(config, agent, 'review')
     if (usa.includes(agent) && blockOf(config, agent, now) === undefined && family !== undefined && family !== own && !covered.has(family)) {
-      if (!options.has(family)) options.set(family, agent)
+      const current = options.get(family)
+      if (current === undefined || (ask.includes(current) && !ask.includes(agent))) options.set(family, agent)
     }
   }
   const have = covered.size === 0 ? 'Hay 0' : `Hay 1 (${[...covered].join(', ')})`
-  const skipped = unknown.length === 0 ? '' : ` No cuento ${unknown.join(', ')}: su modelo no tiene una familia reconocida (agregá su patrón en FAMILIES).`
+  const notCounted = skipped.length === 0 ? '' : ` No cuento ${skipped.join('; ')}.`
   const missing = 2 - covered.size
   const picks = [...options.values()].slice(0, missing)
   const next =
@@ -507,7 +513,7 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
 
   return (
     `${prefix} y lo escribió pi: faltan reviews limpios sobre el commit ${sha} de dos familias de modelo distintas ` +
-    `que no sean la de pi (${own ?? '?'}). ${have}.${skipped}${next}`
+    `que no sean la de pi (${own ?? '?'}). ${have}.${notCounted}${next}`
   )
 }
 

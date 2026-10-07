@@ -15,7 +15,7 @@ export const FAMILIES = {
   "fixed": { "pi": "claude" },
   "defaults": { "claude": "claude", "codex": "gpt", "agy": "gemini" },
   "patterns": [
-    ["claude", "^(claude|opus|sonnet|haiku|fable)\\b"],
+    ["claude", "^(claude|opus|sonnet|haiku|fable)"],
     ["gpt", "^(gpt|codex|o\\d)"],
     ["gemini", "^gemini"],
     ["glm", "^glm"]
@@ -74,7 +74,7 @@ export const loadConfig = (home, root) => {
 // agentes.modelos.<agent>: "model", { modelo, esfuerzo } or { implementar: {...}, revisar: {...} }.
 export const modelFor = (config, agent, mode) => {
   let entry = config.agentes?.modelos?.[agent]
-  if (isPlain(entry) && (entry.implementar || entry.revisar)) entry = entry[mode === 'review' ? 'revisar' : 'implementar']
+  if (isPlain(entry) && (entry.implementar !== undefined || entry.revisar !== undefined)) entry = entry[mode === 'review' ? 'revisar' : 'implementar']
   if (typeof entry === 'string') return { model: entry, effort: undefined }
 
   return { model: isPlain(entry) ? entry.modelo : undefined, effort: isPlain(entry) ? entry.esfuerzo : undefined }
