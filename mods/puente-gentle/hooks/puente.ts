@@ -1,5 +1,6 @@
 import type { Intercambio } from '../types'
-import { MODEL_FAMILY } from './orca-config'
+import { FAMILIES, blockOf, familyOf } from './orca-config'
+import type { StackConfig } from './orca-config'
 
 export const READ_ONLY_TOOLS = 'read,grep,find,ls'
 // Variables this session inherits from its Orca terminal. A consult must not carry them: Pi's Orca
@@ -441,15 +442,16 @@ export const reviewsOf = (bodies: string[], headRefOid: string): Review[] =>
 
 // Why a PR touching a riesgo path cannot merge yet, or undefined. Every review counted is of the head commit.
 // - A review of the head commit with blockers stops it: on a riesgo path the human settles a blocker, not main.
-// - Implemented by pi: clean reviews from two model families other than pi's (claude runs the same model as pi).
+// - Implemented by pi: clean reviews from two model families other than pi's. A family comes from the model each
+//   reviewer has configured to review (familyOf); a reviewer whose model has no known family does not count.
 // - Implemented by anyone else: a clean pi review, the second review the contract asks for.
-export const riskDeny = (n: string, file: string, facts: PrFacts): string | undefined => {
+export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackConfig, now: number): string | undefined => {
   const sha = facts.headRefOid.slice(0, 7)
   const prefix = `PR #${n} toca una ruta de riesgo (${file})`
-  const own = facts.implementer === undefined ? undefined : MODEL_FAMILY[facts.implementer]
-  if (own === undefined) {
+  const agents: readonly string[] = FAMILIES.agents
+  if (facts.implementer === undefined || !agents.includes(facts.implementer)) {
     return (
-      `${prefix} y su body no tiene una línea "Implementador: <agente>" con uno de ${Object.keys(MODEL_FAMILY).join(', ')}: ` +
+      `${prefix} y su body no tiene una línea "Implementador: <agente>" con uno de ${agents.join(', ')}: ` +
       `sin ella no sé quién puede revisarlo. Agregala con \`gh pr edit ${n} --body-file <archivo>\`.`
     )
   }
@@ -461,24 +463,51 @@ export const riskDeny = (n: string, file: string, facts: PrFacts): string | unde
       'En una ruta de riesgo un bloqueo no se salda con "Decidido por main": corregilo y pedí un review nuevo, o pasale la decisión al humano.'
     )
   }
-  const clean = new Set(reviews.map(review => review.reviewer))
+  const reviewers = [...new Set(reviews.map(review => review.reviewer))]
   if (facts.implementer !== 'pi') {
-    return clean.has('pi')
+    return reviewers.includes('pi')
       ? undefined
       : `${prefix}: falta un review de pi sobre el commit ${sha}. Corré \`orca-stack revisar ${n} pi\` y mergeá cuando el review esté limpio.`
   }
-  const covered = new Set([...clean].map(agent => MODEL_FAMILY[agent]).filter(family => family !== undefined && family !== own))
+
+  const own = familyOf(config, 'pi', 'ticket').family
+  const covered = new Set<string>()
+  const unknown: string[] = []
+  for (const reviewer of reviewers) {
+    const { family, model } = familyOf(config, reviewer, 'review')
+    if (family === undefined) {
+      unknown.push(`${reviewer} (${model ?? 'sin modelo configurado'})`)
+    } else if (family !== own) {
+      covered.add(family)
+    }
+  }
   if (covered.size >= 2) {
     return undefined
   }
-  // One agent per family still missing, in table order.
-  const suggest = Object.entries(MODEL_FAMILY)
-    .filter(([, family], i, all) => family !== own && !covered.has(family) && all.findIndex(([, f]) => f === family) === i)
-    .map(([agent]) => `\`orca-stack revisar ${n} ${agent}\``)
+
+  // Who can still add a family: in agentes.usa, not blocked, with a known family that is neither pi's nor covered.
+  const usa = config.agentes?.usa ?? agents
+  const ask = config.agentes?.preguntarAntes ?? []
+  const options = new Map<string, string>()
+  for (const agent of agents) {
+    const { family } = familyOf(config, agent, 'review')
+    if (usa.includes(agent) && blockOf(config, agent, now) === undefined && family !== undefined && family !== own && !covered.has(family)) {
+      if (!options.has(family)) options.set(family, agent)
+    }
+  }
+  const have = covered.size === 0 ? 'Hay 0' : `Hay 1 (${[...covered].join(', ')})`
+  const skipped = unknown.length === 0 ? '' : ` No cuento ${unknown.join(', ')}: su modelo no tiene una familia reconocida (agregá su patrón en FAMILIES).`
+  const missing = 2 - covered.size
+  const picks = [...options.values()].slice(0, missing)
+  const next =
+    picks.length < missing
+      ? ` Con los agentes disponibles (agentes.usa, sin bloqueos) no alcanzan las familias: decidilo con el humano.`
+      : ` Corré ${picks.map(agent => `\`orca-stack revisar ${n} ${agent}\``).join(' y ')}.` +
+        picks.filter(agent => ask.includes(agent)).map(agent => ` ${agent} está en preguntarAntes: pedile el OK al humano y agregá --confirmado.`).join('')
 
   return (
-    `${prefix} y lo escribió pi: faltan reviews limpios sobre el commit ${sha} de dos familias de modelo que no sean la de pi ` +
-    `(claude es el mismo modelo que pi; codex y codex-cc son una sola familia). Hay ${covered.size}. Corré ${suggest.join(' y ')}.`
+    `${prefix} y lo escribió pi: faltan reviews limpios sobre el commit ${sha} de dos familias de modelo distintas ` +
+    `que no sean la de pi (${own ?? '?'}). ${have}.${skipped}${next}`
   )
 }
 

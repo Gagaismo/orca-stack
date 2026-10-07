@@ -217,8 +217,8 @@ Si no hay tiempo para todo, respondé A1, B1, C1, C3, C4 y F1. Con eso alcanza p
 
 **D3. ¿Hay algún proveedor sin cuota o vetado por un tiempo?** [Ambos; solo si D2 = Sí]
 - Por qué importa: la guardia solo revisa las llamadas a tus scripts de despacho. Sin `despacho`, esta clave no hace nada, y nunca frena un despacho hecho con `orca orchestration`.
-- Acción: `guardia.bloquear` con `{ "agente", "hasta", "motivo" }`. `hasta` es excluyente: el bloqueo se levanta a las 00:00 de ese día. Si es temporal (una cuota), ponelo en `.orca-stack.local.json`; si es una regla del proyecto, en `.orca-stack.json`.
-- Ojo: las listas no se combinan. Un `guardia.bloquear` en el `.orca-stack.local.json`, aunque esté vacío, pisa entera la lista del `.orca-stack.json`.
+- Acción: `guardia.bloquear` con `{ "agente", "hasta", "motivo" }`. `hasta` es excluyente: el bloqueo se levanta a las 00:00 de ese día. Si es una cuota de tu cuenta, ponelo en tu config personal (`~/.orca-stack/config.json`), que vale en todos los repos; si es una regla del proyecto, en `.orca-stack.json`.
+- Las reglas de `guardia.bloquear` de las tres capas se suman: una capa no puede borrar el bloqueo de otra. Las demás listas sí se reemplazan.
 
 **D4. ¿Los Claude que implementan tienen que ir con un modelo fijo?** [Ambos; solo si D2 = Sí]
 - Acción: `guardia.modeloClaude` en `.orca-stack.json`. Tu script de despacho tiene que leer `CLAUDE_MODELO`.
@@ -316,7 +316,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 - Cada capa pisa a la anterior. **Los objetos se combinan clave por clave; las listas se reemplazan enteras.**
 - Una lista vacía también pisa: `"destinatarios": []` en el local reemplaza la lista de las otras capas.
 - `null` apaga una clave heredada: `"despacho": null` apaga la guardia y los atajos del tablero en ese repo.
-- Sin `despacho`, `guardia.bloquear` y `guardia.modeloClaude` no hacen nada. La protección de worktrees (rechaza `orca worktree rm` y `git worktree remove` si la rama tiene commits que no están en ningún remoto) no depende de `despacho`.
+- Sin `despacho`, `guardia-despacho` no aplica `guardia.bloquear` ni `guardia.modeloClaude`; `orca-stack despachar` y `revisar` aplican `guardia.bloquear` igual. La protección de worktrees (rechaza `orca worktree rm` y `git worktree remove` si la rama tiene commits que no están en ningún remoto) no depende de `despacho`.
 - Una sesión dentro de un worktree de Orca lee la configuración del checkout principal.
 - `doctor` combina las tres capas igual que los mods y avisa si un script de `despacho` no existe.
 
@@ -327,9 +327,9 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 | `humano` | puente-gentle | Personal |
 | `mensajes.destinatarios` | bandeja-mensajes | `.orca-stack.local.json` del proyecto |
 | `despacho.script`, `despacho.revisar` | guardia-despacho, tablero-despacho | `.orca-stack.json` del proyecto |
-| `guardia.bloquear` | guardia-despacho | `.orca-stack.local.json` si es temporal; `.orca-stack.json` si es regla del proyecto |
+| `guardia.bloquear` | guardia-despacho, despachar, revisar | Tu config personal si es una cuota de tu cuenta; `.orca-stack.json` si es regla del proyecto. Las capas se suman |
 | `guardia.modeloClaude` | guardia-despacho | `.orca-stack.json` del proyecto |
-| `riesgo` | puente-gentle | `.orca-stack.json` del proyecto: globs de las rutas cuyo cambio no se deshace con un revert. Un PR que toca alguna no se mergea sin un review limpio de pi sobre su último commit (`orca-stack revisar <n> pi`). Si lo escribió pi, hacen falta dos reviews de dos familias de modelo distintas que no sean la de pi (agy y codex o codex-cc) |
+| `riesgo` | puente-gentle | `.orca-stack.json` del proyecto: globs de las rutas cuyo cambio no se deshace con un revert. Un PR que toca alguna no se mergea sin un review limpio de pi sobre su último commit (`orca-stack revisar <n> pi`). Si lo escribió pi, hacen falta dos reviews de dos familias de modelo distintas que no sean la de pi (Claude); la familia sale del modelo de `agentes.modelos` |
 | `agentes.pi.claudeConfigDir` | puente-gentle | Personal. Carpeta de config de Claude con otra cuenta para pi; el puente lanza pi con `CLAUDE_CONFIG_DIR=<carpeta>`. El login se hace una vez a mano: en PowerShell, `$env:CLAUDE_CONFIG_DIR="<carpeta>"; claude` y después `/login` |
 
 ---
@@ -363,7 +363,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 | Un agente no puede correr `/setup-matt-pocock-skills` (u otra skill de Matt) | Esas skills solo se activan cuando una persona escribe el comando | Escribilo vos en la sesión |
 | Gentle Shell no responde | Falta el login de Pi | `pi`, después `/login` |
 | `pi install` de gentle-pi falla en Windows | Falta Go o la versión es vieja | Instalá Go 1.25.10 o más nuevo y ponelo en el `PATH` |
-| La guardia no bloquea nada | No hay `despacho` en ninguna capa (está apagada a propósito), se despachó con `orca orchestration`, o el local pisó la lista de `guardia.bloquear` | Declarale `despacho` en el proyecto, o revisá `guardia.bloquear` en las capas 2 y 3 |
+| La guardia no bloquea nada | No hay `despacho` en ninguna capa (está apagada a propósito), se despachó con `orca orchestration`, o la fecha `hasta` ya pasó | Declarale `despacho` en el proyecto, o revisá `guardia.bloquear` en las tres capas |
 | Aparecen destinatarios o atajos de despacho de otro proyecto | Están en la capa personal | Movelos al `.orca-stack*.json` del proyecto que los usa |
 | Claude dejó de conocer a tus destinatarios en un repo | Repo inicializado con la v0.1.0: su `.orca-stack.local.json` trae `"destinatarios": []` | Sacá esa clave |
 | El `node_modules` del checkout principal se borra o se rompe cuando arrancan workers | `node_modules` compartido (symlink) más un setup que lo reinstala (`npm ci`) | Elegí una de las dos opciones de C2 |

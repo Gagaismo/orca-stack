@@ -6,9 +6,23 @@ import { resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
 import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
 
-export const AGENTS = ['claude', 'agy', 'codex', 'codex-cc', 'pi']
-// MODEL_FAMILY in shared/orca-config.ts is the full table (the merge gate uses it); a test keeps these two in step.
-export const CODEX_FAMILY = ['codex', 'codex-cc']
+// Source of truth: shared/orca-config.ts (FAMILIES, familyOf, blockOf), which explains the rules. Duplicated because
+// the mods cannot import src/ and Node 20 cannot import TypeScript; test/units.test.mjs compares the literal and runs
+// shared/familias.json against both sides.
+// BEGIN FAMILIES
+export const FAMILIES = {
+  "agents": ["claude", "agy", "codex", "codex-cc", "pi"],
+  "fixed": { "pi": "claude" },
+  "defaults": { "claude": "claude", "codex": "gpt", "agy": "gemini" },
+  "patterns": [
+    ["claude", "^(claude|opus|sonnet|haiku|fable)\\b"],
+    ["gpt", "^(gpt|codex|o\\d)"],
+    ["gemini", "^gemini"],
+    ["glm", "^glm"]
+  ]
+}
+// END FAMILIES
+export const AGENTS = FAMILIES.agents
 
 // Source of truth: mods/puente-gentle/hooks/puente.ts (ORCA_VARS_CLEARED, engramDir). Duplicated because the mod is TypeScript
 // that can only import its own folder; the pi consult and this launcher must clear and set the same things.
@@ -45,7 +59,11 @@ const readJson = file => {
 
 export const loadConfig = (home, root) => {
   const personal = readJson(layout(home).config)
-  const config = merge(personal, readJson(path.join(root, PROJECT_CONFIG)), readJson(path.join(root, PROJECT_LOCAL_CONFIG)))
+  const layers = [personal, readJson(path.join(root, PROJECT_CONFIG)), readJson(path.join(root, PROJECT_LOCAL_CONFIG))]
+  const config = merge(...layers)
+  // As shared/orca-config.ts: guardia.bloquear adds up across the layers, so no layer can drop a block.
+  const rules = layers.flatMap(l => (isPlain(l) && isPlain(l.guardia) && Array.isArray(l.guardia.bloquear) ? l.guardia.bloquear : []))
+  if (rules.length > 0) config.guardia = { ...config.guardia, bloquear: rules }
   // The Claude account pi uses comes from the personal layer only: a committed file must not redirect credentials.
   const dir = personal?.agentes?.pi?.claudeConfigDir
   config.piClaudeConfigDir = typeof dir === 'string' && dir.trim() !== '' ? path.normalize(dir.trim().replace(/^~(?=$|[\\/])/, home)) : undefined
@@ -60,6 +78,41 @@ export const modelFor = (config, agent, mode) => {
   if (typeof entry === 'string') return { model: entry, effort: undefined }
 
   return { model: isPlain(entry) ? entry.modelo : undefined, effort: isPlain(entry) ? entry.esfuerzo : undefined }
+}
+
+export const familyOfModel = model => {
+  const name = model.trim().toLowerCase().split('/').pop() ?? ''
+
+  return FAMILIES.patterns.find(([, pattern]) => new RegExp(pattern).test(name))?.[0]
+}
+
+export const familyOf = (config, agent, mode) => {
+  if (FAMILIES.fixed[agent] !== undefined) return { family: FAMILIES.fixed[agent], model: undefined }
+  const raw = modelFor(config, agent, mode).model
+  const model = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : undefined
+
+  return { family: model === undefined ? FAMILIES.defaults[agent] : familyOfModel(model), model }
+}
+
+export const parseUntil = date => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim())
+  if (match === null) return undefined
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  const at = new Date(year, month - 1, day)
+  if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== day) return undefined
+
+  return at.getTime()
+}
+
+export const blockOf = (config, agent, now) => {
+  for (const rule of config.guardia?.bloquear ?? []) {
+    if (typeof rule?.agente !== 'string' || rule.agente.toLowerCase() !== agent.toLowerCase()) continue
+    const until = typeof rule.hasta === 'string' ? parseUntil(rule.hasta) : undefined
+    if (until === undefined) return `La regla guardia.bloquear de ${agent} tiene una fecha "hasta" que no es AAAA-MM-DD (${String(rule.hasta)}): corregila antes de despacharlo.`
+    if (now < until) return typeof rule.motivo === 'string' && rule.motivo.trim() !== '' ? rule.motivo : `${agent} está bloqueado hasta el ${rule.hasta}.`
+  }
+
+  return undefined
 }
 
 const psQuote = text => `'${text.replace(/'/g, "''")}'`
@@ -208,6 +261,8 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const base = config.ramaBase
   if (typeof base !== 'string' || base === '') throw new Error('Falta ramaBase en la configuración del repo.')
   if (!(config.agentes?.usa ?? []).includes(agent)) throw new Error(`${agent} no está en agentes.usa de este repo (${(config.agentes?.usa ?? []).join(', ') || 'vacío'}).`)
+  const blocked = blockOf(config, agent, (io.now ?? Date.now)())
+  if (blocked) throw new Error(`No despacho a ${agent}: ${blocked}`)
   if ((config.agentes?.preguntarAntes ?? []).includes(agent) && !confirmado) {
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de despacharlo. Si dijo que sí, repetí el comando con --confirmado.`)
   }
@@ -220,7 +275,12 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     implementer = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim().toLowerCase()
     if (!implementer) throw new Error(`El PR #${n} no tiene la línea "Implementador: <agente>": sin ella no puedo comprobar que el revisor sea otro.`)
     if (implementer === agent.trim().toLowerCase()) throw new Error(`${agent} implementó el PR #${n}: nadie revisa su propio PR.`)
-    if (CODEX_FAMILY.includes(agent) && CODEX_FAMILY.includes(implementer)) throw new Error(`${agent} no revisa PRs de ${implementer}: comparten modelo y puntos ciegos.`)
+    // Same model family, same blind spots. pi is the exception: next to a Claude agent it brings another methodology.
+    // A model with no known family proves nothing, so it does not stop the review.
+    const mine = familyOf(config, agent, 'review').family
+    if (agent !== 'pi' && implementer !== 'pi' && mine !== undefined && mine === familyOf(config, implementer, 'ticket').family) {
+      throw new Error(`${agent} no revisa PRs de ${implementer}: los dos corren modelos de la familia ${mine}, comparten modelo y puntos ciegos.`)
+    }
     branchOfPr = pr.headRefName
     sha = pr.headRefOid
   } else {

@@ -194,10 +194,11 @@ const gate = async ($: EngineInterface, command: string) => {
     if (total !== undefined && total > BIG_PR_LINES && !(await load($))[`pr-${merge.number}`]?.length) {
       return { deny: bigPrReason(merge.number, total) }
     }
-    const globs = (await loadConfig(hostOf($))).riesgo
+    const config = await loadConfig(hostOf($))
+    const globs = config.riesgo
     const facts = Array.isArray(globs) && globs.length > 0 ? prFacts(stdout) : undefined
     const risky = facts === undefined ? undefined : riskyFile(facts.files, globs ?? [])
-    const denied = facts === undefined || risky === undefined ? undefined : riskDeny(merge.number, risky, facts)
+    const denied = facts === undefined || risky === undefined ? undefined : riskDeny(merge.number, risky, facts, config, await $.clock.now())
     if (denied !== undefined) {
       return { deny: denied }
     }

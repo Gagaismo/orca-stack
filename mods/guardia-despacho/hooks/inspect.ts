@@ -1,6 +1,9 @@
 // Pure command inspection for the dispatch guard (no engine access).
 
+import { parseUntil } from './orca-config'
 import type { StackConfig } from './orca-config'
+
+export { parseUntil }
 
 export type Block = { agent: string; untilMs: number; reason: string }
 export type Rules = {
@@ -26,22 +29,6 @@ export type Verdict =
   | { kind: 'rewrite'; command: string }
 
 const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path
-
-// "2026-10-29" -> local midnight of that day; an agent is blocked while now < that instant.
-export const parseUntil = (date: string): number | undefined => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim())
-  if (match === null) {
-    return undefined
-  }
-  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
-  const at = new Date(year, month - 1, day)
-  // Round trip: 2026-02-30 would silently become 2026-03-02.
-  if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== day) {
-    return undefined
-  }
-
-  return at.getTime()
-}
 
 export const blockReason = (agent: string, until: string, motivo: string | undefined): string =>
   motivo !== undefined && motivo.trim() !== '' ? motivo : `${agent} está bloqueado hasta el ${until}.`

@@ -8,33 +8,112 @@
 //   3. <repo>/.orca-stack.local.json    (gitignored, local/sensitive)
 // <repo> is the main checkout, even when the session runs inside a git worktree.
 
+export type BlockRule = { agente: string; hasta: string; motivo?: string }
+
 export type StackConfig = {
   humano?: string
   mensajes?: { destinatarios?: string[] }
   despacho?: { script?: string; revisar?: string }
   riesgo?: string[] // path globs whose change needs a second review before merging (pi, or two other model families when pi wrote it)
+  agentes?: { usa?: string[]; preguntarAntes?: string[]; modelos?: Record<string, unknown> }
   guardia?: {
-    bloquear?: { agente: string; hasta: string; motivo?: string }[]
+    bloquear?: BlockRule[]
     modeloClaude?: string
   }
 }
 
-// The stack's agents and the model each one runs on. Two agents of one family share blind spots, so they do not
-// count as two independent reviews. pi runs on a Claude account. src/despacho.mjs keeps its own AGENTS and codex
-// family list; the repo's tests check that they agree with this table.
-export const MODEL_FAMILY: Record<string, string> = {
-  claude: 'claude',
-  pi: 'claude',
-  codex: 'codex',
-  'codex-cc': 'codex',
-  agy: 'agy',
-}
+// Model families. Two agents whose models share a family share blind spots: one does not review the other, and
+// they do not count as two independent reviews. The family comes from the model in `agentes.modelos` (the one the
+// launcher passes with --model): its name, without the provider prefix, against `patterns`, in order. An agent
+// with no model takes `defaults`; pi is `fixed`, because its launcher never passes a model. A model that matches
+// no pattern has no family: nothing is proved about it.
+// The literal between the markers is JSON: src/despacho.mjs keeps the same one, and test/units.test.mjs compares them.
+// BEGIN FAMILIES
+export const FAMILIES = {
+  "agents": ["claude", "agy", "codex", "codex-cc", "pi"],
+  "fixed": { "pi": "claude" },
+  "defaults": { "claude": "claude", "codex": "gpt", "agy": "gemini" },
+  "patterns": [
+    ["claude", "^(claude|opus|sonnet|haiku|fable)\\b"],
+    ["gpt", "^(gpt|codex|o\\d)"],
+    ["gemini", "^gemini"],
+    ["glm", "^glm"]
+  ]
+} as const
+// END FAMILIES
 
 const isPlain = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
+export const familyOfModel = (model: string): string | undefined => {
+  const name = model.trim().toLowerCase().split('/').pop() ?? ''
+
+  return FAMILIES.patterns.find(([, pattern]) => new RegExp(pattern).test(name))?.[0]
+}
+
+// agentes.modelos.<agent>: "model", { modelo, esfuerzo } or { implementar: {...}, revisar: {...} } (as src/despacho.mjs).
+export const modelFor = (config: StackConfig, agent: string, mode: 'ticket' | 'review'): string | undefined => {
+  let entry = config.agentes?.modelos?.[agent]
+  if (isPlain(entry) && (entry['implementar'] !== undefined || entry['revisar'] !== undefined)) {
+    entry = entry[mode === 'review' ? 'revisar' : 'implementar']
+  }
+  const model = typeof entry === 'string' ? entry : isPlain(entry) ? entry['modelo'] : undefined
+
+  return typeof model === 'string' && model.trim() !== '' ? model.trim() : undefined
+}
+
+// The family `agent` runs on to implement ('ticket') or to review; `model` is the configured one, for messages.
+export const familyOf = (
+  config: StackConfig,
+  agent: string,
+  mode: 'ticket' | 'review',
+): { family: string | undefined; model: string | undefined } => {
+  const fixed = (FAMILIES.fixed as Record<string, string>)[agent]
+  if (fixed !== undefined) {
+    return { family: fixed, model: undefined }
+  }
+  const model = modelFor(config, agent, mode)
+
+  return { family: model === undefined ? (FAMILIES.defaults as Record<string, string>)[agent] : familyOfModel(model), model }
+}
+
+// "2026-10-29" -> local midnight of that day; an agent is blocked while now < that instant.
+export const parseUntil = (date: string): number | undefined => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim())
+  if (match === null) {
+    return undefined
+  }
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  const at = new Date(year, month - 1, day)
+  // Round trip: 2026-02-30 would silently become 2026-03-02.
+  if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== day) {
+    return undefined
+  }
+
+  return at.getTime()
+}
+
+// Why `agent` cannot be dispatched now, or undefined. A rule with a bad date stops it too: a block must not
+// vanish because of a typo.
+export const blockOf = (config: StackConfig, agent: string, now: number): string | undefined => {
+  for (const rule of config.guardia?.bloquear ?? []) {
+    if (typeof rule?.agente !== 'string' || rule.agente.toLowerCase() !== agent.toLowerCase()) {
+      continue
+    }
+    const until = typeof rule.hasta === 'string' ? parseUntil(rule.hasta) : undefined
+    if (until === undefined) {
+      return `La regla guardia.bloquear de ${agent} tiene una fecha "hasta" que no es AAAA-MM-DD (${String(rule.hasta)}): corregila antes de despacharlo.`
+    }
+    if (now < until) {
+      return typeof rule.motivo === 'string' && rule.motivo.trim() !== '' ? rule.motivo : `${agent} está bloqueado hasta el ${rule.hasta}.`
+    }
+  }
+
+  return undefined
+}
+
 // Plain objects merge key by key; anything else (arrays included) is replaced by the later layer.
-export const mergeConfig = (...layers: unknown[]): StackConfig => {
+const mergePlain = (...layers: unknown[]): Record<string, unknown> => {
   const out: Record<string, unknown> = {}
   for (const layer of layers) {
     if (!isPlain(layer)) {
@@ -42,11 +121,27 @@ export const mergeConfig = (...layers: unknown[]): StackConfig => {
     }
     for (const [key, value] of Object.entries(layer)) {
       const before = out[key]
-      out[key] = isPlain(value) && isPlain(before) ? mergeConfig(before, value) : value
+      out[key] = isPlain(value) && isPlain(before) ? mergePlain(before, value) : value
     }
   }
 
-  return out as StackConfig
+  return out
+}
+
+// One exception: `guardia.bloquear` adds up across the layers, so a block in one layer cannot be dropped by another.
+export const mergeConfig = (...layers: unknown[]): StackConfig => {
+  const out = mergePlain(...layers) as StackConfig
+  const rules = layers.flatMap(layer => {
+    const guardia = isPlain(layer) ? layer['guardia'] : undefined
+    const list = isPlain(guardia) ? guardia['bloquear'] : undefined
+
+    return Array.isArray(list) ? (list as BlockRule[]) : []
+  })
+  if (rules.length > 0) {
+    out.guardia = { ...out.guardia, bloquear: rules }
+  }
+
+  return out
 }
 
 export const parseJson = (text: string): unknown => {
