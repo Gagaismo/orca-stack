@@ -7,7 +7,8 @@ import { readAsset, render, wrapperFile } from './templates.mjs'
 import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
 
 export const AGENTS = ['claude', 'agy', 'codex', 'codex-cc', 'pi']
-const CODEX_FAMILY = ['codex', 'codex-cc']
+// MODEL_FAMILY in shared/orca-config.ts is the full table (the merge gate uses it); a test keeps these two in step.
+export const CODEX_FAMILY = ['codex', 'codex-cc']
 
 // Source of truth: mods/puente-gentle/hooks/puente.ts (ORCA_VARS_CLEARED, engramDir). Duplicated because the mod is TypeScript
 // that can only import its own folder; the pi consult and this launcher must clear and set the same things.

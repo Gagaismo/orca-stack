@@ -4,6 +4,7 @@ import path from 'node:path'
 import { describe, test } from 'node:test'
 
 import { parseArgs } from '../src/cli.mjs'
+import { AGENTS, CODEX_FAMILY } from '../src/despacho.mjs'
 import { MARKER_BEGIN, MARKER_END } from '../src/constants.mjs'
 import { buildBlock, removeBlock, upsertBlock } from '../src/marker.mjs'
 import { mergePluginDirs, removePluginDirs } from '../src/settings.mjs'
@@ -147,6 +148,14 @@ describe('the repository itself', () => {
       const copy = readFileSync(path.join(ROOT, 'mods', mod, 'hooks', 'orca-config.ts'), 'utf8')
       assert.equal(copy, shared, `${mod} is out of sync: run npm run sync-shared`)
     }
+  })
+
+  test('despacho agrees with the MODEL_FAMILY table of shared/orca-config.ts', () => {
+    const shared = readFileSync(path.join(ROOT, 'shared', 'orca-config.ts'), 'utf8')
+    const table = /export const MODEL_FAMILY[^{]*\{([^}]*)\}/.exec(shared)?.[1] ?? ''
+    const family = Object.fromEntries([...table.matchAll(/'?([\w-]+)'?:\s*'([\w-]+)'/g)].map(([, agent, name]) => [agent, name]))
+    assert.deepEqual(Object.keys(family).sort(), [...AGENTS].sort())
+    assert.deepEqual(AGENTS.filter(agent => family[agent] === 'codex').sort(), [...CODEX_FAMILY].sort())
   })
 
   test('every mod has a manifest, a hooks entry that exists, and a test', () => {

@@ -7,13 +7,14 @@ import {
   buildArgs,
   changeName,
   globToRegExp,
-  hasPiReview,
+  implementerOf,
   merges,
   piClaudeConfigDir,
   riskyFile,
   parsePiArgs,
   parseStream,
   remember,
+  reviewsOf,
   segments,
 } from '../hooks/puente'
 import { ENTRY, SKILLS, answerStream, line, world } from './harness'
@@ -182,7 +183,7 @@ for (const tool of ['Bash', 'PowerShell'] as const) {
     await boot($)
     const denied = await $.tool.call({ tool, command: 'gh pr merge 612 --squash' } as never)
     expect(denied.deny).toBe('PR #612 grande (450 líneas): consultá a Gentle Shell (tema pr-612) antes de mergear.')
-    expect(w.calls[0]!.argv).toEqual(['gh', 'pr', 'view', '612', '--json', 'additions,deletions,files,headRefOid,comments,reviews'])
+    expect(w.calls[0]!.argv).toEqual(['gh', 'pr', 'view', '612', '--json', 'additions,deletions,files,headRefOid,body,comments,reviews'])
 
     await consult($, { tema: 'pr-612', planteo: 'p', pregunta: 'q' })
     const allowed = await $.tool.call({ tool, command: 'gh pr merge 612 --squash' } as never)
@@ -382,15 +383,24 @@ test('globToRegExp: * stays in a segment, ** crosses them, **/ may match nothing
   expect(riskyFile(['x.ts'], ['', '  '])).toBeUndefined()
 })
 
-test('hasPiReview wants Revisor: pi and the head commit among the first lines of one body', () => {
+test('reviewsOf wants Revisor and the head commit among the first lines of one body, and reads ## BLOQUEA', () => {
   const oid = 'abc1234def5678abc1234def5678abc1234def56'
-  expect(hasPiReview([`Revisor: pi\nCommit: ${oid}\n\n## BLOQUEA\nnada`], oid)).toBe(true)
-  expect(hasPiReview(['Revisor: pi\r\nCommit: abc1234\r\n'], oid)).toBe(true)
-  expect(hasPiReview([`Revisor: agy\nCommit: ${oid}`], oid)).toBe(false)
-  expect(hasPiReview(['Revisor: pi\nCommit: 1111111'], oid)).toBe(false)
-  expect(hasPiReview(['Revisor: pi'], oid)).toBe(false)
-  expect(hasPiReview([`Revisor: pi\n\n\n\n\n\nCommit: ${oid}`], oid)).toBe(false)
-  expect(hasPiReview(['Revisor: pi', `Commit: ${oid}`], oid)).toBe(false) // two bodies: both lines must be in one
+  expect(reviewsOf([`Revisor: pi\nCommit: ${oid}\n\n## BLOQUEA\nnada`], oid)).toEqual([{ reviewer: 'pi', clean: true }])
+  expect(reviewsOf(['Revisor: AGY\r\nSuite: npm test en verde\r\nCommit: abc1234\r\n\r\n## BLOQUEA\r\n\r\nNada\r\n'], oid)).toEqual([{ reviewer: 'agy', clean: true }])
+  expect(reviewsOf([`Revisor: agy\nCommit: ${oid}\n\n## BLOQUEA\n1. \`a.ts:3\` (introducido, concreta): x`], oid)).toEqual([{ reviewer: 'agy', clean: false }])
+  expect(reviewsOf([`Revisor: agy\nCommit: ${oid}`], oid)).toEqual([{ reviewer: 'agy', clean: false }]) // no verdict is not clean
+  expect(reviewsOf(['Revisor: pi\nCommit: 1111111\n## BLOQUEA\nnada'], oid)).toEqual([])
+  expect(reviewsOf(['Revisor: pi\n## BLOQUEA\nnada'], oid)).toEqual([])
+  expect(reviewsOf([`Revisor: pi\n\n\n\n\n\nCommit: ${oid}`], oid)).toEqual([])
+  expect(reviewsOf(['Revisor: pi', `Commit: ${oid}\n## BLOQUEA\nnada`], oid)).toEqual([]) // both lines must be in one body
+})
+
+// The same cases src/despacho.mjs (revisar) is tested with: both sides must read the line alike.
+test('implementerOf reads the line the way revisar does', () => {
+  expect(implementerOf('x\nImplementador: agy\n')).toBe('agy')
+  expect(implementerOf('Implementador:   AGY  \n')).toBe('agy')
+  expect(implementerOf('implementador: Codex-CC')).toBe('codex-cc')
+  expect(implementerOf('sin línea')).toBeUndefined()
 })
 
 const OID = 'abc1234def5678abc1234def5678abc1234def56'
@@ -412,6 +422,7 @@ const pr =
             deletions: 5,
             files: paths.map(path => ({ path })),
             headRefOid: OID,
+            body: 'Implementador: claude\n\n## Summary\nx',
             comments: [],
             reviews: [],
             ...extra,
@@ -440,10 +451,56 @@ test('riesgo: a pi review on the head commit (review body or comment) lets it th
   await boot($)
   const merge = () => $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)
   expect((await merge()).deny).toBeUndefined()
-  extra = { comments: [{ body: 'Revisor: pi\nCommit: abc1234' }] }
+  extra = { comments: [{ body: 'Revisor: pi\nCommit: abc1234\n\n## BLOQUEA\nnada' }] }
   expect((await merge()).deny).toBeUndefined()
-  extra = { reviews: [{ body: 'Revisor: pi\nCommit: 0000000' }] }
-  expect((await merge()).deny).toContain('ruta de riesgo')
+  extra = { reviews: [{ body: 'Revisor: pi\nCommit: 0000000\n\n## BLOQUEA\nnada' }] }
+  expect((await merge()).deny).toContain('falta un review de pi')
+  // The PR body is not a review, even when it starts like one.
+  extra = { body: `Revisor: pi\nCommit: ${OID}\n\n## BLOQUEA\nnada\n\nImplementador: claude` }
+  expect((await merge()).deny).toContain('falta un review de pi')
+})
+
+const clean = (agent: string) => ({ body: `Revisor: ${agent}\nCommit: ${OID}\n\n## BLOQUEA\nnada` })
+
+test('riesgo: a PR pi wrote needs clean reviews from two model families other than pi and claude', async ($, on) => {
+  let reviews: { body: string }[] = []
+  setup(on, argv => pr(['package-lock.json'], { body: 'Implementador: pi', reviews })(argv), {}, { files: RISK_FILES })
+  await boot($)
+  const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
+  expect(await merge()).toBe(
+    'PR #7 toca una ruta de riesgo (package-lock.json) y lo escribió pi: faltan reviews limpios sobre el commit abc1234 de dos familias de modelo que no sean la de pi ' +
+      '(claude es el mismo modelo que pi; codex y codex-cc son una sola familia). Hay 0. Corré `orca-stack revisar 7 codex` y `orca-stack revisar 7 agy`.',
+  )
+  reviews = [clean('claude'), clean('agy')]
+  expect(await merge()).toContain('Hay 1. Corré `orca-stack revisar 7 codex`.')
+  reviews = [clean('codex'), clean('codex-cc')]
+  expect(await merge()).toContain('Hay 1. Corré `orca-stack revisar 7 agy`.')
+  reviews = [clean('agy'), clean('codex-cc')]
+  expect(await merge()).toBeUndefined()
+})
+
+test('riesgo: a review of the head commit with blockers stops the merge even next to clean ones', async ($, on) => {
+  const blocked = { body: `Revisor: agy\nCommit: ${OID}\n\n## BLOQUEA\n1. \`db/x.sql:1\` (introducido, concreta): borra datos.` }
+  setup(on, pr(['package-lock.json'], { reviews: [clean('pi'), blocked] }), {}, { files: RISK_FILES })
+  await boot($)
+  const denied = await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)
+  expect(denied.deny).toBe(
+    'PR #7 toca una ruta de riesgo (package-lock.json) y el review de agy sobre el commit abc1234 tiene bloqueos. ' +
+      'En una ruta de riesgo un bloqueo no se salda con "Decidido por main": corregilo y pedí un review nuevo, o pasale la decisión al humano.',
+  )
+})
+
+test('riesgo: a missing or unknown Implementador stops the merge with what to add', async ($, on) => {
+  let body = '## Summary\nx'
+  setup(on, argv => pr(['package-lock.json'], { body, reviews: [clean('pi')] })(argv), {}, { files: RISK_FILES })
+  await boot($)
+  const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
+  const expected =
+    'PR #7 toca una ruta de riesgo (package-lock.json) y su body no tiene una línea "Implementador: <agente>" con uno de claude, pi, codex, codex-cc, agy: ' +
+    'sin ella no sé quién puede revisarlo. Agregala con `gh pr edit 7 --body-file <archivo>`.'
+  expect(await merge()).toBe(expected)
+  body = 'Implementador: gpt'
+  expect(await merge()).toBe(expected)
 })
 
 test('riesgo: untouched paths and an odd gh answer pass', async ($, on) => {

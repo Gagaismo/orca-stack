@@ -45,7 +45,7 @@ Son plugins de Claude Code que se recargan en caliente (`.claude-plugin/plugin.j
 | --- | --- | --- |
 | `tablero-despacho` | Tablero de PRs abiertos con checks, review y worktrees (`/tablero`). Usa `gh`. | Los atajos de despacho aparecen solo si hay `despacho` |
 | `guardia-despacho` | Bloquea o corrige las llamadas a tus scripts de despacho y revisión según reglas del proyecto. Siempre activo, con o sin `despacho`: rechaza `orca worktree rm` y `git worktree remove` si la rama de ese worktree tiene commits que no están en ningún remoto, porque `orca worktree rm` borra también la rama local. Si no puede resolver la rama, rechaza | Las reglas de despacho están **apagadas** salvo que haya `despacho` |
-| `puente-gentle` | Consulta a Gentle Shell (Pi) como otro orquestador par (`/pi`, `/gentle`). Frena el merge de un PR grande sin consulta y el de uno que toca `riesgo` sin review de pi | `humano`, `riesgo`, `agentes.pi.claudeConfigDir` |
+| `puente-gentle` | Consulta a Gentle Shell (Pi) como otro orquestador par (`/pi`, `/gentle`). Frena el merge de un PR grande sin consulta y el de uno que toca `riesgo` sin sus reviews limpios (de pi, o de dos familias de modelo que no sean la de pi si el PR lo escribió pi) | `humano`, `riesgo`, `agentes.pi.claudeConfigDir` |
 | `bandeja-mensajes` | Captura los bloques ` ```mensaje <destinatario> ` que redacta Claude y deja copiarlos o guardarlos | `mensajes.destinatarios` |
 | `grilling-ok` | Responde con un clic (o con un `ok`) a las preguntas Q1…Qn de una sesión de grilling | — |
 | `modo-autonomo` | Instrucción permanente de trabajo autónomo hasta la meta, con recordatorio anti-parada acotado | — |
@@ -158,7 +158,7 @@ Las claves del contrato de trabajo, que escribe `orca-setup` y que el bloque de 
 | `merge` | Si `main` mergea sola cuando se cumple la condición de merge |
 | `despliegue` | `{ "despues": false }`, o el comando y cómo se verifica |
 | `idioma` | Idioma del código, los commits y los PRs |
-| `riesgo` | Lista de globs de rutas cuyo cambio no se deshace con un revert (migraciones, auth, deploy, dependencias). `puente-gentle` no deja mergear un PR que toca alguna hasta que tenga un review de pi sobre su último commit (`Revisor: pi` y `Commit: <sha>`, de `orca-stack revisar <n> pi`) |
+| `riesgo` | Lista de globs de rutas cuyo cambio no se deshace con un revert (migraciones, auth, deploy, dependencias). `puente-gentle` no deja mergear un PR que toca alguna hasta que tenga un review limpio de pi sobre su último commit (`Revisor: pi`, `Commit: <sha>` y `## BLOQUEA` en `nada`, de `orca-stack revisar <n> pi`). Si lo escribió pi, pide dos reviews limpios de dos familias de modelo distintas que no sean la de pi: agy y codex o codex-cc, porque claude es el mismo modelo que pi. Un review con bloqueos sobre ese commit frena el merge, y también lo frena que falte la línea `Implementador:` |
 | `agentes.pi.claudeConfigDir` | Solo en `~/.orca-stack/config.json`: carpeta de config de Claude con otra cuenta para pi. El puente lanza pi con `CLAUDE_CONFIG_DIR=<carpeta>`, y así pi y `main` no se quedan sin cuota juntos. El login se hace una vez a mano: `$env:CLAUDE_CONFIG_DIR="<carpeta>"; claude` y `/login` |
 
 `<repo>/.orca-stack.local.json` (local, ignorado por git; `init` lo crea vacío):

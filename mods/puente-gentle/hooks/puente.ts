@@ -1,4 +1,5 @@
 import type { Intercambio } from '../types'
+import { MODEL_FAMILY } from './orca-config'
 
 export const READ_ONLY_TOOLS = 'read,grep,find,ls'
 // Variables this session inherits from its Orca terminal. A consult must not carry them: Pi's Orca
@@ -384,15 +385,20 @@ export const riskyFile = (files: string[], globs: string[]): string | undefined 
   return files.find(file => patterns.some(pattern => pattern.test(file.replace(/\\/g, '/'))))
 }
 
-export type PrFacts = { files: string[]; headRefOid: string; bodies: string[] }
+export type PrFacts = { files: string[]; headRefOid: string; bodies: string[]; implementer: string | undefined }
 
-// `gh pr view --json files,headRefOid,comments,reviews`: `gh pr review --comment` bodies live in `reviews`,
-// plain PR comments in `comments`.
+// Same parse as src/despacho.mjs (revisar): the first `Implementador: <agent>` line of the PR body, lowercased.
+export const implementerOf = (body: string): string | undefined =>
+  /^\s*Implementador:\s*(\S+)/im.exec(body)?.[1]?.trim().toLowerCase()
+
+// `gh pr view --json files,headRefOid,body,comments,reviews`: `gh pr review --comment` bodies live in `reviews`,
+// plain PR comments in `comments`. The PR body only says who implemented it; it is never a review.
 export const prFacts = (stdout: string): PrFacts | undefined => {
   try {
     const data = JSON.parse(stdout) as {
       files?: { path?: unknown }[]
       headRefOid?: unknown
+      body?: unknown
       comments?: { body?: unknown }[]
       reviews?: { body?: unknown }[]
     }
@@ -407,29 +413,74 @@ export const prFacts = (stdout: string): PrFacts | undefined => {
       files: data.files.map(one => one?.path).filter((path): path is string => typeof path === 'string'),
       headRefOid: data.headRefOid,
       bodies,
+      implementer: typeof data.body === 'string' ? implementerOf(data.body) : undefined,
     }
   } catch {
     return undefined
   }
 }
 
-// A pi review of exactly this commit: `Revisor: pi` and `Commit: <sha>` among the first lines of one body
-// (the sha may be abbreviated to 7+ characters).
-export const hasPiReview = (bodies: string[], headRefOid: string): boolean =>
-  bodies.some(body => {
-    const head = body.split(/\r?\n/).slice(0, 5).map(line => line.trim())
-    const commit = head.map(line => /^Commit:\s*([0-9a-f]{7,40})$/i.exec(line)?.[1]).find(sha => sha !== undefined)
+export type Review = { reviewer: string; clean: boolean }
 
-    return (
-      head.some(line => /^Revisor:\s*pi$/i.test(line)) &&
-      commit !== undefined &&
-      headRefOid.toLowerCase().startsWith(commit.toLowerCase())
-    )
+// The reviews of exactly this commit: `Revisor: <agent>` and `Commit: <sha>` among the first lines of one body (the
+// sha may be abbreviated to 7+ characters). Clean: the first non-empty line after `## BLOQUEA` is `nada`.
+export const reviewsOf = (bodies: string[], headRefOid: string): Review[] =>
+  bodies.flatMap(body => {
+    const lines = body.split(/\r?\n/).map(line => line.trim())
+    const head = lines.slice(0, 5)
+    const reviewer = head.map(line => /^Revisor:\s*(\S+)$/i.exec(line)?.[1]).find(name => name !== undefined)
+    const commit = head.map(line => /^Commit:\s*([0-9a-f]{7,40})$/i.exec(line)?.[1]).find(sha => sha !== undefined)
+    if (reviewer === undefined || commit === undefined || !headRefOid.toLowerCase().startsWith(commit.toLowerCase())) {
+      return []
+    }
+    const at = lines.findIndex(line => /^##\s*BLOQUEA\b/i.test(line))
+    const verdict = at < 0 ? undefined : lines.slice(at + 1).find(line => line !== '')
+
+    return [{ reviewer: reviewer.toLowerCase(), clean: verdict?.toLowerCase() === 'nada' }]
   })
 
-export const riskReason = (n: string, file: string, headRefOid: string): string =>
-  `PR #${n} toca una ruta de riesgo (${file}): falta un review de pi sobre el commit ${headRefOid.slice(0, 7)}. ` +
-  `Corré \`orca-stack revisar ${n} pi\` y mergeá cuando el review esté limpio.`
+// Why a PR touching a riesgo path cannot merge yet, or undefined. Every review counted is of the head commit.
+// - A review of the head commit with blockers stops it: on a riesgo path the human settles a blocker, not main.
+// - Implemented by pi: clean reviews from two model families other than pi's (claude runs the same model as pi).
+// - Implemented by anyone else: a clean pi review, the second review the contract asks for.
+export const riskDeny = (n: string, file: string, facts: PrFacts): string | undefined => {
+  const sha = facts.headRefOid.slice(0, 7)
+  const prefix = `PR #${n} toca una ruta de riesgo (${file})`
+  const own = facts.implementer === undefined ? undefined : MODEL_FAMILY[facts.implementer]
+  if (own === undefined) {
+    return (
+      `${prefix} y su body no tiene una línea "Implementador: <agente>" con uno de ${Object.keys(MODEL_FAMILY).join(', ')}: ` +
+      `sin ella no sé quién puede revisarlo. Agregala con \`gh pr edit ${n} --body-file <archivo>\`.`
+    )
+  }
+  const reviews = reviewsOf(facts.bodies, facts.headRefOid)
+  const blocked = reviews.find(review => !review.clean)
+  if (blocked !== undefined) {
+    return (
+      `${prefix} y el review de ${blocked.reviewer} sobre el commit ${sha} tiene bloqueos. ` +
+      'En una ruta de riesgo un bloqueo no se salda con "Decidido por main": corregilo y pedí un review nuevo, o pasale la decisión al humano.'
+    )
+  }
+  const clean = new Set(reviews.map(review => review.reviewer))
+  if (facts.implementer !== 'pi') {
+    return clean.has('pi')
+      ? undefined
+      : `${prefix}: falta un review de pi sobre el commit ${sha}. Corré \`orca-stack revisar ${n} pi\` y mergeá cuando el review esté limpio.`
+  }
+  const covered = new Set([...clean].map(agent => MODEL_FAMILY[agent]).filter(family => family !== undefined && family !== own))
+  if (covered.size >= 2) {
+    return undefined
+  }
+  // One agent per family still missing, in table order.
+  const suggest = Object.entries(MODEL_FAMILY)
+    .filter(([, family], i, all) => family !== own && !covered.has(family) && all.findIndex(([, f]) => f === family) === i)
+    .map(([agent]) => `\`orca-stack revisar ${n} ${agent}\``)
+
+  return (
+    `${prefix} y lo escribió pi: faltan reviews limpios sobre el commit ${sha} de dos familias de modelo que no sean la de pi ` +
+    `(claude es el mismo modelo que pi; codex y codex-cc son una sola familia). Hay ${covered.size}. Corré ${suggest.join(' y ')}.`
+  )
+}
 
 // ---- SDD auto-consult -------------------------------------------------------
 
