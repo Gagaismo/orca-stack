@@ -74,6 +74,7 @@ const fakeIo = (over = {}, { config = PROJECT } = {}) => {
 }
 
 const run = (kind, args, env) => dispatch(kind, args, env.io)
+const withModels = modelos => ({ ...PROJECT, agentes: { ...PROJECT.agentes, modelos } })
 
 describe('despachar: refusals', () => {
   test('setup pending', async () => {
@@ -111,11 +112,37 @@ describe('despachar: refusals', () => {
     assert.deepEqual(live.writes(), [])
   })
 
-  test('review: reviewer is the implementer, codex family, missing line', async () => {
+  test('review: reviewer is the implementer, same model family, missing line', async () => {
     const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('x\nImplementador: agy\n'))), /nadie revisa su propio PR/)
-    await assert.rejects(run('review', { n: '9', agent: 'codex-cc', confirmado: true }, fakeIo(pr('Implementador: codex\n'))), /comparten modelo/)
+    await assert.rejects(run('review', { n: '9', agent: 'codex-cc', confirmado: true }, fakeIo(pr('Implementador: codex\n'), { config: withModels({ 'codex-cc': 'gpt-6-luna' }) })), /familia gpt, comparten modelo/)
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('sin línea'))), /no tiene la línea "Implementador/)
+  })
+
+  test('review: the family comes from the configured model, and pi may review a Claude agent', async () => {
+    const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
+    // codex-cc on GLM reviews codex (gpt); with no model it proves nothing and is not stopped either.
+    await run('review', { n: '9', agent: 'codex-cc', confirmado: true, dryRun: true }, fakeIo(pr('Implementador: codex'), { config: withModels({ 'codex-cc': { revisar: { modelo: 'z-ai/glm-5.3-flash' } } }) }))
+    await run('review', { n: '9', agent: 'codex-cc', confirmado: true, dryRun: true }, fakeIo(pr('Implementador: codex')))
+    // agy on a Claude model does not review claude; pi does, and claude reviews pi.
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('Implementador: claude'), { config: withModels({ agy: 'claude-sonnet-5-5' }) })), /familia claude/)
+    await run('review', { n: '9', agent: 'pi', dryRun: true }, fakeIo(pr('Implementador: claude')))
+    await run('review', { n: '9', agent: 'claude', dryRun: true }, fakeIo(pr('Implementador: pi')))
+  })
+
+  test('a guardia.bloquear rule stops despachar and revisar, from any layer', async () => {
+    const until = new Date(Date.now() + 86_400_000 * 3)
+    const hasta = `${until.getFullYear()}-${String(until.getMonth() + 1).padStart(2, '0')}-${String(until.getDate()).padStart(2, '0')}`
+    write(layout(home).config, JSON.stringify({ guardia: { bloquear: [{ agente: 'codex', hasta, motivo: 'codex no tiene cuota: usá codex-cc.' }] } }))
+    // The project layer has its own list: the personal block still applies.
+    const env = fakeIo({}, { config: { ...PROJECT, guardia: { bloquear: [{ agente: 'agy', hasta: '2020-01-01' }] } } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), /No despacho a codex: codex no tiene cuota: usá codex-cc\./)
+    assert.deepEqual(env.writes(), [])
+    await run('ticket', { n: '7', agent: 'agy', dryRun: true }, env) // an expired rule does nothing
+    const pr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }) }
+    await assert.rejects(run('review', { n: '9', agent: 'codex' }, fakeIo(pr)), /No despacho a codex/)
+    write(layout(home).config, JSON.stringify({ guardia: { bloquear: [{ agente: 'codex', hasta: '29/10' }] } }))
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, fakeIo()), /fecha "hasta" que no es AAAA-MM-DD/)
   })
 })
 
@@ -169,7 +196,7 @@ describe('despachar: failures along the way', () => {
   test('the implementer line is compared case-insensitively and trimmed', async () => {
     const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('Implementador:   AGY  \n'))), /nadie revisa su propio PR/)
-    await assert.rejects(run('review', { n: '9', agent: 'codex', confirmado: true }, fakeIo(pr('implementador: Codex-CC'))), /comparten modelo/)
+    await assert.rejects(run('review', { n: '9', agent: 'codex', confirmado: true }, fakeIo(pr('implementador: Codex-CC'), { config: withModels({ 'codex-cc': 'gpt-6-luna' }) })), /comparten modelo/)
   })
 })
 

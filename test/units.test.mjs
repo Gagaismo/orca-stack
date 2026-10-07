@@ -4,7 +4,7 @@ import path from 'node:path'
 import { describe, test } from 'node:test'
 
 import { parseArgs } from '../src/cli.mjs'
-import { AGENTS, CODEX_FAMILY } from '../src/despacho.mjs'
+import { FAMILIES, blockOf, familyOf } from '../src/despacho.mjs'
 import { MARKER_BEGIN, MARKER_END } from '../src/constants.mjs'
 import { buildBlock, removeBlock, upsertBlock } from '../src/marker.mjs'
 import { mergePluginDirs, removePluginDirs } from '../src/settings.mjs'
@@ -148,14 +148,25 @@ describe('the repository itself', () => {
       const copy = readFileSync(path.join(ROOT, 'mods', mod, 'hooks', 'orca-config.ts'), 'utf8')
       assert.equal(copy, shared, `${mod} is out of sync: run npm run sync-shared`)
     }
+    const cases = JSON.parse(readFileSync(path.join(ROOT, 'shared', 'familias.json'), 'utf8'))
+    const module = readFileSync(path.join(ROOT, 'mods', 'puente-gentle', 'tests', 'familias.ts'), 'utf8')
+    assert.deepEqual(JSON.parse(module.slice(module.indexOf('export default ') + 'export default '.length)), cases, 'puente-gentle/tests/familias.ts is out of sync: run npm run sync-shared')
   })
 
-  test('despacho agrees with the MODEL_FAMILY table of shared/orca-config.ts', () => {
+  test('despacho keeps the same FAMILIES literal as shared/orca-config.ts', () => {
     const shared = readFileSync(path.join(ROOT, 'shared', 'orca-config.ts'), 'utf8')
-    const table = /export const MODEL_FAMILY[^{]*\{([^}]*)\}/.exec(shared)?.[1] ?? ''
-    const family = Object.fromEntries([...table.matchAll(/'?([\w-]+)'?:\s*'([\w-]+)'/g)].map(([, agent, name]) => [agent, name]))
-    assert.deepEqual(Object.keys(family).sort(), [...AGENTS].sort())
-    assert.deepEqual(AGENTS.filter(agent => family[agent] === 'codex').sort(), [...CODEX_FAMILY].sort())
+    const literal = /\/\/ BEGIN FAMILIES\s*export const FAMILIES = ([\s\S]*?)(?: as const)?\s*\/\/ END FAMILIES/.exec(shared)?.[1]
+    assert.ok(literal, 'shared/orca-config.ts lost its FAMILIES markers')
+    assert.deepEqual(JSON.parse(literal), FAMILIES)
+  })
+
+  // The mod runs the same cases against shared/orca-config.ts (its copy is mods/puente-gentle/tests/familias.ts).
+  test('familyOf and blockOf answer shared/familias.json', () => {
+    const cases = JSON.parse(readFileSync(path.join(ROOT, 'shared', 'familias.json'), 'utf8'))
+    for (const c of cases.familyOf) assert.equal(familyOf(c.config, c.agent, c.mode).family ?? null, c.family, JSON.stringify(c))
+    for (const c of cases.blockOf) {
+      assert.equal(blockOf({ guardia: { bloquear: c.rules } }, c.agent, new Date(c.now).getTime()) ?? null, c.result, JSON.stringify(c))
+    }
   })
 
   test('every mod has a manifest, a hooks entry that exists, and a test', () => {

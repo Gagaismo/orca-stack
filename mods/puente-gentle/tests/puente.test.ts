@@ -17,6 +17,9 @@ import {
   reviewsOf,
   segments,
 } from '../hooks/puente'
+import familias from './familias'
+import { blockOf, familyOf, mergeConfig } from '../hooks/orca-config'
+import type { StackConfig } from '../hooks/orca-config'
 import { ENTRY, SKILLS, answerStream, line, world } from './harness'
 import type { Run } from './harness'
 
@@ -462,21 +465,85 @@ test('riesgo: a pi review on the head commit (review body or comment) lets it th
 
 const clean = (agent: string) => ({ body: `Revisor: ${agent}\nCommit: ${OID}\n\n## BLOQUEA\nnada` })
 
-test('riesgo: a PR pi wrote needs clean reviews from two model families other than pi and claude', async ($, on) => {
+// The project layer under every spelling the engine may resolve, with extra keys on top of riesgo.
+const riskFiles = (extra: Record<string, unknown>) => {
+  const text = JSON.stringify({ riesgo: ['**/migrations/**', 'package-lock.json'], ...extra })
+
+  return { 'C:/w/repo/.orca-stack.json': text, [['C:', 'w', 'repo', '.orca-stack.json'].join(BS)]: text, '/w/repo/.orca-stack.json': text }
+}
+const piPr = (reviews: () => { body: string }[]) => (argv: readonly string[]) => pr(['package-lock.json'], { body: 'Implementador: pi', reviews: reviews() })(argv)
+const PREFIX = 'PR #7 toca una ruta de riesgo (package-lock.json) y lo escribió pi: faltan reviews limpios sobre el commit abc1234 de dos familias de modelo distintas que no sean la de pi (claude).'
+
+test('riesgo: a PR pi wrote needs clean reviews from two model families other than claude', async ($, on) => {
   let reviews: { body: string }[] = []
-  setup(on, argv => pr(['package-lock.json'], { body: 'Implementador: pi', reviews })(argv), {}, { files: RISK_FILES })
+  const usa = ['claude', 'agy', 'codex', 'codex-cc', 'pi']
+  setup(on, piPr(() => reviews), {}, { files: riskFiles({ agentes: { usa, modelos: { codex: { revisar: { modelo: 'deepseek-v4' } } } } }) })
+  await boot($)
+  const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
+  // codex reviews on an unknown model and codex-cc has none: only agy is a known family besides pi's.
+  expect(await merge()).toBe(`${PREFIX} Hay 0. Con los agentes disponibles (agentes.usa, sin bloqueos) no alcanzan las familias: decidilo con el humano.`)
+  reviews = [clean('claude'), clean('agy'), clean('codex'), clean('codex-cc'), clean('gemini-cli')]
+  expect(await merge()).toBe(
+    `${PREFIX} Hay 1 (gemini). No cuento codex: su modelo deepseek-v4 no tiene una familia reconocida (agregá su patrón en FAMILIES); ` +
+      'codex-cc: no tiene modelo para revisar en agentes.modelos, así que no sé su familia; gemini-cli: no es un agente del stack. ' +
+      'Con los agentes disponibles (agentes.usa, sin bloqueos) no alcanzan las familias: decidilo con el humano.',
+  )
+})
+
+test('riesgo: with default models a PR pi wrote is cleared by agy and codex, and claude does not count', async ($, on) => {
+  let reviews: { body: string }[] = []
+  setup(on, piPr(() => reviews), {}, { files: riskFiles({ agentes: { usa: ['claude', 'agy', 'codex', 'codex-cc', 'pi'], preguntarAntes: ['codex'], modelos: { 'codex-cc': 'gpt-6-luna' } } }) })
+  await boot($)
+  const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
+  // codex and codex-cc are both gpt here: the one that needs no OK is suggested.
+  expect(await merge()).toBe(`${PREFIX} Hay 0. Corré \`orca-stack revisar 7 agy\` y \`orca-stack revisar 7 codex-cc\`.`)
+  reviews = [clean('claude'), clean('agy')]
+  expect(await merge()).toBe(`${PREFIX} Hay 1 (gemini). Corré \`orca-stack revisar 7 codex-cc\`.`)
+  reviews = [clean('agy'), clean('codex')]
+  expect(await merge()).toBeUndefined()
+})
+
+test('riesgo: families follow agentes.modelos; blocked agents and preguntarAntes shape the advice', async ($, on) => {
+  let reviews: { body: string }[] = [clean('agy')]
+  const config = {
+    agentes: { usa: ['claude', 'agy', 'codex', 'codex-cc', 'pi'], preguntarAntes: ['codex-cc'], modelos: { 'codex-cc': { revisar: { modelo: 'z-ai/glm-5.3-flash' } } } },
+    guardia: { bloquear: [{ agente: 'codex', hasta: '2099-01-01', motivo: 'sin cuota' }] },
+  }
+  setup(on, piPr(() => reviews), {}, { files: riskFiles(config) })
   await boot($)
   const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
   expect(await merge()).toBe(
-    'PR #7 toca una ruta de riesgo (package-lock.json) y lo escribió pi: faltan reviews limpios sobre el commit abc1234 de dos familias de modelo que no sean la de pi ' +
-      '(claude es el mismo modelo que pi; codex y codex-cc son una sola familia). Hay 0. Corré `orca-stack revisar 7 codex` y `orca-stack revisar 7 agy`.',
+    `${PREFIX} Hay 1 (gemini). Corré \`orca-stack revisar 7 codex-cc\`. codex-cc está en preguntarAntes: pedile el OK al humano y agregá --confirmado.`,
   )
-  reviews = [clean('claude'), clean('agy')]
-  expect(await merge()).toContain('Hay 1. Corré `orca-stack revisar 7 codex`.')
-  reviews = [clean('codex'), clean('codex-cc')]
-  expect(await merge()).toContain('Hay 1. Corré `orca-stack revisar 7 agy`.')
   reviews = [clean('agy'), clean('codex-cc')]
   expect(await merge()).toBeUndefined()
+})
+
+test('riesgo: when the agents in use cannot reach two families, the deny says so', async ($, on) => {
+  setup(on, piPr(() => []), {}, { files: riskFiles({ agentes: { usa: ['claude', 'agy', 'pi'] } }) })
+  await boot($)
+  const denied = await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)
+  expect(denied.deny).toBe(`${PREFIX} Hay 0. Con los agentes disponibles (agentes.usa, sin bloqueos) no alcanzan las familias: decidilo con el humano.`)
+})
+
+test('guardia.bloquear adds up across the layers; every other list is still replaced', () => {
+  const personal = { guardia: { bloquear: [{ agente: 'codex', hasta: '2026-10-29' }] }, agentes: { usa: ['claude'] } }
+  const local = { guardia: { bloquear: [{ agente: 'agy', hasta: '2026-11-01' }], modeloClaude: 'x' }, agentes: { usa: ['agy'] } }
+  const merged = mergeConfig(personal, undefined, local)
+  expect(merged.guardia?.bloquear?.map(rule => rule.agente)).toEqual(['codex', 'agy'])
+  expect(merged.guardia?.modeloClaude).toBe('x')
+  expect(merged.agentes?.usa).toEqual(['agy'])
+  expect(mergeConfig(personal, { guardia: { modeloClaude: 'y' } }).guardia).toEqual({ bloquear: personal.guardia.bloquear, modeloClaude: 'y' })
+})
+
+// shared/familias.json, copied here by sync-shared: src/despacho.mjs answers the same cases in test/units.test.mjs.
+test('familyOf and blockOf answer shared/familias.json', () => {
+  for (const c of familias.familyOf) {
+    expect([c.agent, c.mode, familyOf(c.config as StackConfig, c.agent, c.mode as 'ticket' | 'review').family ?? null]).toEqual([c.agent, c.mode, c.family])
+  }
+  for (const c of familias.blockOf) {
+    expect(blockOf({ guardia: { bloquear: c.rules } }, c.agent, new Date(c.now).getTime()) ?? null).toBe(c.result)
+  }
 })
 
 test('riesgo: a review of the head commit with blockers stops the merge even next to clean ones', async ($, on) => {
@@ -496,7 +563,7 @@ test('riesgo: a missing or unknown Implementador stops the merge with what to ad
   await boot($)
   const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
   const expected =
-    'PR #7 toca una ruta de riesgo (package-lock.json) y su body no tiene una línea "Implementador: <agente>" con uno de claude, pi, codex, codex-cc, agy: ' +
+    'PR #7 toca una ruta de riesgo (package-lock.json) y su body no tiene una línea "Implementador: <agente>" con uno de claude, agy, codex, codex-cc, pi: ' +
     'sin ella no sé quién puede revisarlo. Agregala con `gh pr edit 7 --body-file <archivo>`.'
   expect(await merge()).toBe(expected)
   body = 'Implementador: gpt'
