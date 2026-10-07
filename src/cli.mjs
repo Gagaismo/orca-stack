@@ -85,7 +85,7 @@ Con --dry-run muestra el plan y el brief y no escribe nada.
 `,
   revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
 
-Igual que despachar, para un review: worktree revision-<pr> parado en la rama del PR. Se niega si el agente es el implementador del PR
+Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
 (línea \`Implementador:\`) o si codex y codex-cc se revisan entre sí.
 `,
   remove: `orca-stack remove [--dry-run] [--with-pi]

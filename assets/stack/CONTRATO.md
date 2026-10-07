@@ -85,7 +85,7 @@ Corré la verificación con los comandos de `verificacion` (`suite` y `typecheck
 
 ### Despacho
 
-`orca-stack despachar <n> <agente>` crea el worktree con `orca worktree create` desde `origin/<ramaBase>`, escribe el brief del ticket desde la plantilla (número de issue, rama, agente, los comandos de `verificacion` y cómo abrir el PR), comprueba que cada ruta que cita el brief exista en el worktree, lanza el agente en una terminal de Orca y le manda el brief. Se niega si la rama o el worktree ya tienen un agente vivo. `orca-stack revisar <pr> <agente>` hace lo mismo para un review, en un worktree `revision-<pr>` parado en el commit del PR. Agregá lo propio de un ticket con `--nota "<texto>"`; si citás un archivo, que sea una ruta del repo y no algo que `.gitignore` deja afuera del worktree.
+`orca-stack despachar <n> <agente>` crea el worktree con `orca worktree create` desde `origin/<ramaBase>`, escribe el brief del ticket desde la plantilla (número de issue, rama, agente, los comandos de `verificacion` y cómo abrir el PR), comprueba que cada ruta que cita el brief exista en el worktree, lanza el agente en una terminal de Orca y le manda el brief. Se niega si la rama o el worktree ya tienen un agente vivo. `orca-stack revisar <pr> <agente>` hace lo mismo para un review, en un worktree `revision-<pr>-<agente>` parado en el commit del PR. Agregá lo propio de un ticket con `--nota "<texto>"`; si citás un archivo, que sea una ruta del repo y no algo que `.gitignore` deja afuera del worktree.
 
 El despacho es un handoff: el worker trabaja solo y no se lo supervisa con `orca orchestration`, salvo que el humano pida supervisar un Run. Si un comando falla, mostrá su error al humano; no armes el despacho a mano.
 
