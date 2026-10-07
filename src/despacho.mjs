@@ -84,7 +84,7 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   // take this pane for a second agent and the stack markers do not leak into Gentle Shell.
   const q = win ? psQuote : shQuote
   const prompt = `Read and carry out the brief in ${briefPath}. Non-interactive: never wait for user input.`
-  const cmd = `pi -p --no-skills --skill ${q(skills)} --session-id ${session} --tools ${PI_TOOLS[mode]} ${q(prompt)}`
+  const cmd = `pi -p --no-skills --skill ${q(skills)} --session-id ${session} --tools ${q(PI_TOOLS[mode])} ${q(prompt)}`
   const set = [['ENGRAM_DATA_DIR', P.join(home, '.gentle-shell', 'engram')], ['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
   if (win) {
     return [`Remove-Item ${ORCA_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
