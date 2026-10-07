@@ -12,11 +12,22 @@ export type StackConfig = {
   humano?: string
   mensajes?: { destinatarios?: string[] }
   despacho?: { script?: string; revisar?: string }
-  riesgo?: string[] // path globs whose change needs a second review (pi) before merging
+  riesgo?: string[] // path globs whose change needs a second review before merging (pi, or two other model families when pi wrote it)
   guardia?: {
     bloquear?: { agente: string; hasta: string; motivo?: string }[]
     modeloClaude?: string
   }
+}
+
+// The stack's agents and the model each one runs on. Two agents of one family share blind spots, so they do not
+// count as two independent reviews. pi runs on a Claude account. src/despacho.mjs keeps its own AGENTS and codex
+// family list; the repo's tests check that they agree with this table.
+export const MODEL_FAMILY: Record<string, string> = {
+  claude: 'claude',
+  pi: 'claude',
+  codex: 'codex',
+  'codex-cc': 'codex',
+  agy: 'agy',
 }
 
 const isPlain = (value: unknown): value is Record<string, unknown> =>

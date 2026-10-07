@@ -16,7 +16,6 @@ import {
   clock,
   consultEnv,
   engramDir,
-  hasPiReview,
   interpret,
   joinPath,
   launcherPath,
@@ -28,7 +27,7 @@ import {
   prFacts,
   prSize,
   remember,
-  riskReason,
+  riskDeny,
   riskyFile,
   section,
   skillsInGlobal,
@@ -172,8 +171,8 @@ const textResult = (text: string) => ({ result: text })
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 
-// Big PRs need a consult before they merge; PRs touching a `riesgo` path need a pi review of their head commit.
-const PR_FIELDS = 'additions,deletions,files,headRefOid,comments,reviews'
+// Big PRs need a consult before they merge; PRs touching a `riesgo` path need clean reviews of their head commit (riskDeny).
+const PR_FIELDS = 'additions,deletions,files,headRefOid,body,comments,reviews'
 
 const gate = async ($: EngineInterface, command: string) => {
   for (const merge of merges(command)) {
@@ -198,8 +197,9 @@ const gate = async ($: EngineInterface, command: string) => {
     const globs = (await loadConfig(hostOf($))).riesgo
     const facts = Array.isArray(globs) && globs.length > 0 ? prFacts(stdout) : undefined
     const risky = facts === undefined ? undefined : riskyFile(facts.files, globs ?? [])
-    if (facts !== undefined && risky !== undefined && !hasPiReview(facts.bodies, facts.headRefOid)) {
-      return { deny: riskReason(merge.number, risky, facts.headRefOid) }
+    const denied = facts === undefined || risky === undefined ? undefined : riskDeny(merge.number, risky, facts)
+    if (denied !== undefined) {
+      return { deny: denied }
     }
   }
 

@@ -329,7 +329,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 | `despacho.script`, `despacho.revisar` | guardia-despacho, tablero-despacho | `.orca-stack.json` del proyecto |
 | `guardia.bloquear` | guardia-despacho | `.orca-stack.local.json` si es temporal; `.orca-stack.json` si es regla del proyecto |
 | `guardia.modeloClaude` | guardia-despacho | `.orca-stack.json` del proyecto |
-| `riesgo` | puente-gentle | `.orca-stack.json` del proyecto: globs de las rutas cuyo cambio no se deshace con un revert. Un PR que toca alguna no se mergea sin un review de pi sobre su último commit (`orca-stack revisar <n> pi`) |
+| `riesgo` | puente-gentle | `.orca-stack.json` del proyecto: globs de las rutas cuyo cambio no se deshace con un revert. Un PR que toca alguna no se mergea sin un review limpio de pi sobre su último commit (`orca-stack revisar <n> pi`). Si lo escribió pi, hacen falta dos reviews de dos familias de modelo distintas que no sean la de pi (agy y codex o codex-cc) |
 | `agentes.pi.claudeConfigDir` | puente-gentle | Personal. Carpeta de config de Claude con otra cuenta para pi; el puente lanza pi con `CLAUDE_CONFIG_DIR=<carpeta>`. El login se hace una vez a mano: en PowerShell, `$env:CLAUDE_CONFIG_DIR="<carpeta>"; claude` y después `/login` |
 
 ---
