@@ -1,6 +1,6 @@
 {
   "name": "orca-stack",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Instala el stack de agentes: política de Orca, skills, wrappers de proveedores, Pi con Gentle Shell y mods de Claude Code.",
   "type": "module",
   "bin": {
