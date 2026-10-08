@@ -162,3 +162,7 @@ Si faltan, corré `npx github:Gagaismo/orca-stack global`.
 - Engram es solo memoria: no es autoridad ni planificador. Para las reglas de cada rol, leé la política canónica.
 - Las reglas de los mods de Claude Code para este proyecto están en `.orca-stack.json` (se commitea) y `.orca-stack.local.json` (local, ignorado por git); las personales, en `~/.orca-stack/config.json`.
 <!-- orca-stack:end -->
+
+## Project rules
+
+- **No reviews in this repo for now (speed first).** This overrides step 7 (a), (b) and (d) of "Ciclo de `main`" and step 6 (no review dispatch): `main` merges a PR as soon as CI is green and the PR body has its `## Evidencia`. Do not run `orca-stack revisar` unless the human asks. `riesgo` is empty on purpose. A PR over 400 lines still gets a Gentle Shell consult before merging (`puente-gentle` enforces it).
