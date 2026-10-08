@@ -65,3 +65,12 @@ export const removeBlock = text => {
 
   return found ? { text: cut(text, found), found: true } : { text, found: false }
 }
+
+// Same, for installs that predate the policy moving into the project: the legacy block goes too.
+export const removeAnyBlock = text => {
+  const legacy = locate(text, LEGACY_BEGIN, LEGACY_END)
+  const first = legacy ? { text: cut(text, legacy), found: true } : { text, found: false }
+  const current = removeBlock(first.text)
+
+  return { text: current.text, found: first.found || current.found }
+}

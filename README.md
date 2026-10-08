@@ -26,14 +26,14 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 | Wrappers `claude-orca-stack`, `codex-orca-stack`, `agy-orca-stack` (`.cmd` en Windows, `.sh` en el resto), cada uno con `--orca-stack-self-test` | `~/orca/stack/scripts/` |
 | Skills propias: `orca-stack-policy`, `orca-setup`, `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | `~/.claude/skills/` y `~/.agents/skills/` |
 | Siete mods de Claude Code (ver abajo) y sus rutas en `env.CLAUDE_CODE_PLUGIN_DIRS` | `~/.claude/mods/` y `~/.claude/settings.json` |
-| Bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` que apunta a la política. Con el RDD de gentle-ai apagado, también recorta de ese archivo las secciones de review que gentle-ai escribe (ver abajo) | `~/.claude/CLAUDE.md` |
+| Nada de metodología en `~/.claude/CLAUDE.md`: si un `global` anterior dejó ahí el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->`, lo saca (con respaldo). Con el RDD de gentle-ai apagado, también recorta de ese archivo las secciones de review que gentle-ai escribe (ver abajo) | `~/.claude/CLAUDE.md` |
 | Pi: `gentle-pi@4.0.0` y `pi-claude-bridge@0.9.1` con `pi install`, más `npm i -g gentle-pi@4.0.0` (comando `gentle-shell`) | `~/.pi/agent/` y npm global |
 | Registro de lo instalado, para `remove` | `~/.orca-stack/state.json` |
 | Capa personal de configuración | `~/.orca-stack/config.json` |
 
 Los wrappers se llaman distinto del binario real a propósito: así nunca se llaman a sí mismos. Cada uno fija los marcadores `ORCA_STACK_*`, busca el binario real en el `PATH`, pasa los argumentos tal cual y devuelve su código de salida.
 
-El bloque de `CLAUDE.md` y todo lo que está fuera de los marcadores se respeta: `global` solo reemplaza lo que hay entre `orca-stack:begin` y `orca-stack:end`. Lo mismo hace con `settings.json`: solo suma sus carpetas a `CLAUDE_CODE_PLUGIN_DIRS` (con el separador de tu sistema), conserva las que ya había y no toca ninguna otra clave.
+`global` instala herramientas, skills, mods y wrappers, pero ningún texto de metodología: una sesión de Claude en un proyecto sin `.orca-stack.json` no recibe nada del stack por esta vía. La metodología llega por el proyecto, con `init` (el contrato y las líneas de la política en `AGENTS.md`, y `@AGENTS.md` en `CLAUDE.md`). Del `CLAUDE.md` global `global` solo saca el bloque entre `orca-stack:begin` y `orca-stack:end` (o `orca-stack:auto`, el viejo) que dejó una versión anterior, y respeta todo lo demás. Con `settings.json` hace algo parecido: solo suma sus carpetas a `CLAUDE_CODE_PLUGIN_DIRS` (con el separador de tu sistema), conserva las que ya había y no toca ninguna otra clave.
 
 Con el desarrollo guiado por recibos (RDD) de gentle-ai apagado (`gentle-ai review mode status` dice `off`), las secciones de review del bloque `gentle-ai:sdd-orchestrator` de `~/.claude/CLAUDE.md` no hacen nada y se cargan igual en cada sesión (unos 26 KB). `global` las saca, con respaldo, e imprime cuántos KB ahorró. Si RDD está prendido, o gentle-ai no está instalado, se omite el paso y dice por qué. `gentle-ai sync` las vuelve a escribir: después de cada sync hay que correr `orca-stack global` de nuevo, y `doctor` avisa si volvieron.
 
@@ -45,7 +45,7 @@ Son plugins de Claude Code que se recargan en caliente (`.claude-plugin/plugin.j
 | --- | --- | --- |
 | `tablero-despacho` | Tablero de PRs abiertos con checks, review y worktrees (`/tablero`). Usa `gh`. | Los atajos de despacho aparecen solo si hay `despacho` |
 | `guardia-despacho` | Bloquea o corrige las llamadas a tus scripts de despacho y revisión según reglas del proyecto. Siempre activo, con o sin `despacho`: rechaza `orca worktree rm` y `git worktree remove` si la rama de ese worktree tiene commits que no están en ningún remoto, porque `orca worktree rm` borra también la rama local. Si no puede resolver la rama, rechaza | Las reglas de despacho están **apagadas** salvo que haya `despacho` |
-| `puente-gentle` | Consulta a Gentle Shell (Pi) como otro orquestador par (`/pi`, `/gentle`). Frena el merge de un PR grande sin consulta y el de uno que toca `riesgo` sin sus reviews limpios (de pi, o de dos familias de modelo que no sean la de pi si el PR lo escribió pi) | `humano`, `riesgo`, `agentes.pi.claudeConfigDir` |
+| `puente-gentle` | Consulta a Gentle Shell (Pi) como otro orquestador par (`/pi`, `/gentle`). La instrucción de consultar y la herramienta `consultar_gentle_shell` aparecen solo en un repo con `.orca-stack.json`. Frena el merge de un PR grande sin consulta y el de uno que toca `riesgo` sin sus reviews limpios (de pi, o de dos familias de modelo que no sean la de pi si el PR lo escribió pi) | `humano`, `riesgo`, `agentes.pi.claudeConfigDir` |
 | `bandeja-mensajes` | Captura los bloques ` ```mensaje <destinatario> ` que redacta Claude y deja copiarlos o guardarlos | `mensajes.destinatarios` |
 | `grilling-ok` | Responde con un clic (o con un `ok`) a las preguntas Q1…Qn de una sesión de grilling | — |
 | `modo-autonomo` | Instrucción permanente de trabajo autónomo hasta la meta, con recordatorio anti-parada acotado | — |
@@ -82,7 +82,7 @@ orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
 - `--skip-pi` no toca Pi (útil si todavía no lo instalaste).
 - `--humano` fija cómo te nombran los mods; si no lo pasás, sale de `git config user.name`.
 - `doctor` hace sondeos reales y sale con código 1 si hay una falla (✖). Los avisos (⚠) no cambian el código.
-- `remove` borra lo que `global` creó, restaura lo que había reemplazado, saca sus entradas de `CLAUDE_CODE_PLUGIN_DIRS` y su bloque de `CLAUDE.md`. Los respaldos (`~/.orca-stack/backups/<fecha>/`) se quedan. Los paquetes de Pi solo se sacan con `--with-pi`, y solo los que no tenías antes de instalar. Si editaste `~/.orca-stack/config.json`, se conserva.
+- `remove` borra lo que `global` creó, restaura lo que había reemplazado, saca sus entradas de `CLAUDE_CODE_PLUGIN_DIRS` y, si quedó, el bloque de `CLAUDE.md` de una instalación vieja. Los respaldos (`~/.orca-stack/backups/<fecha>/`) se quedan. Los paquetes de Pi solo se sacan con `--with-pi`, y solo los que no tenías antes de instalar. Si editaste `~/.orca-stack/config.json`, se conserva.
 - Para probar sin tocar tu carpeta personal: `ORCA_STACK_HOME=/ruta/temporal orca-stack global`.
 
 ### `doctor`
@@ -95,7 +95,7 @@ No se queda en "el archivo existe":
 - verifica que las skills de gentle-pi se resuelvan igual que lo hace `puente-gentle` en ejecución (primero la carpeta de Pi, después `npm root -g`);
 - comprueba que cada mod esté en `CLAUDE_CODE_PLUGIN_DIRS`;
 - combina las tres capas de configuración igual que los mods y avisa si un script de `despacho` no existe;
-- avisa de la deriva: el plugin `mattpocock-skills` por debajo de 1.3.1, skills que están en `~/.claude/skills` y también en el plugin (quedan dos veces en el contexto), `pr`, `implement-spec` o `retro` ausentes de `~/.agents/skills`, y las secciones de review de gentle-ai que siguen en `~/.claude/CLAUDE.md` con RDD apagado. Son avisos, no fallas, y cada uno trae el comando que lo arregla;
+- avisa de la deriva: el plugin `mattpocock-skills` por debajo de 1.3.1, skills que están en `~/.claude/skills` y también en el plugin (quedan dos veces en el contexto), `pr`, `implement-spec` o `retro` ausentes de `~/.agents/skills`, el bloque orca-stack viejo que sigue en `~/.claude/CLAUDE.md` (`orca-stack global` lo saca) y las secciones de review de gentle-ai que siguen ahí con RDD apagado. Son avisos, no fallas, y cada uno trae el comando que lo arregla;
 - detecta `engram`, `gentle-ai`, `gh` y Orca, y **solo lee** `orca-data.json` de los perfiles de Orca para decirte si los overrides de los agentes apuntan a los wrappers. Nunca lo escribe.
 
 ## Configuración en tres capas

@@ -6,6 +6,7 @@ import { LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG
 import { loadState } from './ctx.mjs'
 import { driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
+import { removeAnyBlock } from './marker.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
 import { installedPackageVersion, piBinary, piModulesDir, piVersion, resolveGentleSkills } from './pi.mjs'
 import { parseSettings } from './settings.mjs'
@@ -117,11 +118,17 @@ export const doctorCommand = async flags => {
       add('ok', name)
     }
   }
+  // The methodology now arrives through the project; an old global block keeps loading it in every session.
   if (existsSync(L.claudeMd)) {
-    const has = readFileSync(L.claudeMd, 'utf8').includes('<!-- orca-stack:begin -->')
-    add(has ? 'ok' : 'fail', 'bloque orca-stack en ~/.claude/CLAUDE.md', has ? '' : 'falta: corré `global`')
-  } else {
-    add('fail', '~/.claude/CLAUDE.md', 'no existe')
+    let leftover = false
+    try {
+      leftover = removeAnyBlock(readFileSync(L.claudeMd, 'utf8')).found
+    } catch (error) {
+      add('warn', '~/.claude/CLAUDE.md', error.message)
+    }
+    if (leftover) {
+      add('warn', 'bloque orca-stack viejo en ~/.claude/CLAUDE.md', 'ya no se instala acá (la política llega por el proyecto): corré `orca-stack global` para sacarlo')
+    }
   }
 
   // Pi

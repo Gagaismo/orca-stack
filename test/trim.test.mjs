@@ -106,7 +106,7 @@ describe('global trims the gentle-ai review sections', () => {
     assert.match(first.out, /KB menos en cada sesión/)
     assert.match(first.out, /gentle-ai sync/)
     assert.ok(!read(claudeMd()).includes('Native Checking Contract'))
-    assert.match(read(claudeMd()), /orca-stack:begin/)
+    assert.doesNotMatch(read(claudeMd()), /orca-stack:begin/)
     const saved = backups(home).filter(name => name.endsWith('CLAUDE.md'))
     assert.equal(saved.length, 1)
     assert.equal(read(path.join(home, saved[0])), fixture('\n'))

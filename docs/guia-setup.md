@@ -77,7 +77,9 @@ Además, instalá lo que `global` marque como faltante.
 
 **Resultado esperado de `doctor`:** **0 fallas** (✖), y cada aviso (⚠) leído y entendido. Es normal ver algún aviso, por ejemplo un perfil de Orca sin override o una versión de Pi distinta de la probada. Corrélo desde la raíz de un proyecto: así también revisa sus `.orca-stack*.json` y que existan sus scripts de despacho.
 
-### Qué hace `global` con el `CLAUDE.md` de gentle-ai
+### Qué hace `global` con el `CLAUDE.md` global
+
+`global` no escribe metodología en `~/.claude/CLAUDE.md`: instala herramientas, skills, mods y wrappers, y nada más. La metodología llega solo por el proyecto (`init`), así que una sesión en un repo sin `.orca-stack.json` no recibe texto del stack; `puente-gentle` tampoco inyecta su instrucción de consulta ni registra `consultar_gentle_shell` ahí. Si una versión anterior dejó en ese archivo el bloque `orca-stack:begin` / `orca-stack:end` (o el viejo `orca-stack:auto`), `global` lo saca, con respaldo, y lo avisa.
 
 Si gentle-ai está instalado y su desarrollo guiado por recibos (RDD) está apagado (`gentle-ai review mode status` empieza con `receipt-driven development: off`), `global` saca de `~/.claude/CLAUDE.md` las secciones de review del bloque `gentle-ai:sdd-orchestrator`: no hacen nada con RDD apagado y se cargan igual en cada sesión (unos 26 KB). Hace respaldo, es idempotente, respeta `--dry-run` e imprime cuántos KB sacó. Si RDD está prendido o gentle-ai no está, lo omite y dice por qué. **`gentle-ai sync` las vuelve a escribir**, así que después de cada sync corré `orca-stack global` de nuevo; `doctor` avisa si volvieron.
 
@@ -93,7 +95,7 @@ Pasa si el stack se armó a mano antes de que existiera el instalador. El `--dry
 2. **Repartilos antes de instalar:**
    - `humano` va en `~/.orca-stack/config.json`. Escribilo a mano antes de `global`: así `global` no lo genera solo y `remove` nunca lo borra.
    - Lo demás va en el proyecto al que pertenece. Lo ideal es su `.orca-stack.json` commiteado. Si todavía no podés commitear en ese repo, usá su `.orca-stack.local.json` de forma provisoria e ignoralo con `.git/info/exclude`, que no toca archivos versionados.
-3. **Revisá `~/.claude/CLAUDE.md`.** Si ya tiene una sección "Orca stack integration" sin marcadores, respaldá el archivo y envolvé esa sección con `<!-- orca-stack:begin -->` y `<!-- orca-stack:end -->`. Si no lo hacés, `global` agrega una segunda sección al final.
+3. **Revisá `~/.claude/CLAUDE.md`.** `global` ya no escribe ahí: la metodología llega por el proyecto, con `init`. Si la instalación vieja dejó una sección "Orca stack integration" sin marcadores, sacala a mano (respaldá el archivo antes); `global` solo saca el bloque que tenga marcadores `orca-stack:begin` / `orca-stack:end`.
 4. Corré `global --dry-run --force` y leé la lista completa. Que corra `pi install` o `npm i -g gentle-pi` es esperable si tus versiones no coinciden con las fijadas.
 5. Corré `global --force`. Todo lo que reemplaza queda respaldado.
 6. **Revisá `CLAUDE_CODE_PLUGIN_DIRS`** en `~/.claude/settings.json`. `global` conserva las entradas que ya había: si un mod viejo vivía en otra carpeta, queda cargado junto al nuevo. Dejá solo los 7 mods de `~/.claude/mods/`.
@@ -101,7 +103,7 @@ Pasa si el stack se armó a mano antes de que existiera el instalador. El `--dry
 8. **Borrá los instaladores viejos** (por ejemplo, un script que copiaba los mods a mano): si alguien los corre, vuelven a copiar los mods anteriores encima de los nuevos.
 9. Corré `doctor`.
 
-> Ojo con `remove` después de un `--force`: no deja la máquina limpia, **restaura la instalación vieja** desde el respaldo. La sección que envolviste en `~/.claude/CLAUDE.md` se borra (queda en `backups/`).
+> Ojo con `remove` después de un `--force`: no deja la máquina limpia, **restaura la instalación vieja** desde el respaldo. El `~/.claude/CLAUDE.md` no se toca si ya no tiene el bloque.
 
 ---
 
@@ -347,7 +349,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 - [ ] En una sesión nueva de Claude Code aparecen los mods (por ejemplo `/tablero` y `/pi`).
 - [ ] `git diff --cached` no tiene secretos, `.env` ni datos reales.
 
-`doctor` avisa si `AGENTS.md` o `CLAUDE.md` todavía tienen el bloque viejo `orca-stack:auto` y si `.orca-stack.json` no tiene `"setup": "completo"` (en ese caso, abrí una sesión de Claude en el checkout principal: ofrece el setup con `orca-setup`). También avisa de la deriva: el plugin de Matt por debajo de 1.3.1, skills duplicadas entre el plugin y `~/.claude/skills`, `pr`, `implement-spec` o `retro` ausentes de `~/.agents/skills` y las secciones de review de gentle-ai que volvieron a `~/.claude/CLAUDE.md` con RDD apagado. No revisa el resto de `AGENTS.md` ni `orca.yaml`: esos puntos se miran a mano.
+`doctor` avisa si `AGENTS.md` o `CLAUDE.md` todavía tienen el bloque viejo `orca-stack:auto` y si `.orca-stack.json` no tiene `"setup": "completo"` (en ese caso, abrí una sesión de Claude en el checkout principal: ofrece el setup con `orca-setup`). También avisa de la deriva: el plugin de Matt por debajo de 1.3.1, skills duplicadas entre el plugin y `~/.claude/skills`, `pr`, `implement-spec` o `retro` ausentes de `~/.agents/skills` el bloque orca-stack viejo que sigue en `~/.claude/CLAUDE.md` y las secciones de review de gentle-ai que volvieron ahí con RDD apagado. No revisa el resto de `AGENTS.md` ni `orca.yaml`: esos puntos se miran a mano.
 
 ---
 

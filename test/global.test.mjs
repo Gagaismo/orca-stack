@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 
+import { buildBlock } from '../src/marker.mjs'
 import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const MODS = ['bandeja-mensajes', 'grilling-ok', 'guardia-despacho', 'modo-autonomo', 'puente-gentle', 'reloj-cache', 'tablero-despacho']
@@ -28,7 +29,7 @@ describe('global', () => {
     assert.equal(existsSync(path.join(home, '.orca-stack')), false)
   })
 
-  test('installs policy, wrappers, skills, mods, settings, CLAUDE.md block, config and state', () => {
+  test('installs policy, wrappers, skills, mods, settings, config and state, and writes no methodology into CLAUDE.md', () => {
     const result = cli(home, ['global', '--skip-pi', '--humano', 'Ana'])
     assert.equal(result.status, 0, result.out)
     const ext = process.platform === 'win32' ? 'cmd' : 'sh'
@@ -49,11 +50,11 @@ describe('global', () => {
     assert.equal(existsSync(path.join(home, '.claude', 'mods', 'puente-gentle', 'tests')), false)
     const dirs = JSON.parse(read(settingsPath())).env.CLAUDE_CODE_PLUGIN_DIRS.split(path.delimiter)
     assert.deepEqual(dirs, MODS.map(m => path.join(home, '.claude', 'mods', m)))
-    assert.match(read(claudeMdPath()), /<!-- orca-stack:begin -->[\s\S]*<!-- orca-stack:end -->/)
-    assert.match(read(claudeMdPath()), /Política canónica/)
-    assert.doesNotMatch(read(claudeMdPath()), /### Qué rol tenés|## BLOQUEA/, 'the global block never carries the project work contract')
+    assert.equal(existsSync(claudeMdPath()), false, 'global leaves the methodology to the project')
     assert.deepEqual(JSON.parse(read(path.join(home, '.orca-stack', 'config.json'))), { humano: 'Ana' })
-    assert.equal(JSON.parse(read(path.join(home, '.orca-stack', 'state.json'))).tool, 'orca-stack')
+    const state = JSON.parse(read(path.join(home, '.orca-stack', 'state.json')))
+    assert.equal(state.tool, 'orca-stack')
+    assert.equal(state.claudeMd, null)
   })
 
   test('a second run is idempotent: same bytes, no backups, no duplicate plugin dirs', () => {
@@ -103,26 +104,69 @@ describe('global', () => {
     assert.equal(read(settingsPath()), '{ nope')
   })
 
-  test('CLAUDE.md: the block is replaced in place and everything outside the markers is untouched', () => {
+  describe('a block left in CLAUDE.md by an older install', () => {
     const before = '# Mis reglas\n\nNo tocar esto.\n'
     const after = '\n<!-- gentle-ai:sdd-orchestrator -->\nbloque ajeno\n<!-- /gentle-ai:sdd-orchestrator -->\n'
-    write(claudeMdPath(), before)
-    cli(home, ['global', '--skip-pi'])
-    let text = read(claudeMdPath())
-    assert.ok(text.startsWith(before))
-    // someone edits inside the block and adds a foreign block after it
-    text = text.replace('Política canónica', 'EDITADO') + after
-    write(claudeMdPath(), text)
-    const result = cli(home, ['global', '--skip-pi'])
-    assert.equal(result.status, 0, result.out)
-    const replaced = read(claudeMdPath())
-    assert.ok(!replaced.includes('EDITADO'))
-    assert.ok(replaced.startsWith(before))
-    assert.ok(replaced.endsWith(after))
-    assert.equal(replaced.match(/orca-stack:begin/g).length, 1)
+    const old = `${before}\n${buildBlock('Política canónica: vieja')}\n${after}`
+    const statePath = () => path.join(home, '.orca-stack', 'state.json')
 
-    cli(home, ['remove'])
-    assert.equal(read(claudeMdPath()), before + after.replace(/^\n/, '\n'))
+    test('global takes it out with a backup, keeps everything else, and a second run changes nothing', () => {
+      write(claudeMdPath(), old)
+      const result = cli(home, ['global', '--skip-pi'])
+      assert.equal(result.status, 0, result.out)
+      assert.match(result.out, /saqué el bloque orca-stack: la política ahora llega por el proyecto/)
+      assert.equal(read(claudeMdPath()), before + after)
+      const saved = backups(home).filter(name => name.endsWith('CLAUDE.md'))
+      assert.equal(saved.length, 1)
+      assert.equal(read(path.join(home, saved[0])), old)
+
+      const snap = snapshot(home)
+      const again = cli(home, ['global', '--skip-pi'])
+      assert.equal(again.status, 0, again.out)
+      assert.match(again.out, /sin bloque orca-stack/)
+      assert.deepEqual(snapshot(home), snap)
+    })
+
+    test('the legacy markers go too, and --dry-run only narrates', () => {
+      write(claudeMdPath(), `${before}\n<!-- orca-stack:auto -->\nviejo\n<!-- /orca-stack:auto -->\n`)
+      const dry = cli(home, ['global', '--dry-run', '--skip-pi'])
+      assert.match(dry.out, /\[simulación\] actualizo .*CLAUDE\.md \(sin el bloque orca-stack\)/)
+      assert.ok(read(claudeMdPath()).includes('orca-stack:auto'))
+      assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
+      assert.equal(read(claudeMdPath()), before)
+    })
+
+    test('a file that only held the block, created by an older installer, is deleted', () => {
+      cli(home, ['global', '--skip-pi'])
+      const state = JSON.parse(read(statePath()))
+      state.claudeMd = { file: claudeMdPath(), createdFile: true }
+      write(statePath(), JSON.stringify(state))
+      write(claudeMdPath(), buildBlock('Política canónica: vieja') + '\n')
+      assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
+      assert.equal(existsSync(claudeMdPath()), false)
+      assert.equal(backups(home).filter(name => name.endsWith('CLAUDE.md')).length, 1)
+      assert.equal(JSON.parse(read(statePath())).claudeMd, null)
+    })
+
+    test('remove still cleans an old install that recorded the block in its state', () => {
+      cli(home, ['global', '--skip-pi'])
+      const state = JSON.parse(read(statePath()))
+      state.claudeMd = { file: claudeMdPath(), createdFile: false }
+      write(statePath(), JSON.stringify(state))
+      write(claudeMdPath(), old)
+      assert.equal(cli(home, ['remove']).status, 0)
+      assert.equal(read(claudeMdPath()), before + after)
+    })
+
+    test('doctor warns about it instead of failing, and is quiet once global removed it', () => {
+      cli(home, ['global', '--skip-pi'])
+      write(claudeMdPath(), old)
+      const warned = cli(home, ['doctor', '--offline', '--skip-pi'])
+      assert.match(warned.out, /⚠ bloque orca-stack viejo en ~\/\.claude\/CLAUDE\.md - .*corré `orca-stack global` para sacarlo/)
+      assert.equal(warned.status, 0, warned.out)
+      cli(home, ['global', '--skip-pi'])
+      assert.doesNotMatch(cli(home, ['doctor', '--offline', '--skip-pi']).out, /bloque orca-stack viejo en/)
+    })
   })
 
   test('with --force a different pre-existing file is backed up (outside its folder) and restored by remove', () => {

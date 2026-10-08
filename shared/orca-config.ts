@@ -219,6 +219,16 @@ export const repoRoot = async (host: Host): Promise<string | undefined> => {
   }
 }
 
+// Whether the repo has its own `.orca-stack.json`: mods that inject text into the session only do so in a project that opted in.
+export const hasProjectConfig = async (host: Host): Promise<boolean> => {
+  const root = await repoRoot(host)
+  try {
+    return root !== undefined && (await host.exists(`${root}/.orca-stack.json`))
+  } catch {
+    return false
+  }
+}
+
 const loadFor = async (host: Host, home: string | undefined, root: string | undefined): Promise<StackConfig> =>
   mergeConfig(
     home === undefined ? undefined : await readLayer(host, `${home}/.orca-stack/config.json`),

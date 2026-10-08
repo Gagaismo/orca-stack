@@ -47,7 +47,8 @@ Instala a nivel usuario:
   2. Wrappers claude/codex/agy-orca-stack (.cmd en Windows, .sh en el resto) en ~/orca/stack/scripts
   3. Skills propias en ~/.claude/skills y ~/.agents/skills
   4. Mods en ~/.claude/mods y sus rutas en env.CLAUDE_CODE_PLUGIN_DIRS de ~/.claude/settings.json
-  5. Bloque <!-- orca-stack:begin --> en ~/.claude/CLAUDE.md
+  5. Nada de metodología en ~/.claude/CLAUDE.md (llega por el proyecto, con \`init\`); saca el bloque
+     <!-- orca-stack:begin --> que haya dejado una versión anterior, con respaldo.
      Con el RDD de gentle-ai apagado, saca de ese archivo sus secciones de review (\`gentle-ai sync\` las restaura: volvé a correr \`global\`)
   6. Pi: gentle-pi y pi-claude-bridge con \`pi install\` + gentle-pi global (omitido con --skip-pi)
   7. ~/.orca-stack/state.json (para \`remove\`) y ~/.orca-stack/config.json (capa personal)
@@ -91,7 +92,7 @@ Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en l
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
 Borra los archivos que instaló \`global\`, restaura los que había reemplazado, quita sus entradas de
-CLAUDE_CODE_PLUGIN_DIRS y su bloque de ~/.claude/CLAUDE.md. Los respaldos de ~/.orca-stack/backups se conservan.
+CLAUDE_CODE_PLUGIN_DIRS y, si quedó, su bloque de ~/.claude/CLAUDE.md. Los respaldos de ~/.orca-stack/backups se conservan.
 `,
 }
 
