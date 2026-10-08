@@ -28,6 +28,7 @@ Opciones:
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
   --nota <texto>   (despachar, revisar) Texto que se agrega al brief.
   --confirmado     (despachar, revisar) El humano dijo que sí a un agente de agentes.preguntarAntes.
+  --perfil-pi <nombre> (despachar, revisar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver despachar --help).
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
   --limite <n>     (sesiones) Cuántas sesiones mostrar (por defecto: 10).
   --humano <nombre> (global) Nombre que usan los mods para hablarte (por defecto: git config user.name).
@@ -76,15 +77,20 @@ conversaciones de agy (~/.gemini/antigravity-cli; necesita Node 22.13 o más nue
 carpeta, inicio y fin, llamadas, tus mensajes, las llamadas con error y los resultados de más de 15k caracteres.
 Sirve de entrada para \`/retro\`.
 `,
-  despachar: `orca-stack despachar <issue> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
+  despachar: `orca-stack despachar <issue> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 
 Desde el checkout principal del repo (agentes: claude, agy, codex, codex-cc, pi). Se niega si el setup está pendiente, si el
 agente no está en agentes.usa, si está en agentes.preguntarAntes sin --confirmado, si el issue está cerrado o asignado, o si ya hay
 un worktree o un agente vivo para ese ticket. Asigna el issue, crea el worktree con \`orca worktree create\`, escribe el brief en
 ~/orca/briefs, comprueba que cada ruta que cita exista en el worktree, lanza el agente en una terminal de Orca y le manda el brief.
 Con --dry-run muestra el plan y el brief y no escribe nada.
+
+Con pi, --perfil-pi <nombre> (o agentes.pi.perfil en la config; el flag gana) fija para ese worktree uno de los perfiles de
+~/.pi/gentle-ai/profiles.json: escribe .pi/gentle-ai/profile.json en el worktree (fuera de git, vía info/exclude) y lanza pi con el
+modelo del orquestador del perfil. Se niega si el perfil no existe o si el clon ya fija otro (<git-common-dir>/gentle-ai/profile-pin.json).
+Sin flag y sin agentes.pi.perfil, o con "preguntar", rige el perfil activo global.
 `,
-  revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
+  revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 
 Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
 (línea \`Implementador:\`) o si codex y codex-cc se revisan entre sí.
@@ -97,7 +103,7 @@ CLAUDE_CODE_PLUGIN_DIRS y, si quedó, su bloque de ~/.claude/CLAUDE.md. Los resp
 }
 
 export const parseArgs = argv => {
-  const flags = { nota: undefined, confirmado: false, dryRun: false, force: false, skipPi: false, offline: false, withPi: false, humano: undefined, desde: undefined, limite: undefined, help: false, version: false }
+  const flags = { nota: undefined, perfilPi: undefined, confirmado: false, dryRun: false, force: false, skipPi: false, offline: false, withPi: false, humano: undefined, desde: undefined, limite: undefined, help: false, version: false }
   const rest = []
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
@@ -107,6 +113,10 @@ export const parseArgs = argv => {
       flags.nota = argv[i + 1] ?? ''
       i += 1
     } else if (arg.startsWith('--nota=')) flags.nota = arg.slice('--nota='.length)
+    else if (arg === '--perfil-pi') {
+      flags.perfilPi = argv[i + 1] ?? ''
+      i += 1
+    } else if (arg.startsWith('--perfil-pi=')) flags.perfilPi = arg.slice('--perfil-pi='.length)
     else if (arg === '--force') flags.force = true
     else if (arg === '--skip-pi') flags.skipPi = true
     else if (arg === '--offline') flags.offline = true
@@ -125,6 +135,9 @@ export const parseArgs = argv => {
     }
     else if (arg.startsWith('-')) throw new Error(`Opción desconocida: ${arg}`)
     else rest.push(arg)
+  }
+  if (flags.perfilPi !== undefined && (flags.perfilPi === '' || flags.perfilPi.startsWith('--'))) {
+    throw new Error('--perfil-pi necesita el nombre de un perfil de gentle-pi.')
   }
   if (flags.humano !== undefined && (flags.humano === '' || flags.humano.startsWith('--'))) {
     throw new Error('--humano necesita un nombre.')

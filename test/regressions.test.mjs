@@ -169,7 +169,7 @@ describe('4. Pi packages the user already had are never recorded as ours', () =>
     assert.match(result.out, /ejecuto: pi install npm:gentle-pi@4\.0\.0 \(ya tenías la 3\.0\.0/)
     assert.match(result.out, /ejecuto: npm i -g gentle-pi@4\.0\.0/)
     const state = JSON.parse(read(path.join(home, '.orca-stack', 'state.json')))
-    assert.deepEqual(state.pi.packagesInstalled, ['pi-claude-bridge@0.9.1'])
+    assert.deepEqual(state.pi.packagesInstalled, ['pi-claude-bridge@0.9.2'])
     assert.equal(state.pi.npmGlobalInstalled, false)
 
     const removed = cli(home, ['remove', '--with-pi'], { env: fake.env() })

@@ -90,7 +90,20 @@ Además, instalá lo que `global` marque como faltante.
 
 ### Qué va en la configuración personal
 
-`~/.orca-stack/config.json` vale para **todos** tus proyectos, así que ahí va solo lo tuyo: `humano` (cómo te nombran los mods), los modelos y esfuerzos de cada agente (`agentes.modelos`) y la cuenta de Claude que usa pi (`agentes.pi.claudeConfigDir`). Todo lo que nombra personas, scripts o proveedores de un proyecto (destinatarios de mensajes, scripts de despacho, bloqueos, modelo obligatorio) va en la configuración de **ese** proyecto. Si no, aparece en cada setup nuevo y hay que apagarlo a mano.
+`~/.orca-stack/config.json` vale para **todos** tus proyectos, así que ahí va solo lo tuyo: `humano` (cómo te nombran los mods), los modelos y esfuerzos de cada agente (`agentes.modelos`) la cuenta de Claude que usa pi (`agentes.pi.claudeConfigDir`) y, si no querés que te pregunten en cada despacho a pi, el perfil de modelos (`agentes.pi.perfil`). Todo lo que nombra personas, scripts o proveedores de un proyecto (destinatarios de mensajes, scripts de despacho, bloqueos, modelo obligatorio) va en la configuración de **ese** proyecto. Si no, aparece en cada setup nuevo y hay que apagarlo a mano.
+
+### Perfiles de modelos de Pi (despachos a pi)
+
+gentle-pi guarda perfiles de modelos en `~/.pi/gentle-ai/profiles.json` (cada perfil nombra el orquestador y los diez subagentes). `orca-stack despachar|revisar <n> pi` puede fijar uno de ellos solo para el worktree de ese despacho, con `--perfil-pi <nombre>`:
+
+- Escribe `.pi/gentle-ai/profile.json` en el worktree (gentle-pi lo lee en cada lanzamiento de subagente, también en modo `-p`) y lo excluye de git con `<git-common-dir>/info/exclude`.
+- Lanza pi con `--model` y `--thinking` del `orchestrator` del perfil, porque un pin nunca mueve al orquestador.
+- Se niega si el perfil no existe o si el clon ya tiene un pin local (`<git-common-dir>/gentle-ai/profile-pin.json`) con otro perfil, porque ese gana sobre el del worktree.
+- El perfil global activo no cambia, y las consultas a Gentle Shell (`/pi`, `consultar_gentle_shell`) no usan esto.
+
+Perfiles que conviene tener: `opus-haiku` (Opus 5.5 orquesta; los diez subagentes en Haiku 5.5, todos por `claude-bridge`) y `samu-balanceado` (el multi-modelo). Un perfil tiene que listar a **todos** los agentes: si omite uno, ese agente usa el modelo de su frontmatter. Para editarlos: `/gentle:profiles` dentro de Pi, o editar `profiles.json` a mano (copiá el archivo antes).
+
+Quién elige el perfil, en este orden: el flag `--perfil-pi`; `agentes.pi.perfil` con un nombre; y si falta o vale `"preguntar"`, el mod `guardia-despacho` te lo pregunta (diálogo "Perfil Pi") cuando Claude despacha a pi, y agrega el flag al comando. Si cierran el diálogo, el despacho sigue con el perfil activo global.
 
 ### Si la máquina ya tenía una instalación anterior
 
@@ -338,6 +351,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 | `guardia.modeloClaude` | guardia-despacho | `.orca-stack.json` del proyecto |
 | `riesgo` | puente-gentle | `.orca-stack.json` del proyecto: globs de las rutas cuyo cambio no se deshace con un revert. Un PR que toca alguna no se mergea sin un review limpio de pi sobre su último commit (`orca-stack revisar <n> pi`). Si lo escribió pi, hacen falta dos reviews de dos familias de modelo distintas que no sean la de pi (Claude); la familia sale del modelo de `agentes.modelos` |
 | `agentes.pi.claudeConfigDir` | puente-gentle | Personal. Carpeta de config de Claude con otra cuenta para pi; el puente lanza pi con `CLAUDE_CONFIG_DIR=<carpeta>`. El login se hace una vez a mano: en PowerShell, `$env:CLAUDE_CONFIG_DIR="<carpeta>"; claude` y después `/login` |
+| `agentes.pi.perfil` | guardia-despacho, despachar, revisar | Personal (recomendado). Nombre de un perfil de `~/.pi/gentle-ai/profiles.json`, o `"preguntar"` (por defecto). Con un nombre, los despachos a pi usan ese perfil sin preguntar; con `"preguntar"` o ausente, `guardia-despacho` abre el diálogo "Perfil Pi" y agrega `--perfil-pi <elegido>` al comando |
 
 ---
 
@@ -348,7 +362,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 - [ ] `CLAUDE.md` y `GEMINI.md` importan `AGENTS.md`.
 - [ ] `AGENTS.md` nombra los comandos de test y typecheck (C4).
 - [ ] `git check-ignore -v .orca-stack.local.json` confirma que está ignorado.
-- [ ] `~/.orca-stack/config.json` no tiene nada de este proyecto (solo `humano`, `agentes.modelos` y `agentes.pi.claudeConfigDir`).
+- [ ] `~/.orca-stack/config.json` no tiene nada de este proyecto (solo `humano`, `agentes.modelos`, `agentes.pi.claudeConfigDir` y `agentes.pi.perfil`).
 - [ ] Existen `docs/agents/issue-tracker.md` y `docs/agents/domain.md`, y `triage-labels.md` si usás `/triage`.
 - [ ] Orca crea un worktree y el setup de `orca.yaml` termina sin errores, sin tocar el `node_modules` del checkout principal.
 - [ ] En una sesión nueva de Claude Code aparecen los mods (por ejemplo `/tablero` y `/pi`).

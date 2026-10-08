@@ -15,7 +15,12 @@ export type StackConfig = {
   mensajes?: { destinatarios?: string[] }
   despacho?: { script?: string; revisar?: string }
   riesgo?: string[] // path globs whose change needs a second review before merging (pi, or two other model families when pi wrote it)
-  agentes?: { usa?: string[]; preguntarAntes?: string[]; modelos?: Record<string, unknown> }
+  agentes?: {
+    usa?: string[]
+    preguntarAntes?: string[]
+    modelos?: Record<string, unknown>
+    pi?: { perfil?: string; claudeConfigDir?: string } // perfil: gentle-pi profile name, or "preguntar" (the default)
+  }
   guardia?: {
     bloquear?: BlockRule[]
     modeloClaude?: string
