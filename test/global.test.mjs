@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 
 import { buildBlock } from '../src/marker.mjs'
+import { sddConfig } from './gentle-fixture.mjs'
 import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const MODS = ['bandeja-mensajes', 'grilling-ok', 'guardia-despacho', 'modo-autonomo', 'puente-gentle', 'reloj-cache', 'tablero-despacho']
@@ -111,6 +112,7 @@ describe('global', () => {
     const statePath = () => path.join(home, '.orca-stack', 'state.json')
 
     test('global takes it out with a backup, keeps everything else, and a second run changes nothing', () => {
+      sddConfig(home, 'full') // this fixture's gentle-ai block is not a real one: keep lazy mode away from it
       write(claudeMdPath(), old)
       const result = cli(home, ['global', '--skip-pi'])
       assert.equal(result.status, 0, result.out)

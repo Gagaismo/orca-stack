@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { INSTALL_HINTS, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
-import { rddMode, trimReviewSections } from './gentle.mjs'
+import { isLazyBlock, lazyifyBlock, rddMode, readPersonalConfig, restoreBlock, sddBlock, sddMode, trimReviewSections } from './gentle.mjs'
 import { removeAnyBlock } from './marker.mjs'
 import { orcaInstalled } from './orca.mjs'
 import { setupPi } from './pi.mjs'
@@ -144,12 +144,71 @@ const removeClaudeMdBlock = ctx => {
   }
 }
 
+// Lazy mode: gentle-ai's whole block is a ~16 KB briefing for SDD, which the human asks for explicitly. Keep the full text in
+// ~/.orca-stack/gentle/sdd-orchestrator.md and leave a pointer between the markers (with a backup). `gentle-ai sync` rewrites
+// the block, so this step has to run again after each sync (it also refreshes the copy).
+const lazyGentleBlock = (ctx, original) => {
+  const block = sddBlock(original)
+  if (block.status !== 'ok') {
+    ctx.say(`  se omite y no toco nada: ${block.status === 'none' ? 'no hay bloque gentle-ai:sdd-orchestrator (lo escribe \`gentle-ai sync\`)' : 'los marcadores del bloque de gentle-ai están incompletos, repetidos o desordenados'}`)
+
+    return
+  }
+  const copy = ctx.L.sddCopy
+  if (isLazyBlock(block)) {
+    ctx.say(`  ya está en modo lazy${existsSync(copy) ? '' : `; pero falta ${ctx.show(copy)}: corré \`gentle-ai sync\` y después \`orca-stack global\``}`)
+
+    return
+  }
+  const { text, saved } = lazyifyBlock(original, copy)
+  // The copy goes first: if it cannot be written, the block stays as it is.
+  if (ctx.writeOwned(copy, saved, { label: `${ctx.show(copy)} (copia completa del bloque de gentle-ai)` }) === 'skipped') {
+    ctx.say('  se omite y no toco nada: no pude guardar la copia completa del bloque')
+
+    return
+  }
+  const kb = ((Buffer.byteLength(original) - Buffer.byteLength(text)) / 1024).toFixed(1)
+  ctx.writeShared(ctx.L.claudeMd, text, `${ctx.show(ctx.L.claudeMd)} (bloque de gentle-ai en modo lazy: -${kb} KB)`)
+  ctx.say(`  ${kb} KB menos en cada sesión. El texto completo queda en ${ctx.show(copy)}. \`gentle-ai sync\` lo reescribe: volvé a correr \`orca-stack global\` después de cada sync.`)
+}
+
+// Full mode over a lazy block: put the saved body back (with a backup). Returns the resulting text.
+const restoreGentleBlock = (ctx, original) => {
+  if (!isLazyBlock(sddBlock(original))) {
+    return original
+  }
+  const saved = readTextIfExists(ctx.L.sddCopy)
+  if (saved === null) {
+    ctx.say(`  el bloque está en modo lazy pero falta ${ctx.show(ctx.L.sddCopy)}: corré \`gentle-ai sync\` para que gentle-ai lo escriba de nuevo`)
+
+    return original
+  }
+  const text = restoreBlock(original, saved)
+  ctx.writeShared(ctx.L.claudeMd, text, `${ctx.show(ctx.L.claudeMd)} (bloque completo de gentle-ai, restaurado desde la copia)`)
+
+  return text
+}
+
+const gentleBlockStep = ctx => {
+  ctx.say('\nBloque de gentle-ai en CLAUDE.md')
+  const mode = sddMode(readPersonalConfig(ctx.L))
+  const original = readTextIfExists(ctx.L.claudeMd)
+  if (mode === null) {
+    ctx.say(`  se omite y no toco nada: gentle.sddOrchestrator en ${ctx.show(ctx.L.config)} tiene que ser "lazy" o "full"`)
+  } else if (original === null) {
+    ctx.say('  se omite: no hay ~/.claude/CLAUDE.md')
+  } else if (mode === 'lazy') {
+    lazyGentleBlock(ctx, original)
+  } else {
+    // Full: the block stays as gentle-ai writes it, minus the review sections while RDD is off.
+    trimGentleReview(ctx, restoreGentleBlock(ctx, original))
+  }
+}
+
 // With RDD off, gentle-ai's review sections are dead weight in every session: cut them (with a backup).
 // `gentle-ai sync` writes them back, so this step has to run again after each sync.
-const trimGentleReview = ctx => {
-  ctx.say('\nSecciones de review de gentle-ai en CLAUDE.md')
+const trimGentleReview = (ctx, original) => {
   const file = ctx.L.claudeMd
-  const original = readTextIfExists(file)
   const bin = which('gentle-ai')
   if (original === null || !bin) {
     ctx.say(`  se omite: ${original === null ? 'no hay ~/.claude/CLAUDE.md' : 'gentle-ai no está instalado'}`)
@@ -234,7 +293,7 @@ const printManualSteps = (ctx, { skipPi }) => {
     step('Pi: abrí `pi` y corré /login para conectar tu cuenta (sin eso Gentle Shell no responde)')
   }
   step('GitHub CLI: `gh auth login` (el tablero de PRs y el puente lo necesitan)')
-  step('Después de cada `gentle-ai sync`, volvé a correr `orca-stack global` (la sync restaura las secciones de review recortadas)')
+  step('Después de cada `gentle-ai sync`, volvé a correr `orca-stack global` (la sync reescribe el bloque de gentle-ai que `global` achicó)')
   for (const [bin, title] of [['engram', 'engram'], ['gentle-ai', 'gentle-ai']]) {
     if (!which(bin)) {
       step(`Instalar ${title}`, INSTALL_HINTS[bin])
@@ -280,7 +339,7 @@ export const globalCommand = async flags => {
     installSkills(ctx)
     installMods(ctx)
     removeClaudeMdBlock(ctx)
-    trimGentleReview(ctx)
+    gentleBlockStep(ctx)
     setupPi(ctx, { skipPi: flags.skipPi })
     installPersonalConfig(ctx, { humano: flags.humano })
   } finally {

@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs'
+
 import { run } from './util.mjs'
 
 // gentle-ai writes this managed block into ~/.claude/CLAUDE.md. With receipt-driven development (RDD) off,
@@ -107,4 +109,73 @@ export const rddMode = bin => {
   const mode = result.status === 0 ? /receipt-driven development:\s*(\w+)/i.exec(result.stdout)?.[1]?.toLowerCase() : undefined
 
   return mode === 'on' || mode === 'off' ? mode : null
+}
+
+// Lazy mode (`gentle.sddOrchestrator: "lazy"`, the default): the block's body is replaced by a short pointer that starts with
+// this sentinel; the full body lives in ~/.orca-stack/gentle/sdd-orchestrator.md and is read on demand. The markers stay, so
+// `gentle-ai sync` replaces the pointer instead of appending a second block.
+export const LAZY_SENTINEL = '<!-- orca-stack:gentle-lazy v1 -->'
+
+export const lazyPointer = copyPath => [
+  'gentle-ai SDD / Judgment Day: only when the human explicitly asks for it.',
+  `Before any SDD or Judgment-Day command or phase, read in full \`${copyPath}\`, then \`.claude/skills/_shared/sdd-orchestrator-workflow.md\` in the workspace if present, otherwise \`~/.claude/skills/_shared/sdd-orchestrator-workflow.md\`.`,
+  "When a sub-agent or tool returns a blocking prompt, menu or consent envelope, present it complete and unsummarized, and never answer on the human's behalf.",
+]
+
+const eolOf = text => (text.includes('\r\n') ? '\r\n' : '\n')
+
+// Locates the block body between the markers. { status: 'none' | 'malformed' | 'ok', from, end, inner }.
+// Anything but exactly one opener followed by exactly one closer is 'malformed' (nothing may be written).
+export const sddBlock = text => {
+  const count = marker => text.split(marker).length - 1
+  const opens = count(BLOCK_BEGIN)
+  const closes = count(BLOCK_END)
+  if (opens === 0 && closes === 0) {
+    return { status: 'none' }
+  }
+  const begin = text.indexOf(BLOCK_BEGIN)
+  const end = text.indexOf(BLOCK_END)
+  if (opens !== 1 || closes !== 1 || end < begin) {
+    return { status: 'malformed' }
+  }
+  const from = begin + BLOCK_BEGIN.length
+
+  return { status: 'ok', from, end, inner: text.slice(from, end) }
+}
+
+export const isLazyBlock = block => block.status === 'ok' && block.inner.includes(LAZY_SENTINEL)
+
+// Pure: swaps the body for the pointer. Returns { text, saved (the exact body replaced) }, or { text, skipped } untouched.
+export const lazyifyBlock = (text, copyPath) => {
+  const block = sddBlock(text)
+  if (block.status !== 'ok') {
+    return { text, skipped: block.status === 'none' ? 'no hay bloque gentle-ai:sdd-orchestrator' : 'los marcadores del bloque de gentle-ai están incompletos, repetidos o desordenados' }
+  }
+  const eol = eolOf(text)
+  const inner = [eol + LAZY_SENTINEL, ...lazyPointer(copyPath)].join(eol) + eol
+
+  return { text: text.slice(0, block.from) + inner + text.slice(block.end), saved: block.inner }
+}
+
+// Pure: puts a saved body back between the markers.
+export const restoreBlock = (text, saved) => {
+  const block = sddBlock(text)
+
+  return block.status === 'ok' ? text.slice(0, block.from) + saved + text.slice(block.end) : text
+}
+
+// ~/.orca-stack/config.json as an object, or null when it is missing or unreadable (doctor reports the latter).
+export const readPersonalConfig = L => {
+  try {
+    return existsSync(L.config) ? JSON.parse(readFileSync(L.config, 'utf8').replace(/^﻿/, '')) : null
+  } catch {
+    return null
+  }
+}
+
+// Personal config `gentle.sddOrchestrator`: 'lazy' (default) | 'full' | null when the value is not one of those.
+export const sddMode = config => {
+  const value = config?.gentle?.sddOrchestrator
+
+  return value === undefined ? 'lazy' : value === 'lazy' || value === 'full' ? value : null
 }
