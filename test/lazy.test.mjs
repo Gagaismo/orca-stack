@@ -50,7 +50,7 @@ describe('global and the lazy gentle-ai block', () => {
   beforeEach(() => {
     home = tempDir('lazy-home')
     bin = tempDir('lazy-bin')
-    fakeGentle(bin, 'on') // RDD on: the review trim never interferes
+    fakeGentle(bin, 'off') // RDD off: lazy applies (with RDD on it keeps the block full)
   })
   afterEach(() => {
     cleanup(home)
@@ -134,6 +134,7 @@ describe('global and the lazy gentle-ai block', () => {
     assert.match(missing.out, /falta .*sdd-orchestrator\.md: corré `gentle-ai sync`/)
     assert.equal(read(claudeMd()), lazy)
     write(copy(), kept)
+    fakeGentle(bin, 'on') // RDD off would also trim the review sections
     const before = backups(home).length
     const restored = global()
     assert.equal(restored.status, 0, restored.out)
@@ -185,6 +186,52 @@ describe('global and the lazy gentle-ai block', () => {
     assert.equal(global().status, 0)
     sddConfig(home, 'full')
     assert.match(doctor().out, /⚠ bloque de gentle-ai .* sigue en modo lazy pero gentle\.sddOrchestrator es "full"/)
+  })
+
+  test('RDD on keeps the full block (it carries the review contract) and says why', () => {
+    fakeGentle(bin, 'on')
+    write(claudeMd(), fixture('\n'))
+    const result = global()
+    assert.equal(result.status, 0, result.out)
+    assert.match(result.out, /RDD de gentle-ai prendido: el bloque queda completo/)
+    assert.equal(read(claudeMd()), fixture('\n'))
+    assert.equal(existsSync(copy()), false)
+    assert.equal(backups(home).filter(name => name.endsWith('CLAUDE.md')).length, 0)
+    assert.equal(doctor().out.includes('bloque de gentle-ai'), false)
+  })
+
+  test('RDD on over a lazy block restores it from the copy (with a backup)', () => {
+    write(claudeMd(), fixture('\n'))
+    assert.equal(global().status, 0)
+    assert.ok(read(claudeMd()).includes(LAZY_SENTINEL))
+    fakeGentle(bin, 'on')
+    assert.match(doctor().out, /⚠ bloque de gentle-ai .* modo lazy pero el RDD/)
+    const before = backups(home).length
+    const result = global()
+    assert.equal(result.status, 0, result.out)
+    assert.match(result.out, /RDD de gentle-ai prendido/)
+    assert.equal(read(claudeMd()), fixture('\n'))
+    assert.equal(backups(home).length, before + 1)
+  })
+
+  test('full mode with RDD on warns when the saved copy lacks the review contract', () => {
+    write(claudeMd(), fixture('\n'))
+    assert.equal(global().status, 0)
+    write(copy(), read(copy()).replace('#### Review Execution Contract', '#### Something else'))
+    sddConfig(home, 'full')
+    fakeGentle(bin, 'on')
+    const result = global()
+    assert.match(result.out, /la copia no tiene el contrato de review: corré \`gentle-ai sync\`/)
+  })
+
+  test('doctor: full mode also fails on a pointer without its copy', () => {
+    write(claudeMd(), fixture('\n'))
+    assert.equal(global().status, 0)
+    cleanup(path.dirname(copy()))
+    sddConfig(home, 'full')
+    const broken = doctor()
+    assert.match(broken.out, /✖ bloque de gentle-ai en modo lazy sin su copia/)
+    assert.equal(broken.status, 1)
   })
 
   test('an invalid gentle.sddOrchestrator value changes nothing and says so', () => {
