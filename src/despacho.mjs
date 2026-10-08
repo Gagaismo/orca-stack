@@ -251,7 +251,7 @@ const waitForTui = async (io, handle, agent, tries = 45) => {
 // the globally active profile (today's behavior). Fails before any side effect when it cannot be honored.
 export const piProfileFor = ({ flag, config, home, commonDir, io }) => {
   const configured = config.agentes?.pi?.perfil
-  const wanted = typeof flag === 'string' ? flag.trim() : typeof configured === 'string' && configured.trim() !== 'preguntar' ? configured.trim() : ''
+  const wanted = typeof flag === 'string' ? flag.trim() : typeof configured === 'string' && configured.trim().toLowerCase() !== 'preguntar' ? configured.trim() : ''
   if (wanted === '') return undefined
   if (!PROFILE_NAME.test(wanted)) throw new Error(`El perfil de Pi "${wanted}" no es un nombre válido (letras, números, . _ -; hasta 64 caracteres).`)
   const store = path.join(home, '.pi', 'gentle-ai', 'profiles.json')
@@ -270,23 +270,43 @@ export const piProfileFor = ({ flag, config, home, commonDir, io }) => {
     throw new Error(`El clon ya fija el perfil de Pi "${local.profile}" (${localPin}) y ese pin gana sobre el del worktree. Sacalo (/gentle:profiles, tecla p) o despachá con --perfil-pi ${local.profile}.`)
   }
 
-  return { name: wanted, model: orchestrator.model.trim(), thinking: typeof orchestrator.thinking === 'string' ? orchestrator.thinking : undefined }
+  let thinking
+  if (orchestrator.thinking !== undefined) {
+    if (PI_THINKING.includes(orchestrator.thinking)) thinking = orchestrator.thinking
+    else io.out(`⚠ El perfil de Pi "${wanted}" tiene thinking ${JSON.stringify(orchestrator.thinking)}, que no es válido (${PI_THINKING.join(', ')}): se ignora y Pi arranca sin --thinking.`)
+  }
+
+  return { name: wanted, model: orchestrator.model.trim(), thinking }
 }
 
 // Writes the worktree pin gentle-pi reads at every subagent launch, and keeps it out of git: info/exclude is per clone,
-// so nothing tracked changes.
+// so nothing tracked changes. gentle-pi also documents this file as a team-committable declaration, so first: a tracked pin
+// is left alone when it declares the same profile and fails when it declares another one; and if git still does not ignore
+// the file after the exclude entry (a .gitignore negation wins over info/exclude), it fails instead of writing.
 const PIN_REL = '.pi/gentle-ai/profile.json'
 const writePin = (io, worktree, commonDir, name) => {
   const file = path.join(worktree, ...PIN_REL.split('/'))
+  if (io.sh('git', ['ls-files', '--error-unmatch', PIN_REL], { cwd: worktree }).status === 0) {
+    let declared
+    try {
+      declared = JSON.parse(io.readFile(file))
+    } catch {}
+    const other = isPlain(declared) && typeof declared.profile === 'string' ? declared.profile : undefined
+    if (other === name) return
+    throw new Error(`${PIN_REL} está versionado en el repo y ${other === undefined ? 'no se puede leer' : `declara el perfil "${other}"`}, no "${name}". No lo piso: ${other === undefined ? 'arreglalo en el repo' : `despachá con --perfil-pi ${other} o cambiá el perfil en el repo`}.`)
+  }
+  const ignored = () => io.sh('git', ['check-ignore', '-q', file], { cwd: worktree }).status === 0
+  if (!ignored()) {
+    const exclude = path.join(commonDir, 'info', 'exclude')
+    const text = io.exists(exclude) ? io.readFile(exclude) : ''
+    if (!text.split(/\r?\n/).some(l => l.trim() === `/${PIN_REL}`)) {
+      io.mkdirp(path.dirname(exclude))
+      io.writeFile(exclude, `${text}${text === '' || text.endsWith('\n') ? '' : '\n'}/${PIN_REL}\n`)
+    }
+    if (!ignored()) throw new Error(`git no ignora ${PIN_REL} ni con la entrada en ${exclude} (un .gitignore con \`!${PIN_REL}\` gana sobre info/exclude): no escribo el pin para no ensuciar el repo.`)
+  }
   io.mkdirp(path.dirname(file))
   io.writeFile(file, `${JSON.stringify({ kind: PIN_KIND, version: 1, profile: name }, null, 2)}\n`)
-  if (io.sh('git', ['check-ignore', '-q', file], { cwd: worktree }).status === 0) return
-  const exclude = path.join(commonDir, 'info', 'exclude')
-  const text = io.exists(exclude) ? io.readFile(exclude) : ''
-  if (text.split(/\r?\n/).some(l => l.trim() === `/${PIN_REL}`)) return
-  io.mkdirp(path.dirname(exclude))
-  io.writeFile(exclude, `${text}${text === '' || text.endsWith('\n') ? '' : '\n'}/${PIN_REL}\n`)
-
 }
 // The whole dispatch: despachar (kind 'ticket', n = issue) and revisar (kind 'review', n = PR).
 export const dispatch = async (kind, args, io = defaultIo()) => {

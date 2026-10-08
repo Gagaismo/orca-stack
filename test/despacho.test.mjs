@@ -54,8 +54,10 @@ const fakeIo = (over = {}, { config = PROJECT } = {}) => {
     gentleSkills: () => 'C:\\pi\\gentle-pi\\skills',
     sh: (cmd, args) => {
       calls.push([cmd, ...args])
-      const custom = over[`${cmd} ${args[0]} ${args[1] ?? ''}`.trim()] ?? over[`${cmd} ${args[0]}`]
+      const found = over[`${cmd} ${args[0]} ${args[1] ?? ''}`.trim()] ?? over[`${cmd} ${args[0]}`]
+      const custom = typeof found === 'function' ? found(args) : found
       if (custom) return custom
+      if (cmd === 'git' && args[0] === 'ls-files') return { status: 1, stdout: '', stderr: '' } // not tracked
       if (cmd === 'git' && args[0] === 'rev-parse') return okRes(`${path.join(root, '.git')}\n${path.join(root, '.git')}\n${root}\n`)
       if (cmd === 'git' && args[0] === 'worktree') return okRes(`worktree ${root}\nbranch refs/heads/main\n`)
       if (cmd === 'git') return okRes('src/app.ts\n')
@@ -308,7 +310,13 @@ describe('pi: --perfil-pi', () => {
 
     return call[call.indexOf('--command') + 1]
   }
-  const notIgnored = { 'git check-ignore': { status: 1, stdout: '', stderr: '' } }
+  const EXCLUDE_LINE = '/.pi/gentle-ai/profile.json'
+  // Not ignored until the exclude entry is there (what git does).
+  const notIgnored = { 'git check-ignore': () => ({ status: existsSync(exclude()) && read(exclude()).includes(EXCLUDE_LINE) ? 0 : 1, stdout: '', stderr: '' }) }
+  // A .gitignore negation: git keeps reporting the file as not ignored.
+  const negated = { 'git check-ignore': { status: 1, stdout: '', stderr: '' } }
+  const tracked = { 'git ls-files': { status: 0, stdout: '.pi/gentle-ai/profile.json\n', stderr: '' } }
+  const trackedPin = profile => write(pinFile(), JSON.stringify({ kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile }))
   beforeEach(() => write(store(), JSON.stringify(PROFILES)))
 
   test('writes the worktree pin, excludes it once, and launches pi with the profile orchestrator', async () => {
@@ -332,6 +340,35 @@ describe('pi: --perfil-pi', () => {
   test('an already ignored pin touches no exclude file', async () => {
     await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo())
     assert.ok(existsSync(pinFile()) && !existsSync(exclude()))
+  })
+
+  test('a tracked pin that declares the same profile is left untouched', async () => {
+    trackedPin('opus-haiku')
+    const env = fakeIo(tracked)
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, env)
+    assert.equal(env.written.filter(([file]) => file === pinFile()).length, 0)
+    assert.ok(!existsSync(exclude()))
+    assert.ok(launcher(env).includes('--model'))
+  })
+
+  test('a tracked pin that declares another profile (or is unreadable) fails without writing', async () => {
+    trackedPin('samu-balanceado')
+    const env = fakeIo(tracked)
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, env), /versionado.*declara el perfil "samu-balanceado".*--perfil-pi samu-balanceado/)
+    assert.equal(JSON.parse(read(pinFile())).profile, 'samu-balanceado')
+    assert.ok(env.out.join('\n').includes('El despacho quedó a medias'))
+    assert.ok(!env.calls.some(c => c[1] === 'terminal' && c[2] === 'create'))
+    write(pinFile(), '{ not json')
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo(tracked)), /versionado.*no se puede leer/)
+    assert.equal(read(pinFile()), '{ not json')
+  })
+
+  test('a pin that a .gitignore negation keeps visible fails instead of writing; the exclude entry is added once', async () => {
+    for (let i = 0; i < 2; i += 1) {
+      await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo(negated)), /git no ignora \.pi\/gentle-ai\/profile\.json.*gana sobre info\/exclude/)
+    }
+    assert.ok(!existsSync(pinFile()))
+    assert.equal(read(exclude()), '/.pi/gentle-ai/profile.json\n')
   })
 
   test('a clone-local pin on another profile fails before any write; the same one is fine', async () => {
@@ -358,7 +395,7 @@ describe('pi: --perfil-pi', () => {
     assert.equal(JSON.parse(read(pinFile())).profile, 'samu-balanceado')
     await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo({}, { config: withPerfil('samu-balanceado') }))
     assert.equal(JSON.parse(read(pinFile())).profile, 'opus-haiku')
-    for (const config of [withPerfil('preguntar'), PROJECT]) {
+    for (const config of [withPerfil('preguntar'), withPerfil(' Preguntar '), PROJECT]) {
       cleanup(path.dirname(pinFile()))
       const env = fakeIo({}, { config })
       await run('ticket', { n: '7', agent: 'pi' }, env)
@@ -367,6 +404,17 @@ describe('pi: --perfil-pi', () => {
     // No profiles store is needed when no profile is asked for.
     cleanup(store())
     await run('ticket', { n: '7', agent: 'pi', dryRun: true }, fakeIo())
+  })
+
+  test('an invalid thinking in the profile is warned about and not passed to pi', async () => {
+    write(store(), JSON.stringify({ ...PROFILES, profiles: { 'opus-haiku': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'turbo' } } } }))
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, env)
+    assert.match(env.out.join('\n'), /thinking "turbo", que no es válido.*se ignora/)
+    assert.ok(launcher(env).includes('--model') && !launcher(env).includes('--thinking'))
+    const dry = fakeIo()
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku', dryRun: true }, dry)
+    assert.ok(!dry.out.join('\n').includes('(turbo)'))
   })
 
   test('--dry-run narrates the pin and the model and writes nothing', async () => {
