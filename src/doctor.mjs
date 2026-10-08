@@ -191,8 +191,8 @@ export const doctorCommand = async flags => {
   // Drift: things that were right once and went stale
   section('Deriva')
   const drift = driftWarnings(L)
-  for (const { label, detail } of drift) {
-    add('warn', label, detail)
+  for (const { label, detail, level } of drift) {
+    add(level ?? 'warn', label, detail)
   }
   if (drift.length === 0) {
     add('ok', 'skills de Matt y secciones de gentle-ai', 'sin deriva')

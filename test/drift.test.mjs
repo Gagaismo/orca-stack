@@ -3,7 +3,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { compareVersions } from '../src/drift.mjs'
-import { fakeGentle, fixture, withPath } from './gentle-fixture.mjs'
+import { fakeGentle, fixture, sddConfig, withPath } from './gentle-fixture.mjs'
 import { cleanup, cli, tempDir, write } from './helpers.mjs'
 
 describe('compareVersions', () => {
@@ -21,6 +21,7 @@ describe('doctor: drift warnings', () => {
   beforeEach(() => {
     home = tempDir('drift-home')
     bin = tempDir('drift-bin')
+    sddConfig(home, 'full')
   })
   afterEach(() => {
     cleanup(home)

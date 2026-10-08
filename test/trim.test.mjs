@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { REVIEW_SECTIONS, trimReviewSections } from '../src/gentle.mjs'
-import { KEPT, fakeGentle, fixture, withPath } from './gentle-fixture.mjs'
+import { KEPT, fakeGentle, fixture, sddConfig, withPath } from './gentle-fixture.mjs'
 import { backups, cleanup, cli, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const headings = text => text.split(/\r?\n/).filter(line => /^#{1,6} /.test(line))
@@ -91,6 +91,7 @@ describe('global trims the gentle-ai review sections', () => {
   beforeEach(() => {
     home = tempDir('trim-home')
     bin = tempDir('trim-bin')
+    sddConfig(home, 'full')
   })
   afterEach(() => {
     cleanup(home)
