@@ -5,3 +5,4 @@ mods/*/.claude-plugin/types/
 .DS_Store
 # local skill registry written by gentle-ai
 .atl/
+.orca-stack.local.json
