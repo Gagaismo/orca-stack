@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { currentConfig, forgetConfig } from '../hooks/orca-config'
+import { chosenProfile, configuredProfile, piDispatchSlots, profileNames, profileOptions, withProfile } from '../hooks/perfil-pi'
 import { buildRules, checkRemovals, inspect, modelReason, parseUntil, unmergedReason, worktreeRemovals } from '../hooks/inspect'
 
 const CODEX_REASON = 'Codex no tiene cuota: despachá a claude o agy.'
@@ -471,4 +472,177 @@ test('path and name selectors must resolve to exactly one worktree', async () =>
   expect(await checkRemovals('git worktree remove C:/r/ws/issue-5', fakeGit('', { porcelain }).git)).toBeUndefined()
   // a single suffix match is fine
   expect(await checkRemovals('git worktree remove ../ws/issue-6', fakeGit('').git)).toBeUndefined()
+})
+
+// ---- which gentle-pi profile does a pi dispatch get? ------------------------------------------------
+
+const STORE = { kind: 'gentle-pi.agent_model_profiles', version: 1, active: 'samu-balanceado', profiles: { 'samu-balanceado': {}, extra: {}, 'opus-haiku': {} } }
+const rewritten = (command: string, name = 'opus-haiku'): string => withProfile(command, piDispatchSlots(command), name)
+
+test('the flag goes right after the agent of an orca-stack despachar/revisar to pi, whatever surrounds it', () => {
+  expect(rewritten('orca-stack despachar 12 pi')).toBe('orca-stack despachar 12 pi --perfil-pi opus-haiku')
+  expect(rewritten('npx github:Gagaismo/orca-stack#v0.4.0 revisar 7 pi --nota "x"')).toBe(
+    'npx github:Gagaismo/orca-stack#v0.4.0 revisar 7 pi --perfil-pi opus-haiku --nota "x"',
+  )
+  expect(rewritten('cd repo && orca-stack despachar 12 pi | tail -5')).toBe('cd repo && orca-stack despachar 12 pi --perfil-pi opus-haiku | tail -5')
+  expect(rewritten('FOO=1 orca-stack.cmd despachar 3 PI; echo hecho')).toBe('FOO=1 orca-stack.cmd despachar 3 PI --perfil-pi opus-haiku; echo hecho')
+  expect(rewritten("& 'C:\\x\\orca-stack.ps1' despachar 3 'pi'")).toBe("& 'C:\\x\\orca-stack.ps1' despachar 3 'pi' --perfil-pi opus-haiku")
+  expect(rewritten('orca-stack despachar 1 pi && orca-stack revisar 2 pi')).toBe(
+    'orca-stack despachar 1 pi --perfil-pi opus-haiku && orca-stack revisar 2 pi --perfil-pi opus-haiku',
+  )
+})
+
+test('other agents, other commands, a flag already there, --dry-run and mere mentions are left alone', () => {
+  for (const line of [
+    'orca-stack despachar 12 claude',
+    'orca-stack despachar 12 pi-extra',
+    'orca-stack despachar pi 12',
+    'orca-stack doctor',
+    'orca-stack despachar 12 pi --perfil-pi samu-balanceado',
+    'orca-stack despachar 12 pi --perfil-pi=samu-balanceado',
+    'orca-stack revisar 12 pi --dry-run',
+    'echo "orca-stack despachar 12 pi"',
+    'grep -rn "despachar 12 pi" docs/ | orca-stack-notes',
+    'scripts/despachar.sh 12 pi',
+  ]) {
+    expect(piDispatchSlots(line), line).toEqual([])
+  }
+})
+
+test('the options put opus-haiku first and samu-balanceado second, safe names only, at most four', () => {
+  const options = profileOptions(profileNames(STORE))
+  expect(options.map(option => option.name)).toEqual(['opus-haiku', 'samu-balanceado', 'extra'])
+  expect(options[0]?.label).toBe('opus-haiku: Opus orquesta, todos los subagentes en Haiku 5.5')
+  expect(options[1]?.label).toBe('samu-balanceado: perfil multi-modelo actual')
+  expect(options[2]?.label).toBe('extra')
+  expect(profileNames({ profiles: { 'a b': {}, 'x;rm': {}, ok: {} } })).toEqual(['ok'])
+  expect(profileNames(undefined)).toEqual([])
+  expect(profileOptions(['a', 'b', 'c', 'd', 'e']).length).toBe(4)
+  // A label picks its profile; so does a name typed under "Other"; anything else picks nothing.
+  const names = profileNames(STORE)
+  expect(chosenProfile(options[0]?.label ?? '', options, names)).toBe('opus-haiku')
+  expect(chosenProfile('extra', options, names)).toBe('extra')
+  expect(chosenProfile('x; rm -rf ~', options, names)).toBeUndefined()
+  expect(configuredProfile('opus-haiku')).toBe(true)
+  for (const none of [undefined, '', '  ', 'preguntar', 'Preguntar', 3]) {
+    expect(configuredProfile(none)).toBe(false)
+  }
+})
+
+type Asked = { asked: { header: string; options: string[] }[]; seen: string[] }
+
+// The world for the hook: a home with the profiles store (and config layers), the dialog answered by `answer`.
+const piWorld = (
+  on: Parameters<typeof mock.clock>[0],
+  opts: { layers?: Record<string, unknown>; store?: boolean; answer: (options: string[]) => string | undefined },
+): Asked => {
+  const layers: Record<string, unknown> = { ...(opts.layers ?? {}) }
+  if (opts.store !== false) {
+    layers['/home/u/.pi/gentle-ai/profiles.json'] = STORE
+  }
+  mock.clock(on, { now: BEFORE })
+  files(on, layers)
+  const world: Asked = { asked: [], seen: [] }
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+    const question = (e as unknown as { questions: { question: string; header: string; options: { label: string }[] }[] }).questions[0]
+    const options = (question?.options ?? []).map(option => option.label)
+    world.asked.push({ header: question?.header ?? '', options })
+    const picked = opts.answer(options)
+    if (picked === undefined) {
+      return { deny: 'dismissed' }
+    }
+
+    return { result: { questions: [], answers: { [question?.question ?? '']: picked } } as never }
+  })
+  on('tool.call', { tool: 'Bash' }, (_$, e) => {
+    world.seen.push(e.command)
+
+    return { result: { stdout: '', stderr: '', interrupted: false } as never }
+  })
+
+  return world
+}
+
+test('the hook asks "Perfil Pi" and runs the dispatch with the chosen profile', async ($, on) => {
+  forgetConfig()
+  const world = piWorld(on, { answer: options => options[0] })
+  await $.tool.call({ tool: 'Bash', command: 'orca-stack despachar 12 pi | tail -3' })
+  expect(world.asked).toHaveLength(1)
+  expect(world.asked[0]?.header).toBe('Perfil Pi')
+  expect(world.asked[0]?.options[0]).toBe('opus-haiku: Opus orquesta, todos los subagentes en Haiku 5.5')
+  expect(world.asked[0]?.options[1]).toBe('samu-balanceado: perfil multi-modelo actual')
+  expect(world.seen).toEqual(['orca-stack despachar 12 pi --perfil-pi opus-haiku | tail -3'])
+})
+
+test('the second option picks samu-balanceado', async ($, on) => {
+  forgetConfig()
+  const world = piWorld(on, { answer: options => options[1] })
+  await $.tool.call({ tool: 'Bash', command: 'npx github:Gagaismo/orca-stack revisar 4 pi' })
+  expect(world.seen).toEqual(['npx github:Gagaismo/orca-stack revisar 4 pi --perfil-pi samu-balanceado'])
+})
+
+test('no question when the flag is there, the agent is not pi, or the command only mentions it', async ($, on) => {
+  forgetConfig()
+  const world = piWorld(on, { answer: options => options[0] })
+  const commands = ['orca-stack despachar 12 pi --perfil-pi samu-balanceado', 'orca-stack despachar 12 claude', 'echo "orca-stack despachar 12 pi"']
+  for (const command of commands) {
+    await $.tool.call({ tool: 'Bash', command })
+  }
+  expect(world.asked).toHaveLength(0)
+  expect(world.seen).toEqual(commands)
+})
+
+test('a dismissed question (or -p) lets the command run unchanged', async ($, on) => {
+  forgetConfig()
+  const world = piWorld(on, { answer: () => undefined })
+  const out = await $.tool.call({ tool: 'Bash', command: 'orca-stack despachar 12 pi' })
+  expect(out.deny).toBeUndefined()
+  expect(world.seen).toEqual(['orca-stack despachar 12 pi'])
+})
+
+test('no profiles store: nothing is asked and the command runs unchanged', async ($, on) => {
+  forgetConfig()
+  const world = piWorld(on, { store: false, answer: options => options[0] })
+  await $.tool.call({ tool: 'Bash', command: 'orca-stack despachar 12 pi' })
+  expect(world.asked).toHaveLength(0)
+  expect(world.seen).toEqual(['orca-stack despachar 12 pi'])
+})
+
+test('agentes.pi.perfil set to a name: nobody is asked and nothing is rewritten (the CLI reads the config)', async ($, on) => {
+  forgetConfig()
+  const world = piWorld(on, {
+    layers: { '/work/repo/.orca-stack.json': { agentes: { pi: { perfil: 'opus-haiku' } } } },
+    answer: options => options[1],
+  })
+  await $.tool.call({ tool: 'Bash', command: 'orca-stack despachar 12 pi' })
+  expect(world.asked).toHaveLength(0)
+  expect(world.seen).toEqual(['orca-stack despachar 12 pi'])
+})
+
+test('agentes.pi.perfil "preguntar" still asks', async ($, on) => {
+  forgetConfig()
+  const world = piWorld(on, {
+    layers: { '/work/repo/.orca-stack.json': { agentes: { pi: { perfil: 'preguntar' } } } },
+    answer: options => options[0],
+  })
+  await $.tool.call({ tool: 'Bash', command: 'orca-stack revisar 9 pi' })
+  expect(world.asked).toHaveLength(1)
+  expect(world.seen).toEqual(['orca-stack revisar 9 pi --perfil-pi opus-haiku'])
+})
+
+test('the existing guard still wins: a blocked pi is denied before any question', async ($, on) => {
+  forgetConfig()
+  const world = piWorld(on, {
+    layers: {
+      '/work/repo/.orca-stack.json': {
+        despacho: { script: 'orca-stack' },
+        guardia: { bloquear: [{ agente: 'pi', hasta: '2026-10-29', motivo: 'pi no tiene cuota.' }] },
+      },
+    },
+    answer: options => options[0],
+  })
+  const out = await $.tool.call({ tool: 'Bash', command: 'orca-stack despachar 12 pi' })
+  expect(out.deny).toBe('pi no tiene cuota.')
+  expect(world.asked).toHaveLength(0)
+  expect(world.seen).toHaveLength(0)
 })

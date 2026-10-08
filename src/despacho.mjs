@@ -36,6 +36,9 @@ const ORCA_VARS_CLEARED = [
 // Only a review closes pi's tools (read-only). A ticket gets all of them: an allowlist would also drop gentle-pi's
 // subagents, SDD and engram tools.
 const PI_TOOLS = { review: 'read,bash,grep,find,ls' }
+const PI_THINKING = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+// gentle-pi profile names: 1-64 ASCII slug characters. Also keeps the name harmless inside a path or a command.
+const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const PATH_EXTENSIONS = /\.(md|json|mjs|cjs|js|ts|tsx|jsx|py|sh|ps1|ya?ml|toml|txt|html|css|sql|go|rs|cs|java|kt|rb)$/i
 
 const isPlain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -49,9 +52,10 @@ const merge = (...layers) => {
 
   return out
 }
-const readJson = file => {
+const PIN_KIND = 'gentle-pi.agent_model_profile_pin'
+const readJson = (file, io) => {
   try {
-    return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8').replace(/^﻿/, '')) : undefined
+    return (io?.exists ?? existsSync)(file) ? JSON.parse((io?.readFile ?? (f => readFileSync(f, 'utf8')))(file).replace(/^﻿/, '')) : undefined
   } catch {
     return undefined
   }
@@ -120,7 +124,7 @@ const shQuote = text => `'${text.replace(/'/g, "'\\''")}'`
 
 // The command typed into the Orca terminal. `win` is the target shell, not the host: PowerShell on win32 (Orca's
 // terminal there), POSIX elsewhere. Paths follow it.
-export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills }) => {
+export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking }) => {
   const { model, effort } = modelFor(config, agent, mode)
   const P = win ? path.win32 : path.posix
   const wrapper = P.join(home, ...SCRIPTS_REL, wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
@@ -141,7 +145,9 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   const q = win ? psQuote : shQuote
   const prompt = `Read and carry out the brief in ${briefPath}. Non-interactive: never wait for user input.`
   const tools = PI_TOOLS[mode] ? ` --tools ${q(PI_TOOLS[mode])}` : ''
-  const cmd = `pi -p --no-skills --skill ${q(skills)} --session-id ${session}${tools} ${q(prompt)}`
+  // With a profile the orchestrator is the profile's own, not whatever the global settings.json says (a pin never moves it).
+  const piFlags = piModel ? ` --model ${q(piModel)}${PI_THINKING.includes(piThinking) ? ` --thinking ${piThinking}` : ''}` : ''
+  const cmd = `pi -p --no-skills --skill ${q(skills)} --session-id ${session}${piFlags}${tools} ${q(prompt)}`
   const set = [['ENGRAM_DATA_DIR', P.join(home, '.gentle-shell', 'engram')], ['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
   if (win) {
     return [`Remove-Item ${ORCA_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
@@ -204,6 +210,7 @@ export const defaultIo = () => ({
   sh: (cmd, args, { cwd } = {}) => run(which(cmd) ?? cmd, args, { cwd, env: process.env, timeout: 60_000 }),
   exists: existsSync,
   mkdirp: dir => mkdirSync(dir, { recursive: true }),
+  readFile: file => readFileSync(file, 'utf8'),
   writeFile: (file, text) => writeFileSync(file, text, 'utf8'),
   sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
   gentleSkills: home => resolveGentleSkills(layout(home))?.dir ?? null,
@@ -240,9 +247,50 @@ const waitForTui = async (io, handle, agent, tries = 45) => {
   return false
 }
 
+// The gentle-pi profile a pi dispatch is pinned to: --perfil-pi wins over agentes.pi.perfil; absent or "preguntar" means
+// the globally active profile (today's behavior). Fails before any side effect when it cannot be honored.
+export const piProfileFor = ({ flag, config, home, commonDir, io }) => {
+  const configured = config.agentes?.pi?.perfil
+  const wanted = typeof flag === 'string' ? flag.trim() : typeof configured === 'string' && configured.trim() !== 'preguntar' ? configured.trim() : ''
+  if (wanted === '') return undefined
+  if (!PROFILE_NAME.test(wanted)) throw new Error(`El perfil de Pi "${wanted}" no es un nombre válido (letras, números, . _ -; hasta 64 caracteres).`)
+  const store = path.join(home, '.pi', 'gentle-ai', 'profiles.json')
+  const profiles = readJson(store, io)?.profiles
+  if (!isPlain(profiles) || !isPlain(profiles[wanted])) {
+    throw new Error(`No existe el perfil de Pi "${wanted}" en ${store}${isPlain(profiles) ? ` (hay: ${Object.keys(profiles).join(', ') || 'ninguno'})` : ''}. Crealo con /gentle:profiles en Pi.`)
+  }
+  const orchestrator = profiles[wanted].orchestrator
+  if (!isPlain(orchestrator) || typeof orchestrator.model !== 'string' || orchestrator.model.trim() === '') {
+    throw new Error(`El perfil de Pi "${wanted}" no define orchestrator.model: sin él, el orquestador dependería del settings.json global.`)
+  }
+  // gentle-pi gives the clone-local pin precedence over the worktree one, so it would win silently.
+  const localPin = path.join(commonDir, 'gentle-ai', 'profile-pin.json')
+  const local = readJson(localPin, io)
+  if (isPlain(local) && local.kind === PIN_KIND && typeof local.profile === 'string' && local.profile !== wanted) {
+    throw new Error(`El clon ya fija el perfil de Pi "${local.profile}" (${localPin}) y ese pin gana sobre el del worktree. Sacalo (/gentle:profiles, tecla p) o despachá con --perfil-pi ${local.profile}.`)
+  }
+
+  return { name: wanted, model: orchestrator.model.trim(), thinking: typeof orchestrator.thinking === 'string' ? orchestrator.thinking : undefined }
+}
+
+// Writes the worktree pin gentle-pi reads at every subagent launch, and keeps it out of git: info/exclude is per clone,
+// so nothing tracked changes.
+const PIN_REL = '.pi/gentle-ai/profile.json'
+const writePin = (io, worktree, commonDir, name) => {
+  const file = path.join(worktree, ...PIN_REL.split('/'))
+  io.mkdirp(path.dirname(file))
+  io.writeFile(file, `${JSON.stringify({ kind: PIN_KIND, version: 1, profile: name }, null, 2)}\n`)
+  if (io.sh('git', ['check-ignore', '-q', file], { cwd: worktree }).status === 0) return
+  const exclude = path.join(commonDir, 'info', 'exclude')
+  const text = io.exists(exclude) ? io.readFile(exclude) : ''
+  if (text.split(/\r?\n/).some(l => l.trim() === `/${PIN_REL}`)) return
+  io.mkdirp(path.dirname(exclude))
+  io.writeFile(exclude, `${text}${text === '' || text.endsWith('\n') ? '' : '\n'}/${PIN_REL}\n`)
+
+}
 // The whole dispatch: despachar (kind 'ticket', n = issue) and revisar (kind 'review', n = PR).
 export const dispatch = async (kind, args, io = defaultIo()) => {
-  const { n, agent, nota, dryRun = false, confirmado = false } = args
+  const { n, agent, nota, perfilPi, dryRun = false, confirmado = false } = args
   const review = kind === 'review'
   const say = io.out
   if (!/^\d+$/.test(String(n ?? ''))) throw new Error(`Falta el número de ${review ? 'PR' : 'issue'}. Uso: orca-stack ${review ? 'revisar <pr>' : 'despachar <issue>'} <agente>.`)
@@ -266,6 +314,9 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   if ((config.agentes?.preguntarAntes ?? []).includes(agent) && !confirmado) {
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de despacharlo. Si dijo que sí, repetí el comando con --confirmado.`)
   }
+
+  if (perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
+  const profile = agent === 'pi' ? piProfileFor({ flag: perfilPi, config, home: io.home, commonDir, io }) : undefined
 
   let implementer = agent
   let branchOfPr
@@ -314,7 +365,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const mode = review ? 'review' : 'ticket'
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corré `orca-stack global`.')
-  const launcher = launcherFor({ agent, mode, config, win, home: io.home, briefPath, session, skills })
+  const launcher = launcherFor({ agent, mode, config, win, home: io.home, briefPath, session, skills, piModel: profile?.model, piThinking: profile?.thinking })
   const act = (cmd, argv, opts = {}) => {
     say(`${dryRun ? '[simulación] ' : ''}${cmd} ${argv.map(a => (/[\s"]/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
 
@@ -357,6 +408,10 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       left.worktree = worktree
     }
 
+    if (profile) {
+      say(`${dryRun ? '[simulación] ' : ''}perfil de Pi "${profile.name}": pin en ${path.join(worktree, ...PIN_REL.split('/'))} (si git no lo ignora, se agrega /${PIN_REL} a ${path.join(commonDir, 'info', 'exclude')}); orquestador ${profile.model}${profile.thinking ? ` (${profile.thinking})` : ''}`)
+      if (!dryRun) writePin(io, worktree, commonDir, profile.name)
+    }
     const brief = briefFor(branch)
     say(`${dryRun ? '[simulación] ' : ''}brief -> ${briefPath}`)
     if (!dryRun) {
@@ -388,7 +443,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
 }
 
 const command = kind => async (flags, n, agent) =>
-  dispatch(kind, { n, agent, nota: flags.nota, dryRun: flags.dryRun, confirmado: flags.confirmado })
+  dispatch(kind, { n, agent, nota: flags.nota, dryRun: flags.dryRun, confirmado: flags.confirmado, perfilPi: flags.perfilPi })
 export const despacharCommand = command('ticket')
 export const revisarCommand = command('review')
 

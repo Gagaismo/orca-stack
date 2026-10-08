@@ -27,7 +27,7 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 | Skills propias: `orca-stack-policy`, `orca-setup`, `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | `~/.claude/skills/` y `~/.agents/skills/` |
 | Siete mods de Claude Code (ver abajo) y sus rutas en `env.CLAUDE_CODE_PLUGIN_DIRS` | `~/.claude/mods/` y `~/.claude/settings.json` |
 | Nada de metodología en `~/.claude/CLAUDE.md`: si un `global` anterior dejó ahí el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->`, lo saca (con respaldo). También achica el bloque que gentle-ai escribe ahí (ver abajo) | `~/.claude/CLAUDE.md` |
-| Pi: `gentle-pi@4.0.0` y `pi-claude-bridge@0.9.1` con `pi install`, más `npm i -g gentle-pi@4.0.0` (comando `gentle-shell`) | `~/.pi/agent/` y npm global |
+| Pi: `gentle-pi@4.0.0` y `pi-claude-bridge@0.9.2` con `pi install`, más `npm i -g gentle-pi@4.0.0` (comando `gentle-shell`) | `~/.pi/agent/` y npm global |
 | Registro de lo instalado, para `remove` | `~/.orca-stack/state.json` |
 | Capa personal de configuración | `~/.orca-stack/config.json` |
 
@@ -49,7 +49,7 @@ Son plugins de Claude Code que se recargan en caliente (`.claude-plugin/plugin.j
 | Mod | Qué hace | Config |
 | --- | --- | --- |
 | `tablero-despacho` | Tablero de PRs abiertos con checks, review y worktrees (`/tablero`). Usa `gh`. | Los atajos de despacho aparecen solo si hay `despacho` |
-| `guardia-despacho` | Bloquea o corrige las llamadas a tus scripts de despacho y revisión según reglas del proyecto. Siempre activo, con o sin `despacho`: rechaza `orca worktree rm` y `git worktree remove` si la rama de ese worktree tiene commits que no están en ningún remoto, porque `orca worktree rm` borra también la rama local. Si no puede resolver la rama, rechaza | Las reglas de despacho están **apagadas** salvo que haya `despacho` |
+| `guardia-despacho` | Bloquea o corrige las llamadas a tus scripts de despacho y revisión según reglas del proyecto. Siempre activo, con o sin `despacho`: pregunta qué perfil de gentle-pi usa un despacho a pi (`--perfil-pi`); rechaza `orca worktree rm` y `git worktree remove` si la rama de ese worktree tiene commits que no están en ningún remoto, porque `orca worktree rm` borra también la rama local. Si no puede resolver la rama, rechaza | Las reglas de despacho están **apagadas** salvo que haya `despacho` |
 | `puente-gentle` | Consulta a Gentle Shell (Pi) como otro orquestador par (`/pi`, `/gentle`). La instrucción de consultar y la herramienta `consultar_gentle_shell` aparecen solo en un repo con `.orca-stack.json`. Frena el merge de un PR grande sin consulta y el de uno que toca `riesgo` sin sus reviews limpios (de pi, o de dos familias de modelo que no sean la de pi si el PR lo escribió pi) | `humano`, `riesgo`, `agentes.pi.claudeConfigDir` |
 | `bandeja-mensajes` | Captura los bloques ` ```mensaje <destinatario> ` que redacta Claude y deja copiarlos o guardarlos | `mensajes.destinatarios` |
 | `grilling-ok` | Responde con un clic (o con un `ok`) a las preguntas Q1…Qn de una sesión de grilling | — |
@@ -74,8 +74,8 @@ orca-stack init   [--dry-run]
 orca-stack doctor [--offline] [--skip-pi]
 orca-stack remove [--dry-run] [--with-pi]
 orca-stack sesiones [--desde <AAAA-MM-DD>] [--limite <n>]
-orca-stack despachar <issue> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
-orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
+orca-stack despachar <issue> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
+orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 ```
 
 - `--dry-run` cuenta cada acción sin escribir nada.
@@ -84,6 +84,10 @@ orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
 - `orca-setup` es la skill con la que la sesión de `main` entrevista al humano, en una sola ronda, para completar `.orca-stack.json` (`"setup": "completo"`). La ofrece sola cuando falta y `doctor` avisa si quedó pendiente.
 - `sesiones` es de solo lectura: lista las sesiones recientes de Claude Code (`~/.claude/projects` y, si está, la carpeta de `agentes.pi.claudeConfigDir`), de Pi (`~/.pi/agent/sessions`) y de agy (`~/.gemini/antigravity-cli`, solo con Node 22.13 o más nuevo). Por sesión muestra la herramienta, la carpeta, inicio y fin, las llamadas, tus mensajes, las llamadas con error y los resultados de más de 15k caracteres. Es la entrada para quien corre `/retro` de Matt: `--desde` fija el día de inicio (por defecto, los últimos 2 días) y `--limite` cuántas sesiones (por defecto, 10).
 - `despachar` y `revisar` (agentes: claude, agy, codex, codex-cc, pi) corren desde el checkout principal de un repo con el setup completo. Se niegan si el agente no está en `agentes.usa`, si está en `agentes.preguntarAntes` (repetí con `--confirmado` cuando el humano dijo que sí), si el issue está cerrado o asignado, si el revisor es el implementador del PR (línea `Implementador:`) o corre un modelo de su misma familia (sale de `agentes.modelos`; pi y claude sí se revisan entre sí), si el agente tiene una regla `guardia.bloquear` vigente, o si ya hay un worktree o un agente vivo para ese ticket. Antes de tocar nada hacen `git fetch origin` y comprueban que cada ruta que cita el brief (armado desde `assets/stack/brief-ticket.md` o `brief-revision.md`) exista en `origin/<ramaBase>` (en `revisar`, en la rama del PR): una ruta que falta o que git ignora aborta sin asignar ni crear nada. Si pasa todo, `despachar` asigna el issue (el assignee es el cerrojo y lo maneja el comando: no se asigna antes), y ambos crean el worktree con `orca worktree create` (así lo ve Orca), escriben el brief en `~/orca/briefs/`, lanzan el agente en una terminal de Orca y le mandan el brief. Si algo falla después de crear el worktree, el mensaje lista lo que quedó (assignee, worktree, brief) y cómo recuperarlo, porque el cerrojo rechaza un reintento. Pi corre sin TUI (`pi -p`), así que sí puede ejecutar git, gh y la suite. `--nota` agrega texto al brief y `--dry-run` muestra el plan y el brief sin escribir nada. Los modelos salen de `agentes.modelos` de tu config personal: un texto, `{ "modelo", "esfuerzo" }` o `{ "implementar": {…}, "revisar": {…} }` por agente.
+
+- `--perfil-pi <nombre>` (solo con `pi`) fija qué perfil de modelos de gentle-pi usa **ese** despacho, sin tocar el perfil global activo. Los perfiles viven en `~/.pi/gentle-ai/profiles.json`; el comando se niega si el nombre no existe o si el clon ya fija otro perfil (`<git-common-dir>/gentle-ai/profile-pin.json`, que gana en silencio sobre el del worktree). Después de crear el worktree escribe el pin `.pi/gentle-ai/profile.json` ahí (gentle-pi lo lee en cada lanzamiento de subagente) y, si git no lo ignora, agrega `/.pi/gentle-ai/profile.json` a `<git-common-dir>/info/exclude`, así que nunca se commitea. Como un pin no mueve al orquestador, lanza pi con `--model <orchestrator.model del perfil> --thinking <orchestrator.thinking>`. Con `--dry-run` cuenta todo esto sin escribir. Sin el flag y sin `agentes.pi.perfil` (o con `"preguntar"`) rige el perfil activo global, como siempre. `agentes.pi.perfil: "<nombre>"` lo fija para todos los despachos a pi y el flag gana.
+- `guardia-despacho` pregunta ese perfil por vos: cuando Claude corre `orca-stack despachar|revisar <n> pi` sin `--perfil-pi` y `agentes.pi.perfil` no es un nombre, abre el diálogo "Perfil Pi" con los perfiles de `profiles.json` (`opus-haiku` y `samu-balanceado` primero; máximo cuatro opciones) y agrega `--perfil-pi <elegido>` justo detrás del agente. Si cierran el diálogo, o no hay nadie que conteste (`-p`), el comando corre sin cambios. Las consultas (`/pi`, `consultar_gentle_shell`) no preguntan, y un `--dry-run` tampoco.
+- Perfil `opus-haiku`: el orquestador es Opus 5.5 (`claude-bridge/claude-opus-5-5`, thinking `high`) y los diez subagentes de gentle-pi (`gentle-ai-explore`, `gentle-ai-verify`, `gentle-ai-worker`, `jd-fix-agent`, `jd-judge-a`, `jd-judge-b`, `review-readability`, `review-reliability`, `review-resilience`, `review-risk`) corren en Haiku 5.5 (`claude-bridge/claude-haiku-5-5`). Un perfil tiene que nombrar a todos los agentes: el que omite uno lo deja con el modelo de su frontmatter. Para cambiarlo después: `/gentle:profiles` en Pi, o editar `~/.pi/gentle-ai/profiles.json` (hacé una copia antes).
 - `--skip-pi` no toca Pi (útil si todavía no lo instalaste).
 - `--humano` fija cómo te nombran los mods; si no lo pasás, sale de `git config user.name`.
 - `doctor` hace sondeos reales y sale con código 1 si hay una falla (✖). Los avisos (⚠) no cambian el código.
@@ -95,7 +99,7 @@ orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--dry-run]
 No se queda en "el archivo existe":
 
 - corre el `--orca-stack-self-test` de cada wrapper y comprueba que la ruta de la política exista;
-- compara la versión de Pi y de sus paquetes con las fijadas (Pi `0.99.1`, gentle-pi `4.0.0`, pi-claude-bridge `0.9.1`) y avisa si no coinciden;
+- compara la versión de Pi y de sus paquetes con las fijadas (Pi `1.1.0`, gentle-pi `4.0.0`, pi-claude-bridge `0.9.2`) y avisa si no coinciden;
 - sondea con un `pi -p` corto (con tiempo máximo) si falta el `/login` (se omite con `--offline`);
 - verifica que las skills de gentle-pi se resuelvan igual que lo hace `puente-gentle` en ejecución (primero la carpeta de Pi, después `npm root -g`);
 - comprueba que cada mod esté en `CLAUDE_CODE_PLUGIN_DIRS`;
@@ -165,6 +169,7 @@ Las claves del contrato de trabajo, que escribe `orca-setup` y que el bloque de 
 | `idioma` | Idioma del código, los commits y los PRs |
 | `riesgo` | Lista de globs de rutas cuyo cambio no se deshace con un revert (migraciones, auth, deploy, dependencias). `puente-gentle` no deja mergear un PR que toca alguna hasta que tenga un review limpio de pi sobre su último commit (`Revisor: pi`, `Commit: <sha>` y `## BLOQUEA` en `nada`, de `orca-stack revisar <n> pi`). Si lo escribió pi, pide dos reviews limpios de dos familias de modelo distintas que no sean la de pi (Claude); la familia sale del modelo de `agentes.modelos`. Un review con bloqueos sobre ese commit frena el merge, y también lo frena que falte la línea `Implementador:` |
 | `agentes.pi.claudeConfigDir` | Solo en `~/.orca-stack/config.json`: carpeta de config de Claude con otra cuenta para pi. El puente lanza pi con `CLAUDE_CONFIG_DIR=<carpeta>`, y así pi y `main` no se quedan sin cuota juntos. El login se hace una vez a mano: `$env:CLAUDE_CONFIG_DIR="<carpeta>"; claude` y `/login` |
+| `agentes.pi.perfil` | Nombre de un perfil de `~/.pi/gentle-ai/profiles.json` (o `"preguntar"`, el valor por defecto). Con un nombre, todo `despachar`/`revisar` a pi usa ese perfil sin preguntar (el flag `--perfil-pi` gana). Con `"preguntar"` o ausente, `guardia-despacho` pregunta en cada despacho a pi y, sin el mod, rige el perfil activo global |
 
 `<repo>/.orca-stack.local.json` (local, ignorado por git; `init` lo crea vacío):
 

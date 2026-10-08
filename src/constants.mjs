@@ -1,9 +1,9 @@
 // Versions and names the installer pins. Everything else is discovered from the package contents.
 
 export const PINNED = {
-  pi: '0.99.1',
+  pi: '1.1.0',
   gentlePi: '4.0.0',
-  claudeBridge: '0.9.1',
+  claudeBridge: '0.9.2',
 }
 
 // Pi packages installed with `pi install npm:<name>@<version>`.

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
@@ -45,6 +45,7 @@ const fakeIo = (over = {}, { config = PROJECT } = {}) => {
     out: line => out.push(line),
     sleep: async () => {},
     exists: existsSync,
+    readFile: file => readFileSync(file, 'utf8'),
     mkdirp: () => {},
     writeFile: (file, text) => {
       written.push([file, text])
@@ -286,6 +287,105 @@ describe('launchers', () => {
     const launcher = env.out.find(l => l.startsWith('Lanzador'))
     assert.ok(launcher.includes(path.join(home, '.claude-pi')) && !launcher.includes('evil'))
     assert.ok(!env.calls.some(c => c[2] === 'send'))
+  })
+})
+
+describe('pi: --perfil-pi', () => {
+  const PROFILES = {
+    kind: 'gentle-pi.agent_model_profiles',
+    version: 1,
+    active: 'samu-balanceado',
+    profiles: {
+      'opus-haiku': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' }, 'gentle-ai-worker': { model: 'claude-bridge/claude-haiku-5-5', thinking: 'high' } },
+      'samu-balanceado': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },
+    },
+  }
+  const store = () => path.join(home, '.pi', 'gentle-ai', 'profiles.json')
+  const pinFile = () => path.join(worktree, '.pi', 'gentle-ai', 'profile.json')
+  const exclude = () => path.join(root, '.git', 'info', 'exclude')
+  const launcher = env => {
+    const call = env.calls.find(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'create')
+
+    return call[call.indexOf('--command') + 1]
+  }
+  const notIgnored = { 'git check-ignore': { status: 1, stdout: '', stderr: '' } }
+  beforeEach(() => write(store(), JSON.stringify(PROFILES)))
+
+  test('writes the worktree pin, excludes it once, and launches pi with the profile orchestrator', async () => {
+    const env = fakeIo(notIgnored)
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, env)
+    assert.deepEqual(JSON.parse(read(pinFile())), { kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile: 'opus-haiku' })
+    assert.equal(read(exclude()), '/.pi/gentle-ai/profile.json\n')
+    assert.ok(launcher(env).includes("--model 'claude-bridge/claude-opus-5-5' --thinking high"), launcher(env))
+    // The pin exists before pi starts.
+    const order = env.calls.map(c => c.join(' '))
+    assert.ok(order.findIndex(l => l.startsWith('git check-ignore')) < order.findIndex(l => l.startsWith('orca terminal create')))
+  })
+
+  test('the exclude entry is appended once and keeps what was there', async () => {
+    write(exclude(), '# mine')
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo(notIgnored))
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo(notIgnored))
+    assert.equal(read(exclude()), '# mine\n/.pi/gentle-ai/profile.json\n')
+  })
+
+  test('an already ignored pin touches no exclude file', async () => {
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo())
+    assert.ok(existsSync(pinFile()) && !existsSync(exclude()))
+  })
+
+  test('a clone-local pin on another profile fails before any write; the same one is fine', async () => {
+    const pin = profile => write(path.join(root, '.git', 'gentle-ai', 'profile-pin.json'), JSON.stringify({ kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile }))
+    pin('samu-balanceado')
+    const env = fakeIo()
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, env), /fija el perfil de Pi "samu-balanceado"/)
+    assert.deepEqual(env.writes(), [])
+    pin('opus-haiku')
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku', dryRun: true }, fakeIo())
+  })
+
+  test('an unknown profile fails before any write and lists the existing ones', async () => {
+    const env = fakeIo()
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'nope' }, env), /No existe el perfil de Pi "nope".*opus-haiku, samu-balanceado/)
+    assert.deepEqual(env.writes(), [])
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'a b; rm' }, fakeIo()), /no es un nombre válido/)
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy', perfilPi: 'opus-haiku' }, fakeIo()), /solo vale para el agente pi/)
+  })
+
+  test('agentes.pi.perfil applies, the flag wins, and "preguntar" or nothing changes nothing', async () => {
+    const withPerfil = perfil => ({ ...PROJECT, agentes: { ...PROJECT.agentes, pi: { perfil } } })
+    await run('ticket', { n: '7', agent: 'pi' }, fakeIo({}, { config: withPerfil('samu-balanceado') }))
+    assert.equal(JSON.parse(read(pinFile())).profile, 'samu-balanceado')
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo({}, { config: withPerfil('samu-balanceado') }))
+    assert.equal(JSON.parse(read(pinFile())).profile, 'opus-haiku')
+    for (const config of [withPerfil('preguntar'), PROJECT]) {
+      cleanup(path.dirname(pinFile()))
+      const env = fakeIo({}, { config })
+      await run('ticket', { n: '7', agent: 'pi' }, env)
+      assert.ok(!existsSync(pinFile()) && !launcher(env).includes('--model') && !launcher(env).includes('--thinking'))
+    }
+    // No profiles store is needed when no profile is asked for.
+    cleanup(store())
+    await run('ticket', { n: '7', agent: 'pi', dryRun: true }, fakeIo())
+  })
+
+  test('--dry-run narrates the pin and the model and writes nothing', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku', dryRun: true }, env)
+    const text = env.out.join('\n')
+    for (const part of ['[simulación] perfil de Pi "opus-haiku"', 'profile.json', 'exclude', "--model 'claude-bridge/claude-opus-5-5'"]) assert.ok(text.includes(part), part)
+    assert.ok(!existsSync(pinFile()) && !existsSync(exclude()))
+    assert.deepEqual(env.writes(), [])
+    const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) })
+    await run('review', { n: '9', agent: 'pi', perfilPi: 'opus-haiku', dryRun: true }, review)
+    assert.ok(review.out.join('\n').includes('perfil de Pi "opus-haiku"'))
+  })
+
+  test('launcherFor adds --model only when given, in PowerShell and POSIX', () => {
+    const base = { mode: 'ticket', config: {}, home: '/h', briefPath: '/b.md', session: 's', skills: '/s', agent: 'pi' }
+    assert.ok(!launcherFor({ ...base, win: false }).includes('--model'))
+    assert.ok(launcherFor({ ...base, win: false, piModel: 'p/m' }).includes("--session-id s --model 'p/m' 'Read"))
+    assert.ok(launcherFor({ ...base, win: true, piModel: 'p/m', piThinking: 'bogus' }).includes("--model 'p/m' 'Read"))
   })
 })
 
