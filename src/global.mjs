@@ -154,6 +154,16 @@ const lazyGentleBlock = (ctx, original) => {
 
     return
   }
+  // The block carries gentle-ai's Review Execution Contract: a pointer would silently turn receipt-driven development off.
+  // Without the gentle-ai binary there is no review to protect.
+  const bin = which('gentle-ai')
+  const rdd = bin ? rddMode(bin) : 'off'
+  if (rdd !== 'off') {
+    ctx.say(`  RDD de gentle-ai ${rdd === 'on' ? 'prendido' : 'en un estado que no pude leer'}: el bloque queda completo (lazy le sacaría el contrato de review)`)
+    restoreGentleBlock(ctx, original)
+
+    return
+  }
   const copy = ctx.L.sddCopy
   if (isLazyBlock(block)) {
     ctx.say(`  ya está en modo lazy${existsSync(copy) ? '' : `; pero falta ${ctx.show(copy)}: corré \`gentle-ai sync\` y después \`orca-stack global\``}`)
@@ -185,6 +195,10 @@ const restoreGentleBlock = (ctx, original) => {
   }
   const text = restoreBlock(original, saved)
   ctx.writeShared(ctx.L.claudeMd, text, `${ctx.show(ctx.L.claudeMd)} (bloque completo de gentle-ai, restaurado desde la copia)`)
+  const bin = which('gentle-ai')
+  if (bin && !saved.includes('#### Review Execution Contract') && rddMode(bin) !== 'off') {
+    ctx.say('  la copia no tiene el contrato de review: corré `gentle-ai sync`')
+  }
 
   return text
 }
