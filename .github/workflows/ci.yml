@@ -43,6 +43,9 @@ jobs:
   hygiene:
     name: Commits and secrets
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
