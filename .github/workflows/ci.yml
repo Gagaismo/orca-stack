@@ -39,3 +39,24 @@ jobs:
           git init -q "$repo"
           (cd "$repo" && node "$GITHUB_WORKSPACE/bin/orca-stack.mjs" init --dry-run)
           test -z "$(ls -A "$repo" | grep -v '^.git$' || true)" || { echo "init --dry-run escribió archivos"; exit 1; }
+
+  hygiene:
+    name: Commits and secrets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Conventional Commits on every commit of the PR
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-commits.mjs "origin/${{ github.base_ref }}" HEAD
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "modo": "multiagente",
+  "ramaBase": "main",
+  "agentes": {
+    "usa": [
+      "claude",
+      "agy",
+      "codex",
+      "codex-cc",
+      "pi"
+    ],
+    "preguntarAntes": [
+      "codex-cc"
+    ]
+  },
+  "verificacion": {
+    "suite": "npm test && npm run test:mods",
+    "typecheck": "ninguno"
+  },
+  "riesgo": [],
+  "merge": "main merges on its own as soon as CI is green (no reviews in this repo for now, see AGENTS.md Project rules)",
+  "despliegue": {
+    "despues": false
+  },
+  "idioma": "English for code, comments, tests, commits and PRs; README, docs/ and CLI strings stay in Spanish until a separate decision",
+  "setup": "completo"
+}
