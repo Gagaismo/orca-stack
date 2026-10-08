@@ -24,6 +24,8 @@ import { ENTRY, SKILLS, answerStream, line, world } from './harness'
 import type { Run } from './harness'
 
 const TOOL = 'mcp__puente-gentle__consultar_gentle_shell'
+// Where the engine resolves the config of the fake repo at /p.
+const PROJECT_CONFIG = 'C:\\p\\.orca-stack.json'
 const AT = new Date(2026, 9, 3, 10, 0).getTime()
 
 const boot = async (
@@ -36,8 +38,9 @@ const setup = (
   on: On,
   run: (argv: readonly string[]) => Run,
   store: Record<string, unknown> = {},
-  opts: { exists?: string[]; files?: Record<string, string> } = {},
+  opts: { exists?: string[]; files?: Record<string, string>; project?: boolean } = {},
 ) => {
+  const { project, ...rest } = opts
   const clock = mock.clock(on, { now: AT })
   mock.store(on, store)
   mock.env(on, { APPDATA: 'C:\\Users\\tester\\AppData\\Roaming', USERPROFILE: 'C:\\Users\\tester', OS: 'Windows_NT' })
@@ -56,7 +59,12 @@ const setup = (
     return { result: { stdout: 'ok' } } as never
   })
 
-  return { ...world(on, { run, ...opts }), clock }
+  // project: a repo at /p with its own .orca-stack.json (the mod injects text only there).
+  const inProject = (argv: readonly string[]): Run =>
+    argv[0] === 'git' ? { exitCode: 0, stdout: '/p/.git\n/p\n', stderr: '' } : run(argv)
+  const files = project ? { [PROJECT_CONFIG]: '{}', ...rest.files } : rest.files
+
+  return { ...world(on, { ...rest, run: project ? inProject : run, files }), clock }
 }
 
 const ok = (text = 'Coincido salvo en X.'): Run => ({ exitCode: 0, stdout: answerStream(text), stderr: '' })
@@ -72,7 +80,7 @@ const consult = ($: any, input: Record<string, string>) =>
 const textOf = (out: any): string => out.result
 
 test('the command line carries every flag, the engram env, and runs node on the entry file', async ($, on) => {
-  const w = setup(on, () => ok('Mi lectura'))
+  const w = setup(on, () => ok('Mi lectura'), {}, { project: true })
   await boot($)
   expect(w.tools).toEqual(['consultar_gentle_shell'])
   const out = await consult($, { tema: 'PR 612', planteo: 'contexto', pregunta: '¿riesgos?' })
@@ -282,7 +290,7 @@ test('/pi parses "tema: pregunta", derives a slug otherwise, and shows usage whe
 })
 
 test('the system prompt gets one session section, last', async ($, on) => {
-  setup(on, () => ok())
+  setup(on, () => ok(), {}, { project: true })
   await boot($)
   const out = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] })
   const last = out.sections.at(-1)!
@@ -329,16 +337,38 @@ test('/gentle lists temas, expands the chosen one and copies an answer', async (
 const compose = ($: any) =>
   $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] })
 
+test('without .orca-stack.json there is no criterio section and no tool; the commands stay', async ($, on) => {
+  const w = setup(on, () => ok())
+  await boot($)
+  expect(w.tools).toEqual([])
+  expect(w.registered).toEqual(['pi', 'gentle'])
+  expect((await compose($)).sections).toEqual([])
+})
+
+test('a repo that is not a git checkout has no project config either', async ($, on) => {
+  const w = setup(on, () => ok(), {}, { files: { [PROJECT_CONFIG]: '{}' } })
+  await boot($)
+  expect(w.tools).toEqual([])
+  expect((await compose($)).sections).toEqual([])
+})
+
+test('with .orca-stack.json both the tool and the criterio section are there', async ($, on) => {
+  const w = setup(on, () => ok(), {}, { project: true })
+  await boot($)
+  expect(w.tools).toEqual(['consultar_gentle_shell'])
+  expect((await compose($)).sections.map((one: { id: string }) => one.id)).toEqual(['puente-gentle:criterio'])
+})
+
 test('the human name comes from the personal config layer, with a neutral fallback', async ($, on) => {
   const personal = 'C:\\Users\\tester\\.orca-stack\\config.json'
-  const w = setup(on, () => ok(), {}, { files: { [personal]: JSON.stringify({ humano: 'Ana' }) } })
+  const w = setup(on, () => ok(), {}, { project: true, files: { [personal]: JSON.stringify({ humano: 'Ana' }) } })
   await boot($)
   expect((await compose($)).sections.at(-1)?.text).toContain('mostrale a Ana las dos posturas')
-  expect(w.calls.length).toBeGreaterThan(0)
+  expect(w.gits.length).toBeGreaterThan(0)
 })
 
 test('without a name the section talks to "el usuario"', async ($, on) => {
-  setup(on, () => ok())
+  setup(on, () => ok(), {}, { project: true })
   await boot($)
   expect((await compose($)).sections.at(-1)?.text).toContain('mostrale al usuario las dos posturas')
 })

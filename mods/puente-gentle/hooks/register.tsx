@@ -37,7 +37,7 @@ import {
   vista,
 } from './puente'
 import type { Memoria, Outcome } from './puente'
-import { loadConfig } from './orca-config'
+import { hasProjectConfig, loadConfig } from './orca-config'
 import type { Host } from './orca-config'
 
 const PANE = 'gentle'
@@ -219,21 +219,24 @@ export const register: Register = (on, options) => {
       name: 'gentle',
       description: 'Abre el panel con las consultas a Gentle Shell',
     })
-    await $.tool.register({
-      name: 'consultar_gentle_shell',
-      description:
-        'Consulta a Gentle Shell (Pi), otro orquestador par con otra metodología, en modo solo lectura. ' +
-        'Usalo en puntos de decisión. El planteo va neutral: problema, restricciones, nuestra propuesta y archivos relevantes.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          tema: { type: 'string', description: 'Slug corto del tema, por ejemplo pr-612 o sdd-auditoria. Misma conversación por tema.' },
-          planteo: { type: 'string', description: 'Contexto neutral: el problema, las restricciones, nuestra propuesta actual y las rutas relevantes.' },
-          pregunta: { type: 'string', description: 'Lo que querés que opine.' },
+    // The tool (and the criterio section below) only exist in a repo with .orca-stack.json: `global` carries no methodology.
+    if (await hasProjectConfig(hostOf($))) {
+      await $.tool.register({
+        name: 'consultar_gentle_shell',
+        description:
+          'Consulta a Gentle Shell (Pi), otro orquestador par con otra metodología, en modo solo lectura. ' +
+          'Usalo en puntos de decisión. El planteo va neutral: problema, restricciones, nuestra propuesta y archivos relevantes.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tema: { type: 'string', description: 'Slug corto del tema, por ejemplo pr-612 o sdd-auditoria. Misma conversación por tema.' },
+            planteo: { type: 'string', description: 'Contexto neutral: el problema, las restricciones, nuestra propuesta actual y las rutas relevantes.' },
+            pregunta: { type: 'string', description: 'Lo que querés que opine.' },
+          },
+          required: ['tema', 'planteo', 'pregunta'],
         },
-        required: ['tema', 'planteo', 'pregunta'],
-      },
-    })
+      })
+    }
     await publish($, await load($))
 
     return next(e)
@@ -319,6 +322,9 @@ export const register: Register = (on, options) => {
 
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
+    if (!(await hasProjectConfig(hostOf($)))) {
+      return composed
+    }
     const humano = (await loadConfig(hostOf($))).humano
 
     return {

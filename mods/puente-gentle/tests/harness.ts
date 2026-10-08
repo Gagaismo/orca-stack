@@ -25,6 +25,7 @@ export const world = (on: On, opts: { run?: (argv: readonly string[]) => Run; ex
   const state = new Map<string, { value: unknown; version: number }>()
   const toasts: string[] = []
   const calls: { argv: string[]; init: Init }[] = []
+  const gits: string[][] = [] // the repo-root probes of hasProjectConfig / loadConfig, kept out of `calls`
   const submitted: string[] = []
   const registered: string[] = []
   const tools: string[] = []
@@ -69,11 +70,15 @@ export const world = (on: On, opts: { run?: (argv: readonly string[]) => Run; ex
   })
   on('prompt.compose', () => ({ sections: [] }))
   on('process.run', (_$, e) => {
-    calls.push({ argv: [...e.argv], init: (e.init ?? {}) as Init })
+    if (e.argv[0] === 'git') {
+      gits.push([...e.argv])
+    } else {
+      calls.push({ argv: [...e.argv], init: (e.init ?? {}) as Init })
+    }
     const run = opts.run?.(e.argv) ?? { exitCode: 0, stdout: '', stderr: '' }
 
     return { value: { ...run, isStdoutTruncated: false, isStderrTruncated: false } }
   })
 
-  return { state, toasts, calls, submitted, registered, tools, copied }
+  return { state, toasts, calls, gits, submitted, registered, tools, copied }
 }

@@ -12,7 +12,7 @@ import {
 import path from 'node:path'
 
 import { createCtx, loadState } from './ctx.mjs'
-import { removeBlock } from './marker.mjs'
+import { removeAnyBlock } from './marker.mjs'
 import { piBinary } from './pi.mjs'
 import { parseSettings, removePluginDirs, stringifySettings } from './settings.mjs'
 import { homeDir, run, sha256, which } from './util.mjs'
@@ -122,10 +122,10 @@ export const removeCommand = async flags => {
     }
   }
 
-  // 4. Marker block in the global CLAUDE.md.
+  // 4. Marker block in the global CLAUDE.md (only old installs left one; `global` now removes it).
   if (st.claudeMd && existsSync(st.claudeMd.file)) {
     const file = st.claudeMd.file
-    const { text, found } = removeBlock(readFileSync(file, 'utf8'))
+    const { text, found } = removeAnyBlock(readFileSync(file, 'utf8'))
     if (found) {
       ctx.backup(file)
       if (text.trim() === '' && st.claudeMd.createdFile) {

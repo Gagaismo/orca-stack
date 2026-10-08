@@ -56,10 +56,9 @@ describe('1. global validates before writing and never orphans files', () => {
     // Only the shared files (whose creation this run cannot know) and the personal config stay.
     assert.deepEqual(
       allFiles(home).filter(name => !name.includes('.orca-stack/backups/')),
-      ['.claude/CLAUDE.md', '.claude/settings.json', '.orca-stack/config.json'],
+      ['.claude/settings.json', '.orca-stack/config.json'],
     )
     assert.equal(JSON.parse(read(settingsPath())).env?.CLAUDE_CODE_PLUGIN_DIRS, undefined)
-    assert.ok(!read(claudeMdPath()).includes(BEGIN))
   })
 })
 
@@ -111,7 +110,7 @@ describe('3. foreign files are not overwritten; backups live outside the filesâ€
     assert.notEqual(read(skill()), 'mi ponytail\n')
     assert.equal(allFiles(home).filter(name => name.includes('.bak-orca-stack-')).length, 0)
     const saved = backups(home)
-    for (const needle of ['ponytail/SKILL.md', 'settings.json', 'CLAUDE.md']) {
+    for (const needle of ['ponytail/SKILL.md', 'settings.json']) {
       assert.ok(saved.some(name => name.endsWith(needle)), needle)
     }
     for (const name of saved) {

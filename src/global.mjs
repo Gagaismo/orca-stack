@@ -1,10 +1,10 @@
-import { chmodSync, existsSync, readFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
 
 import { INSTALL_HINTS, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
 import { rddMode, trimReviewSections } from './gentle.mjs'
-import { upsertBlock } from './marker.mjs'
+import { removeAnyBlock } from './marker.mjs'
 import { orcaInstalled } from './orca.mjs'
 import { setupPi } from './pi.mjs'
 import { mergePluginDirs, parseSettings, stringifySettings } from './settings.mjs'
@@ -12,7 +12,6 @@ import {
   assetPath,
   listDirs,
   listFiles,
-  policyBlock,
   readAsset,
   render,
   skipForMod,
@@ -118,20 +117,30 @@ const installMods = ctx => {
   }
 }
 
-const installClaudeMd = ctx => {
+// `global` no longer writes methodology into ~/.claude/CLAUDE.md (it reaches a project through `init`).
+// Installs from before that left a block there: take it out, with a backup.
+const removeClaudeMdBlock = ctx => {
   ctx.say('\nCLAUDE.md global')
   const file = ctx.L.claudeMd
   const original = readTextIfExists(file)
-  const vars = stackVars(ctx.L)
-  const next = upsertBlock(original ?? '', policyBlock({ policyPath: vars.POLICY_PATH, briefsPath: vars.BRIEFS_PATH }))
-  let created = false
-  if (next === original) {
-    ctx.say('  el bloque orca-stack ya está al día')
-  } else {
-    created = ctx.writeShared(file, next, `bloque orca-stack en ${ctx.show(file)}`).created
+  const { text, found } = removeAnyBlock(original ?? '')
+  if (!found) {
+    ctx.say('  sin bloque orca-stack: no hay nada que sacar (la política llega por el proyecto, con `orca-stack init`)')
+
+    return
   }
+  if (text.trim() === '' && ctx.state.claudeMd?.createdFile) {
+    ctx.backup(file)
+    ctx.act(`borro ${ctx.show(file)} (lo había creado este instalador)`)
+    if (!ctx.dryRun) {
+      rmSync(file)
+    }
+  } else {
+    ctx.writeShared(file, text, `${ctx.show(file)} (sin el bloque orca-stack)`)
+  }
+  ctx.say('  saqué el bloque orca-stack: la política ahora llega por el proyecto (`orca-stack init`), no por el CLAUDE.md global')
   if (!ctx.dryRun) {
-    ctx.state.claudeMd = { file, createdFile: ctx.state.claudeMd ? ctx.state.claudeMd.createdFile : created }
+    ctx.state.claudeMd = null
   }
 }
 
@@ -253,7 +262,7 @@ export const preflight = ctx => {
   }
   const md = readTextIfExists(ctx.L.claudeMd)
   if (md !== null) {
-    upsertBlock(md, 'x') // throws on unbalanced, reordered or duplicated markers
+    removeAnyBlock(md) // throws on unbalanced, reordered or duplicated markers
   }
 }
 
@@ -270,7 +279,7 @@ export const globalCommand = async flags => {
     installWrappers(ctx)
     installSkills(ctx)
     installMods(ctx)
-    installClaudeMd(ctx)
+    removeClaudeMdBlock(ctx)
     trimGentleReview(ctx)
     setupPi(ctx, { skipPi: flags.skipPi })
     installPersonalConfig(ctx, { humano: flags.humano })

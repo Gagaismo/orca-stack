@@ -72,7 +72,7 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
   }
 
   try {
-    block('AGENTS.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, agentsPointer: true }))
+    block('AGENTS.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS }))
 
     const claudeText = readTextIfExists(path.join(root, 'CLAUDE.md')) ?? ''
     block('CLAUDE.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, short: true, importAgents: !importsAgents(claudeText) }))

@@ -125,8 +125,8 @@ export const shWrapper = agent => {
 
 export const wrapperContent = (agent, win) => (win ? cmdWrapper(agent) : shWrapper(agent))
 
-// The policy lines shared by every block. policyPath/briefsPath are shown as given.
-const policyLines = ({ policyPath, briefsPath, agentsPointer }) => [
+// The policy lines of the project blocks. policyPath/briefsPath are shown as given.
+const policyLines = ({ policyPath, briefsPath }) => [
   `Política canónica: \`${policyPath}\` (se puede cambiar con \`$ORCA_STACK_POLICY_PATH\`). Briefs por rol: \`${briefsPath}\`.`,
   'Si faltan, corré `npx github:Gagaismo/orca-stack global`.',
   '',
@@ -135,15 +135,11 @@ const policyLines = ({ policyPath, briefsPath, agentsPointer }) => [
   '- Respetá los requisitos explícitos de la spec, el ticket y los ADRs, y también la validación, la seguridad, la accesibilidad, el manejo de errores, la protección contra pérdida de datos y los tests que se piden: son lo que el humano espera recibir.',
   '- Caveman sigue el ajuste Auto/Off del stack y comprime solo prosa pesada en tokens. Conservá el código, los comandos, las rutas, los errores exactos, las decisiones, los riesgos, las dudas, los tests y la evidencia de aceptación.',
   '- Engram es solo memoria: no es autoridad ni planificador. Para las reglas de cada rol, leé la política canónica.',
-  ...(agentsPointer
-    ? [
-        '- Las reglas de los mods de Claude Code para este proyecto están en `.orca-stack.json` (se commitea) y `.orca-stack.local.json` (local, ignorado por git); las personales, en `~/.orca-stack/config.json`.',
-      ]
-    : []),
+  '- Las reglas de los mods de Claude Code para este proyecto están en `.orca-stack.json` (se commitea) y `.orca-stack.local.json` (local, ignorado por git); las personales, en `~/.orca-stack/config.json`.',
 ]
 
-// The block placed in CLAUDE.md / AGENTS.md. `agentsPointer` is the project AGENTS.md block, which carries the work contract.
-export const policyBlock = ({ policyPath, briefsPath, short = false, agentsPointer = false, importAgents = false }) => {
+// The project blocks: the short CLAUDE.md one, or the AGENTS.md one that carries the work contract.
+export const policyBlock = ({ policyPath, briefsPath, short = false, importAgents = false }) => {
   if (short) {
     return [
       '## Orca stack integration',
@@ -152,10 +148,7 @@ export const policyBlock = ({ policyPath, briefsPath, short = false, agentsPoint
       `The stack policy is \`${policyPath}\`; the orca-stack block in \`AGENTS.md\` summarises it.`,
     ].join('\n')
   }
-  const lines = policyLines({ policyPath, briefsPath, agentsPointer })
-  if (agentsPointer) {
-    return [readAsset('stack', 'CONTRATO.md').replace(/\s+$/, ''), '', '### Política del stack', '', ...lines].join('\n')
-  }
+  const lines = policyLines({ policyPath, briefsPath })
 
-  return ['## Orca stack integration', '', ...lines].join('\n')
+  return [readAsset('stack', 'CONTRATO.md').replace(/\s+$/, ''), '', '### Política del stack', '', ...lines].join('\n')
 }
