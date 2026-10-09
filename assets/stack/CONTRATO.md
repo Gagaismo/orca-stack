@@ -92,7 +92,7 @@ El despacho es un handoff: el worker trabaja solo y no se lo supervisa con `orca
 ### PRs
 
 - El cuerpo sigue la skill `pr`: `## Summary` con la vista más chica que deje claro el cambio, `## Evidencia` y `## Merge Danger` (puerta de una o dos vías y blast radius).
-- Un PR de ticket lleva `Closes #<n>`, la línea `Implementador: <agente>` y `## Evidencia` con una fila por cada regla (o, en tickets legacy, por cada criterio de aceptación y modo de falla usado como RED) y por cada entrada pública tocada (la definición está en `assets/stack/brief-ticket.md`). Cada fila incluye el nombre exacto del test y la línea de la corrida en verde, o cómo se verificó si no hay test. Si no se toca ninguna entrada pública existente, se indica `none touched` sin una fila de relleno. Agregá antes y después cuando el cambio se ve (captura o salida), y `## Desvíos del ticket` (`ninguno`, o qué se hizo distinto y por qué).
+- Un PR de ticket lleva `Closes #<n>`, la línea `Implementador: <agente>` y `## Evidencia` con una fila por cada regla (o, en tickets legacy, por cada criterio de aceptación y modo de falla usado como RED) y por cada entrada pública tocada (la definición está en el brief del ticket que arma `orca-stack despachar`). Cada fila incluye el nombre exacto del test y la línea de la corrida en verde, o cómo se verificó si no hay test. Si no se toca ninguna entrada pública existente, se indica `none touched` sin una fila de relleno. Agregá antes y después cuando el cambio se ve (captura o salida), y `## Desvíos del ticket` (`ninguno`, o qué se hizo distinto y por qué).
 - Un PR de orquestación (este contrato, scripts, ADRs) no lleva `Closes #`: su cuerpo dice qué se pidió y qué criterios cumple.
 - El cuerpo de un PR o de un review se manda con `--body-file`, nunca por tubería: la consola de Windows rompe los acentos.
 - Si existe `CODING_STANDARDS.md`, leelo antes de commitear y verificá tu cambio contra él.
@@ -111,9 +111,9 @@ Cada regla del repo vive en un solo archivo; los demás apuntan a ella sin copia
 
 El review que cuenta es el cruzado. `/code-review` dentro de `implement`, y el review RDD de gentle-ai si alguien lo prende, son autochequeos del autor y no lo reemplazan.
 
-Los ejes, los tests derivados, la comprobación de que un test del autor falle sin el cambio y la limpieza de tests están en `assets/stack/brief-revision.md`.
+Los ejes, los tests derivados, la comprobación de que un test del autor falle sin el cambio y la limpieza de tests están en el brief de revisión que arman `orca-stack revisar` y `orca-stack brief-revision`.
 
-Bloquean: en Spec y Modos de falla, un criterio o modo de falla del issue que el diff no cumple o no prueba; en Standards, solo una regla escrita en `CODING_STANDARDS.md` (si existe) o en `AGENTS.md`. No bloquean los code smells (van a `## SUGERENCIAS`), lo que digan otros documentos ni los problemas que el diff no toca ni empeora.
+Bloquean: en Spec y Modos de falla, un criterio o modo de falla del issue que el diff no cumple o no prueba; en Standards, solo una regla escrita en `CODING_STANDARDS.md` (si existe) o en `AGENTS.md`. No bloquean los code smells (van a `## SUGERENCIAS`), lo que digan otros documentos, una regla mecánica que ya tiene chequeo en la CI, ni los problemas que el diff no toca ni empeora.
 
 Cada bloqueo dice si lo **introduce** o lo **empeora**, y si su evidencia es **concreta** o **inferida**. Se etiqueta `implementación` si el código rompe una regla clara, o `interpretación` si el autor y el reviewer leen la regla de manera distinta; los de interpretación se envían al humano y `main` no los resuelve con `Decidido por main`.
 
