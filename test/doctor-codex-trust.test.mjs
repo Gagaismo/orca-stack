@@ -49,16 +49,14 @@ describe('doctor: Codex project trust', () => {
     assert.equal(codexTrustStatus(root, basic).level, 'ok')
   })
 
-  test('an entry with a trust level other than trusted warns with dispatch-compatible TOML lines', () => {
+  test('an entry with a trust level other than trusted warns with dispatch exact Codex trust hint', () => {
     const root = sampleRoot()
     const file = path.join(temp('codex-untrusted'), 'config.toml')
     write(file, `[projects.'${tomlPath(root)}']\ntrust_level = "untrusted"\n`)
 
     const result = codexTrustStatus(root, file)
     assert.equal(result.level, 'warn')
-    assert.ok(result.detail.includes(`[projects.'${tomlPath(root)}']`))
-    assert.match(result.detail, /trust_level = "trusted"/)
-    assert.match(result.detail, /~\/\.codex\/config\.toml/)
+    assert.ok(result.detail.includes(`Confiá la raíz del repo en Codex: [projects.'${root}'] trust_level = "trusted" en ~/.codex/config.toml.`))
   })
 
   test('missing, unreadable, and malformed config warn without throwing', () => {
@@ -73,8 +71,7 @@ describe('doctor: Codex project trust', () => {
 
     const absent = codexTrustStatus(root, missing)
     assert.equal(absent.level, 'warn')
-    assert.ok(absent.detail.includes(`[projects.'${tomlPath(root)}']`))
-    assert.match(absent.detail, /trust_level = "trusted"/)
+    assert.ok(absent.detail.includes(`Confiá la raíz del repo en Codex: [projects.'${root}'] trust_level = "trusted" en ~/.codex/config.toml.`))
     assert.match(codexTrustStatus(root, unreadable).detail, /directory\.toml/)
     assert.match(codexTrustStatus(root, malformed).detail, /malformed\.toml/)
   })

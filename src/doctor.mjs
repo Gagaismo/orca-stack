@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
+import { codexTrustHint } from './codex-trust.mjs'
 import { loadState } from './ctx.mjs'
 import { driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
@@ -85,10 +86,8 @@ const parseProjectTrust = (contents, root) => {
   return trust
 }
 
-const trustSuggestion = root => `Confiá la raíz del repo en Codex: [projects.'${root}']\ntrust_level = "trusted" en ~/.codex/config.toml.`
-
 export const codexTrustStatus = (root, file) => {
-  if (!existsSync(file)) return { level: 'warn', detail: `${file} no existe. ${trustSuggestion(root)}` }
+  if (!existsSync(file)) return { level: 'warn', detail: `${file} no existe. ${codexTrustHint(root)}` }
   let contents
   try {
     contents = readFileSync(file, 'utf8')
@@ -104,7 +103,7 @@ export const codexTrustStatus = (root, file) => {
 
   return trust === 'trusted'
     ? { level: 'ok', detail: '' }
-    : { level: 'warn', detail: trustSuggestion(root) }
+    : { level: 'warn', detail: codexTrustHint(root) }
 }
 
 const usesCodex = (...layers) => {

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
+import { codexTrustHint } from './codex-trust.mjs'
 import { resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
 import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
@@ -237,7 +238,7 @@ const waitForTui = async (io, handle, agent, root, tries = 45) => {
     const text = Array.isArray(tail) ? tail.join('\n') : typeof tail === 'string' ? tail : ''
     if (/trust this folder\?/i.test(text)) {
       if (agent !== 'agy') {
-        throw new Error(`Codex pide confiar en la carpeta y no recibió el brief. Confiá la raíz del repo en Codex: [projects.'${root}'] trust_level = "trusted" en ~/.codex/config.toml. Pantalla: ${text}`)
+        throw new Error(`Codex pide confiar en la carpeta y no recibió el brief. ${codexTrustHint(root)} Pantalla: ${text}`)
       }
     }
     if (agent === 'agy' && !trusted && /trust/i.test(text)) {
