@@ -3,13 +3,13 @@
 Instala de una vez el stack de agentes que uso para trabajar con [Orca](https://github.com/stablyai/orca): la política del stack, las skills propias, los wrappers de proveedores, Pi con Gentle Shell y los mods de Claude Code. Todo en un comando, con respaldo de lo que toca y con vuelta atrás.
 
 ```bash
-npx github:Gagaismo/orca-stack#v0.5.1 global     # instalación a nivel usuario
-npx github:Gagaismo/orca-stack#v0.5.1 init       # cablea el proyecto actual
-npx github:Gagaismo/orca-stack#v0.5.1 doctor     # verifica que todo funcione de verdad
-npx github:Gagaismo/orca-stack#v0.5.1 remove     # deshace lo que instaló global
-npx github:Gagaismo/orca-stack#v0.5.1 sesiones   # lista las sesiones recientes de Claude, Pi y agy (para `/retro`)
-npx github:Gagaismo/orca-stack#v0.5.1 despachar 12 agy   # desde el checkout principal: despacha el ticket #12 al agente
-npx github:Gagaismo/orca-stack#v0.5.1 revisar 15 pi      # despacha el review del PR #15
+npx github:Gagaismo/orca-stack#v0.6.0 global     # instalación a nivel usuario
+npx github:Gagaismo/orca-stack#v0.6.0 init       # cablea el proyecto actual
+npx github:Gagaismo/orca-stack#v0.6.0 doctor     # verifica que todo funcione de verdad
+npx github:Gagaismo/orca-stack#v0.6.0 remove     # deshace lo que instaló global
+npx github:Gagaismo/orca-stack#v0.6.0 sesiones   # lista las sesiones recientes de Claude, Pi y agy (para `/retro`)
+npx github:Gagaismo/orca-stack#v0.6.0 despachar 12 agy   # desde el checkout principal: despacha el ticket #12 al agente
+npx github:Gagaismo/orca-stack#v0.6.0 revisar 15 pi      # despacha el review del PR #15
 ```
 
 ¿Primera vez, o un proyecto nuevo o ya empezado? Seguí la [guía de setup](docs/guia-setup.md): tiene un cuestionario que dice qué configurar en cada caso.
