@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 
 import { buildBlock } from '../src/marker.mjs'
-import { packageVersion } from '../src/util.mjs'
+import { packageVersion, samePath } from '../src/util.mjs'
 import { sddConfig } from './gentle-fixture.mjs'
 import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
@@ -100,6 +100,76 @@ describe('global', () => {
     assert.equal(result.status, 0, result.out)
     assert.equal(read(existing), 'foreign command\n')
     assert.match(result.out, /already exists on PATH and was not written/)
+  })
+
+  test('ignores its npx shim, installs outside npx .bin, and doctor checks the installed command', () => {
+    const packageDir = path.join(home, 'npm-cache', 'node_modules', 'orca-stack')
+    const npxBinDir = path.join(home, 'npm-cache', 'node_modules', '.bin')
+    const installDir = path.join(home, 'path-bin')
+    const commandName = process.platform === 'win32' ? 'orca-stack.cmd' : 'orca-stack'
+    const packageBin = path.join(packageDir, 'bin', 'orca-stack.mjs')
+    const npxShim = path.join(npxBinDir, commandName)
+    for (const dir of ['bin', 'src', 'assets', 'mods', 'shared']) {
+      cpSync(path.join(ROOT, dir), path.join(packageDir, dir), { recursive: true })
+    }
+    cpSync(path.join(ROOT, 'package.json'), path.join(packageDir, 'package.json'))
+    mkdirSync(installDir, { recursive: true })
+    if (process.platform === 'win32') {
+      write(npxShim, `@echo off\r\nnode "${packageBin}" %*\r\n`)
+      write(path.join(installDir, 'npm.cmd'), `@echo off\r\necho ${installDir}\r\n`)
+    } else {
+      write(npxShim, `#!/bin/sh\nexec node '${packageBin}' "$@"\n`)
+      chmodSync(npxShim, 0o755)
+    }
+    const originalPathDirs = (process.env.PATH || process.env.Path || '')
+      .split(path.delimiter)
+      .filter(dir => dir && !samePath(dir, npxBinDir))
+    const env = { PATH: [npxBinDir, installDir, ...originalPathDirs].join(path.delimiter) }
+    const npxCli = (args) => spawnSync(process.execPath, [packageBin, ...args], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+        ORCA_STACK_HOME: home,
+        ORCA_STACK_ORCA_DIR: path.join(home, 'no-orca'),
+        NPM_CONFIG_PREFIX: path.join(home, 'npm-global'),
+        ...env,
+      },
+    })
+
+    const installed = npxCli(['global', '--skip-pi'])
+    assert.equal(installed.status, 0, installed.stdout + installed.stderr)
+    assert.ok(existsSync(path.join(installDir, commandName)), installed.stdout)
+    assert.equal(existsSync(path.join(npxBinDir, commandName)), true)
+    assert.doesNotMatch(installed.stdout + installed.stderr, /already exists on PATH and was not written/)
+    assert.doesNotMatch(read(path.join(home, '.orca-stack', 'state.json')), new RegExp(npxBinDir.replaceAll('\\', '\\\\')))
+
+    const installedEnv = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      ORCA_STACK_HOME: home,
+      PATH: [installDir, ...originalPathDirs].join(path.delimiter),
+    }
+    const shell = process.platform === 'win32'
+      ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+      : 'sh'
+    const shellArgs = process.platform === 'win32' ? ['-NoProfile', '-Command'] : ['-c']
+    const throughInstalled = spawnSync(shell, [...shellArgs, 'orca-stack global --skip-pi'], { encoding: 'utf8', env: installedEnv })
+    assert.equal(throughInstalled.status, 0, throughInstalled.stdout + throughInstalled.stderr)
+    const shellVersion = spawnSync(shell, [...shellArgs, 'orca-stack --version'], { encoding: 'utf8', env: installedEnv })
+    assert.equal(shellVersion.status, 0, shellVersion.stdout + shellVersion.stderr)
+    assert.equal(shellVersion.stdout.trim(), packageVersion())
+    const secondNpxRun = npxCli(['global', '--skip-pi'])
+    assert.equal(secondNpxRun.status, 0, secondNpxRun.stdout + secondNpxRun.stderr)
+    assert.match(secondNpxRun.stdout, /already up to date/)
+    assert.doesNotMatch(secondNpxRun.stdout + secondNpxRun.stderr, /already exists on PATH and was not written/)
+
+    const doctor = npxCli(['doctor', '--offline', '--skip-pi'])
+    assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr)
+    assert.match(doctor.stdout, new RegExp(`orca-stack.*${packageVersion().replaceAll('.', '\\.')}`))
+    assert.doesNotMatch(doctor.stdout, new RegExp(npxBinDir.replaceAll('\\', '\\\\')))
   })
 
   test('chooses a PATH directory, reports idempotence, and doctor checks its version', () => {
