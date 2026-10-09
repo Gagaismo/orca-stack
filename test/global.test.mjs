@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 
 import { buildBlock } from '../src/marker.mjs'
+import { packageVersion } from '../src/util.mjs'
 import { sddConfig } from './gentle-fixture.mjs'
 import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
@@ -111,7 +112,7 @@ describe('global', () => {
     assert.equal(second.status, 0, second.out)
     assert.match(second.out, /orca-stack.*(actualizado|up to date)/i)
     const checked = cli(home, ['doctor', '--offline', '--skip-pi'], { env })
-    assert.match(checked.out, /orca-stack.*0\.6\.0/)
+    assert.match(checked.out, new RegExp(`orca-stack.*${packageVersion().replaceAll('.', '\\.')}`))
   })
 
   test('finishes without a writable PATH directory and doctor warns with the PATH fix', () => {
