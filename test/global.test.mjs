@@ -328,6 +328,42 @@ describe('doctor', () => {
     }
   })
 
+  test('warns when configured deploy verification has no real functional check, but not when deploy is disabled', () => {
+    cli(home, ['global', '--skip-pi'])
+    const repo = path.join(tempDir('repo'), 'proyecto')
+    write(path.join(repo, 'README.md'), '# proyecto\n')
+    git(repo, 'init', '-q', '-b', 'main')
+    const doctor = () => cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo })
+    try {
+      write(path.join(repo, '.orca-stack.json'), JSON.stringify({
+        version: 1,
+        setup: 'completo',
+        despliegue: { comando: 'deploy', verificacion: 'revisar el estado del servicio' },
+      }))
+      assert.match(doctor().out, /despliegue\.pruebaFuncional - falta un recorrido funcional real hasta un destino permitido/)
+
+      write(path.join(repo, '.orca-stack.json'), JSON.stringify({
+        version: 1,
+        setup: 'completo',
+        despliegue: { despues: false },
+      }))
+      assert.doesNotMatch(doctor().out, /despliegue\.pruebaFuncional/)
+
+      write(path.join(repo, '.orca-stack.json'), JSON.stringify({
+        version: 1,
+        setup: 'completo',
+        despliegue: {
+          comando: 'deploy',
+          verificacion: 'revisar el estado del servicio',
+          pruebaFuncional: 'enviar un mensaje real al número de prueba permitido',
+        },
+      }))
+      assert.doesNotMatch(doctor().out, /despliegue\.pruebaFuncional/)
+    } finally {
+      cleanup(path.dirname(repo))
+    }
+  })
+
   test('reads the Orca agent overrides without writing', () => {
     cli(home, ['global', '--skip-pi'])
     const orca = path.join(home, 'orca-app')
