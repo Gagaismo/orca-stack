@@ -43,22 +43,35 @@ const isTracked = (ctx, file) =>
 export const installPathCommand = ctx => {
   const win = process.platform === 'win32'
   const dirs = writablePathDirs()
-  const existing = which('orca-stack')
-  const visibleFiles = pathDirs().flatMap(dir => win ? [path.join(dir, 'orca-stack'), path.join(dir, 'orca-stack.cmd')] : [path.join(dir, 'orca-stack')])
-  const foreign = visibleFiles.find(file => existsSync(file) && !isTracked(ctx, file))
-  if (foreign || (existing && !isTracked(ctx, existing))) {
-    const conflict = foreign ?? existing
-    ctx.say(`\nGlobal command orca-stack\n  ${conflict} already exists on PATH and was not written by this installation; leaving it unchanged.`)
-    ctx.state.command = null
-    return
-  }
-
   const npmPrefix = npmPrefixOnPath(dirs)
   const trackedDir = !win && ctx.state.command?.file ? dirs.find(dir => samePath(dir, path.dirname(ctx.state.command.file))) : null
   const commandDir = npmPrefix ?? (win ? null : trackedDir ?? dirs[0]) ?? path.join(ctx.L.ownDir, 'bin')
   const file = path.join(commandDir, commandName())
   const shellFile = win ? path.join(commandDir, 'orca-stack') : null
   const packageDir = path.join(ctx.L.ownDir, 'cli')
+  const isAdoptable = (target, content) => {
+    if (!target || (!samePath(target, file) && (!shellFile || !samePath(target, shellFile)))) return false
+    try {
+      return readFileSync(target).equals(Buffer.from(content))
+    } catch {
+      return false
+    }
+  }
+  const shimContent = target =>
+    commandContent(packageDir, !(shellFile && samePath(target, shellFile)) && win)
+  const existing = which('orca-stack')
+  const visibleFiles = pathDirs().flatMap(dir => win ? [path.join(dir, 'orca-stack'), path.join(dir, 'orca-stack.cmd')] : [path.join(dir, 'orca-stack')])
+  const foreign = visibleFiles.find(target => {
+    if (!existsSync(target) || isTracked(ctx, target)) return false
+    return !isAdoptable(target, shimContent(target))
+  })
+  if (foreign || (existing && !isTracked(ctx, existing) && !isAdoptable(existing, shimContent(existing)))) {
+    const conflict = foreign ?? existing
+    ctx.say(`\nGlobal command orca-stack\n  ${conflict} already exists on PATH and was not written by this installation; leaving it unchanged.`)
+    ctx.state.command = null
+    return
+  }
+
   ctx.say('\nGlobal command orca-stack')
   if (win ? !npmPrefix : !existing && dirs.length === 0) {
     ctx.say(`  ${win ? 'No writable npm global prefix was found on PATH' : 'No writable directory was found on PATH'}. Installed under ${path.join(ctx.L.ownDir, 'bin')}; add that directory to PATH.`)

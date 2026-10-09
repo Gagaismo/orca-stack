@@ -23,6 +23,7 @@ export const cli = (home, args, { cwd = ROOT, env = {} } = {}) => {
       USERPROFILE: home,
       ORCA_STACK_HOME: home,
       ORCA_STACK_ORCA_DIR: path.join(home, 'no-orca'),
+      NPM_CONFIG_PREFIX: path.join(home, 'npm-global'),
       GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig-none'),
       ...env,
     },

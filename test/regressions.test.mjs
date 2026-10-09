@@ -44,19 +44,36 @@ describe('1. global validates before writing and never orphans files', () => {
   })
 
   test('orphans of an aborted run are adopted by the next run, and remove then cleans everything', () => {
-    assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
+    const pathDir = path.join(home, 'path-bin')
+    write(path.join(pathDir, '.probe'), '')
+    if (process.platform === 'win32') write(path.join(pathDir, 'npm.cmd'), `@echo off\r\necho ${pathDir}\r\n`)
+    const env = {
+      PATH: [pathDir, path.dirname(process.execPath)].join(path.delimiter),
+      NPM_CONFIG_PREFIX: pathDir,
+    }
+    assert.equal(cli(home, ['global', '--skip-pi'], { env }).status, 0)
     // an aborted run left files and settings entries but no state.json
     cleanup(path.join(home, '.orca-stack', 'state.json'))
-    const rerun = cli(home, ['global', '--skip-pi'])
+    const rerun = cli(home, ['global', '--skip-pi'], { env })
     assert.equal(rerun.status, 0, rerun.out)
     const state = JSON.parse(read(path.join(home, '.orca-stack', 'state.json')))
     assert.ok(Object.keys(state.files).length > 50, 'identical files are claimed')
+    assert.ok(state.files[path.join(home, '.orca-stack', 'cli', 'bin', 'orca-stack.mjs')], 'the copied CLI package is adopted')
+    assert.ok(state.files[path.join(pathDir, process.platform === 'win32' ? 'orca-stack.cmd' : 'orca-stack')], 'the PATH command is adopted')
+    if (process.platform === 'win32') {
+      assert.ok(state.files[path.join(pathDir, 'orca-stack')], 'the Windows extensionless shim is adopted')
+    }
     assert.equal(state.settings.pluginDirsAdded.length, 7, 'already-present plugin dirs are claimed')
-    assert.equal(cli(home, ['remove']).status, 0)
+    assert.equal(cli(home, ['remove'], { env }).status, 0)
     // Only the shared files (whose creation this run cannot know) and the personal config stay.
     assert.deepEqual(
       allFiles(home).filter(name => !name.includes('.orca-stack/backups/')),
-      ['.claude/settings.json', '.orca-stack/config.json'],
+      [
+        '.claude/settings.json',
+        '.orca-stack/config.json',
+        'path-bin/.probe',
+        ...(process.platform === 'win32' ? ['path-bin/npm.cmd'] : []),
+      ],
     )
     assert.equal(JSON.parse(read(settingsPath())).env?.CLAUDE_CODE_PLUGIN_DIRS, undefined)
   })
