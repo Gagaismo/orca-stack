@@ -20,6 +20,71 @@ const settingsPath = () => path.join(home, '.claude', 'settings.json')
 const claudeMdPath = () => path.join(home, '.claude', 'CLAUDE.md')
 
 describe('global', () => {
+  test('installs an offline command that reports the version global ran', () => {
+    const commandDir = path.join(home, 'path-bin')
+    write(path.join(commandDir, '.probe'), '')
+    const envPath = [commandDir, path.dirname(process.execPath)].join(path.delimiter)
+    const installed = cli(home, ['global', '--skip-pi'], { env: { PATH: envPath } })
+    assert.equal(installed.status, 0, installed.out)
+    const command = process.platform === 'win32' ? 'orca-stack.cmd' : 'orca-stack'
+    const executable = path.join(commandDir, command)
+    assert.ok(existsSync(executable), installed.out)
+    const version = spawnSync(executable, ['--version'], {
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+      env: { ...process.env, HOME: home, USERPROFILE: home, PATH: envPath },
+    })
+    assert.equal(version.status, 0, version.stdout + version.stderr)
+    assert.equal(version.stdout.trim(), JSON.parse(read(path.join(ROOT, 'package.json'))).version)
+  })
+
+  test('does not overwrite an untracked command already on PATH', () => {
+    const commandDir = path.join(home, 'path-bin')
+    const command = process.platform === 'win32' ? 'orca-stack.cmd' : 'orca-stack'
+    const existing = path.join(commandDir, command)
+    write(existing, 'foreign command\n')
+    const result = cli(home, ['global', '--skip-pi'], { env: { PATH: [commandDir, path.dirname(process.execPath)].join(path.delimiter) } })
+    assert.equal(result.status, 0, result.out)
+    assert.equal(read(existing), 'foreign command\n')
+    assert.match(result.out, /already exists on PATH and was not written/)
+  })
+
+  test('chooses a PATH directory, reports idempotence, and doctor checks its version', () => {
+    const commandDir = path.join(home, 'path-bin')
+    write(path.join(commandDir, '.probe'), '')
+    const env = { PATH: [commandDir, path.dirname(process.execPath)].join(path.delimiter) }
+    const first = cli(home, ['global', '--skip-pi'], { env })
+    assert.equal(first.status, 0, first.out)
+    const second = cli(home, ['global', '--skip-pi'], { env })
+    assert.equal(second.status, 0, second.out)
+    assert.match(second.out, /orca-stack.*(actualizado|up to date)/i)
+    const checked = cli(home, ['doctor', '--offline', '--skip-pi'], { env })
+    assert.match(checked.out, /orca-stack.*0\.6\.0/)
+  })
+
+  test('finishes without a writable PATH directory and doctor warns with the PATH fix', () => {
+    const result = cli(home, ['global', '--skip-pi'], { env: { PATH: path.join(home, 'missing-path') } })
+    assert.equal(result.status, 0, result.out)
+    assert.match(result.out, /PATH/)
+    const doctor = cli(home, ['doctor', '--offline', '--skip-pi'], { env: { PATH: path.join(home, 'missing-path') } })
+    assert.match(doctor.out, /orca-stack.*PATH/i)
+  })
+
+  test('remove deletes only the tracked command and preserves a foreign command', () => {
+    const commandDir = path.join(home, 'path-bin')
+    write(path.join(commandDir, '.probe'), '')
+    const env = { PATH: [commandDir, path.dirname(process.execPath)].join(path.delimiter) }
+    cli(home, ['global', '--skip-pi'], { env })
+    const commandName = process.platform === 'win32' ? 'orca-stack.cmd' : 'orca-stack'
+    const installed = path.join(commandDir, commandName)
+    const foreign = path.join(commandDir, process.platform === 'win32' ? 'other.cmd' : 'other')
+    write(foreign, 'keep me\n')
+    const removed = cli(home, ['remove'], { env })
+    assert.equal(removed.status, 0, removed.out)
+    assert.equal(existsSync(installed), false)
+    assert.equal(read(foreign), 'keep me\n')
+  })
+
   test('--dry-run writes nothing at all', () => {
     const before = snapshot(home)
     const result = cli(home, ['global', '--dry-run', '--skip-pi'])
