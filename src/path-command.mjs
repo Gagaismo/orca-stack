@@ -18,8 +18,16 @@ const commandContent = (packageDir, win) => {
 
 const pathDirs = () => [...new Set((process.env.PATH || process.env.Path || '').split(path.delimiter).filter(Boolean))]
 
+const isOwnNpxBinDir = dir =>
+  path.basename(dir) === '.bin' && samePath(path.resolve(dir, '..', path.basename(PACKAGE_ROOT)), PACKAGE_ROOT)
+
+const commandPathDirs = () => pathDirs().filter(dir => !isOwnNpxBinDir(dir))
+
+const commandOnPath = () =>
+  which('orca-stack', { ...process.env, PATH: commandPathDirs().join(path.delimiter) })
+
 const writablePathDirs = () =>
-  pathDirs().filter(dir => {
+  commandPathDirs().filter(dir => {
     try {
       return existsSync(dir) && (accessSync(dir, constants.W_OK), true)
     } catch {
@@ -59,8 +67,8 @@ export const installPathCommand = ctx => {
   }
   const shimContent = target =>
     commandContent(packageDir, !(shellFile && samePath(target, shellFile)) && win)
-  const existing = which('orca-stack')
-  const visibleFiles = pathDirs().flatMap(dir => win ? [path.join(dir, 'orca-stack'), path.join(dir, 'orca-stack.cmd')] : [path.join(dir, 'orca-stack')])
+  const existing = commandOnPath()
+  const visibleFiles = commandPathDirs().flatMap(dir => win ? [path.join(dir, 'orca-stack'), path.join(dir, 'orca-stack.cmd')] : [path.join(dir, 'orca-stack')])
   const foreign = visibleFiles.find(target => {
     if (!existsSync(target) || isTracked(ctx, target)) return false
     return !isAdoptable(target, shimContent(target))
@@ -94,7 +102,7 @@ export const installPathCommand = ctx => {
 
 export const checkPathCommand = (state, add) => {
   const expected = state?.command
-  const actual = which('orca-stack')
+  const actual = commandOnPath()
   if (!expected) {
     add('warn', 'orca-stack', 'not tracked by global; run orca-stack global')
     return
