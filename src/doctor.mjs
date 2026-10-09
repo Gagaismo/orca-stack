@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
+import { codexTrustHint } from './codex-trust.mjs'
 import { loadState } from './ctx.mjs'
 import { driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
@@ -15,6 +16,107 @@ import { PACKAGE_ROOT, homeDir, isWindows, layout, run, samePath, tilde, which }
 
 const ICON = { ok: '✔', warn: '⚠', fail: '✖' }
 const AUTH_ERROR = /\/login|no api key|not logged|unauthori[sz]ed|\b401\b|invalid api key|authentication|credential|no models? available|no provider/i
+
+const tomlString = source => {
+  const value = source.trim()
+  if (value.startsWith("'") && value.endsWith("'")) return value.slice(1, -1)
+  if (!value.startsWith('"') || !value.endsWith('"')) return null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+const stripTomlComment = line => {
+  let quote = null
+  let escaped = false
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i]
+    if (quote === '"' && char === '\\' && !escaped) {
+      escaped = true
+      continue
+    }
+    if ((char === '"' || char === "'") && !escaped) {
+      quote = quote === char ? null : quote === null ? char : quote
+    }
+    if (char === '#' && quote === null) return line.slice(0, i)
+    escaped = false
+  }
+
+  return line
+}
+
+const sameProjectPath = (left, right) => {
+  const normalize = value => path.resolve(value.replace(/[\\/]+/g, path.sep)).replace(/[\\/]+$/, '').toLowerCase()
+
+  return normalize(left) === normalize(right)
+}
+
+const parseProjectTrust = (contents, root) => {
+  let section = null
+  let trust = undefined
+  for (const [index, raw] of contents.split(/\r?\n/).entries()) {
+    const line = stripTomlComment(raw).trim()
+    if (!line) continue
+    const projectHeader = /^\[projects\.(?:'([^']*)'|"((?:\\.|[^"\\])*)")\]$/.exec(line)
+    if (projectHeader) {
+      const name = projectHeader[1] ?? tomlString(`"${projectHeader[2]}"`)
+      if (name === null) throw new Error(`TOML inválido en la línea ${index + 1}`)
+      section = sameProjectPath(name, root)
+      if (section) trust = undefined
+      continue
+    }
+    if (/^\[projects\./.test(line)) throw new Error(`TOML inválido en la línea ${index + 1}`)
+    if (/^\[/.test(line)) {
+      section = null
+      continue
+    }
+    if (section) {
+      const assignment = /^trust_level\s*=\s*(.*?)\s*$/.exec(line)
+      if (assignment) {
+        trust = tomlString(assignment[1])
+        if (trust === null) throw new Error(`TOML inválido en la línea ${index + 1}`)
+      } else if (/^trust_level\b/.test(line)) {
+        throw new Error(`TOML inválido en la línea ${index + 1}`)
+      }
+    }
+  }
+
+  return trust
+}
+
+export const codexTrustStatus = (root, file) => {
+  if (!existsSync(file)) return { level: 'warn', detail: `${file} no existe. ${codexTrustHint(root)}` }
+  let contents
+  try {
+    contents = readFileSync(file, 'utf8')
+  } catch (error) {
+    return { level: 'warn', detail: `${file} no se pudo leer: ${error.message}` }
+  }
+  let trust
+  try {
+    trust = parseProjectTrust(contents, root)
+  } catch (error) {
+    return { level: 'warn', detail: `${file} tiene TOML inválido: ${error.message}` }
+  }
+
+  return trust === 'trusted'
+    ? { level: 'ok', detail: '' }
+    : { level: 'warn', detail: codexTrustHint(root) }
+}
+
+const usesCodex = (...layers) => {
+  let agents = {}
+  for (const layer of layers) {
+    if (layer && typeof layer.agentes === 'object' && !Array.isArray(layer.agentes)) {
+      agents = { ...agents, ...layer.agentes }
+    }
+  }
+  const used = agents.usa
+
+  return Array.isArray(used) && used.some(agent => ['codex', 'codex-cc'].includes(String(agent).toLowerCase()))
+}
 
 export const doctorCommand = async flags => {
   const home = homeDir()
@@ -251,6 +353,10 @@ export const doctorCommand = async flags => {
   if (root) {
     const committed = checkJson(path.join(root, PROJECT_CONFIG), PROJECT_CONFIG)
     const local = checkJson(path.join(root, PROJECT_LOCAL_CONFIG), PROJECT_LOCAL_CONFIG)
+    if (usesCodex(personal, committed, local)) {
+      const trust = codexTrustStatus(root, path.join(home, '.codex', 'config.toml'))
+      add(trust.level, 'codex repo root trust', trust.detail)
+    }
     // Same layering as the mods' mergeConfig: objects merge key by key, anything else (null included) replaces.
     const isPlain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
     const despacho = [personal, committed, local].reduce((acc, layer) => {
