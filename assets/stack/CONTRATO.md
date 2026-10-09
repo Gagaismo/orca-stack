@@ -92,10 +92,10 @@ El despacho es un handoff: el worker trabaja solo y no se lo supervisa con `orca
 ### PRs
 
 - El cuerpo sigue la skill `pr`: `## Summary` con la vista más chica que deje claro el cambio, `## Evidencia` y `## Merge Danger` (puerta de una o dos vías y blast radius).
-- Un PR de ticket lleva `Closes #<n>`, la línea `Implementador: <agente>` y `## Evidencia` con una fila por cada regla (o, en tickets legacy, por cada criterio de aceptación y modo de falla usado como RED) y una por cada entrada pública tocada. A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job. Cada fila incluye el nombre exacto del test y la línea de la corrida en verde, o cómo se verificó si no hay test. Si no se toca ninguna entrada pública existente, se indica `none touched` sin una fila de relleno. Agregá antes y después cuando el cambio se ve (captura o salida), y `## Desvíos del ticket` (`ninguno`, o qué se hizo distinto y por qué).
+- Un PR de ticket lleva `Closes #<n>`, la línea `Implementador: <agente>` y `## Evidencia` con una fila por cada regla (o, en tickets legacy, por cada criterio de aceptación y modo de falla usado como RED) y por cada entrada pública tocada (la definición está en el brief del ticket que arma `orca-stack despachar`). Cada fila incluye el nombre exacto del test y la línea de la corrida en verde, o cómo se verificó si no hay test. Si no se toca ninguna entrada pública existente, se indica `none touched` sin una fila de relleno. Agregá antes y después cuando el cambio se ve (captura o salida), y `## Desvíos del ticket` (`ninguno`, o qué se hizo distinto y por qué).
 - Un PR de orquestación (este contrato, scripts, ADRs) no lleva `Closes #`: su cuerpo dice qué se pidió y qué criterios cumple.
 - El cuerpo de un PR o de un review se manda con `--body-file`, nunca por tubería: la consola de Windows rompe los acentos.
-- Antes de commitear, leé `CODING_STANDARDS.md` y verificá tu cambio contra él.
+- Si existe `CODING_STANDARDS.md`, leelo antes de commitear y verificá tu cambio contra él.
 - Los implementadores no editan `GLOSSARY.md` ni `docs/adr/`: lo proponen en el cuerpo del PR bajo `## Propuesta para GLOSSARY.md` o `## Propuesta de ADR`, y lo integra `main`.
 - Si el diff proyecta más de 700 líneas, pará y avisá en el issue antes de seguir.
 
@@ -104,20 +104,20 @@ El despacho es un handoff: el worker trabaja solo y no se lo supervisa con `orca
 Cada regla del repo vive en un solo archivo; los demás apuntan a ella sin copiarla.
 
 - **Mecánica** (la puede verificar una herramienta: formato de commits, secretos, tipos, lint): vive en la CI, con un hook local como aviso temprano. Cuenta la CI, porque un hook se saltea con `--no-verify`. Sale de `AGENTS.md` solo cuando el chequeo existe y se lo vio fallar con un caso malo.
-- **De juicio sobre cómo se escribe el código**: vive en `CODING_STANDARDS.md`.
+- **De juicio sobre cómo se escribe el código**: vive en `CODING_STANDARDS.md`, si existe.
 - **De producto o privacidad** (cambia qué se implementa): vive en `AGENTS.md`.
 
 ### Review
 
 El review que cuenta es el cruzado. `/code-review` dentro de `implement`, y el review RDD de gentle-ai si alguien lo prende, son autochequeos del autor y no lo reemplazan.
 
-El reviewer actúa como verificador de requisitos, no como verificador de los tests del autor. Deriva y corre sus propios tests en el worktree de review: desde cada regla numerada de `## Reglas`; para tickets viejos sin esa sección, desde los criterios de aceptación y modos de falla; además, desde cada entrada pública tocada y desde los invariantes relevantes (por ejemplo, un comando rechazado deja los datos sin cambios). A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job. No reutiliza los tests, fakes o fixtures del autor para verificar comportamiento. Para servicios externos no reutiliza fakes ni fixtures del autor: usa el sistema real cuando el repo ofrece una forma de hacerlo y, si no, lo dice en el review. Cada test propio que falla va bajo `## BLOQUEA`, con el código para que el autor lo agregue al PR. La `## Evidencia` del autor es secundaria, pero se conserva la comprobación económica de que uno de sus tests falle sin el cambio. Después de correrlos, borra los archivos de tests del reviewer para no dejar sucio el worktree.
+Los ejes, los tests derivados, la comprobación de que un test del autor falle sin el cambio y la limpieza de tests están en el brief de revisión que arman `orca-stack revisar` y `orca-stack brief-revision`.
 
-Se revisa en tres ejes: **Standards** (el código cumple `CODING_STANDARDS.md` y `AGENTS.md`, y usa el vocabulario de `GLOSSARY.md`), **Spec** (hace lo que pide el issue, incluidos sus modos de falla; un PR de orquestación se mide contra su cuerpo) y **Modos de falla** (los de la lista del ticket, solo lo que el diff introduce o toca). La Evidencia se verifica, no se cree: abrí cada test de la tabla y comprobá que afirme lo que su criterio dice.
+Bloquean: en Spec y Modos de falla, un criterio o modo de falla del issue que el diff no cumple o no prueba; en Standards, solo una regla escrita en `CODING_STANDARDS.md` (si existe) o en `AGENTS.md`. No bloquean los code smells (van a `## SUGERENCIAS`), lo que digan otros documentos, una regla mecánica que ya tiene chequeo en la CI, ni los problemas que el diff no toca ni empeora.
 
-Bloquean: en Spec y Modos de falla, un criterio o un modo de falla del issue que el diff no cumple o no prueba; en Standards, solo una regla escrita en `CODING_STANDARDS.md` o en `AGENTS.md`, y el hallazgo cita archivo y línea tal como están en el commit revisado. No bloquean: los code smells de la base de `code-review` (van a `## SUGERENCIAS`), lo que digan otros documentos, una regla mecánica que ya tiene chequeo en la CI (si falla, la CI queda en rojo y la condición de merge ya frena el PR), ni un problema que ya estaba y el diff no toca ni empeora. Cada bloqueo dice si lo **introduce** o lo **empeora** el diff, y si su evidencia es **concreta** (una línea, un test que falla) o **inferida** (en ese caso, qué habría que correr para confirmarlo).
+Cada bloqueo dice si lo **introduce** o lo **empeora**, y si su evidencia es **concreta** o **inferida**. Se etiqueta `implementación` si el código rompe una regla clara, o `interpretación` si el autor y el reviewer leen la regla de manera distinta; los de interpretación se envían al humano y `main` no los resuelve con `Decidido por main`.
 
-Escribí el review en un archivo UTF-8 y publicalo con `gh pr review <n> --comment --body-file <archivo>`. No apruebes, no mergees y no arregles el código. El formato es este, sin listas de lo que está bien:
+El formato es este, sin listas de lo que está bien:
 
 ```
 Revisor: <agente>
@@ -130,7 +130,7 @@ Commit: <sha>
 (como mucho tres, una línea cada una)
 ```
 
-Sin bloqueos, `## BLOQUEA` dice `nada`: así se distingue un review limpio de uno que no se corrió. Cada bloqueo se etiqueta `implementación` si el código rompe una regla clara, o `interpretación` si el autor y el reviewer leen la regla de manera distinta. `main` deriva los bloqueos de implementación como hoy; los de interpretación son una brecha de requisitos y siempre se envían al humano: `main` no los resuelve con `Decidido por main`. Si el repo no tiene CI, corré la suite completa en tu worktree y agregá debajo de `Revisor:` la línea `Suite: <comando> en verde`. Si el diff es una puerta de una vía y el `## Merge Danger` del PR dice otra cosa, decilo en `## SUGERENCIAS`.
+Sin bloqueos, `## BLOQUEA` dice `nada`. Si el repo no tiene CI, corré la suite completa en tu worktree y agregá debajo de `Revisor:` la línea `Suite: <comando> en verde`. Si el diff es una puerta de una vía y el `## Merge Danger` del PR dice otra cosa, decilo en `## SUGERENCIAS`.
 
 ### Skills de Matt
 

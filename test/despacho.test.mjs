@@ -334,8 +334,18 @@ describe('briefs', () => {
     assert.ok(roleBriefs.includes(touched))
     assert.match(roleBriefs, /RED is one test per rule[\s\S]*PRESERVE is one test per existing public entry[\s\S]*Nothing else/i)
     assert.match(roleBriefs, /If a rule\s+cites an artifact, test against that artifact, not a paraphrase/i)
-    assert.ok(contract.includes(touched))
-    assert.match(contract, /## Evidencia` con una fila por cada regla[\s\S]*una por cada entrada pública tocada/i)
+    assert.doesNotMatch(contract, /A public entry is touched when its own code changed in the diff/)
+    assert.match(contract, /## Evidencia` con una fila por cada regla[\s\S]*por cada entrada pública tocada \(la definición está en el brief del ticket que arma `orca-stack despachar`\)/i)
+    const reviewSection = contract.split('### Review')[1].split('### Skills de Matt')[0]
+    assert.match(reviewSection, /Los ejes, los tests derivados, la comprobación de que un test del autor falle sin el cambio y la limpieza de tests están en el brief de revisión que arman `orca-stack revisar` y `orca-stack brief-revision`\./)
+    assert.doesNotMatch(reviewSection, /se revisa en tres ejes|deriva y corre sus propios tests/i)
+    assert.match(reviewSection, /Bloquean:.*No bloquean/is)
+    assert.match(reviewSection, /una regla mecánica que ya tiene chequeo en la CI/)
+    assert.match(reviewSection, /`implementación`.*`interpretación`.*humano.*`Decidido por main`/is)
+    assert.doesNotMatch(contract, /assets\//)
+    for (const marker of ['## BLOQUEA', '## SUGERENCIAS', 'Revisor:', 'Commit:', 'Implementador:', 'Verificado por main:', 'Decidido por main:', 'Suite:']) {
+      assert.ok(contract.includes(marker), marker)
+    }
   })
 
   test('ticket brief falls back to acceptance criteria and failure modes as RED list for legacy tickets', async () => {
