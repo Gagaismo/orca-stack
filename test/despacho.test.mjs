@@ -33,11 +33,15 @@ afterEach(() => {
 })
 
 // A scripted environment: every external call is recorded; `over` answers specific ones ("cmd arg0 [arg1]").
-const fakeIo = (over = {}, { config = PROJECT } = {}) => {
+const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => {
   write(path.join(root, '.orca-stack.json'), JSON.stringify(config))
   const calls = []
   const out = []
   const written = []
+  const sessionRoot = path.join(home, '.pi', 'agent', 'sessions')
+  const sessionDir = path.join(sessionRoot, 'project')
+  const sessionFile = path.join(sessionDir, '2026-10-09T00-00-00-000Z_session.jsonl')
+  const files = new Map()
   const io = {
     home,
     cwd: root,
@@ -45,7 +49,8 @@ const fakeIo = (over = {}, { config = PROJECT } = {}) => {
     out: line => out.push(line),
     sleep: async () => {},
     exists: existsSync,
-    readFile: file => readFileSync(file, 'utf8'),
+    readFile: file => files.get(file) ?? readFileSync(file, 'utf8'),
+    listFiles: dir => dir === sessionRoot ? [sessionDir] : dir === sessionDir ? [...files.keys()].filter(file => path.dirname(file) === sessionDir) : [],
     mkdirp: () => {},
     writeFile: (file, text) => {
       written.push([file, text])
@@ -64,7 +69,17 @@ const fakeIo = (over = {}, { config = PROJECT } = {}) => {
       if (cmd === 'gh' && args[0] === 'issue') return json({ state: 'OPEN', assignees: [], title: 't' })
       if (args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })
       if (args.join(' ').startsWith('worktree create')) return json({ result: { worktree: { path: worktree, branch: 'refs/heads/proj-7' } } })
-      if (args[0] === 'terminal' && args[1] === 'create') return json({ result: { terminal: { handle: 'term_1' } } })
+      if (args[0] === 'terminal' && args[1] === 'create') {
+        if (String(args[args.indexOf('--command') + 1] ?? '').includes('pi -p')) {
+          const text = piTools === 'none' ? '<tools>\n(none)' : '<tools>\n- read: Read file contents\n- bash: Execute commands'
+          files.set(sessionFile, [
+            JSON.stringify({ type: 'session', cwd: worktree }),
+            '{}', '{}', '{}', JSON.stringify({ type: 'message', message: { role: 'system', content: '', sections: { tools: text } } }),
+          ].join('\n'))
+        }
+        return json({ result: { terminal: { handle: 'term_1' } } })
+      }
+      if (args[0] === 'terminal' && args[1] === 'send' && args.includes('--wait-submit')) return json({ result: { submission: 'submitted', turnStarted: true } })
       if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'], latestCursor: calls.length } } })
       return okRes()
     },
@@ -168,6 +183,99 @@ describe('despachar: the TUI wait', () => {
     await run('ticket', { n: '7', agent: 'claude' }, env)
     const sent = env.calls.find(c => c[1] === 'terminal' && c[2] === 'send')
     assert.ok(sent?.includes('--text') && sent.some(a => String(a).startsWith('Read and follow the brief in ')))
+  })
+
+  test('codex trust screen fails with the repo trust hint and never sends the brief', async () => {
+    const env = fakeIo({
+      'orca terminal read': args => json({ result: { terminal: { tail: ['Trust this folder?'] } } }),
+    })
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), /confiá la raíz del repo en Codex[\s\S]*\[projects\.'/i)
+    assert.ok(!env.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send'))
+    assert.ok(!env.out.some(line => line.includes('✔ codex despachado')))
+  })
+
+  test('revisar applies the same trust check before sending its brief', async () => {
+    const env = fakeIo({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }),
+      'orca terminal read': args => json({ result: { terminal: { tail: ['Trust this folder?'] } } }),
+    })
+    await assert.rejects(run('review', { n: '9', agent: 'codex' }, env), /confiá la raíz del repo en Codex/i)
+    assert.ok(!env.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send'))
+  })
+
+  test('revisar reports success after Orca observes its review turn start', async () => {
+    const env = fakeIo({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }),
+    })
+    await run('review', { n: '9', agent: 'codex' }, env)
+    assert.ok(env.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send' && c.includes('--wait-submit')))
+    assert.ok(env.out.some(line => line.includes('✔ codex despachado')))
+  })
+
+  test('a launched agent that exits to PowerShell fails without sending or reporting success', async () => {
+    const env = fakeIo({
+      'orca terminal read': args => json({ result: { terminal: { tail: ['PS C:\\work>'] } } }),
+    })
+    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, env), /shell prompt[\s\S]*PS C:/i)
+    assert.ok(!env.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send'))
+    assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
+  })
+
+  test('only an observed submitted turn prints dispatch success', async () => {
+    const env = fakeIo({
+      'orca terminal send': args => args.includes('--wait-submit')
+        ? json({ result: { submission: 'submitted', turnStarted: true } })
+        : okRes(),
+    })
+    await run('ticket', { n: '7', agent: 'claude' }, env)
+    const send = env.calls.find(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
+    assert.ok(send.includes('--wait-submit') && send.includes('--json'))
+    assert.ok(env.out.some(line => line.includes('✔ claude despachado')))
+  })
+
+  test('an old host without --wait-submit falls back to a changed terminal screen', async () => {
+    let reads = 0
+    const env = fakeIo({
+      'orca terminal read': () => json({ result: { terminal: { tail: [reads++ < 3 ? 'ready' : 'prompt submitted'] } } }),
+      'orca terminal send': args => args.includes('--wait-submit')
+        ? { status: 1, stdout: '', stderr: 'unknown option --wait-submit' }
+        : okRes(),
+    })
+    await run('ticket', { n: '7', agent: 'claude' }, env)
+    const sends = env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
+    assert.equal(sends.length, 2)
+    assert.ok(sends[0].includes('--wait-submit') && !sends[1].includes('--wait-submit'))
+    assert.ok(env.out.some(line => line.includes('✔ claude despachado')))
+  })
+
+  test('an accepted but unobserved prompt is not reported as a started turn', async () => {
+    const env = fakeIo({
+      'orca terminal send': args => args.includes('--wait-submit')
+        ? json({ result: { inputAccepted: true, turnStarted: false } })
+        : okRes(),
+      'orca terminal read': args => json({ result: { terminal: { tail: ['ready'] } } }),
+    })
+    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, env), /no hay evidencia.*turno haya arrancado/i)
+    assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
+  })
+
+  test('a send transport error prints recovery details and never reports success', async () => {
+    const env = fakeIo({
+      'orca terminal send': { status: 1, stdout: '', stderr: 'agent_prompt_blocked' },
+    })
+    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, env), /agent_prompt_blocked/)
+    assert.ok(env.out.join('\n').includes('El despacho quedó a medias'))
+    assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
+  })
+
+  test('a pi review with no tools fails fast, while the normal read/bash review tools pass', async () => {
+    const pr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) }
+    const none = fakeIo(pr, { piTools: 'none' })
+    await assert.rejects(run('review', { n: '9', agent: 'pi' }, none), /no tiene herramientas.*\(none\)/i)
+    assert.ok(!none.out.some(line => line.includes('✔ pi despachado')))
+    const available = fakeIo(pr, { piTools: 'available' })
+    await run('review', { n: '9', agent: 'pi' }, available)
+    assert.ok(available.out.some(line => line.includes('✔ pi despachado')))
   })
 })
 
@@ -274,7 +382,7 @@ describe('briefs', () => {
     assert.ok(!brief.includes('{{'))
     assert.notEqual(read(file).charCodeAt(0), 0xfeff)
     assert.deepEqual(env.writes().map(c => c.slice(0, 3).join(' ')), ['git fetch origin', 'gh issue edit', 'orca worktree create', 'orca terminal create', 'orca terminal send'])
-    assert.deepEqual(env.calls.find(c => c[2] === 'send').slice(3), ['--terminal', 'term_1', '--text', `Read and follow the brief in ${file}`, '--enter'])
+    assert.deepEqual(env.calls.find(c => c[2] === 'send').slice(3), ['--terminal', 'term_1', '--text', `Read and follow the brief in ${file}`, '--enter', '--wait-submit', '10', '--json'])
   })
 
   test('review brief: sha, implementer, axes, red check and format', async () => {
