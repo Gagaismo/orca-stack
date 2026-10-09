@@ -294,6 +294,16 @@ export const projectWarnings = (root, config) => {
       detail: 'abrí una sesión de Claude en el checkout principal: va a ofrecer el setup (`orca-setup`)',
     })
   }
+  const deploy = config?.despliegue
+  if (
+    deploy && typeof deploy === 'object' && !Array.isArray(deploy) && deploy.despues !== false &&
+    (typeof deploy.pruebaFuncional !== 'string' || deploy.pruebaFuncional.trim() === '')
+  ) {
+    found.push({
+      label: 'despliegue.pruebaFuncional',
+      detail: 'falta un recorrido funcional real hasta un destino permitido',
+    })
+  }
 
   return found
 }
