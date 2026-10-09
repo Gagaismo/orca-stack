@@ -1,4 +1,4 @@
-import { despacharCommand, revisarCommand } from './despacho.mjs'
+import { briefRevisionCommand, despacharCommand, revisarCommand } from './despacho.mjs'
 import { doctorCommand } from './doctor.mjs'
 import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
@@ -19,16 +19,18 @@ Comandos:
   remove    Deshace lo que instaló \`global\`, según ~/.orca-stack/state.json.
   despachar Despacha un ticket a un agente: worktree en Orca, brief y lanzamiento (desde el checkout principal).
   revisar   Despacha el review de un PR a un agente que no sea su autor.
+  brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar) Muestra cada acción sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, brief-revision) Muestra cada acción sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
   --nota <texto>   (despachar, revisar) Texto que se agrega al brief.
   --confirmado     (despachar, revisar) El humano dijo que sí a un agente de agentes.preguntarAntes.
   --perfil-pi <nombre> (despachar, revisar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver despachar --help).
+  --modelo <name>  (brief-revision) Modelo del subagente revisor.
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
   --limite <n>     (sesiones) Cuántas sesiones mostrar (por defecto: 10).
   --humano <nombre> (global) Nombre que usan los mods para hablarte (por defecto: git config user.name).
@@ -95,6 +97,11 @@ Sin flag y sin agentes.pi.perfil, o con "preguntar", rige el perfil activo globa
 Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
 (línea \`Implementador:\`) o si codex y codex-cc se revisan entre sí.
 `,
+  'brief-revision': `orca-stack brief-revision <pr> --modelo <name> [--dry-run]
+
+Solo desde el checkout principal, con setup completo y en modo "un-agente". Crea un worktree detached en el head del PR y escribe en UTF-8 el brief de review compartido con \`revisar\`. El subagente escribe el cuerpo del review en un archivo; main lo publica.
+Con --dry-run muestra las acciones y las rutas, sin crear worktree ni brief.
+`,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
 Borra los archivos que instaló \`global\`, restaura los que había reemplazado, quita sus entradas de
@@ -103,7 +110,7 @@ CLAUDE_CODE_PLUGIN_DIRS y, si quedó, su bloque de ~/.claude/CLAUDE.md. Los resp
 }
 
 export const parseArgs = argv => {
-  const flags = { nota: undefined, perfilPi: undefined, confirmado: false, dryRun: false, force: false, skipPi: false, offline: false, withPi: false, humano: undefined, desde: undefined, limite: undefined, help: false, version: false }
+  const flags = { nota: undefined, perfilPi: undefined, modelo: undefined, confirmado: false, dryRun: false, force: false, skipPi: false, offline: false, withPi: false, humano: undefined, desde: undefined, limite: undefined, help: false, version: false }
   const rest = []
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
@@ -117,6 +124,10 @@ export const parseArgs = argv => {
       flags.perfilPi = argv[i + 1] ?? ''
       i += 1
     } else if (arg.startsWith('--perfil-pi=')) flags.perfilPi = arg.slice('--perfil-pi='.length)
+    else if (arg === '--modelo') {
+      flags.modelo = argv[i + 1] ?? ''
+      i += 1
+    } else if (arg.startsWith('--modelo=')) flags.modelo = arg.slice('--modelo='.length)
     else if (arg === '--force') flags.force = true
     else if (arg === '--skip-pi') flags.skipPi = true
     else if (arg === '--offline') flags.offline = true
@@ -138,6 +149,9 @@ export const parseArgs = argv => {
   }
   if (flags.perfilPi !== undefined && (flags.perfilPi === '' || flags.perfilPi.startsWith('--'))) {
     throw new Error('--perfil-pi necesita el nombre de un perfil de gentle-pi.')
+  }
+  if (flags.modelo !== undefined && (flags.modelo.trim() === '' || flags.modelo.startsWith('--'))) {
+    throw new Error('--modelo necesita el nombre del modelo del subagente.')
   }
   if (flags.humano !== undefined && (flags.humano === '' || flags.humano.startsWith('--'))) {
     throw new Error('--humano necesita un nombre.')
@@ -187,6 +201,8 @@ export const main = async argv => {
         return await despacharCommand(flags, rest[1], rest[2])
       case 'revisar':
         return await revisarCommand(flags, rest[1], rest[2])
+      case 'brief-revision':
+        return await briefRevisionCommand({ ...flags, n: rest[1] })
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 
