@@ -1,0 +1,113 @@
+import assert from 'node:assert/strict'
+import { existsSync, mkdirSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, describe, test } from 'node:test'
+
+import { codexTrustStatus } from '../src/doctor.mjs'
+import { cleanup, cli, git, read, tempDir, write } from './helpers.mjs'
+
+const dirs = []
+const sampleRoot = () => path.resolve(os.homedir(), 'Documents', 'orca-stack')
+const tomlPath = value => value.replaceAll('/', '\\')
+const temp = prefix => {
+  const dir = tempDir(prefix)
+  dirs.push(dir)
+
+  return dir
+}
+
+afterEach(() => {
+  while (dirs.length > 0) cleanup(dirs.pop())
+})
+
+describe('doctor: Codex project trust', () => {
+  test('a trusted entry for the repo root reports ok', () => {
+    const root = sampleRoot()
+    const file = path.join(temp('codex-trust'), 'config.toml')
+    write(file, `[projects.'${tomlPath(root).toLowerCase()}']\ntrust_level = "trusted"\n`)
+
+    assert.deepEqual(codexTrustStatus(root, file), { level: 'ok', detail: '' })
+  })
+
+  test('path comparison ignores case and treats slash styles alike', () => {
+    const root = sampleRoot()
+    const file = path.join(temp('codex-trust'), 'config.toml')
+    write(file, `[projects.'${tomlPath(root).toLowerCase()}']\ntrust_level = "trusted"\n`)
+
+    assert.deepEqual(codexTrustStatus(root.toUpperCase().replaceAll('\\', '/'), file), { level: 'ok', detail: '' })
+  })
+
+  test('literal and basic TOML project keys both match the repo root', () => {
+    const root = sampleRoot()
+    const literal = path.join(temp('codex-literal'), 'config.toml')
+    const basic = path.join(temp('codex-basic'), 'config.toml')
+    write(literal, `[projects.'${tomlPath(root).toLowerCase()}']\ntrust_level = "trusted"\n`)
+    write(basic, `[projects."${tomlPath(root).toLowerCase().replaceAll('\\', '\\\\')}"]\ntrust_level = "trusted"\n`)
+
+    assert.equal(codexTrustStatus(root, literal).level, 'ok')
+    assert.equal(codexTrustStatus(root, basic).level, 'ok')
+  })
+
+  test('an entry with a trust level other than trusted warns with dispatch-compatible TOML lines', () => {
+    const root = sampleRoot()
+    const file = path.join(temp('codex-untrusted'), 'config.toml')
+    write(file, `[projects.'${tomlPath(root)}']\ntrust_level = "untrusted"\n`)
+
+    const result = codexTrustStatus(root, file)
+    assert.equal(result.level, 'warn')
+    assert.ok(result.detail.includes(`[projects.'${tomlPath(root)}']`))
+    assert.match(result.detail, /trust_level = "trusted"/)
+    assert.match(result.detail, /~\/\.codex\/config\.toml/)
+  })
+
+  test('missing, unreadable, and malformed config warn without throwing', () => {
+    const root = sampleRoot()
+    const home = temp('codex-config-errors')
+    const missing = path.join(home, 'missing.toml')
+    const unreadable = path.join(home, 'directory.toml')
+    const malformed = path.join(home, 'malformed.toml')
+    // A directory at the config path makes readFileSync fail on Windows and POSIX.
+    mkdirSync(unreadable)
+    write(malformed, `[projects.'${tomlPath(root)}']\ntrust_level = [\n`)
+
+    const absent = codexTrustStatus(root, missing)
+    assert.equal(absent.level, 'warn')
+    assert.ok(absent.detail.includes(`[projects.'${tomlPath(root)}']`))
+    assert.match(absent.detail, /trust_level = "trusted"/)
+    assert.match(codexTrustStatus(root, unreadable).detail, /directory\.toml/)
+    assert.match(codexTrustStatus(root, malformed).detail, /malformed\.toml/)
+  })
+
+  test('doctor checks only a merged project config that enables Codex, and never writes Codex config', () => {
+    const home = temp('codex-doctor-home')
+    const repo = temp('codex-doctor-repo')
+    const codexConfig = path.join(home, '.codex', 'config.toml')
+    write(codexConfig, '[projects."unused"]\ntrust_level = "trusted"\n')
+    write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ agentes: { usa: ['codex'] } }))
+    write(path.join(repo, '.orca-stack.json'), JSON.stringify({ agentes: { usa: ['claude'] } }))
+    write(path.join(repo, '.orca-stack.local.json'), JSON.stringify({ agentes: { usa: ['codex-cc'] } }))
+    assert.equal(git(repo, 'init').status, 0)
+    const before = read(codexConfig)
+
+    const enabled = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo })
+    assert.match(enabled.out, /codex repo root trust/)
+    assert.match(enabled.out, /\[projects\.'[^']+'\]/)
+    assert.equal(read(codexConfig), before)
+
+    write(codexConfig, `[projects.'${repo.replaceAll('/', '\\')}']\ntrust_level = "trusted"\n`)
+    const trusted = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo })
+    assert.match(trusted.out, /✔ codex repo root trust/)
+    assert.doesNotMatch(trusted.out, /⚠ codex repo root trust/)
+    const trustedConfig = read(codexConfig)
+
+    write(path.join(repo, '.orca-stack.local.json'), JSON.stringify({ agentes: { usa: ['claude'] } }))
+    const disabled = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo })
+    assert.doesNotMatch(disabled.out, /codex repo root trust/)
+
+    const outside = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: temp('codex-outside') })
+    assert.doesNotMatch(outside.out, /codex repo root trust/)
+    assert.equal(existsSync(codexConfig), true)
+    assert.equal(read(codexConfig), trustedConfig)
+  })
+})
