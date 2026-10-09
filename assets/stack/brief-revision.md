@@ -4,7 +4,7 @@ You are the reviewer ({{AGENT}}) of PR #{{PR}}. You work alone in this worktree 
 
 ## Setup
 
-- Repo: {{REPO}}. PR #{{PR}} is written by {{IMPLEMENTER}}; its head commit is {{SHA}}. This worktree must be at that commit: run git rev-parse HEAD, and if it differs, git fetch origin and git checkout --detach {{SHA}}.
+- {{WORKTREE_INSTRUCTIONS}}
 - The PR targets {{BASE}}.
 - Read the PR and the ticket it closes: gh pr view {{PR}} --comments, gh pr diff {{PR}}
 - Read CODING_STANDARDS.md and AGENTS.md when they exist, and the vocabulary of GLOSSARY.md when it exists.
@@ -36,14 +36,14 @@ What blocks: on Spec and Failure modes, a criterion or failure mode of the issue
 
 ## Format
 
-Write the review in a UTF-8 file and publish it with a body file, never through a pipe:
+{{PUBLISH_INSTRUCTIONS}}
 
-gh pr review {{PR}} --comment --body-file <file>
+{{PUBLISH_COMMAND}}
 
 The headings and the `Revisor:` and `Commit:` lines are literal protocol markers: do not translate them. No lists of what is fine.
 
 ```
-Revisor: {{AGENT}}
+Revisor: {{REVIEWER_LINE}}
 Commit: {{SHA}}
 
 ## BLOQUEA
