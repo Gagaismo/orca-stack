@@ -578,28 +578,29 @@ export const revisarCommand = command('review')
 
 export const briefRevisionCommand = async ({ n, modelo, dryRun = false }, io = defaultIo()) => {
   const say = io.out
-  if (!/^\d+$/.test(String(n ?? ''))) throw new Error('Falta el nÃºmero de PR. Uso: orca-stack brief-revision <pr> --modelo <name>.')
-  if (typeof modelo !== 'string' || modelo.trim() === '') throw new Error('brief-revision necesita --modelo <name>.')
+  if (!/^\d+$/.test(String(n ?? ''))) throw new Error('Falta el número de PR. Uso: orca-stack brief-revision <pr> --modelo <modelo>.')
+  if (typeof modelo !== 'string' || modelo.trim() === '') throw new Error('brief-revision necesita --modelo <modelo>.')
 
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
-  if (git.status !== 0) throw new Error('CorrÃ© este comando dentro del checkout principal de un repo git.')
+  if (git.status !== 0) throw new Error('Corré este comando dentro del checkout principal de un repo git.')
   const [gitDir, commonDir, top] = git.stdout.split(/\r?\n/).map(line => line.trim())
-  if (!samePath(gitDir, commonDir)) throw new Error('Esto es un worktree: corrÃ© el comando desde el checkout principal del repo (la sesiÃ³n de main).')
+  if (!samePath(gitDir, commonDir)) throw new Error('Esto es un worktree: corré el comando desde el checkout principal del repo (la sesión de main).')
   const root = path.resolve(top)
   const repo = path.basename(root)
   const config = loadConfig(io.home, root)
-  if (config.setup !== 'completo') throw new Error(`El setup de orca-stack estÃ¡ pendiente en ${repo}: hacelo con la skill orca-setup antes de despachar.`)
-  if (config.modo !== 'un-agente') throw new Error('El modo del repo no es "un-agente": usÃ¡ `orca-stack revisar <pr> <agente>` en modo multiagente.')
+  if (config.setup !== 'completo') throw new Error(`El setup de orca-stack está pendiente en ${repo}: hacelo con la skill orca-setup antes de despachar.`)
+  if (config.modo !== 'un-agente') throw new Error('El modo del repo no es "un-agente": usá `orca-stack revisar <pr> <agente>` en modo multiagente.')
 
   const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'headRefOid,body,number'], { cwd: root }), 'gh pr view'), 'gh pr view')
   const implementer = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim()
-  if (!implementer) throw new Error(`El PR #${n} no tiene la lÃ­nea "Implementador: <agente>".`)
+  if (!implementer) throw new Error(`El PR #${n} no tiene la línea "Implementador: <agente>".`)
   const sha = pr.headRefOid
   if (typeof sha !== 'string' || sha.trim() === '') throw new Error(`No pude obtener headRefOid del PR #${n}.`)
 
   const name = `revision-${n}-subagente`
   const worktree = path.join(path.dirname(root), `${repo}-${name}`)
   const briefPath = path.join(io.home, 'orca', 'briefs', `${repo}-${name}.md`)
+  const reviewPath = path.join(io.home, 'orca', 'briefs', `${repo}-${name}.review.md`)
   const listed = ok(io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root }), 'git worktree list').stdout
   const registered = listed.split(/\r?\n/).filter(line => line.startsWith('worktree ')).map(line => line.slice('worktree '.length))
   if (registered.some(entry => samePath(entry, worktree)) || io.exists(worktree)) {
@@ -616,27 +617,28 @@ export const briefRevisionCommand = async ({ n, modelo, dryRun = false }, io = d
     AGENT: `subagente (${modelo.trim()})`,
     REVIEWER_LINE: `subagente (${modelo.trim()})`,
     WORKTREE_INSTRUCTIONS: `Repo: ${repo}. This review is isolated in ${worktree}; work only inside that worktree. It is checked out detached at PR #${n}'s head commit ${sha}. Do not checkout or modify the main checkout. PR #${n} is written by ${implementer}.`,
-    PUBLISH_INSTRUCTIONS: 'Write the review body to the UTF-8 file `review-body.md` in this worktree. Do not publish the review; main will publish your file with gh pr review --comment --body-file.',
-    PUBLISH_COMMAND: 'Do not publish; report the path to `review-body.md` to main.',
+    PUBLISH_INSTRUCTIONS: `Write the review body to the UTF-8 file ${reviewPath}. Do not publish the review; main will publish your file with gh pr review --comment --body-file.`,
+    PUBLISH_COMMAND: `Do not publish; report the path to ${reviewPath} to main.`,
   })
 
   const act = (cmd, args, cwd = root) => {
-    say(`${dryRun ? '[simulaciÃ³n] ' : ''}${cmd} ${args.join(' ')}`)
+    say(`${dryRun ? '[simulación] ' : ''}${cmd} ${args.join(' ')}`)
     return dryRun ? { status: 0, stdout: '', stderr: '' } : ok(io.sh(cmd, args, { cwd }), `${cmd} ${args[0]}`)
   }
   act('git', ['fetch', 'origin', `refs/pull/${n}/head`])
   if (!dryRun) {
     const fetched = ok(io.sh('git', ['rev-parse', 'FETCH_HEAD'], { cwd: root }), 'git rev-parse FETCH_HEAD').stdout.trim()
-    if (fetched !== sha) throw new Error(`El head del PR #${n} cambiÃ³ durante la preparaciÃ³n: esperaba ${sha}, recibÃ­ ${fetched}.`)
+    if (fetched !== sha) throw new Error(`El head del PR #${n} cambió durante la preparación: esperaba ${sha}, recibí ${fetched}.`)
   }
   act('git', ['worktree', 'add', '--detach', worktree, sha])
-  say(`${dryRun ? '[simulaciÃ³n] ' : ''}brief -> ${briefPath}`)
+  say(`${dryRun ? '[simulación] ' : ''}brief -> ${briefPath}`)
   if (!dryRun) {
     io.mkdirp(path.dirname(briefPath))
     io.writeFile(briefPath, brief)
   }
   say(`worktree: ${worktree}`)
   say(`brief: ${briefPath}`)
+  say(`review body: ${reviewPath}`)
 
   return 0
 }

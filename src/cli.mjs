@@ -30,7 +30,7 @@ Opciones:
   --nota <texto>   (despachar, revisar) Texto que se agrega al brief.
   --confirmado     (despachar, revisar) El humano dijo que sí a un agente de agentes.preguntarAntes.
   --perfil-pi <nombre> (despachar, revisar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver despachar --help).
-  --modelo <name>  (brief-revision) Modelo del subagente revisor.
+  --modelo <modelo>  (brief-revision) Modelo del subagente revisor.
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
   --limite <n>     (sesiones) Cuántas sesiones mostrar (por defecto: 10).
   --humano <nombre> (global) Nombre que usan los mods para hablarte (por defecto: git config user.name).
@@ -97,7 +97,7 @@ Sin flag y sin agentes.pi.perfil, o con "preguntar", rige el perfil activo globa
 Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
 (línea \`Implementador:\`) o si codex y codex-cc se revisan entre sí.
 `,
-  'brief-revision': `orca-stack brief-revision <pr> --modelo <name> [--dry-run]
+  'brief-revision': `orca-stack brief-revision <pr> --modelo <modelo> [--dry-run]
 
 Solo desde el checkout principal, con setup completo y en modo "un-agente". Crea un worktree detached en el head del PR y escribe en UTF-8 el brief de review compartido con \`revisar\`. El subagente escribe el cuerpo del review en un archivo; main lo publica.
 Con --dry-run muestra las acciones y las rutas, sin crear worktree ni brief.

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, test } from 'node:test'
 
 import { briefRevisionCommand, renderBrief } from '../src/despacho.mjs'
 import { main } from '../src/cli.mjs'
+import { PACKAGE_ROOT } from '../src/util.mjs'
 
 const temporary = []
 const tempDir = prefix => {
@@ -28,6 +29,7 @@ const setup = ({ mode = 'un-agente', body = 'Implementador: codex', registered =
   const out = []
   const worktreePath = path.join(path.dirname(root), 'repo-revision-7-subagente')
   const briefPath = path.join(home, 'orca', 'briefs', 'repo-revision-7-subagente.md')
+  const reviewPath = path.join(home, 'orca', 'briefs', 'repo-revision-7-subagente.review.md')
   let hasWorktree = registered
   const io = {
     home,
@@ -48,7 +50,7 @@ const setup = ({ mode = 'un-agente', body = 'Implementador: codex', registered =
       return { status: 0, stdout: '', stderr: '' }
     },
   }
-  return { io, calls, writes, out, tracked, worktreePath, briefPath }
+  return { io, calls, writes, out, tracked, worktreePath, briefPath, reviewPath }
 }
 
 describe('brief-revision', () => {
@@ -136,10 +138,13 @@ describe('brief-revision', () => {
     await briefRevisionCommand({ n: '7', modelo: 'gpt-6' }, env.io)
     const brief = readFileSync(env.briefPath, 'utf8')
     assert.match(brief, /work only inside that worktree/)
-    assert.match(brief, /Write the review body to the UTF-8 file `review-body\.md`/)
+    assert.match(brief, /Write the review body to the UTF-8 file/)
+    assert.ok(brief.includes(env.reviewPath))
     assert.match(brief, /Revisor: subagente \(gpt-6\)/)
     assert.match(brief, /Commit: abc123/)
     assert.match(brief, /Do not checkout or modify the main checkout/)
+    assert.ok(env.out.some(line => line === `review body: ${env.reviewPath}`))
+    assert.ok(path.relative(env.worktreePath, env.reviewPath).startsWith('..'))
   })
 
   test('Acceptance: creates a detached worktree at the exact fetched PR head commit', async () => {
@@ -155,7 +160,7 @@ describe('brief-revision', () => {
     console.log = value => { output += `${value}\n` }
     try {
       await main(['brief-revision', '--help'])
-      assert.match(output, /orca-stack brief-revision <pr> --modelo <name>/)
+      assert.match(output, /orca-stack brief-revision <pr> --modelo <modelo>/)
       output = ''
       await main(['--help'])
       assert.match(output, /brief-revision/)
@@ -172,5 +177,28 @@ describe('brief-revision', () => {
     assert.ok(brief.includes('Write the review in a UTF-8 file and publish it with a body file, never through a pipe:'))
     assert.ok(brief.includes('gh pr review 7 --comment --body-file <file>'))
     assert.ok(brief.includes('Revisor: agy\nCommit: abc123'))
+  })
+
+  test('CONTRATO keeps the human reviewer marker literal and the review body outside the discardable worktree', () => {
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/CONTRATO.md'), 'utf8')
+    assert.match(contract, /Si `review` es `"humano"`[\s\S]*?`Revisor: humano` y `Commit: <sha>`/)
+    assert.match(contract, /--modelo <modelo>/)
+    assert.match(contract, /<repo>-revision-<pr>-subagente\.review\.md/)
+    assert.match(contract, /worktree descartable/)
+  })
+  test('all files under src are free of the mojibake marker', () => {
+    const sourceRoot = path.join(PACKAGE_ROOT, 'src')
+    const files = []
+    const walk = dir => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name)
+        if (entry.isDirectory()) walk(fullPath)
+        else files.push(fullPath)
+      }
+    }
+    walk(sourceRoot)
+    const marker = String.fromCharCode(0x00c3)
+    const offenders = files.filter(file => readFileSync(file, 'utf8').includes(marker))
+    assert.deepEqual(offenders.map(file => path.relative(PACKAGE_ROOT, file)), [])
   })
 })
