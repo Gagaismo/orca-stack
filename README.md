@@ -28,7 +28,7 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 | Siete mods de Claude Code (ver abajo) y sus rutas en `env.CLAUDE_CODE_PLUGIN_DIRS` | `~/.claude/mods/` y `~/.claude/settings.json` |
 | Nada de metodología en `~/.claude/CLAUDE.md`: si un `global` anterior dejó ahí el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->`, lo saca (con respaldo). También achica el bloque que gentle-ai escribe ahí (ver abajo) | `~/.claude/CLAUDE.md` |
 | Pi: `gentle-pi@4.0.0` y `pi-claude-bridge@0.9.2` con `pi install`, más `npm i -g gentle-pi@4.0.0` (comando `gentle-shell`) | `~/.pi/agent/` y npm global |
-| Comando `orca-stack`, para usar desde cualquier repo sin npx ni red | primer directorio escribible del `PATH`; copia autonoma en `~/.orca-stack/cli/`. Si ninguno es escribible, queda en `~/.orca-stack/bin/` y `global` indica que hay que agregarlo al `PATH` |
+| Comando `orca-stack`, para usar desde cualquier repo sin npx ni red | Windows: prefijo global de npm si esta en `PATH`, con shims `.cmd` y sin extension para PowerShell y Git Bash. Otros sistemas: primer directorio escribible del `PATH`. La copia queda en `~/.orca-stack/cli/`; si falta el destino compartido, se usa `~/.orca-stack/bin/` y `global` imprime como agregarlo al `PATH` |
 | Registro de lo instalado, para `remove` | `~/.orca-stack/state.json` |
 | Capa personal de configuración | `~/.orca-stack/config.json` |
 

@@ -16,34 +16,52 @@ const commandContent = (packageDir, win) => {
   return `#!/bin/sh\nexec node '${entry.replaceAll("'", "'\\''")}' "$@"\n`
 }
 
-const writablePathDirs = () => {
-  const dirs = [...new Set((process.env.PATH || process.env.Path || '').split(path.delimiter).filter(Boolean))]
-  return dirs.filter(dir => {
+const pathDirs = () => [...new Set((process.env.PATH || process.env.Path || '').split(path.delimiter).filter(Boolean))]
+
+const writablePathDirs = () =>
+  pathDirs().filter(dir => {
     try {
       return existsSync(dir) && (accessSync(dir, constants.W_OK), true)
     } catch {
       return false
     }
   })
+
+const npmPrefixOnPath = dirs => {
+  if (process.platform !== 'win32') return null
+  const npm = which('npm')
+  if (!npm) return null
+  const result = run(npm, ['prefix', '-g'], { timeout: 10_000 })
+  if (result.status !== 0) return null
+  const prefix = result.stdout.trim()
+  return dirs.find(dir => samePath(dir, prefix)) ?? null
 }
+
+const isTracked = (ctx, file) =>
+  Boolean(ctx.state.files[file]) || [ctx.state.command?.file, ctx.state.command?.shellFile].some(owned => owned && samePath(owned, file))
 
 export const installPathCommand = ctx => {
   const win = process.platform === 'win32'
+  const dirs = writablePathDirs()
   const existing = which('orca-stack')
-  const tracked = ctx.state.command?.file
-  if (existing && (!tracked || !samePath(existing, tracked))) {
-    ctx.say(`\nGlobal command orca-stack\n  ${existing} already exists on PATH and was not written by this installation; leaving it unchanged.`)
+  const visibleFiles = pathDirs().flatMap(dir => win ? [path.join(dir, 'orca-stack'), path.join(dir, 'orca-stack.cmd')] : [path.join(dir, 'orca-stack')])
+  const foreign = visibleFiles.find(file => existsSync(file) && !isTracked(ctx, file))
+  if (foreign || (existing && !isTracked(ctx, existing))) {
+    const conflict = foreign ?? existing
+    ctx.say(`\nGlobal command orca-stack\n  ${conflict} already exists on PATH and was not written by this installation; leaving it unchanged.`)
     ctx.state.command = null
     return
   }
 
-  const dirs = writablePathDirs()
-  const commandDir = existing ? path.dirname(existing) : dirs[0] ?? path.join(ctx.L.ownDir, 'bin')
-  const file = existing ?? path.join(commandDir, commandName())
+  const npmPrefix = npmPrefixOnPath(dirs)
+  const trackedDir = !win && ctx.state.command?.file ? dirs.find(dir => samePath(dir, path.dirname(ctx.state.command.file))) : null
+  const commandDir = npmPrefix ?? (win ? null : trackedDir ?? dirs[0]) ?? path.join(ctx.L.ownDir, 'bin')
+  const file = path.join(commandDir, commandName())
+  const shellFile = win ? path.join(commandDir, 'orca-stack') : null
   const packageDir = path.join(ctx.L.ownDir, 'cli')
   ctx.say('\nGlobal command orca-stack')
-  if (!existing && dirs.length === 0) {
-    ctx.say(`  No writable directory was found on PATH. Installed under ${path.join(ctx.L.ownDir, 'bin')}; add that directory to PATH.`)
+  if (win ? !npmPrefix : !existing && dirs.length === 0) {
+    ctx.say(`  ${win ? 'No writable npm global prefix was found on PATH' : 'No writable directory was found on PATH'}. Installed under ${path.join(ctx.L.ownDir, 'bin')}; add that directory to PATH.`)
   }
   for (const dir of packageDirs) {
     for (const rel of listFiles(path.join(PACKAGE_ROOT, dir))) {
@@ -53,10 +71,12 @@ export const installPathCommand = ctx => {
   }
   ctx.writeOwned(path.join(packageDir, 'package.json'), readFileSync(path.join(PACKAGE_ROOT, 'package.json')))
   const status = ctx.writeOwned(file, commandContent(packageDir, win), { mode: win ? undefined : 0o755 })
+  const shellStatus = shellFile ? ctx.writeOwned(shellFile, commandContent(packageDir, false), { mode: 0o755 }) : status
   if (!ctx.dryRun) {
-    ctx.state.command = { file, packageDir, version: packageVersion() }
+    ctx.state.command = { file, ...(shellFile ? { shellFile } : {}), packageDir, version: packageVersion() }
   }
-  ctx.say(`  ${status === 'unchanged' ? 'orca-stack is already up to date' : `Installed ${file}`} (version ${packageVersion()})`)
+  const unchanged = status === 'unchanged' && shellStatus === 'unchanged'
+  ctx.say(`  ${unchanged ? 'orca-stack is already up to date' : `Installed ${file}${shellFile ? ` and ${shellFile}` : ''}`} (version ${packageVersion()})`)
 }
 
 export const checkPathCommand = (state, add) => {
