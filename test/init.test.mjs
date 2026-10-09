@@ -83,6 +83,19 @@ describe('init', () => {
     assert.doesNotMatch(run().out, /contrato de trabajo completo/, 'quiet when nothing changes')
   })
 
+  test('rerunning init replaces a duplicated step 9 in the existing AGENTS.md block', () => {
+    run()
+    const agentsPath = path.join(repo, 'AGENTS.md')
+    const original = read(agentsPath)
+    const step9 = original.match(/^9\. Después del merge:.*$/m)?.[0]
+    assert.ok(step9, 'generated contract contains step 9')
+    write(agentsPath, original.replace(step9, `${step9}\n${step9}`))
+
+    const result = run()
+    assert.equal(result.status, 0, result.out)
+    assert.equal((read(agentsPath).match(/^9\. Después del merge:/gm) ?? []).length, 1)
+  })
+
   test('is idempotent and never overwrites an existing config', () => {
     run()
     write(path.join(repo, '.orca-stack.json'), '{"despacho":{"script":"scripts/x.sh"}}\n')
