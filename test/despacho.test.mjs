@@ -334,8 +334,16 @@ describe('briefs', () => {
     assert.ok(roleBriefs.includes(touched))
     assert.match(roleBriefs, /RED is one test per rule[\s\S]*PRESERVE is one test per existing public entry[\s\S]*Nothing else/i)
     assert.match(roleBriefs, /If a rule\s+cites an artifact, test against that artifact, not a paraphrase/i)
-    assert.ok(contract.includes(touched))
-    assert.match(contract, /## Evidencia` con una fila por cada regla[\s\S]*una por cada entrada pública tocada/i)
+    assert.doesNotMatch(contract, /A public entry is touched when its own code changed in the diff/)
+    assert.match(contract, /## Evidencia` con una fila por cada regla[\s\S]*por cada entrada pública tocada.*assets\/stack\/brief-ticket\.md/i)
+    const reviewSection = contract.split('### Review')[1].split('### Skills de Matt')[0]
+    assert.match(reviewSection, /assets\/stack\/brief-revision\.md/)
+    assert.doesNotMatch(reviewSection, /se revisa en tres ejes|deriva y corre sus propios tests/i)
+    assert.match(reviewSection, /Bloquean:.*No bloquean/is)
+    assert.match(reviewSection, /`implementación`.*`interpretación`.*humano.*`Decidido por main`/is)
+    for (const marker of ['## BLOQUEA', '## SUGERENCIAS', 'Revisor:', 'Commit:', 'Implementador:', 'Verificado por main:', 'Decidido por main:', 'Suite:']) {
+      assert.ok(contract.includes(marker), marker)
+    }
   })
 
   test('ticket brief falls back to acceptance criteria and failure modes as RED list for legacy tickets', async () => {
