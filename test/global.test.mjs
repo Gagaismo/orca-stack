@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 
 import { buildBlock } from '../src/marker.mjs'
-import { packageVersion } from '../src/util.mjs'
+import { packageVersion, samePath } from '../src/util.mjs'
 import { sddConfig } from './gentle-fixture.mjs'
 import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
@@ -121,7 +121,10 @@ describe('global', () => {
       write(npxShim, `#!/bin/sh\nexec node '${packageBin}' "$@"\n`)
       chmodSync(npxShim, 0o755)
     }
-    const env = { PATH: [npxBinDir, installDir, path.dirname(process.execPath)].join(path.delimiter) }
+    const originalPathDirs = (process.env.PATH || process.env.Path || '')
+      .split(path.delimiter)
+      .filter(dir => dir && !samePath(dir, npxBinDir))
+    const env = { PATH: [npxBinDir, installDir, ...originalPathDirs].join(path.delimiter) }
     const npxCli = (args) => spawnSync(process.execPath, [packageBin, ...args], {
       encoding: 'utf8',
       env: {
@@ -147,7 +150,7 @@ describe('global', () => {
       HOME: home,
       USERPROFILE: home,
       ORCA_STACK_HOME: home,
-      PATH: [installDir, path.dirname(process.execPath), ...process.env.PATH.split(path.delimiter)].join(path.delimiter),
+      PATH: [installDir, ...originalPathDirs].join(path.delimiter),
     }
     const shell = process.platform === 'win32'
       ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
