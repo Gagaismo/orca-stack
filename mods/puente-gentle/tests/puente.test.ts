@@ -439,7 +439,7 @@ test('reviewsOf wants Revisor and the head commit among the first lines of one b
   const oid = 'abc1234def5678abc1234def5678abc1234def56'
   expect(reviewsOf([`Revisor: pi\nCommit: ${oid}\n\n## BLOQUEA\nnada`], oid)).toEqual([{ reviewer: 'pi', clean: true }])
   expect(reviewsOf(['Revisor: AGY\r\nSuite: npm test en verde\r\nCommit: abc1234\r\n\r\n## BLOQUEA\r\n\r\nNada\r\n'], oid)).toEqual([{ reviewer: 'agy', clean: true }])
-  expect(reviewsOf([`Revisor: agy\nCommit: ${oid}\n\n## BLOQUEA\n1. \`a.ts:3\` (introducido, concreta): x`], oid)).toEqual([{ reviewer: 'agy', clean: false }])
+  expect(reviewsOf([`Revisor: agy\nCommit: ${oid}\n\n## BLOQUEA\n1. \`a.ts:3\` (introducido, concreta, interpretación): x`], oid)).toEqual([{ reviewer: 'agy', clean: false }])
   expect(reviewsOf([`Revisor: agy\nCommit: ${oid}`], oid)).toEqual([{ reviewer: 'agy', clean: false }]) // no verdict is not clean
   expect(reviewsOf(['Revisor: pi\nCommit: 1111111\n## BLOQUEA\nnada'], oid)).toEqual([])
   expect(reviewsOf(['Revisor: pi\n## BLOQUEA\nnada'], oid)).toEqual([])
