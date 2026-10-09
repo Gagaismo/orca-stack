@@ -8,7 +8,7 @@ You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this 
 - Pull requests target {{BASE}}.
 - Read the issue and its comments first: gh issue view {{ISSUE}} --comments
 - Read the project instructions (AGENTS.md, and GLOSSARY.md or CONTEXT.md and docs/adr when they exist) and CODING_STANDARDS.md when the repo has one. Check your change against CODING_STANDARDS.md before every commit.
-- The issue's acceptance criteria and failure modes are your TDD slice list: each one ends with a test that proves it.
+- The issue's acceptance criteria and any applicable rules or failure modes are your TDD slice list: each one ends with a test that proves it. Do not require a section the issue does not have.
 
 ## Verification
 

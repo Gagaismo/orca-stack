@@ -63,6 +63,9 @@ accessibility, data-loss handling, or required tests. `ponytail-review` is a
 second-pass complexity review after correctness/spec review; it reports only and
 never applies changes. `ponytail-audit` is opt-in and repo-wide.
 
+Ticket authoring rules are defined in the project's `AGENTS.md` contract. `main`
+follows that contract when writing tickets; do not copy a second version here.
+
 ## Communication contract
 
 Caveman is communication-only. In `auto`, compress filler and repetitive prose

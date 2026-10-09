@@ -204,6 +204,19 @@ describe('despachar: failures along the way', () => {
 })
 
 describe('briefs', () => {
+  test('dispatching a legacy ticket with only Modos de falla preserves acceptance criteria as TDD slices', async () => {
+    const env = fakeIo({
+      'gh issue view': json({
+        state: 'OPEN', assignees: [], title: 'legacy ticket',
+        body: '## Acceptance criteria\n- Keep this behavior\n\n## Modos de falla\n- An external call fails',
+      }),
+    })
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    const brief = env.written[0][1]
+    assert.match(brief, /acceptance criteria.*TDD slice list/i)
+    assert.doesNotMatch(brief, /requires? `?## Reglas`?/i)
+  })
+
   test('ticket brief keeps markers literal, verification verbatim and the nota', async () => {
     const env = fakeIo()
     await run('ticket', { n: '7', agent: 'agy', nota: 'Mirá `src/app.ts` antes de empezar.' }, env)
