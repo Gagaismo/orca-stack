@@ -5,6 +5,7 @@ import { INSTALL_HINTS, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
 import { isLazyBlock, lazyifyBlock, rddMode, readPersonalConfig, restoreBlock, sddBlock, sddMode, trimReviewSections } from './gentle.mjs'
 import { removeAnyBlock } from './marker.mjs'
+import { installPathCommand } from './path-command.mjs'
 import { orcaInstalled } from './orca.mjs'
 import { setupPi } from './pi.mjs'
 import { mergePluginDirs, parseSettings, stringifySettings } from './settings.mjs'
@@ -356,6 +357,7 @@ export const globalCommand = async flags => {
     gentleBlockStep(ctx)
     setupPi(ctx, { skipPi: flags.skipPi })
     installPersonalConfig(ctx, { humano: flags.humano })
+    installPathCommand(ctx)
   } finally {
     // Whatever was written is recorded, even when a step threw, so `remove` can always undo it.
     if (ctx.save()) {

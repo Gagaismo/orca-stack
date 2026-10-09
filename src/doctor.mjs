@@ -8,6 +8,7 @@ import { loadState } from './ctx.mjs'
 import { driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
 import { removeAnyBlock } from './marker.mjs'
+import { checkPathCommand } from './path-command.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
 import { installedPackageVersion, piBinary, piModulesDir, piVersion, resolveGentleSkills } from './pi.mjs'
 import { parseSettings } from './settings.mjs'
@@ -138,6 +139,8 @@ export const doctorCommand = async flags => {
   } else {
     add('fail', 'estado de instalación', 'no hay state.json: corré `orca-stack global`')
   }
+
+  checkPathCommand(state, add)
 
   // Policy docs
   section('Política del stack')
