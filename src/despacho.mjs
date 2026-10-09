@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
@@ -211,6 +211,7 @@ export const defaultIo = () => ({
   exists: existsSync,
   mkdirp: dir => mkdirSync(dir, { recursive: true }),
   readFile: file => readFileSync(file, 'utf8'),
+  listFiles: dir => readdirSync(dir).map(name => path.join(dir, name)),
   writeFile: (file, text) => writeFileSync(file, text, 'utf8'),
   sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
   gentleSkills: home => resolveGentleSkills(layout(home))?.dir ?? null,
@@ -222,7 +223,9 @@ const ok = (res, what) => {
   return res
 }
 
-const waitForTui = async (io, handle, agent, tries = 45) => {
+const shellPrompt = text => /(?:^|\n)\s*PS\s+[A-Za-z]:\\[^\n>]*>\s*$/im.test(text)
+
+const waitForTui = async (io, handle, agent, root, tries = 45) => {
   let last = null
   let stable = 0
   let trusted = false
@@ -232,6 +235,11 @@ const waitForTui = async (io, handle, agent, tries = 45) => {
     // Only the screen: the rest of the reply (the request id, the cursors) changes on every read.
     const tail = res.status === 0 ? parseJson(res, 'orca terminal read').result?.terminal?.tail : undefined
     const text = Array.isArray(tail) ? tail.join('\n') : typeof tail === 'string' ? tail : ''
+    if (/trust this folder\?/i.test(text)) {
+      if (agent !== 'agy') {
+        throw new Error(`Codex pide confiar en la carpeta y no recibió el brief. Confiá la raíz del repo en Codex: [projects.'${root}'] trust_level = "trusted" en ~/.codex/config.toml. Pantalla: ${text}`)
+      }
+    }
     if (agent === 'agy' && !trusted && /trust/i.test(text)) {
       io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
       trusted = true
@@ -239,12 +247,84 @@ const waitForTui = async (io, handle, agent, tries = 45) => {
       last = null
       continue
     }
+    if (shellPrompt(text)) throw new Error(`La terminal volvió al shell prompt antes de recibir el brief; el turno no arrancó. Pantalla: ${text}`)
     stable = text !== '' && text === last ? stable + 1 : 0
     last = text
-    if (stable >= 2) return true
+    if (stable >= 2) {
+      if (/trust this folder\?/i.test(text)) throw new Error(`La pantalla de confianza sigue abierta; no envío el brief sobre ese menú. Pantalla: ${text}`)
+      return text
+    }
   }
 
-  return false
+  return undefined
+}
+
+const submittedTurn = value => {
+  if (Array.isArray(value)) return value.some(submittedTurn)
+  if (!isPlain(value)) return false
+  if (value.turnStarted === true || value.turn_started === true || value.turnStartObserved === true || value.submitted === true || value.submissionObserved === true || value.promptSubmitted === true || value.started === true) return true
+  if (typeof value.status === 'string' && /^(submitted|turn[_ -]?started)$/i.test(value.status)) return true
+  return Object.values(value).some(submittedTurn)
+}
+
+const worktreeAgentStarted = (io, worktree) => {
+  const ps = io.sh('orca', ['worktree', 'ps', '--json'])
+  if (ps.status !== 0) return false
+  try {
+    const rows = parseJson(ps, 'orca worktree ps').result?.worktrees ?? []
+    const row = rows.find(w => samePath(w.path ?? '', worktree))
+    return (row?.agents ?? []).some(a => /^(working|running|active)$/i.test(a.state ?? a.status ?? ''))
+  } catch {
+    return false
+  }
+}
+
+const screenAfterSend = async (io, handle, before) => {
+  for (let i = 0; i < 5; i += 1) {
+    await io.sleep(1000)
+    const res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])
+    if (res.status !== 0) continue
+    try {
+      const tail = parseJson(res, 'orca terminal read').result?.terminal?.tail
+      const text = Array.isArray(tail) ? tail.join('\n') : typeof tail === 'string' ? tail : ''
+      if (text !== '' && text !== before) return text
+    } catch {}
+  }
+  return undefined
+}
+
+const piSessionTools = (io, home, worktree) => {
+  const root = path.join(home, '.pi', 'agent', 'sessions')
+  const target = path.resolve(worktree)
+  try {
+    const dirs = io.listFiles(root)
+    const matches = dirs.flatMap(dir => {
+      try {
+        return io.listFiles(dir).filter(file => file.endsWith('.jsonl')).map(file => ({ file, name: path.basename(file) }))
+      } catch { return [] }
+    }).sort((a, b) => b.name.localeCompare(a.name))
+    for (const { file } of matches) {
+      try {
+        const lines = io.readFile(file).split(/\r?\n/)
+        const session = JSON.parse(lines[0])
+        if (!samePath(session.cwd ?? '', target)) continue
+        const initial = JSON.parse(lines[4] ?? '{}')
+        const tools = initial.message?.sections?.tools ?? initial.message?.content?.find?.(part => part.type === 'text')?.text ?? initial.message?.content
+        if (typeof tools === 'string' && /<tools>\s*\(none\)/i.test(tools)) return 'none'
+        return 'available'
+      } catch {}
+    }
+  } catch {}
+  return undefined
+}
+
+const waitForPiSession = async (io, home, worktree) => {
+  for (let i = 0; i < 25; i += 1) {
+    const tools = piSessionTools(io, home, worktree)
+    if (tools !== undefined) return tools
+    await io.sleep(200)
+  }
+  return undefined
 }
 
 // The gentle-pi profile a pi dispatch is pinned to: --perfil-pi wins over agentes.pi.perfil; absent or "preguntar" means
@@ -450,8 +530,32 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     if (agent !== 'pi') {
       const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
       if (!handle) throw new Error('orca terminal create no devolvió el handle de la terminal.')
-      if (!(await waitForTui(io, handle, agent))) throw new Error(`La TUI de ${agent} no apareció a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
-      ok(io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', `Read and follow the brief in ${briefPath}`, '--enter']), 'orca terminal send')
+      const before = await waitForTui(io, handle, agent, root)
+      if (!before) throw new Error(`La TUI de ${agent} no apareció a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
+      const prompt = `Read and follow the brief in ${briefPath}`
+      const observed = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', '10', '--json'])
+      let sent = observed
+      let oldHost = false
+      if (observed.status !== 0 && /(?:unknown|unrecognized|unsupported)[^\n]*--wait-submit/i.test(observed.stderr || observed.stdout)) {
+        oldHost = true
+        sent = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter'])
+      }
+      ok(sent, 'orca terminal send')
+      let started = false
+      if (!oldHost) {
+        const receipt = parseJson(sent, 'orca terminal send')
+        if (receipt.ok === false) throw new Error(`orca terminal send no inició el turno: ${receipt.error?.message ?? JSON.stringify(receipt)}`)
+        started = submittedTurn(receipt)
+      }
+      if (!started) started = worktreeAgentStarted(io, worktree)
+      if (!started) {
+        const screen = await screenAfterSend(io, handle, before)
+        if (screen && !shellPrompt(screen) && !/trust this folder\?/i.test(screen)) started = true
+      }
+      if (!started) throw new Error(`orca terminal send aceptó o envió el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
+    } else {
+      const tools = await waitForPiSession(io, io.home, worktree)
+      if (tools === 'none') throw new Error(`La nueva sesión de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revisá la configuración de herramientas de Pi para el worktree ${worktree}.`)
     }
     say(`✔ ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
 
