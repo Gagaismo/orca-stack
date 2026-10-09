@@ -190,7 +190,7 @@ const gh = (additions: number, deletions: number): ((argv: readonly string[]) =>
 
 for (const tool of ['Bash', 'PowerShell'] as const) {
   test(`${tool}: big PR without a consult is denied, with one it passes`, async ($, on) => {
-    const w = setup(on, gh(300, 150))
+    const w = setup(on, gh(300, 150), {}, { project: true })
     await boot($)
     const denied = await $.tool.call({ tool, command: 'gh pr merge 612 --squash' } as never)
     expect(denied.deny).toBe('PR #612 grande (450 líneas): consultá a Gentle Shell (tema pr-612) antes de mergear.')
@@ -204,7 +204,7 @@ for (const tool of ['Bash', 'PowerShell'] as const) {
 
 test('small PR, exactly 400, gh failure, no number and other commands pass', async ($, on) => {
   let size: Run = { exitCode: 0, stdout: JSON.stringify({ additions: 100, deletions: 100 }), stderr: '' }
-  const w = setup(on, argv => (argv[0] === 'gh' ? size : ok()))
+  const w = setup(on, argv => (argv[0] === 'gh' ? size : ok()), {}, { project: true })
   await boot($)
   const merge = (command: string) => $.tool.call({ tool: 'Bash', command } as never)
   expect((await merge('gh pr merge 5')).deny).toBeUndefined()
@@ -219,6 +219,25 @@ test('small PR, exactly 400, gh failure, no number and other commands pass', asy
   expect((await merge('grep "gh pr merge" docs/')).deny).toBeUndefined()
   expect((await merge('git status')).deny).toBeUndefined()
   expect(w.calls.length).toBe(before)
+})
+
+test('outside an orca-stack project a big PR merges: there is no consult tool to satisfy the gate', async ($, on) => {
+  const w = setup(on, gh(300, 150))
+  await boot($)
+  expect(w.tools).toEqual([])
+  expect((await $.tool.call({ tool: 'Bash', command: 'gh pr merge 612 --squash' } as never)).deny).toBeUndefined()
+})
+
+test('a repo with only .orca-stack.local.json has the tool, the criterio section and the big-PR gate', async ($, on) => {
+  const local = { [PROJECT_CONFIG.replace('.orca-stack.json', '.orca-stack.local.json')]: '{}' }
+  const inRepo = (argv: readonly string[]): Run =>
+    argv[0] === 'git' ? { exitCode: 0, stdout: '/p/.git\n/p\n', stderr: '' } : gh(300, 150)(argv)
+  const w = setup(on, inRepo, {}, { files: local })
+  await boot($)
+  expect(w.tools).toEqual(['consultar_gentle_shell'])
+  expect((await compose($)).sections.map((one: { id: string }) => one.id)).toEqual(['puente-gentle:criterio'])
+  const denied = await $.tool.call({ tool: 'Bash', command: 'gh pr merge 612 --squash' } as never)
+  expect(denied.deny).toContain('grande (450 líneas)')
 })
 
 test('sdd-propose and sdd-design get the Gentle Shell block appended; other agents do not', async ($, on) => {
@@ -337,7 +356,7 @@ test('/gentle lists temas, expands the chosen one and copies an answer', async (
 const compose = ($: any) =>
   $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: ['terminal'], tools: [], outputStyle: null, traits: [] })
 
-test('without .orca-stack.json there is no criterio section and no tool; the commands stay', async ($, on) => {
+test('without orca-stack config there is no criterio section and no tool; the commands stay', async ($, on) => {
   const w = setup(on, () => ok())
   await boot($)
   expect(w.tools).toEqual([])

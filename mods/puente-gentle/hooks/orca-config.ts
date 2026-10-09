@@ -224,14 +224,24 @@ export const repoRoot = async (host: Host): Promise<string | undefined> => {
   }
 }
 
-// Whether the repo has its own `.orca-stack.json`: mods that inject text into the session only do so in a project that opted in.
+// Whether the repo opted into orca-stack, with `.orca-stack.json` or `.orca-stack.local.json`: mods that inject text
+// into the session, or that gate on it, only do so in such a project.
 export const hasProjectConfig = async (host: Host): Promise<boolean> => {
   const root = await repoRoot(host)
-  try {
-    return root !== undefined && (await host.exists(`${root}/.orca-stack.json`))
-  } catch {
+  if (root === undefined) {
     return false
   }
+  for (const name of ['.orca-stack.json', '.orca-stack.local.json']) {
+    try {
+      if (await host.exists(`${root}/${name}`)) {
+        return true
+      }
+    } catch {
+      // An unreadable layer counts as missing.
+    }
+  }
+
+  return false
 }
 
 const loadFor = async (host: Host, home: string | undefined, root: string | undefined): Promise<StackConfig> =>

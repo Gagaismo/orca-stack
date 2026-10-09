@@ -171,7 +171,8 @@ const textResult = (text: string) => ({ result: text })
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 
-// Big PRs need a consult before they merge; PRs touching a `riesgo` path need clean reviews of their head commit (riskDeny).
+// Big PRs need a consult before they merge, only where the consult tool exists (a project with orca-stack config);
+// PRs touching a `riesgo` path need clean reviews of their head commit (riskDeny).
 const PR_FIELDS = 'additions,deletions,files,headRefOid,body,comments,reviews'
 
 const gate = async ($: EngineInterface, command: string) => {
@@ -191,7 +192,12 @@ const gate = async ($: EngineInterface, command: string) => {
       continue
     }
     const total = prSize(stdout)
-    if (total !== undefined && total > BIG_PR_LINES && !(await load($))[`pr-${merge.number}`]?.length) {
+    if (
+      total !== undefined &&
+      total > BIG_PR_LINES &&
+      !(await load($))[`pr-${merge.number}`]?.length &&
+      (await hasProjectConfig(hostOf($)))
+    ) {
       return { deny: bigPrReason(merge.number, total) }
     }
     const config = await loadConfig(hostOf($))
@@ -219,7 +225,7 @@ export const register: Register = (on, options) => {
       name: 'gentle',
       description: 'Abre el panel con las consultas a Gentle Shell',
     })
-    // The tool (and the criterio section below) only exist in a repo with .orca-stack.json: `global` carries no methodology.
+    // The tool (and the criterio section below) only exist in a repo with orca-stack config: `global` carries no methodology.
     if (await hasProjectConfig(hostOf($))) {
       await $.tool.register({
         name: 'consultar_gentle_shell',
