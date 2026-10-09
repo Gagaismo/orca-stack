@@ -121,9 +121,11 @@ describe('global', () => {
       write(npxShim, `#!/bin/sh\nexec node '${packageBin}' "$@"\n`)
       chmodSync(npxShim, 0o755)
     }
+    const realCommandNames = process.platform === 'win32' ? ['orca-stack', 'orca-stack.cmd'] : ['orca-stack']
     const originalPathDirs = (process.env.PATH || process.env.Path || '')
       .split(path.delimiter)
       .filter(dir => dir && !samePath(dir, npxBinDir))
+      .filter(dir => !realCommandNames.some(name => existsSync(path.join(dir, name))))
     const env = { PATH: [npxBinDir, installDir, ...originalPathDirs].join(path.delimiter) }
     const npxCli = (args) => spawnSync(process.execPath, [packageBin, ...args], {
       encoding: 'utf8',
