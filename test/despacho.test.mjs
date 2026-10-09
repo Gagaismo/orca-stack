@@ -340,6 +340,7 @@ describe('briefs', () => {
     assert.match(reviewSection, /Los ejes, los tests derivados, la comprobación de que un test del autor falle sin el cambio y la limpieza de tests están en el brief de revisión que arman `orca-stack revisar` y `orca-stack brief-revision`\./)
     assert.doesNotMatch(reviewSection, /se revisa en tres ejes|deriva y corre sus propios tests/i)
     assert.match(reviewSection, /Bloquean:.*No bloquean/is)
+    assert.match(reviewSection, /una regla mecánica que ya tiene chequeo en la CI/)
     assert.match(reviewSection, /`implementación`.*`interpretación`.*humano.*`Decidido por main`/is)
     assert.doesNotMatch(contract, /assets\//)
     for (const marker of ['## BLOQUEA', '## SUGERENCIAS', 'Revisor:', 'Commit:', 'Implementador:', 'Verificado por main:', 'Decidido por main:', 'Suite:']) {
