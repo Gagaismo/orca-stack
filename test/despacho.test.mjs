@@ -243,6 +243,7 @@ describe('briefs', () => {
       'Revisor: agy', 'Commit: abc123', 'written by codex', '## BLOQUEA', '## SUGERENCIAS', 'Standards',
       'Derive and run your own tests', 'every numbered rule in `## Reglas`', 'A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job.',
       'external service', 'real system', 'test code', 'implementación', 'interpretación', 'Delete your verifier test files',
+      'tell `main` to send it to the human', '`main` must not settle it with `Decidido por main`',
       'acceptance criteria and failure modes', 'git checkout origin/<base> -- <files>', 'git checkout HEAD -- .',
     ]) assert.ok(brief.includes(part), part)
     for (const part of ['gh pr review 9 --comment --body-file', '--base-branch origin/feat/x', '--name revision-9-agy', 'proj-revision-9-agy.md']) assert.ok(text.includes(part), part)
