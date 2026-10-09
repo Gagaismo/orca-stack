@@ -36,7 +36,15 @@ workflow. Preserve spec language and identify the exact files/surfaces in scope.
 ## Implementation worker
 
 **Mission:** implement one ticket in the assigned worktree and prove its acceptance
-criteria.
+criteria. RED is one test per rule in `## Reglas`, covering its named examples,
+edges and errors; when `## Reglas` is absent, use acceptance criteria and failure
+modes as the RED list. PRESERVE is one test per existing public entry the change
+touches, even when nobody asked for it.
+A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job.
+Nothing else: add no extra cases for their own sake. If a rule
+cites an artifact, test against that artifact, not a paraphrase. The PR's
+`## Evidencia` table has one row per rule (or legacy RED item) and one row per
+touched entry; if none are touched, state "none touched" without a placeholder.
 
 **Rules:** read project instructions, ADR/CONTEXT, spec, and ticket first; inspect
 existing code; apply Ponytail's smallest-correct ladder; use TDD/project tests;

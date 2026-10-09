@@ -204,6 +204,51 @@ describe('despachar: failures along the way', () => {
 })
 
 describe('briefs', () => {
+  test('ticket brief defines RED/PRESERVE slices and evidence rows for rules and touched entries', async () => {
+    const env = fakeIo({
+      'gh issue view': json({
+        state: 'OPEN', assignees: [], title: 'ticket with rules',
+        body: '## Reglas\n1. `cliente` (`docs/example.md`): match this example.\n\n## Acceptance criteria\n- Keep this behavior',
+      }),
+    })
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    const brief = env.written[0][1]
+    const touched = 'A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job.'
+    assert.match(brief, /\*\*RED:\*\* Write one test per rule[\s\S]*?examples, edges and errors/i)
+    assert.match(brief, /\*\*PRESERVE:\*\* Write one test per existing public entry the change touches/i)
+    assert.match(brief, /Nothing else/i)
+    assert.ok(brief.includes(touched))
+    assert.match(brief, /When a rule cites an artifact.*test against that artifact, not a paraphrase/i)
+    assert.match(brief, /one row per rule.*one row per touched public entry/i)
+
+    const roleBriefs = readFileSync(new URL('../assets/stack/ROLE-BRIEFS.md', import.meta.url), 'utf8')
+    const contract = readFileSync(new URL('../assets/stack/CONTRATO.md', import.meta.url), 'utf8')
+    assert.ok(roleBriefs.includes(touched))
+    assert.match(roleBriefs, /RED is one test per rule[\s\S]*PRESERVE is one test per existing public entry[\s\S]*Nothing else/i)
+    assert.match(roleBriefs, /If a rule\s+cites an artifact, test against that artifact, not a paraphrase/i)
+    assert.ok(contract.includes(touched))
+    assert.match(contract, /## Evidencia` con una fila por cada regla[\s\S]*una por cada entrada pública tocada/i)
+  })
+
+  test('ticket brief falls back to acceptance criteria and failure modes as RED list for legacy tickets', async () => {
+    const env = fakeIo({
+      'gh issue view': json({
+        state: 'OPEN', assignees: [], title: 'legacy ticket',
+        body: '## Acceptance criteria\n- Keep this behavior\n\n## Modos de falla\n- An external call fails',
+      }),
+    })
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    const brief = env.written[0][1]
+    assert.match(brief, /If the ticket has no `## Reglas`, use its acceptance criteria and failure modes as the RED list/i)
+  })
+
+  test('ticket brief permits zero PRESERVE rows when no public entry is touched', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    const brief = env.written[0][1]
+    assert.match(brief, /If no existing public entry is touched, state "none touched"; do not add a placeholder row/i)
+  })
+
   test('dispatching a legacy ticket with only Modos de falla preserves acceptance criteria as TDD slices', async () => {
     const env = fakeIo({
       'gh issue view': json({
@@ -213,7 +258,7 @@ describe('briefs', () => {
     })
     await run('ticket', { n: '7', agent: 'agy' }, env)
     const brief = env.written[0][1]
-    assert.match(brief, /acceptance criteria.*TDD slice list/i)
+    assert.match(brief, /If the ticket has no `## Reglas`, use its acceptance criteria and failure modes as the RED list/i)
     assert.doesNotMatch(brief, /requires? `?## Reglas`?/i)
   })
 

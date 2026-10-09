@@ -8,7 +8,9 @@ You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this 
 - Pull requests target {{BASE}}.
 - Read the issue and its comments first: gh issue view {{ISSUE}} --comments
 - Read the project instructions (AGENTS.md, and GLOSSARY.md or CONTEXT.md and docs/adr when they exist) and CODING_STANDARDS.md when the repo has one. Check your change against CODING_STANDARDS.md before every commit.
-- The issue's acceptance criteria and any applicable rules or failure modes are your TDD slice list: each one ends with a test that proves it. Do not require a section the issue does not have.
+- **RED:** Write one test per rule in `## Reglas`, covering the examples, edges and errors each rule names. If the ticket has no `## Reglas`, use its acceptance criteria and failure modes as the RED list. Each item ends with a test that proves it.
+- **PRESERVE:** Write one test per existing public entry the change touches, even when the ticket did not ask for it. A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job.
+- **Nothing else:** do not add extra cases for their own sake. When a rule cites an artifact (such as a path in `## Reglas`), test against that artifact, not a paraphrase of it.
 
 ## Verification
 
@@ -33,9 +35,9 @@ The body is UTF-8 and has exactly this shape. The headings and the `Implementado
 <the smallest view that makes the change clear>
 
 ## Evidencia
-| Criterion or failure mode | Test (exact name) | Result |
+| Rule, legacy RED item, or touched public entry | Test (exact name) | Result |
 |---|---|---|
-<one row per acceptance criterion and per failure mode: the exact test name and the passing line of the run, or how it was verified when there is no test. Add before/after (screenshot or output) when the change is visible.>
+<one row per rule (or, for a legacy ticket, per acceptance criterion and failure mode used as a RED item) and one row per touched public entry: the exact test name and passing line, or how it was verified when there is no test. If no existing public entry is touched, state "none touched"; do not add a placeholder row. Add before/after (screenshot or output) when the change is visible.>
 
 ## Merge Danger
 <one-way or two-way door, and the blast radius>
