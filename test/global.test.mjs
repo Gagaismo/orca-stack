@@ -103,16 +103,28 @@ describe('global', () => {
   })
 
   test('chooses a PATH directory, reports idempotence, and doctor checks its version', () => {
-    const commandDir = path.join(home, 'path-bin')
+    const commandDir = path.join(home, process.platform === 'win32' ? 'npm-prefix' : 'path-bin')
+    const toolsDir = path.join(home, 'tools')
     write(path.join(commandDir, '.probe'), '')
-    const env = { PATH: [commandDir, path.dirname(process.execPath)].join(path.delimiter) }
+    const pathDirs = [commandDir]
+    if (process.platform === 'win32') {
+      write(path.join(toolsDir, 'npm.cmd'), `@echo off\r\necho ${commandDir}\r\n`)
+      pathDirs.push(toolsDir)
+    }
+    pathDirs.push(path.dirname(process.execPath))
+    const env = { PATH: pathDirs.join(path.delimiter) }
     const first = cli(home, ['global', '--skip-pi'], { env })
     assert.equal(first.status, 0, first.out)
+    if (process.platform === 'win32') {
+      assert.ok(existsSync(path.join(commandDir, 'orca-stack.cmd')), first.out)
+      assert.ok(existsSync(path.join(commandDir, 'orca-stack')), first.out)
+    }
     const second = cli(home, ['global', '--skip-pi'], { env })
     assert.equal(second.status, 0, second.out)
     assert.match(second.out, /orca-stack.*(actualizado|up to date)/i)
     const checked = cli(home, ['doctor', '--offline', '--skip-pi'], { env })
-    assert.match(checked.out, new RegExp(`orca-stack.*${packageVersion().replaceAll('.', '\\.')}`))
+    const checkLine = checked.out.split(/\r?\n/).find(line => /✔ orca-stack -/.test(line))?.trim()
+    assert.equal(checkLine, `✔ orca-stack - version ${packageVersion()} on PATH`)
   })
 
   test('finishes without a writable PATH directory and doctor warns with the PATH fix', () => {
