@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { citedPaths, dispatch, launcherFor, missingPaths } from '../src/despacho.mjs'
+import { citedPaths, dispatch, launcherFor, missingPaths, renderBrief } from '../src/despacho.mjs'
 import { layout } from '../src/util.mjs'
 import { cleanup, read, tempDir, write } from './helpers.mjs'
 
@@ -281,7 +281,17 @@ describe('briefs', () => {
     const env = fakeIo({ 'gh pr': json({ headRefName: 'feat/x', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) })
     await run('review', { n: '9', agent: 'agy', dryRun: true }, env)
     const text = env.out.join('\n')
-    for (const part of ['Revisor: agy', 'Commit: abc123', 'written by codex', '## BLOQUEA', '## SUGERENCIAS', 'Standards', 'git checkout origin/<base> -- <files>', 'git checkout HEAD -- .', 'gh pr review 9 --comment --body-file', '--base-branch origin/feat/x', '--name revision-9-agy', 'proj-revision-9-agy.md']) assert.ok(text.includes(part), part)
+    const brief = renderBrief('review', {
+      PR: '9', REPO: 'repo', AGENT: 'agy', IMPLEMENTER: 'codex', SHA: 'abc123', BASE: 'main', VERIFICATION: 'npm test',
+    })
+    for (const part of [
+      'Revisor: agy', 'Commit: abc123', 'written by codex', '## BLOQUEA', '## SUGERENCIAS', 'Standards',
+      'Derive and run your own tests', 'every numbered rule in `## Reglas`', 'A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job.',
+      'external service', 'real system', 'test code', 'implementación', 'interpretación', 'Delete your verifier test files',
+      'tell `main` to send it to the human', '`main` must not settle it with `Decidido por main`',
+      'acceptance criteria and failure modes', 'git checkout origin/<base> -- <files>', 'git checkout HEAD -- .',
+    ]) assert.ok(brief.includes(part), part)
+    for (const part of ['gh pr review 9 --comment --body-file', '--base-branch origin/feat/x', '--name revision-9-agy', 'proj-revision-9-agy.md']) assert.ok(text.includes(part), part)
   })
 
   test('a cited path that is not in the base tree aborts a real run with zero writes', async () => {

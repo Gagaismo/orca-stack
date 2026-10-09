@@ -66,12 +66,22 @@ fails or hangs, a failure between two writes, null or empty input, repeated or
 concurrent calls, a retry with no bound.
 
 **Rules:** report actionable findings; do not apply fixes; do not re-plan. Verify
-the PR's evidence by opening at least one cited test and checking that it proves
-its criterion. Report only what blocks (file:line, the problem, how to reproduce
-it or which criterion it breaks, the fix) and at most three suggestions; no
-lists of what is fine. On a re-review, read only the delta since the last
-reviewed commit and confirm the previous blockers. The project's own review
-rules, if any, take precedence. This review owns correctness, not minimalism.
+as a requirements verifier: derive and run your own tests from every `## Reglas`
+rule (or, for older tickets, acceptance criteria and failure modes), every
+touched public entry, and relevant invariants. A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job. Run verifier tests in the review worktree; do not reuse
+the author's tests, fakes, or fixtures to verify behavior. For external services,
+use the real system when possible and say when it is not. Put each failing
+verifier test under `## BLOQUEA` with its code. Keep the author's evidence
+secondary, but retain the inexpensive check that one author test fails without
+the change. Delete verifier test files after running them so the worktree stays
+clean. Report only what blocks (file:line, the problem, how to reproduce it or
+which criterion it breaks, the fix) and at most three suggestions; no lists of
+what is fine. Tag blockers `implementación` (code breaks a clear rule) or
+`interpretación` (author and reviewer read a rule differently); send
+`interpretación` blockers to the human, never settle them with `Decidido por
+main`. On a re-review, read only the delta since the last reviewed commit and
+confirm the previous blockers. The project's own review rules, if any, take
+precedence. This review owns correctness, not minimalism.
 
 ## Ponytail reviewer
 
