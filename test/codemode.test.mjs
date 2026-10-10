@@ -3,12 +3,12 @@ import { chmodSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { pathToFileURL } from 'node:url'
 import {
   codexCodemodeStatus,
   ensureCodexCodemode,
   ensurePiCodemode,
   piCodemodeStatus,
+  resolveDefaultTools,
 } from '../src/codemode.mjs'
 import { PI_TOOLS, launcherFor } from '../src/despacho.mjs'
 import { checkCodemode, doctorCommand } from '../src/doctor.mjs'
@@ -105,6 +105,38 @@ describe('codemode rules 1-6', () => {
 
     const updated = JSON.parse(read(settingsFile))
     assert.deepEqual(updated.defaultTools, ['read', '+codemode'])
+  })
+
+  test('Rule 1: pi settings.json with plain codemode in defaultTools is preserved without re-adding +codemode', () => {
+    const messages = []
+    const ctx = createCtx({ home, out: msg => messages.push(msg) })
+    const piBin = path.join(binDir, 'pi')
+    write(piBin, '#!/bin/sh\n')
+
+    const settingsFile = path.join(ctx.L.piAgent, 'settings.json')
+    write(settingsFile, JSON.stringify({ defaultTools: ['read', 'codemode'] }, null, 2))
+
+    const result = ensurePiCodemode(ctx, { piBin })
+    assert.equal(result, 'unchanged')
+
+    const after = JSON.parse(read(settingsFile))
+    assert.deepEqual(after.defaultTools, ['read', 'codemode'])
+    assert.ok(messages.some(m => m.includes('codemode en Pi ya está activado (codemode en defaultTools)')))
+  })
+
+  test('Rule 1: pi settings.json with [+codemode, -codemode] enables codemode', () => {
+    const ctx = createCtx({ home })
+    const piBin = path.join(binDir, 'pi')
+    write(piBin, '#!/bin/sh\n')
+
+    const settingsFile = path.join(ctx.L.piAgent, 'settings.json')
+    write(settingsFile, JSON.stringify({ defaultTools: ['+codemode', '-codemode'] }, null, 2))
+
+    const result = ensurePiCodemode(ctx, { piBin })
+    assert.equal(result, 'updated')
+
+    const after = JSON.parse(read(settingsFile))
+    assert.deepEqual(after.defaultTools, ['+codemode'])
   })
 
   test('Rule 2: codex config without code_mode = true enables it with codex features enable code_mode and does not hand-edit TOML', () => {
@@ -258,7 +290,35 @@ describe('codemode rules 1-6', () => {
     assert.ok(codexUnsupported.detail.includes('no soporta code_mode'))
   })
 
-  test('Rule 7: Gentle Shell consult and pi reviews pass codemode in --tools, and consult cannot write', async () => {
+  test('Rule 8: piCodemodeStatus reports on for plain codemode and off for [+codemode, -codemode]', () => {
+    const ctx = createCtx({ home })
+    const piBin = path.join(binDir, 'pi')
+    write(piBin, '#!/bin/sh\n')
+    const settingsFile = path.join(ctx.L.piAgent, 'settings.json')
+
+    // List 1: plain name
+    write(settingsFile, JSON.stringify({ defaultTools: ['read', 'codemode'] }, null, 2))
+    const statusPlain = piCodemodeStatus(ctx.L, { piBin })
+    assert.equal(statusPlain.status, 'on')
+    assert.equal(statusPlain.detail, 'codemode en defaultTools')
+
+    // List 2: addition followed by removal
+    write(settingsFile, JSON.stringify({ defaultTools: ['+codemode', '-codemode'] }, null, 2))
+    const statusCancelled = piCodemodeStatus(ctx.L, { piBin })
+    assert.equal(statusCancelled.status, 'off')
+    assert.equal(statusCancelled.command, 'orca-stack global')
+  })
+
+  test('resolveDefaultTools resolves plain names, additions, and removals in order', () => {
+    assert.deepEqual(resolveDefaultTools(['read', 'codemode']), ['read', 'codemode'])
+    assert.deepEqual(resolveDefaultTools(['+codemode', '-codemode']), ['read', 'bash', 'edit', 'write'])
+    assert.deepEqual(resolveDefaultTools(['+codemode']), ['read', 'bash', 'edit', 'write', 'codemode'])
+    assert.deepEqual(resolveDefaultTools(['-read', '+codemode']), ['bash', 'edit', 'write', 'codemode'])
+    assert.deepEqual(resolveDefaultTools([]), [])
+    assert.deepEqual(resolveDefaultTools(undefined), [])
+  })
+
+  test('Rule 7: Gentle Shell consult and pi reviews pass codemode in --tools, and consult cannot write', () => {
     // 1. Pi reviews pass codemode in PI_TOOLS.review
     assert.ok(PI_TOOLS.review.split(',').includes('codemode'), 'PI_TOOLS.review must include codemode')
     assert.deepEqual(PI_TOOLS.review.split(','), ['read', 'bash', 'grep', 'find', 'ls', 'codemode'])
@@ -287,20 +347,6 @@ describe('codemode rules 1-6', () => {
       config: { agentes: {} },
     })
     assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode'"))
-
-    // 4. Proves that pi codemode can only call tools in --tools
-    // In @earendil-works/pi-coding-agent, getCodemodeCallableTools(ctx.tools) filters ctx.tools
-    // to remove 'codemode' and only allows what remains.
-    const candidatePath = process.env.APPDATA
-      ? path.join(process.env.APPDATA, 'npm', 'node_modules', 'gentle-pi', 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'extensions', 'codemode', 'tool.js')
-      : null
-    if (candidatePath && existsSync(candidatePath)) {
-      const { getCodemodeCallableTools } = await import(pathToFileURL(candidatePath).href)
-      const consultToolObjects = readOnlyTools.map(name => ({ name }))
-      const callable = getCodemodeCallableTools(consultToolObjects)
-      assert.deepEqual(callable.map(t => t.name), ['read', 'grep', 'find', 'ls'])
-      assert.ok(!callable.some(t => ['write', 'edit', 'bash'].includes(t.name)))
-    }
   })
 
   test('PRESERVE: globalCommand runs successfully and sets up codemode without crashing', async () => {

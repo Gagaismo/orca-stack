@@ -4,6 +4,27 @@ import path from 'node:path'
 import { piBinary } from './pi.mjs'
 import { childEnv, readTextIfExists, run, which } from './util.mjs'
 
+export const DEFAULT_TOOL_NAMES = ['read', 'bash', 'edit', 'write']
+
+export const isToolModifier = entry => typeof entry === 'string' && (entry.startsWith('+') || entry.startsWith('-'))
+
+export const resolveDefaultTools = entries => {
+  if (!Array.isArray(entries)) return []
+  const plain = entries.filter(entry => !isToolModifier(entry))
+  const tools = plain.length > 0 || entries.length === 0 ? [...plain] : [...DEFAULT_TOOL_NAMES]
+  for (const entry of entries) {
+    if (!isToolModifier(entry)) continue
+    const name = entry.slice(1)
+    const index = tools.indexOf(name)
+    if (entry.startsWith('+') && index === -1 && name) {
+      tools.push(name)
+    } else if (entry.startsWith('-') && index !== -1) {
+      tools.splice(index, 1)
+    }
+  }
+  return tools
+}
+
 export const piCodemodeStatus = (L, { piBin } = {}) => {
   const bin = piBin !== undefined ? piBin : piBinary(L)
   if (!bin) {
@@ -16,8 +37,11 @@ export const piCodemodeStatus = (L, { piBin } = {}) => {
   }
   try {
     const data = JSON.parse(text)
-    if (Array.isArray(data.defaultTools) && data.defaultTools.includes('+codemode')) {
-      return { status: 'on', detail: '+codemode en defaultTools', file }
+    if (Array.isArray(data.defaultTools) && resolveDefaultTools(data.defaultTools).includes('codemode')) {
+      const detail = data.defaultTools.includes('+codemode')
+        ? '+codemode en defaultTools'
+        : 'codemode en defaultTools'
+      return { status: 'on', detail, file }
     }
 
     return { status: 'off', command: 'orca-stack global', file }
@@ -44,8 +68,11 @@ export const ensurePiCodemode = (ctx, { piBin } = {}) => {
     }
   }
 
-  if (Array.isArray(data.defaultTools) && data.defaultTools.includes('+codemode')) {
-    ctx.say('  codemode en Pi ya está activado (+codemode en defaultTools)')
+  if (Array.isArray(data.defaultTools) && resolveDefaultTools(data.defaultTools).includes('codemode')) {
+    const detail = data.defaultTools.includes('+codemode')
+      ? '+codemode en defaultTools'
+      : 'codemode en defaultTools'
+    ctx.say(`  codemode en Pi ya está activado (${detail})`)
 
     return 'unchanged'
   }
