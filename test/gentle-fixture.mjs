@@ -151,10 +151,11 @@ export const fixtureV4 = eol =>
 
 
 // A fake `gentle-ai` first in the PATH, answering the RDD status the test asks for.
-export const fakeGentle = (dir, mode) => {
+export const fakeGentle = (dir, mode, source = 'default') => {
   const win = process.platform === 'win32'
   const file = path.join(dir, win ? 'gentle-ai.cmd' : 'gentle-ai')
-  write(file, win ? `@echo receipt-driven development: ${mode} (decided by default)\r\n` : `#!/bin/sh\necho "receipt-driven development: ${mode} (decided by default)"\n`)
+  const suffix = source ? ` (decided by ${source})` : ''
+  write(file, win ? `@echo receipt-driven development: ${mode}${suffix}\r\n` : `#!/bin/sh\necho "receipt-driven development: ${mode}${suffix}"\n`)
   if (!win) {
     chmodSync(file, 0o755)
   }
