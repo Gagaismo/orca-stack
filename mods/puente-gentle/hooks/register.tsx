@@ -230,7 +230,7 @@ export const register: Register = (on, options) => {
         inputSchema: {
           type: 'object',
           properties: {
-            tema: { type: 'string', description: 'Slug corto del tema, por ejemplo pr-612 o auditoria. Misma conversación por tema.' },
+            tema: { type: 'string', description: 'Slug corto del tema, por ejemplo pr-612 o auditoria. Misma conversaci\u00f3n por tema.' },
             planteo: { type: 'string', description: 'Contexto neutral: el problema, las restricciones, nuestra propuesta actual y las rutas relevantes.' },
             pregunta: { type: 'string', description: 'Lo que querés que opine.' },
           },

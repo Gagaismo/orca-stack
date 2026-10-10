@@ -242,7 +242,7 @@ test('a repo with only .orca-stack.local.json has the tool, the criterio section
 test('Agent calls never trigger automatic consult', async ($, on) => {
   const w = setup(on, () => ok('Yo evitaría el cache.'))
   await boot($)
-  await $.tool.call({ tool: 'Agent', description: 'd', prompt: 'hacé la propuesta', subagent_type: 'custom-agent' } as never)
+  await $.tool.call({ tool: 'Agent', description: 'd', prompt: 'hac\u00e9 la propuesta', subagent_type: 'custom-agent' } as never)
   expect(w.calls).toHaveLength(0)
 })
 

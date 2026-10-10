@@ -59,7 +59,7 @@ Instala a nivel usuario:
   7. ~/.orca-stack/state.json (para \`remove\`) y ~/.orca-stack/config.json (capa personal)
 
 Es idempotente: una segunda corrida no cambia nada ni genera respaldos nuevos.
---limpiar-sdd respalda y mueve solo restos SDD conocidos a ~/.orca-stack/backups; sin la opción no mueve ninguno.
+--limpiar-sdd respalda y mueve solo restos SDD conocidos a ~/.orca-stack/backups; sin la opci\u00f3n no mueve ninguno.
 `,
   init: `orca-stack init [--dry-run]
 
