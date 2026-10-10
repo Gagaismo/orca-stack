@@ -29,14 +29,32 @@ const PROBE_TIMEOUT = 10_000
 const codes = expr => `([int[]][char[]](${expr}) -join ',')`
 const fromCodes = list => String.fromCharCode(...list.split(',').filter(Boolean).map(Number))
 
+// Inspects the codex ASCII block markers. Returns { status: 'ok' | 'none' | 'malformed', from, end, inner }.
+export const codexBlock = text => {
+  const count = marker => text.split(marker).length - 1
+  const opens = count(CODEX_ASCII_MARKERS.begin)
+  const closes = count(CODEX_ASCII_MARKERS.end)
+  if (opens === 0 && closes === 0) {
+    return { status: 'none' }
+  }
+  const begin = text.indexOf(CODEX_ASCII_MARKERS.begin)
+  const end = text.indexOf(CODEX_ASCII_MARKERS.end)
+  if (opens !== 1 || closes !== 1 || end < begin) {
+    return { status: 'malformed' }
+  }
+  const from = begin + CODEX_ASCII_MARKERS.begin.length
+
+  return { status: 'ok', from, end, inner: text.slice(from, end) }
+}
+
 // Reads a UTF-8 file without BOM the way codex does. Returns { status: 'ok' | 'mojibake' | 'error', text, profile, reason }.
-export const probeGetContent = ({ exec = run } = {}) => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'orca-stack-probe-'))
+export const probeGetContent = ({ exec = run, tmpdir = os.tmpdir() } = {}) => {
+  const dir = mkdtempSync(path.join(tmpdir, 'orca-stack-probe-'))
   const file = path.join(dir, 'probe.txt')
   writeFileSync(file, SAMPLE, 'utf8')
   try {
     const script = [
-      `'ORCA_TEXT=' + ${codes(`Get-Content -Raw '${file.replaceAll("'", "''")}'`)}`,
+      `'ORCA_TEXT=' + ${codes(`Get-Content -LiteralPath '${file.replaceAll("'", "''")}' -Raw`)}`,
       `'ORCA_PROFILE=' + ${codes('$PROFILE')}`,
     ].join('; ')
     const result = exec('powershell.exe', ['-Command', script], { timeout: PROBE_TIMEOUT, env: process.env })

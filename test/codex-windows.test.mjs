@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
@@ -17,7 +17,7 @@ const PROFILE = 'C:\\Users\\Ana\\OneDrive\\Documentos\\WindowsPowerShell\\Micros
 const fakeExec = ({ text, profile = PROFILE, ...rest } = {}) => {
   const calls = []
   const exec = (cmd, args, options) => {
-    const file = /Get-Content -Raw '([^']+)'/.exec(args.at(-1))[1]
+    const file = (/Get-Content -LiteralPath '([^']+)' -Raw/.exec(args.at(-1)) ?? /Get-Content -Raw '([^']+)'/.exec(args.at(-1)))[1]
     calls.push({ cmd, args, options, bytes: readFileSync(file) })
 
     return { status: 0, stdout: `ORCA_TEXT=${codes(text)}\r\nORCA_PROFILE=${codes(profile)}\r\n`, stderr: '', error: null, timedOut: false, ...rest }
@@ -92,6 +92,37 @@ describe('doctor: codex Get-Content probe on Windows', () => {
     assert.deepEqual(codexWindowsChecks({ windows: true, codex: false, agentsMd: agentsMd(), probe }), [])
     assert.equal(probed, 0)
   })
+
+  test('rule 1: a probe file path containing [ and ] still reads the sample (ok or mojibake, not error)', () => {
+    const bracketDir = path.join(tempDir('probe-brackets'), '[a]')
+    mkdirSync(bracketDir, { recursive: true })
+    try {
+      let commandScript = ''
+      const exec = (cmd, args) => {
+        commandScript = args.at(-1)
+        const fileMatch = /Get-Content -LiteralPath '([^']+)' -Raw/.exec(commandScript)
+        if (!fileMatch) {
+          return { status: 1, stdout: '', stderr: 'Get-Content : ItemNotFound', error: null, timedOut: false }
+        }
+        const content = readFileSync(fileMatch[1], 'utf8')
+
+        return { status: 0, stdout: `ORCA_TEXT=${codes(content)}\r\nORCA_PROFILE=${codes(PROFILE)}\r\n`, stderr: '', error: null, timedOut: false }
+      }
+      const injected = probeGetContent({ exec, tmpdir: bracketDir })
+      assert.equal(injected.status, 'ok')
+      assert.equal(injected.text, 'está')
+      assert.match(commandScript, /Get-Content -LiteralPath '.*\[a\].*' -Raw/)
+
+      if (process.platform === 'win32') {
+        const real = probeGetContent({ tmpdir: bracketDir })
+        assert.notEqual(real.status, 'error', `powershell failed to find or read file: ${real.reason}`)
+        assert.ok(real.status === 'ok' || real.status === 'mojibake')
+        assert.ok(real.text === 'está' || real.text === MOJIBAKE)
+      }
+    } finally {
+      cleanup(path.dirname(bracketDir))
+    }
+  })
 })
 
 describe('doctor: codex ASCII block', () => {
@@ -108,14 +139,22 @@ describe('doctor: codex ASCII block', () => {
     assert.equal(blockCheck(checks(exec)).level, 'ok')
   })
 
-  test('doctor prints neither check off Windows or when codex is not in agentes.usa', () => {
+  test('rule 4: a repo whose agentes.usa has codex-cc but not codex prints the Codex en Windows section on Windows', () => {
+    write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ agentes: { usa: ['claude', 'codex-cc'] } }))
+    const result = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home, env: { ORCA_STACK_PLATFORM: 'win32' } })
+    assert.match(result.out, /Codex en Windows/)
+    assert.match(result.out, /Get-Content/)
+    assert.match(result.out, /regla ASCII/)
+  })
+
+  test('rule 5: neither codex nor codex-cc in use does not print the section on Windows', () => {
+    write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ agentes: { usa: ['claude', 'agy'] } }))
+    const noCodex = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home, env: { ORCA_STACK_PLATFORM: 'win32' } })
+    assert.doesNotMatch(noCodex.out, /Codex en Windows|Get-Content|regla ASCII/)
+
     write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ agentes: { usa: ['codex'] } }))
     const linux = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home, env: { ORCA_STACK_PLATFORM: 'linux' } })
     assert.doesNotMatch(linux.out, /Codex en Windows|Get-Content|regla ASCII/)
-
-    write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ agentes: { usa: ['claude', 'codex-cc'] } }))
-    const noCodex = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home, env: { ORCA_STACK_PLATFORM: 'win32' } })
-    assert.doesNotMatch(noCodex.out, /Codex en Windows|Get-Content|regla ASCII/)
   })
 })
 
@@ -201,5 +240,35 @@ describe('global and remove: codex ASCII block', () => {
     run(['remove'])
     assert.equal(existsSync(agentsMd()), false)
     assert.equal(existsSync(path.join(home, '.codex')), true)
+  })
+
+  test('rule 2: remove with a codex ASCII block whose end marker is missing, or with two start markers, leaves the file byte-identical and names the problem', () => {
+    // Case A: end marker missing
+    const own = '## Rules\n\n- mine\n'
+    write(agentsMd(), own)
+    run(['global', '--skip-pi'])
+    const missingEnd = read(agentsMd()).replace(CODEX_ASCII_MARKERS.end, '')
+    write(agentsMd(), missingEnd)
+    const resMissing = run(['remove'])
+    assert.equal(read(agentsMd()), missingEnd)
+    assert.match(resMissing.out, /se omite y no toco nada: los marcadores de la regla ASCII de codex están incompletos/)
+
+    // Case B: two start markers
+    write(agentsMd(), own)
+    run(['global', '--skip-pi'])
+    const twoStarts = CODEX_ASCII_MARKERS.begin + '\n' + read(agentsMd())
+    write(agentsMd(), twoStarts)
+    const resTwoStarts = run(['remove'])
+    assert.equal(read(agentsMd()), twoStarts)
+    assert.match(resTwoStarts.out, /se omite y no toco nada: los marcadores de la regla ASCII de codex están incompletos, repetidos o desordenados/)
+  })
+
+  test('rule 3: remove with a well-formed block removes it exactly as today', () => {
+    const own = '## Rules\n\n- mine\n'
+    write(agentsMd(), own)
+    run(['global', '--skip-pi'])
+    assert.ok(read(agentsMd()).includes(CODEX_ASCII_MARKERS.begin))
+    run(['remove'])
+    assert.equal(read(agentsMd()), own)
   })
 })

@@ -388,7 +388,7 @@ export const doctorCommand = async flags => {
   // codex on Windows reads files through PowerShell 5.1 (#58). Off Windows or without codex, not even the title prints.
   const codexChecks = codexWindowsChecks({
     windows: isWindows(),
-    codex: agentsUsed(personal, committed, local).includes('codex'),
+    codex: agentsUsed(personal, committed, local).some(agent => ['codex', 'codex-cc'].includes(agent)),
     agentsMd: L.codexAgentsMd,
   })
   if (codexChecks.length > 0) {
