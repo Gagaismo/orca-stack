@@ -93,7 +93,7 @@ test('the command line carries every flag, the engram env, and runs node on the 
     '-p', '--mode', 'json',
     '--no-skills', '--skill', SKILLS,
     '--session-id', 'gentle-pr-612',
-    '--tools', 'read,grep,find,ls', '--append-system-prompt',
+    '--tools', 'read,grep,find,ls,codemode', '--append-system-prompt',
   ])
   expect(args).not.toContain('--model')
   expect(args[11]).toBe(MARCO)

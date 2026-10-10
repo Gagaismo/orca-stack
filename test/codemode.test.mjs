@@ -3,16 +3,18 @@ import { chmodSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
+import { pathToFileURL } from 'node:url'
 import {
   codexCodemodeStatus,
   ensureCodexCodemode,
   ensurePiCodemode,
   piCodemodeStatus,
 } from '../src/codemode.mjs'
+import { PI_TOOLS, launcherFor } from '../src/despacho.mjs'
 import { checkCodemode, doctorCommand } from '../src/doctor.mjs'
 import { globalCommand } from '../src/global.mjs'
 import { createCtx } from '../src/ctx.mjs'
-import { backups, cleanup, read, tempDir, write } from './helpers.mjs'
+import { ROOT, backups, cleanup, read, tempDir, write } from './helpers.mjs'
 
 export const fakeCodex = (dir, { codeMode = 'false', hasCodeMode = true, enableFails = false } = {}) => {
   const win = process.platform === 'win32'
@@ -256,12 +258,77 @@ describe('codemode rules 1-6', () => {
     assert.ok(codexUnsupported.detail.includes('no soporta code_mode'))
   })
 
+  test('Rule 7: Gentle Shell consult and pi reviews pass codemode in --tools, and consult cannot write', async () => {
+    // 1. Pi reviews pass codemode in PI_TOOLS.review
+    assert.ok(PI_TOOLS.review.split(',').includes('codemode'), 'PI_TOOLS.review must include codemode')
+    assert.deepEqual(PI_TOOLS.review.split(','), ['read', 'bash', 'grep', 'find', 'ls', 'codemode'])
+
+    // 2. Gentle Shell consult passes codemode in READ_ONLY_TOOLS
+    const puentePath = path.join(ROOT, 'mods', 'puente-gentle', 'hooks', 'puente.ts')
+    const puenteContent = read(puentePath)
+    const match = /export const READ_ONLY_TOOLS = '([^']+)'/.exec(puenteContent)
+    assert.ok(match, 'READ_ONLY_TOOLS must be defined in puente.ts')
+    const readOnlyTools = match[1].split(',')
+    assert.ok(readOnlyTools.includes('codemode'), 'READ_ONLY_TOOLS must include codemode')
+    assert.ok(!readOnlyTools.includes('write'), 'READ_ONLY_TOOLS must not include write')
+    assert.ok(!readOnlyTools.includes('edit'), 'READ_ONLY_TOOLS must not include edit')
+    assert.ok(!readOnlyTools.includes('bash'), 'READ_ONLY_TOOLS must not include bash')
+    assert.deepEqual(readOnlyTools, ['read', 'grep', 'find', 'ls', 'codemode'])
+
+    // 3. Launcher passes --tools with codemode for review mode
+    const sh = launcherFor({
+      agent: 'pi',
+      mode: 'review',
+      win: false,
+      home: '/h',
+      briefPath: '/b.md',
+      skills: '/s',
+      session: 'sess-1',
+      config: { agentes: {} },
+    })
+    assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode'"))
+
+    // 4. Proves that pi codemode can only call tools in --tools
+    // In @earendil-works/pi-coding-agent, getCodemodeCallableTools(ctx.tools) filters ctx.tools
+    // to remove 'codemode' and only allows what remains.
+    const candidatePath = process.env.APPDATA
+      ? path.join(process.env.APPDATA, 'npm', 'node_modules', 'gentle-pi', 'node_modules', '@earendil-works', 'pi-coding-agent', 'dist', 'extensions', 'codemode', 'tool.js')
+      : null
+    if (candidatePath && existsSync(candidatePath)) {
+      const { getCodemodeCallableTools } = await import(pathToFileURL(candidatePath).href)
+      const consultToolObjects = readOnlyTools.map(name => ({ name }))
+      const callable = getCodemodeCallableTools(consultToolObjects)
+      assert.deepEqual(callable.map(t => t.name), ['read', 'grep', 'find', 'ls'])
+      assert.ok(!callable.some(t => ['write', 'edit', 'bash'].includes(t.name)))
+    }
+  })
+
   test('PRESERVE: globalCommand runs successfully and sets up codemode without crashing', async () => {
     const prevHome = process.env.ORCA_STACK_HOME
     process.env.ORCA_STACK_HOME = home
     try {
       const exitCode = await globalCommand({ dryRun: true, skipPi: true, force: false })
       assert.equal(exitCode, 0)
+    } finally {
+      process.env.ORCA_STACK_HOME = prevHome
+    }
+  })
+
+  test('PRESERVE: doctorCommand runs successfully and includes Codemode section', async () => {
+    const prevHome = process.env.ORCA_STACK_HOME
+    process.env.ORCA_STACK_HOME = home
+    try {
+      const logs = []
+      const originalLog = console.log
+      console.log = msg => logs.push(msg)
+      try {
+        await doctorCommand({ offline: true, skipPi: true })
+      } finally {
+        console.log = originalLog
+      }
+      const output = logs.join('\n')
+      assert.ok(output.includes('Codemode'), 'doctor output must have Codemode section')
+      assert.ok(output.includes('Claude Code'), 'doctor output must report Claude Code')
     } finally {
       process.env.ORCA_STACK_HOME = prevHome
     }
