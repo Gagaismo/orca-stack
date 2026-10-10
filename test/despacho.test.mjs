@@ -109,6 +109,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
       if (cmd === 'git' && args[0] === 'ls-files') return { status: 1, stdout: '', stderr: '' } // not tracked
       if (cmd === 'git' && args[0] === 'rev-parse') return okRes(`${path.join(root, '.git')}\n${path.join(root, '.git')}\n${root}\n`)
       if (cmd === 'git' && args[0] === 'worktree') return okRes(`worktree ${root}\nbranch refs/heads/main\n`)
+      if (cmd === 'git' && args[0] === 'remote') return okRes('https://github.com/Gagaismo/orca-stack.git\n')
       if (cmd === 'git') return okRes('src/app.ts\n')
       if (cmd === 'gh' && args[0] === 'issue') return json({ state: 'OPEN', assignees: [], title: 't' })
       if (args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })

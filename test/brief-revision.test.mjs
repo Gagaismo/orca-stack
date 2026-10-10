@@ -43,6 +43,7 @@ const setup = ({ mode = 'un-agente', body = 'Implementador: codex', registered =
     sh: (cmd, args, options = {}) => {
       calls.push({ cmd, args, cwd: options.cwd })
       if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === '--path-format=absolute') return { status: 0, stdout: `${path.join(root, '.git')}\n${path.join(root, '.git')}\n${root}\n`, stderr: '' }
+      if (cmd === 'git' && args[0] === 'remote') return { status: 0, stdout: 'https://github.com/Gagaismo/orca-stack.git\n', stderr: '' }
       if (cmd === 'gh' && args[0] === 'pr') return { status: 0, stdout: JSON.stringify({ number: 7, headRefOid: 'abc123', body }), stderr: '' }
       if (cmd === 'git' && args[0] === 'worktree' && args[1] === 'list') return { status: 0, stdout: `worktree ${root}\n${hasWorktree ? `\nworktree ${worktreePath}\nHEAD abc123\n` : ''}`, stderr: '' }
       if (cmd === 'git' && args[0] === 'fetch') return { status: 0, stdout: '', stderr: '' }

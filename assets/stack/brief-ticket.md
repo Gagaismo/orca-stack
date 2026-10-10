@@ -57,4 +57,11 @@ If you want to change GLOSSARY.md or docs/adr, do not edit them: propose it in t
 - If the diff will pass 700 lines, stop and say so on the issue before going on.
 - Do not review PRs, do not merge, do not spawn other workers.
 - Finish with a summary: what you did, what you found, tests run, remaining risk.
+
+## Remote authorization
+
+- Destination: {{REMOTE_HOST}}, repository {{REMOTE_REPO}}
+- Credential/session: the GitHub CLI (`gh`) session and the git credentials already configured on this machine.
+- Operations: {{REMOTE_OPERATIONS}}
+- Explicitly not authorized: merge, force push, deleting branches or issues, other repos, remotes or hosts.
 {{NOTE_SECTION}}

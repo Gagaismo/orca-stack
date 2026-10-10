@@ -61,4 +61,11 @@ Tag a blocker `implementación` when the code breaks a clear rule, or `interpret
 
 - Do not approve, do not merge and do not fix the code: report only.
 - Do not leave the worktree dirty: restore every file you touched.
+
+## Remote authorization
+
+- Destination: {{REMOTE_HOST}}, repository {{REMOTE_REPO}}
+- Credential/session: the GitHub CLI (`gh`) session and the git credentials already configured on this machine.
+- Operations: {{REMOTE_OPERATIONS}}
+- Explicitly not authorized: merge, force push, deleting branches or issues, other repos, remotes or hosts.
 {{NOTE_SECTION}}
