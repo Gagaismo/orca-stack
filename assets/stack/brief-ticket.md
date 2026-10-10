@@ -64,4 +64,14 @@ If you want to change GLOSSARY.md or docs/adr, do not edit them: propose it in t
 - Credential/session: the GitHub CLI (`gh`) session and the git credentials already configured on this machine.
 - Operations: {{REMOTE_OPERATIONS}}
 - Explicitly not authorized: merge, force push, deleting branches or issues, other repos, remotes or hosts.
+
+## Method: gentle-ai ODD
+
+- Follow ODD (explore, classify, track, implement, close). The feature is `issue-{{ISSUE}}`. Its document is `odd/tasks/issue-{{ISSUE}}.md` plus the Engram mirror `odd/issue-{{ISSUE}}/tasks`. Never commit `odd/`.
+- The ticket's `## Reglas` are the feature's acceptance criteria. The existing RED and PRESERVE rules above override ODD test-first applicability: one test per rule and one per touched public entry.
+- ODD step 1 (Authorize): this brief is your explicit authorization to implement the ticket. Step 3 (Resolve uncertainty): product questions go to the issue as a comment (`gh issue comment {{ISSUE}} --body-file <file>`), then continue with whatever is not blocked; never stop and wait.
+- This brief is the repository policy for delivery: commit work units, push the branch and open the PR yourself. Delivery strategy is always a single PR (`single-pr`), never ask. If the diff passes about 700 lines, say so in the issue and keep going.
+- Delegation: the session's own subagents may be used; dispatching Orca workers may not.
+- If Engram is unavailable or reports `ambiguous_project`, mark the mirror pending and continue; never ask.
+- Before opening the PR, run the `code-review` skill on the diff as a self-check.
 {{NOTE_SECTION}}

@@ -6,3 +6,4 @@ mods/*/.claude-plugin/types/
 # local skill registry written by gentle-ai
 .atl/
 .orca-stack.local.json
+odd/

@@ -18,9 +18,8 @@ Provider instruction files point here for the durable policy.
   errors, decisions, risks, uncertainty, tests, or acceptance evidence.
 - **Engram**: persistent memory only. It is not an authority or a scheduler.
 - **Gentle Shell (Pi)**: another engineer on the team with its own methodology
-  (it may use SDD/ODD). It implements tickets, reviews with Judgment Day, and is
-  consulted as a peer. gentle-ai's SDD/ODD (SDD up to v3, ODD from v4) is
-  available to Claude sessions on explicit request.
+  (it may use ODD). It implements tickets, reviews with Judgment Day, and is
+  consulted as a peer. Implementation across the stack uses gentle-ai ODD.
 - **Claude / Codex / Antigravity**: execution providers attached to Orca. Provider
   choice never changes lifecycle authority.
 
@@ -55,8 +54,10 @@ do not wait for Orca receipts that will not come.
 
 ## Methodology contract
 
-Matt's workflow is the default methodology for Claude, Codex and Antigravity
-sessions; Pi follows its own. Ponytail may reduce the
+Planning follows Matt's skills (`grilling`, `to-spec`, `to-tickets`, triggered
+by the human) and implementation follows gentle-ai ODD for Claude, Codex and
+Antigravity sessions; Pi follows its own methodology (it may use ODD). Ponytail
+may reduce the
 implementation footprint inside an approved ticket; it may not remove research,
 domain modeling, explicit spec obligations, ADR decisions, security, validation,
 accessibility, data-loss handling, or required tests. `ponytail-review` is a
@@ -115,7 +116,7 @@ terminal on Windows, which is PowerShell; in a POSIX shell the leading `& ` is d
   the Orca and `ORCA_STACK_*` variables (the same list the pi consult bridge clears), sets `ENGRAM_DATA_DIR` to
   Gentle Shell's own engram, `GENTLE_PI_AUTONOMOUS_MODE=1` and, when personal config sets it, `CLAUDE_CONFIG_DIR`
   from `agentes.pi.claudeConfigDir`, then runs `pi -p --no-skills --skill <gentle-pi skills> --session-id <id> [--tools <tools>] "Read and carry out the brief in <path>. Non-interactive: never wait for user input."`
-  Tools: no `--tools` to implement, so gentle-pi keeps its subagents, SDD and engram tools; `read,bash,grep,find,ls` to
+  Tools: no `--tools` to implement, so gentle-pi keeps its subagents, ODD and engram tools; `read,bash,grep,find,ls` to
   review. Unlike the consult bridge, this one can run git, gh and the suite.
 
 ## Official Orca integration (preferred)

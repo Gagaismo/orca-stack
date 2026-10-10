@@ -13,6 +13,7 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 ## Work
 
 - Work only in this existing worktree and stay on its PR branch.
+- Resume the ODD feature `issue-{{ISSUE}}` with ODD's resume protocol (the document is still in the worktree).
 - Fix every listed review finding and failed check. Do not resolve interpretation findings; those are never sent in a bounce brief.
 - Do not delete, skip or weaken a test to make CI pass.
 - Do not edit `.github/workflows/` unless the ticket asks for it.
