@@ -170,6 +170,21 @@ describe('brief-revision', () => {
     }
   })
 
+  test('Acceptance: rebote appears in command help and top-level usage', async () => {
+    const oldLog = console.log
+    let output = ''
+    console.log = value => { output += `${value}\n` }
+    try {
+      await main(['rebote', '--help'])
+      assert.match(output, /orca-stack rebote <pr>/)
+      output = ''
+      await main(['--help'])
+      assert.match(output, /rebote/)
+    } finally {
+      console.log = oldLog
+    }
+  })
+
   test('Preserve: revisar keeps its original PR checkout and body-file instructions', () => {
     const brief = renderBrief('review', {
       REPO: 'repo', PR: '7', IMPLEMENTER: 'codex', SHA: 'abc123', BASE: 'main', VERIFICATION: 'npm test', AGENT: 'agy',
