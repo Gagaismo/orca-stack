@@ -779,6 +779,7 @@ describe('launchInWorktree', () => {
 describe('rebote', () => {
   const pr = (overrides = {}) => ({
     state: 'OPEN', headRefName: 'feat/fix', headRefOid: 'abc123', body: 'Implementador: agy',
+    statusCheckRollup: [],
     reviews: [{ body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, concreta, implementaci\u00F3n): fix it.\n\n## SUGERENCIAS\n(none)', url: 'https://example.test/review/1' }],
     comments: [], ...overrides,
   })
@@ -786,7 +787,7 @@ describe('rebote', () => {
     const env = fakeIo({ 'gh pr': json(pull), 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`), 'git status': okRes(''), ...extra }, { config })
     const original = env.io.sh
     env.io.sh = (cmd, args, opts) => {
-      if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return okRes('abc123\n')
+      if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return okRes(`${pull.headRefOid}\n`)
       return original(cmd, args, opts)
     }
     return env
@@ -875,5 +876,120 @@ describe('rebote', () => {
     env.io.sh = (cmd, args, opts) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create' ? { status: 1, stdout: '', stderr: 'launch failed' } : original(cmd, args, opts)
     await assert.rejects(reboteCommand({}, '12', env.io), /launch failed/)
     assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+  })
+
+  test('Rule 1: failed CheckRuns and StatusContexts relaunch with each failed check and a CI marker', async () => {
+    const checks = [
+      { __typename: 'CheckRun', name: 'Windows / Node 20', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://github.com/org/repo/actions/runs/123/job/456' },
+      { __typename: 'CheckRun', name: 'Timed out job', status: 'COMPLETED', conclusion: 'TIMED_OUT', detailsUrl: 'https://github.com/org/repo/actions/runs/123/job/458' },
+      { __typename: 'CheckRun', name: 'Startup failure', status: 'COMPLETED', conclusion: 'STARTUP_FAILURE', detailsUrl: 'https://github.com/org/repo/actions/runs/123/job/459' },
+      { __typename: 'CheckRun', name: 'Action required', status: 'COMPLETED', conclusion: 'ACTION_REQUIRED', detailsUrl: 'https://github.com/org/repo/actions/runs/123/job/460' },
+      { __typename: 'StatusContext', context: 'failed status', state: 'FAILURE', targetUrl: 'https://ci.example.test/failure/1' },
+      { __typename: 'StatusContext', context: 'lint', state: 'ERROR', targetUrl: 'https://ci.example.test/lint/1' },
+      { __typename: 'CheckRun', name: 'Passing job', status: 'COMPLETED', conclusion: 'SUCCESS' },
+      { __typename: 'CheckRun', name: 'Neutral job', status: 'COMPLETED', conclusion: 'NEUTRAL' },
+      { __typename: 'CheckRun', name: 'Skipped job', status: 'COMPLETED', conclusion: 'SKIPPED', detailsUrl: 'https://github.com/org/repo/actions/runs/123/job/457' },
+    ]
+    const env = bounceEnv(pr({ reviews: [], statusCheckRollup: checks }))
+    await reboteCommand({}, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.match(brief, /Windows \/ Node 20[\s\S]*https:\/\/github\.com\/org\/repo\/actions\/runs\/123\/job\/456[\s\S]*gh run view --job 456 --log-failed/)
+    assert.match(brief, /lint[\s\S]*https:\/\/ci\.example\.test\/lint\/1/)
+    assert.match(brief, /failed status[\s\S]*https:\/\/ci\.example\.test\/failure\/1/)
+    assert.match(brief, /Startup failure/)
+    assert.match(brief, /Action required/)
+    assert.doesNotMatch(brief, /Skipped job/)
+    assert.doesNotMatch(brief, /Passing job|Neutral job/)
+    assert.ok(env.calls.find(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'view').some(arg => arg.includes('statusCheckRollup')))
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: abc123\n')
+  })
+
+  test('Rule 2: red CI and a current blocking review relaunch once and post both markers', async () => {
+    const env = bounceEnv(pr({ statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit tests', status: 'COMPLETED', conclusion: 'TIMED_OUT', detailsUrl: 'https://github.com/org/repo/actions/runs/321/job/654' }] }))
+    await reboteCommand({}, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.match(brief, /fix it/)
+    assert.match(brief, /unit tests/)
+    assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create').length, 1)
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\nRebote CI: abc123\n')
+  })
+
+  test('Rule 3: pending checks refuse before relaunch even with a blocking review', async () => {
+    const env = bounceEnv(pr({ statusCheckRollup: [
+      { __typename: 'CheckRun', name: 'still running', status: 'IN_PROGRESS' },
+      { __typename: 'StatusContext', context: 'queued context', state: 'PENDING' },
+    ] }))
+    await assert.rejects(reboteCommand({}, '12', env.io), /esper[aá].*CI|CI.*pendiente/i)
+    assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+  })
+
+  test('Rule 4: cancelled CI refuses with a rerun command even if another check failed', async () => {
+    const checks = [
+      { __typename: 'CheckRun', name: 'cancelled job', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/987/job/111' },
+      { __typename: 'CheckRun', name: 'ci-ok', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://github.com/org/repo/actions/runs/987/job/222' },
+    ]
+    const env = bounceEnv(pr({ statusCheckRollup: checks }))
+    await assert.rejects(reboteCommand({}, '12', env.io), /gh run rerun 987 --failed/)
+    assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+  })
+
+  test('Rule 5: two prior distinct CI bounces reach the human, while the current sha retry is allowed', async () => {
+    const exhausted = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1\nRebote CI: old2' }] }))
+    await assert.rejects(reboteCommand({}, '12', exhausted.io), /dos rebotes de CI.*humano/i)
+    assert.equal(exhausted.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+
+    const sameSha = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1' }, { body: 'Rebote CI: abc123' }] }))
+    await reboteCommand({}, '12', sameSha.io)
+    assert.equal(sameSha.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: abc123\n')
+  })
+
+  test('Rule 6: CI markers do not consume a later review bounce on a new head', async () => {
+    const env = bounceEnv(pr({ headRefOid: 'def456', reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. finding' }], comments: [{ body: 'Rebote CI: abc123' }] }))
+    await reboteCommand({}, '12', env.io)
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: def456\n')
+  })
+
+  test('Rule 7: no failed checks and no current blocker keeps the existing refusal', async () => {
+    const env = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'passing', status: 'COMPLETED', conclusion: 'SUCCESS' }] }))
+    await assert.rejects(reboteCommand({}, '12', env.io), /no tiene un review bloqueante vigente/)
+    assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+    const noChecks = bounceEnv(pr({ reviews: [], statusCheckRollup: [] }))
+    await assert.rejects(reboteCommand({}, '12', noChecks.io), /no tiene un review bloqueante vigente/)
+  })
+
+  test('Rule 8: interpretation blockers do not prevent or enter a CI-only bounce', async () => {
+    const env = bounceEnv(pr({ reviews: [{ body: 'Commit: abc123\n## BLOQUEA\n1. (inferida, interpretaci\u00F3n): product disagreement' }], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }] }))
+    await reboteCommand({}, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.doesNotMatch(brief, /product disagreement/)
+    assert.match(brief, /unit/)
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: abc123\n')
+  })
+
+  test('Rule 9: failed launch does not post a CI marker', async () => {
+    const env = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }] }))
+    const original = env.io.sh
+    env.io.sh = (cmd, args, opts) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create' ? { status: 1, stdout: '', stderr: 'launch failed' } : original(cmd, args, opts)
+    await assert.rejects(reboteCommand({}, '12', env.io), /launch failed/)
+    assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+  })
+
+  test('Rule 10: existing worktree guards still apply to a CI bounce', async () => {
+    const env = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }] }), { 'git status': okRes(' M src/app.mjs\n') })
+    await assert.rejects(reboteCommand({}, '12', env.io), /worktree .* est[aá] sucio/)
+    assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+  })
+
+  test('CLI help and bounce brief describe CI findings and safe repair rules', () => {
+    const cli = readFileSync(path.join(PACKAGE_ROOT, 'src', 'cli.mjs'), 'utf8')
+    const brief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-rebote.md'), 'utf8')
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
+    assert.match(cli, /rebote\s+Relanza al autor de un PR bloqueado o con CI roja/i)
+    assert.match(brief, /## Failed checks/)
+    assert.match(brief, /do not delete, skip or weaken a test/i)
+    assert.match(brief, /do not edit `\.github\/workflows\/`/i)
+    assert.match(contract, /rebote.*CI roja/i)
+    assert.match(contract, /gh run view.*--log-failed/i)
+    assert.match(contract, /gh run rerun.*--failed/i)
   })
 })
