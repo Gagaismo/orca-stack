@@ -20,6 +20,10 @@ export const isWindows = () => platform() === 'win32'
 // Where the wrappers live, relative to the home: shared with the launchers, which build it for the target platform.
 export const SCRIPTS_REL = ['orca', 'stack', 'scripts']
 
+// codex's home: CODEX_HOME when set and not empty, else ~/.codex. Its config.toml and AGENTS.md live there
+// (openai/codex rust-v0.162.1: codex-rs/utils/home-dir/src/lib.rs:13, codex-rs/config/src/loader/local.rs:122).
+export const codexHome = (home = homeDir(), env = process.env) => env.CODEX_HOME || path.join(home, '.codex')
+
 export const layout = (home = homeDir()) => ({
   home,
   stackDir: path.join(home, 'orca', 'stack'),
@@ -37,8 +41,7 @@ export const layout = (home = homeDir()) => ({
   gentleDir: path.join(home, '.orca-stack', 'gentle'),
   sddCopy: path.join(home, '.orca-stack', 'gentle', 'sdd-orchestrator.md'),
   piAgent: path.join(home, '.pi', 'agent'),
-  codexDir: path.join(home, '.codex'),
-  codexAgentsMd: path.join(home, '.codex', 'AGENTS.md'),
+  codexDir: codexHome(home),
 })
 
 export const tilde = (p, home = homeDir()) => {

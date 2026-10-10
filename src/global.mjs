@@ -4,7 +4,7 @@ import path from 'node:path'
 import { INSTALL_HINTS, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
 import { NO_BLOCK, isLazyBlock, lazyifyBlock, rddMode, readPersonalConfig, restoreBlock, sddBlock, sddMode, trimReviewSections } from './gentle.mjs'
-import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE } from './codex-windows.mjs'
+import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, codexAgentsMd } from './codex-windows.mjs'
 import { removeAnyBlock, removeBlock, upsertBlock } from './marker.mjs'
 import { installPathCommand } from './path-command.mjs'
 import { orcaInstalled } from './orca.mjs'
@@ -253,19 +253,20 @@ const trimGentleReview = (ctx, original) => {
   ctx.say(`  ${kb} KB menos en cada sesión. \`gentle-ai sync\` las restaura: volvé a correr \`orca-stack global\` después de cada sync.`)
 }
 
-// Windows only: codex reads files through PowerShell 5.1, which garbles UTF-8 (#58). A managed block in
-// ~/.codex/AGENTS.md keeps its source code ASCII. Text outside the markers is never touched.
+// Windows only: codex reads files through PowerShell, and 5.1 garbles UTF-8 (#58). A managed block in
+// codex's AGENTS.md keeps its source code ASCII. Text outside the markers is never touched.
 const installCodexAsciiRule = ctx => {
   if (!isWindows()) {
     return
   }
   ctx.say('\nRegla ASCII de codex (Windows)')
-  const file = ctx.L.codexAgentsMd
   if (!existsSync(ctx.L.codexDir)) {
-    ctx.say(`  se omite: no hay ${ctx.show(ctx.L.codexDir)} (codex no está instalado)`)
+    const why = process.env.CODEX_HOME ? 'CODEX_HOME apunta a una carpeta que no existe' : 'codex no está instalado'
+    ctx.say(`  se omite: no hay ${ctx.show(ctx.L.codexDir)} (${why})`)
 
     return
   }
+  const file = codexAgentsMd(ctx.L.codexDir)
   const original = readTextIfExists(file)
   const text = upsertBlock(original ?? '', CODEX_ASCII_RULE, CODEX_ASCII_MARKERS)
   if (text === original) {
@@ -365,7 +366,7 @@ export const preflight = ctx => {
   if (md !== null) {
     removeAnyBlock(md) // throws on unbalanced, reordered or duplicated markers
   }
-  const codexMd = isWindows() ? readTextIfExists(ctx.L.codexAgentsMd) : null
+  const codexMd = isWindows() ? readTextIfExists(codexAgentsMd(ctx.L.codexDir)) : null
   if (codexMd !== null) {
     removeBlock(codexMd, CODEX_ASCII_MARKERS) // same
   }

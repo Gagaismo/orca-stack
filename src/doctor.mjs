@@ -4,7 +4,7 @@ import path from 'node:path'
 
 import { LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
-import { codexWindowsChecks } from './codex-windows.mjs'
+import { codexAgentsMd, codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
 import { driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
@@ -361,7 +361,7 @@ export const doctorCommand = async flags => {
     committed = checkJson(path.join(root, PROJECT_CONFIG), PROJECT_CONFIG)
     local = checkJson(path.join(root, PROJECT_LOCAL_CONFIG), PROJECT_LOCAL_CONFIG)
     if (agentsUsed(personal, committed, local).some(agent => ['codex', 'codex-cc'].includes(agent))) {
-      const trust = codexTrustStatus(root, path.join(home, '.codex', 'config.toml'))
+      const trust = codexTrustStatus(root, path.join(L.codexDir, 'config.toml'))
       add(trust.level, 'codex repo root trust', trust.detail)
     }
     // Same layering as the mods' mergeConfig: objects merge key by key, anything else (null included) replaces.
@@ -389,7 +389,7 @@ export const doctorCommand = async flags => {
   const codexChecks = codexWindowsChecks({
     windows: isWindows(),
     codex: agentsUsed(personal, committed, local).some(agent => ['codex', 'codex-cc'].includes(agent)),
-    agentsMd: L.codexAgentsMd,
+    agentsMd: codexAgentsMd(L.codexDir),
   })
   if (codexChecks.length > 0) {
     section('Codex en Windows')
