@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { citedPaths, dispatch, launcherFor, missingPaths, renderBrief } from '../src/despacho.mjs'
@@ -17,6 +18,49 @@ const PROJECT = {
   agentes: { usa: ['claude', 'agy', 'codex', 'codex-cc', 'pi'], preguntarAntes: ['codex-cc'] },
   verificacion: { suite: 'npm test -- --run', typecheck: 'npm run typecheck' },
 }
+
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const SHIPPED_STACK_FILES = ['CONTRATO.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']
+const packageOnlyPathRegex = (packageRoot = PACKAGE_ROOT) => {
+  const allowedDirectories = new Set(['docs', '.github', '.git'])
+  const packageOnlyDirectories = readdirSync(packageRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && !allowedDirectories.has(entry.name))
+    .map(entry => entry.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return new RegExp(`(?<![\\w./-])(?:${packageOnlyDirectories.join('|')})\\/`)
+}
+
+describe('shipped stack file paths', () => {
+  test('rejects package-only top-level directories in every shipped stack file', () => {
+    const forbiddenPath = packageOnlyPathRegex()
+    const filesWithLeaks = SHIPPED_STACK_FILES.filter(filename =>
+      forbiddenPath.test(readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', filename), 'utf8')),
+    )
+    assert.deepEqual(filesWithLeaks, [], 'shipped stack files must not cite package-only paths')
+  })
+
+  test('covers bin paths and newly added package directories', () => {
+    assert.match('ROLE-BRIEFS.md cites bin/orca-stack.mjs', packageOnlyPathRegex())
+
+    const fixture = tempDir('shipped-stack-paths')
+    try {
+      write(path.join(fixture, 'future-module', 'index.mjs'), '')
+      assert.match('new shipped file cites future-module/index.mjs', packageOnlyPathRegex(fixture))
+      assert.doesNotMatch('docs/adr/decision.md is a project path', packageOnlyPathRegex(fixture))
+    } finally {
+      cleanup(fixture)
+    }
+  })
+
+  test('allows project paths and the installed stack path', () => {
+    const projectPaths = 'docs/adr/, GLOSSARY.md, CODING_STANDARDS.md, .orca-stack.json, ~/orca/stack/ORCA-STACK.md'
+    assert.doesNotMatch(projectPaths, packageOnlyPathRegex())
+  })
+
+  test('does not treat path-like non-path tokens as package paths', () => {
+    const tokens = 'origin/<ramaBase>, /code-review, /mattpocock-skills:<skill>'
+    assert.doesNotMatch(tokens, packageOnlyPathRegex())
+  })
+})
 
 let home
 let root
