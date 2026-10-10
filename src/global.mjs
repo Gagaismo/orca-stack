@@ -4,6 +4,7 @@ import path from 'node:path'
 import { INSTALL_HINTS, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
 import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestratorMode, rddMode, readPersonalConfig, refreshLazyPointer, restoreBlock, sddBlock, trimReviewSections } from './gentle.mjs'
+import { cleanupKnownSdd } from './sdd-cleanup.mjs'
 import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, codexAgentsMd } from './codex-windows.mjs'
 import { removeAnyBlock, removeBlock, upsertBlock } from './marker.mjs'
 import { installPathCommand } from './path-command.mjs'
@@ -410,6 +411,9 @@ export const globalCommand = async flags => {
       `Destino: ${ctx.home}`,
   )
   preflight(ctx)
+  const cleanupResult = flags.limpiarSdd
+    ? cleanupKnownSdd(ctx.home, { dryRun: flags.dryRun, say: message => ctx.say(message) })
+    : { status: 0 }
   try {
     installPolicyDocs(ctx)
     installWrappers(ctx)
@@ -433,6 +437,11 @@ Estado guardado en ${ctx.show(ctx.L.state)}`)
   if (ctx.skipped.length > 0) {
     ctx.say(`
 ⚠ ${ctx.skipped.length} archivos existentes que no son de orca-stack quedaron como estaban. Para reemplazarlos (con respaldo): orca-stack global --force`)
+  }
+  if (cleanupResult.status !== 0) {
+    ctx.say('\nSDD cleanup was incomplete; rerun `orca-stack global --limpiar-sdd` for the remaining files.')
+
+    return 1
   }
   if (ctx.failures > 0) {
     ctx.say(`

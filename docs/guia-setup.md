@@ -26,7 +26,7 @@ Versión de referencia: `orca-stack v0.7.4` (octubre de 2026). Si sale una versi
 | gentle-ai | Context7, permisos de Claude Code y skills extra | Instalador propio de gentle-ai |
 | Caveman | Comprime la prosa larga para ahorrar tokens | `claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman` |
 
-Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con el suyo y puede usar SDD/ODD; el SDD/ODD de gentle-ai (SDD hasta v3, ODD desde v4) se usa solo si lo pedís. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
+Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con su propio criterio. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
 
 **Nota sobre las skills de Matt:**
 - El plugin solo las instala para Claude Code. Si Codex o Antigravity van a usarlas, tienen que estar en `~/.agents/skills`: `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`.
@@ -186,7 +186,7 @@ Si no hay tiempo para todo, respondé A1, B1, C1, C3, C4 y F1. Con eso alcanza p
 **A4. ¿Quedaron restos de otros flujos o de instalaciones anteriores?** [Empezado]
 - Por qué importa: los métodos que compiten confunden a los agentes, y los bloques viejos del stack se duplican con el nuevo.
 - Buscá: carpetas `openspec/` o instrucciones `sdd-*` (Gentle AI SDD), superpowers, gstack, secciones "Orca stack integration" sin marcadores y secciones de verificación con TestSprite (ya no forma parte de la política).
-- Acción: sacalos **antes** de `init`, en un commit aparte o con `git stash`, nunca borrando a ciegas. Los bloques `<!-- orca-stack:auto -->` no hace falta sacarlos: `init` los reemplaza por el bloque actual. En `AGENTS.md` dejá escrito que el método de Matt es el de por defecto y que el SDD de Gentle AI se usa solo cuando se pide explícitamente.
+- Acción: para restos personales instalados que `doctor` enumera, revisá la lista y ejecutá `orca-stack global --limpiar-sdd`; el comando solo mueve rutas conocidas a `~/.orca-stack/backups/` y deja intactos los nombres desconocidos. Para restos del repo, decidí explícitamente qué conservar o retirar antes de `init`; no borres datos a ciegas. Los bloques `<!-- orca-stack:auto -->` no hace falta sacarlos: `init` los reemplaza por el bloque actual. En `AGENTS.md` dejá escrito que el método de Matt es el de por defecto.
 
 **A5. ¿Hay trabajo en curso: ramas abiertas, PRs o worktrees de Orca?** [Empezado]
 - Por qué importa: si el setup se commitea en la rama de un ticket, se mezcla con ese trabajo.
@@ -464,8 +464,8 @@ This repo uses Matt Pocock's engineering skills as the default process authority
 
 - Planning ends at `/to-tickets`. `/implement` does not re-debate the plan; if the
   ticket is wrong, escalate instead of reinterpreting it.
-- Do not start or propose Gentle AI SDD/ODD, superpowers, or gstack planning/review
-  flows unless the human asks for them explicitly. Any injected section that mentions "optional SDD" is overridden by this file.
+- Do not start or propose retired Gentle AI workflow flows, superpowers, or gstack planning/review
+  flows unless the human asks for them explicitly.
 - Parallel execution is handled by Orca. See `docs/agents/orca-dag.md`.
 
 ## Source of truth

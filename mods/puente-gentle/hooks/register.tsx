@@ -3,16 +3,11 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Intercambio } from '../types'
 import {
   BIG_PR_LINES,
-  PLANTEO_SDD,
   PLANTEO_STORED,
-  SDD_AGENTS,
-  SDD_QUESTION,
   TIMEOUT_MS,
   bigPrReason,
-  block,
   buildArgs,
   buildMessage,
-  changeName,
   clock,
   consultEnv,
   engramDir,
@@ -235,7 +230,7 @@ export const register: Register = (on, options) => {
         inputSchema: {
           type: 'object',
           properties: {
-            tema: { type: 'string', description: 'Slug corto del tema, por ejemplo pr-612 o sdd-auditoria. Misma conversación por tema.' },
+            tema: { type: 'string', description: 'Slug corto del tema, por ejemplo pr-612 o auditoria. Misma conversación por tema.' },
             planteo: { type: 'string', description: 'Contexto neutral: el problema, las restricciones, nuestra propuesta actual y las rutas relevantes.' },
             pregunta: { type: 'string', description: 'Lo que querés que opine.' },
           },
@@ -281,46 +276,6 @@ export const register: Register = (on, options) => {
     await $.ui.open({ id: PANE, title: 'Gentle Shell' })
 
     return { text: 'Panel de Gentle Shell abierto.' }
-  })
-
-  // After an SDD proposal or design, Gentle Shell reads it too.
-  on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
-    const ran = await next(e)
-    const type = e.subagent_type ?? ''
-    if (!SDD_AGENTS.has(type) || ran.deny !== undefined || ran.isError === true) {
-      return ran
-    }
-    const result = ran.result as { status?: string; content?: { type: string; text?: string }[] } | undefined
-    if (result?.status !== 'completed' || !Array.isArray(result.content)) {
-      return ran
-    }
-    const answer = result.content
-      .filter(one => one.type === 'text')
-      .map(one => one.text ?? '')
-      .join('\n')
-      .trim()
-    if (answer === '') {
-      return ran
-    }
-    let appended: string
-    try {
-      const tema = changeName(`${e.prompt}\n${e.description}\n${answer}`, await $.clock.now())
-      const outcome = await consult(
-        $,
-        modelo,
-        tema,
-        `${type} devolvió:\n${truncate(answer, PLANTEO_SDD)}`,
-        SDD_QUESTION,
-      )
-      appended = block(tema, outcome.ok ? outcome.respuesta : outcome.error)
-    } catch (error) {
-      appended = block('?', `No pude consultar a Gentle Shell: ${error instanceof Error ? error.message : String(error)}`)
-    }
-
-    return {
-      result: { ...result, content: [...result.content, { type: 'text' as const, text: appended }] },
-      ...(ran.context === undefined ? {} : { context: ran.context }),
-    } as typeof ran
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => (await gate($, e.command)) ?? next(e))
