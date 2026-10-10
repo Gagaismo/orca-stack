@@ -1,13 +1,28 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
 import { hasBlock } from './marker.mjs'
-import { run } from './util.mjs'
+import { isFile, run, tilde, which } from './util.mjs'
 
-// codex-cli on Windows reads files with `powershell.exe -Command "Get-Content -Raw <file>"` (no -NoProfile), and
+// codex-cli on Windows reads files with `<shell> -Command "Get-Content -Raw <file>"` (no -NoProfile), and
 // Windows PowerShell 5.1 decodes UTF-8 without BOM as cp1252: the model sees mojibake and writes it back (#58).
-// Two fixes: a rule in ~/.codex/AGENTS.md (written by `global`) and a line in the PowerShell profile (added by hand).
+// Two fixes: a rule in codex's AGENTS.md (written by `global`) and a line in the PowerShell profile (added by hand).
+// PowerShell 7 (pwsh) reads UTF-8 by default, and codex prefers it when it finds it.
+
+// codex's shell on Windows: pwsh on PATH, then its default install path, then powershell.exe
+// (openai/codex rust-v0.162.1: codex-rs/shell-command/src/shell_detect.rs:267 and :351).
+const PWSH_DEFAULT = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'
+export const codexPowerShell = ({ env = process.env, exists = existsSync } = {}) =>
+  which('pwsh', env) ?? (exists(PWSH_DEFAULT) ? PWSH_DEFAULT : 'powershell.exe')
+
+// The global instructions file codex reads: AGENTS.override.md when it has text, else AGENTS.md; never both
+// (openai/codex rust-v0.162.1: codex-rs/codex-home/src/instructions/mod.rs:43).
+export const codexAgentsMd = dir => {
+  const override = path.join(dir, 'AGENTS.override.md')
+
+  return isFile(override) && readFileSync(override, 'utf8').trim() !== '' ? override : path.join(dir, 'AGENTS.md')
+}
 
 export const CODEX_ASCII_MARKERS = {
   begin: '<!-- orca-stack:codex-ascii:begin -->',
@@ -48,7 +63,8 @@ export const codexBlock = text => {
 }
 
 // Reads a UTF-8 file without BOM the way codex does. Returns { status: 'ok' | 'mojibake' | 'error', text, profile, reason }.
-export const probeGetContent = ({ exec = run, tmpdir = os.tmpdir() } = {}) => {
+export const probeGetContent = ({ exec = run, tmpdir = os.tmpdir(), shell = codexPowerShell() } = {}) => {
+  const name = path.basename(shell)
   const dir = mkdtempSync(path.join(tmpdir, 'orca-stack-probe-'))
   const file = path.join(dir, 'probe.txt')
   writeFileSync(file, SAMPLE, 'utf8')
@@ -57,21 +73,21 @@ export const probeGetContent = ({ exec = run, tmpdir = os.tmpdir() } = {}) => {
       `'ORCA_TEXT=' + ${codes(`Get-Content -LiteralPath '${file.replaceAll("'", "''")}' -Raw`)}`,
       `'ORCA_PROFILE=' + ${codes('$PROFILE')}`,
     ].join('; ')
-    const result = exec('powershell.exe', ['-Command', script], { timeout: PROBE_TIMEOUT, env: process.env })
+    const result = exec(shell, ['-Command', script], { timeout: PROBE_TIMEOUT, env: process.env })
     if (result.timedOut) {
-      return { status: 'error', reason: `powershell.exe tardó más de ${PROBE_TIMEOUT / 1000} s` }
+      return { status: 'error', reason: `${name} tardó más de ${PROBE_TIMEOUT / 1000} s` }
     }
     if (result.error) {
-      return { status: 'error', reason: `no pude ejecutar powershell.exe (${result.error.code ?? result.error.message})` }
+      return { status: 'error', reason: `no pude ejecutar ${name} (${result.error.code ?? result.error.message})` }
     }
     const text = /ORCA_TEXT=([\d,]*)/.exec(result.stdout)?.[1]
     if (result.status !== 0 || text === undefined) {
-      return { status: 'error', reason: `powershell.exe salió con ${result.status}: ${result.stderr.trim().split('\n')[0] ?? ''}` }
+      return { status: 'error', reason: `${name} salió con ${result.status}: ${result.stderr.trim().split('\n')[0] ?? ''}` }
     }
     const read = fromCodes(text).trim()
     const profile = fromCodes(/ORCA_PROFILE=([\d,]*)/.exec(result.stdout)?.[1] ?? '')
 
-    return { status: read === SAMPLE ? 'ok' : 'mojibake', text: read, profile }
+    return { status: read === SAMPLE ? 'ok' : 'mojibake', text: read, profile, shell: name }
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -85,13 +101,13 @@ export const codexWindowsChecks = ({ windows, codex, agentsMd, probe = probeGetC
   const found = []
   const result = probe()
   if (result.status === 'ok') {
-    found.push({ level: 'ok', label: 'codex: Get-Content lee UTF-8', detail: `PowerShell leyó "${SAMPLE}" intacto` })
+    found.push({ level: 'ok', label: 'codex: Get-Content lee UTF-8', detail: `${result.shell} leyó "${SAMPLE}" intacto` })
   } else if (result.status === 'mojibake') {
     found.push({
       level: 'warn',
       label: 'codex: Get-Content lee UTF-8',
       detail:
-        `PowerShell leyó "${result.text}" en vez de "${SAMPLE}": codex va a escribir mojibake. ` +
+        `${result.shell} leyó "${result.text}" en vez de "${SAMPLE}": codex va a escribir mojibake. ` +
         `Agregá esta línea a ${result.profile || '$PROFILE'}: ${PROFILE_LINE} ` +
         '(si ya está, puede que la política de ejecución no deje cargar el perfil: mirá `Get-ExecutionPolicy -List`)',
     })
@@ -99,6 +115,7 @@ export const codexWindowsChecks = ({ windows, codex, agentsMd, probe = probeGetC
     found.push({ level: 'warn', label: 'codex: Get-Content lee UTF-8', detail: `no se pudo verificar: ${result.reason}` })
   }
 
+  const label = `codex: regla ASCII en ${tilde(agentsMd)}`
   let text = null
   try {
     text = readFileSync(agentsMd, 'utf8')
@@ -108,11 +125,11 @@ export const codexWindowsChecks = ({ windows, codex, agentsMd, probe = probeGetC
   try {
     found.push(
       text !== null && hasBlock(text, CODEX_ASCII_MARKERS)
-        ? { level: 'ok', label: 'codex: regla ASCII en ~/.codex/AGENTS.md' }
-        : { level: 'warn', label: 'codex: regla ASCII en ~/.codex/AGENTS.md', detail: 'falta: corré `orca-stack global`' },
+        ? { level: 'ok', label }
+        : { level: 'warn', label, detail: 'falta: corré `orca-stack global`' },
     )
   } catch (error) {
-    found.push({ level: 'warn', label: 'codex: regla ASCII en ~/.codex/AGENTS.md', detail: error.message })
+    found.push({ level: 'warn', label, detail: error.message })
   }
 
   return found

@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, PROFILE_LINE, codexWindowsChecks, probeGetContent } from '../src/codex-windows.mjs'
+import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, PROFILE_LINE, codexPowerShell, codexWindowsChecks, probeGetContent } from '../src/codex-windows.mjs'
 import { buildBlock, removeBlock, upsertBlock } from '../src/marker.mjs'
+import { codexHome } from '../src/util.mjs'
 import { cleanup, cli, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const codes = text => [...text].map(char => char.charCodeAt(0)).join(',')
@@ -34,7 +35,7 @@ afterEach(() => cleanup(home))
 
 const agentsMd = () => path.join(home, '.codex', 'AGENTS.md')
 const checks = (exec, over = {}) =>
-  codexWindowsChecks({ windows: true, codex: true, agentsMd: agentsMd(), probe: () => probeGetContent({ exec }), ...over })
+  codexWindowsChecks({ windows: true, codex: true, agentsMd: agentsMd(), probe: () => probeGetContent({ exec, shell: 'powershell.exe' }), ...over })
 const probeCheck = results => results.find(result => result.label.includes('Get-Content'))
 const blockCheck = results => results.find(result => result.label.includes('regla ASCII'))
 
@@ -79,6 +80,30 @@ describe('doctor: codex Get-Content probe on Windows', () => {
     assert.equal(result.level, 'warn')
     assert.match(result.detail, /política de ejecución/)
     assert.match(result.detail, /Get-ExecutionPolicy/)
+  })
+
+  test('#83 rule 4: with pwsh installed codex uses it, so the probe runs pwsh and the 5.1 profile warning does not fire; without it, powershell.exe as today', () => {
+    // PowerShell 7 decodes UTF-8 without BOM; 5.1 decodes it as cp1252.
+    const exec = (cmd, args, options) => fakeExec({ text: path.basename(cmd).startsWith('pwsh') ? 'está' : MOJIBAKE }).exec(cmd, args, options)
+    const probeWith = shell => probeCheck(checks(exec, { probe: () => probeGetContent({ exec, shell }) }))
+    const empty = { PATH: path.join(home, 'empty'), PATHEXT: '.exe' }
+    const pwshDefault = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'
+
+    const bin = path.join(home, 'pwsh-bin')
+    const onPath = path.join(bin, process.platform === 'win32' ? 'pwsh.exe' : 'pwsh')
+    write(onPath, '')
+    assert.equal(codexPowerShell({ env: { PATH: bin, PATHEXT: '.exe' }, exists: () => true }), onPath)
+    const withPwsh = probeWith(onPath)
+    assert.equal(withPwsh.level, 'ok')
+    assert.match(withPwsh.detail, /^pwsh/)
+
+    assert.equal(codexPowerShell({ env: empty, exists: file => file === pwshDefault }), pwshDefault)
+
+    const shell = codexPowerShell({ env: empty, exists: () => false })
+    assert.equal(shell, 'powershell.exe')
+    const without = probeWith(shell)
+    assert.equal(without.level, 'warn')
+    assert.ok(without.detail.includes(PROFILE_LINE), without.detail)
   })
 
   test('rule 8 and codex not in agentes.usa: nothing runs and nothing is reported', () => {
@@ -171,8 +196,8 @@ describe('global and remove: codex ASCII block', () => {
   // A PATH with only node: global's own command lands in the temp home, never in a real PATH directory.
   const bin = () => path.join(home, 'path-bin')
   beforeEach(() => write(path.join(bin(), '.probe'), ''))
-  const run = (args, platform = 'win32') => {
-    const result = cli(home, args, { env: { ORCA_STACK_PLATFORM: platform, PATH: [bin(), path.dirname(process.execPath)].join(path.delimiter) } })
+  const run = (args, platform = 'win32', env = {}) => {
+    const result = cli(home, args, { env: { ORCA_STACK_PLATFORM: platform, PATH: [bin(), path.dirname(process.execPath)].join(path.delimiter), ...env } })
     assert.equal(result.status, 0, result.out)
 
     return result
@@ -270,5 +295,46 @@ describe('global and remove: codex ASCII block', () => {
     assert.ok(read(agentsMd()).includes(CODEX_ASCII_MARKERS.begin))
     run(['remove'])
     assert.equal(read(agentsMd()), own)
+  })
+
+  test('#83 rule 1: CODEX_HOME set, global writes the block to $CODEX_HOME/AGENTS.md and not to ~/.codex; remove takes it back out', () => {
+    assert.equal(codexHome(home, { CODEX_HOME: 'D:\\codex-home' }), 'D:\\codex-home')
+    const codexDir = path.join(home, 'codex-home')
+    mkdirSync(codexDir)
+    run(['global', '--skip-pi'], 'win32', { CODEX_HOME: codexDir })
+    assert.equal(read(path.join(codexDir, 'AGENTS.md')), `${BLOCK}\n`)
+    assert.equal(existsSync(path.join(home, '.codex')), false)
+
+    run(['remove'], 'win32', { CODEX_HOME: codexDir })
+    assert.equal(existsSync(path.join(codexDir, 'AGENTS.md')), false)
+  })
+
+  test('#83 rule 2: CODEX_HOME unset or empty, codex home is ~/.codex as today', () => {
+    assert.equal(codexHome(home, {}), path.join(home, '.codex'))
+    assert.equal(codexHome(home, { CODEX_HOME: '' }), path.join(home, '.codex'))
+    write(path.join(home, '.codex', 'config.toml'), '')
+    run(['global', '--skip-pi'])
+    assert.equal(read(agentsMd()), `${BLOCK}\n`)
+  })
+
+  test('#83 rule 3: CODEX_HOME points to a folder that does not exist, global does not create it and says so', () => {
+    const missing = path.join(home, 'no-codex-home')
+    const result = run(['global', '--skip-pi'], 'win32', { CODEX_HOME: missing })
+    assert.equal(existsSync(missing), false)
+    assert.match(result.out, /se omite: no hay .*no-codex-home \(CODEX_HOME apunta a una carpeta que no existe\)/)
+  })
+
+  test('#83: a non-empty AGENTS.override.md is the file codex reads, so the block goes there and AGENTS.md stays as is', () => {
+    const override = path.join(home, '.codex', 'AGENTS.override.md')
+    write(override, '## Mine\n')
+    write(agentsMd(), '## Rules\n')
+    run(['global', '--skip-pi'])
+    assert.equal(read(override), upsertBlock('## Mine\n', CODEX_ASCII_RULE, CODEX_ASCII_MARKERS))
+    assert.equal(read(agentsMd()), '## Rules\n')
+
+    // Whitespace only: codex skips it and reads AGENTS.md.
+    write(override, '  \n')
+    run(['global', '--skip-pi'])
+    assert.ok(read(agentsMd()).includes(CODEX_ASCII_MARKERS.begin))
   })
 })

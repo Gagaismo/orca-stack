@@ -76,6 +76,25 @@ describe('doctor: Codex project trust', () => {
     assert.match(codexTrustStatus(root, malformed).detail, /malformed\.toml/)
   })
 
+  test('#83 rule 1: CODEX_HOME set, doctor checks trust in $CODEX_HOME/config.toml and its hint names that file', () => {
+    const home = temp('codex-home-doctor')
+    const repo = temp('codex-home-repo')
+    const codexDir = temp('codex-home-dir')
+    const codexConfig = path.join(codexDir, 'config.toml')
+    write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ agentes: { usa: ['codex'] } }))
+    assert.equal(git(repo, 'init').status, 0)
+
+    write(codexConfig, '[projects."unused"]\ntrust_level = "trusted"\n')
+    const untrusted = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo, env: { CODEX_HOME: codexDir } })
+    assert.match(untrusted.out, /⚠ codex repo root trust/)
+    assert.ok(untrusted.out.includes(`en ${codexConfig.replaceAll('\\', '/')}.`), untrusted.out)
+
+    write(codexConfig, `[projects.'${repo.replaceAll('/', '\\')}']\ntrust_level = "trusted"\n`)
+    const trusted = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo, env: { CODEX_HOME: codexDir } })
+    assert.match(trusted.out, /✔ codex repo root trust/)
+    assert.equal(existsSync(path.join(home, '.codex')), false)
+  })
+
   test('doctor checks only a merged project config that enables Codex, and never writes Codex config', () => {
     const home = temp('codex-doctor-home')
     const repo = temp('codex-doctor-repo')
