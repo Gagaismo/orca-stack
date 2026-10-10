@@ -35,7 +35,7 @@ const ORCA_VARS_CLEARED = [
   'ORCA_STACK_CAVEMAN_LEVEL',
 ]
 // Only a review closes pi's tools (read-only). A ticket gets all of them: an allowlist would also drop gentle-pi's
-// subagents, SDD and engram tools.
+// subagents, ODD and engram tools.
 const PI_TOOLS = { review: 'read,bash,grep,find,ls' }
 const PI_THINKING = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 // gentle-pi profile names: 1-64 ASCII slug characters. Also keeps the name harmless inside a path or a command.
@@ -163,7 +163,7 @@ export const citedPaths = text => {
   const found = []
   for (const [, token] of text.replace(/```[\s\S]*?```/g, '').matchAll(/`([^`\n]+)`/g)) {
     const t = token.replace(/:\d+(-\d+)?$/, '')
-    if (/[\s<>{}*$=:@#]/.test(t) || /^(-|~|\/|origin\/|refs\/)/.test(t) || /^[a-z]:[\\/]/i.test(t)) continue
+    if (/[\s<>{}*$=:@#]/.test(t) || /^(-|~|\/|origin\/|refs\/|odd(\/|$))/.test(t) || /^[a-z]:[\\/]/i.test(t)) continue
     if ((t.includes('/') || PATH_EXTENSIONS.test(t)) && !found.includes(t)) found.push(t)
   }
 
@@ -775,8 +775,10 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const profile = agent === 'pi' ? piProfileFor({ flag: profilePin ?? perfilPi, config, home: io.home, commonDir, io }) : undefined
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corr\u00E9 `orca-stack global`.')
+  const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
   const brief = render(readAsset('stack', 'brief-rebote.md'), {
     PR: String(n), SHA: sha,
+    ISSUE: issue,
     REMOTE_HOST: remote.host,
     REMOTE_REPO: remote.ownerRepo,
     REMOTE_OPERATIONS: 'read the PR, its reviews and checks (including `gh run view ... --log-failed`); push only the PR branch to `origin`; comment on the PR.',
