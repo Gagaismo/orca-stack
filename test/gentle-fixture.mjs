@@ -167,6 +167,6 @@ export const withPath = bin => {
 }
 
 
-// ~/.orca-stack/config.json with gentle.sddOrchestrator set (lazy is the default when the key is absent).
+// ~/.orca-stack/config.json with gentle.orchestrator set (lazy is the default when the key is absent).
 export const sddConfig = (home, mode) =>
-  write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify(mode === undefined ? {} : { gentle: { sddOrchestrator: mode } }))
+  write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify(mode === undefined ? {} : { gentle: { orchestrator: mode } }))

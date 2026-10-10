@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 
 import { run } from './util.mjs'
 
@@ -130,22 +130,15 @@ export const rddMode = bin => {
   return { mode, source }
 }
 
-// Lazy mode (`gentle.sddOrchestrator: "lazy"`, the default): the block's body is replaced by a short pointer that starts with
-// this sentinel; the full body lives in ~/.orca-stack/gentle/sdd-orchestrator.md and is read on demand. The markers stay, so
+// Lazy mode (`gentle.orchestrator: "lazy"`, the default): the block's body is replaced by a short pointer that starts with
+// this sentinel; the full body lives in ~/.orca-stack/gentle/orchestrator.md and is read on demand. The markers stay, so
 // `gentle-ai sync` replaces the pointer instead of appending a second block.
 export const LAZY_SENTINEL = '<!-- orca-stack:gentle-lazy v1 -->'
 
 // v4 ships no SDD workflow file: its block is the whole ODD orchestrator.
 export const lazyPointer = (copyPath, generation = 'v2') => [
-  ...(generation === 'v4'
-    ? [
-        'gentle-ai ODD orchestrator / Judgment Day: only when the human explicitly asks for it.',
-        `Before any gentle-ai ODD or Judgment-Day command or phase, read in full \`${copyPath}\`.`,
-      ]
-    : [
-        'gentle-ai SDD / Judgment Day: only when the human explicitly asks for it.',
-        `Before any SDD or Judgment-Day command or phase, read in full \`${copyPath}\`, then \`.claude/skills/_shared/sdd-orchestrator-workflow.md\` in the workspace if present, otherwise \`~/.claude/skills/_shared/sdd-orchestrator-workflow.md\`.`,
-      ]),
+  ...(generation === 'v4' ? ['ODD is the default workflow (see the agent-routing block).'] : []),
+  `The full gentle-ai coordinator rules are in \`${copyPath}\`: read them in full when you are the orchestrating session (\`main\`).`,
   "When a sub-agent or tool returns a blocking prompt, menu or consent envelope, present it complete and unsummarized, and never answer on the human's behalf.",
 ]
 
@@ -179,6 +172,47 @@ export const NO_BLOCK = 'no hay bloque gentle-ai:orchestrator (v4) ni gentle-ai:
 
 export const isLazyBlock = block => block.status === 'ok' && block.inner.includes(LAZY_SENTINEL)
 
+export const refreshLazyPointer = (text, copyPath) => {
+  const block = sddBlock(text)
+  if (!isLazyBlock(block)) {
+    return text
+  }
+  const eol = eolOf(text)
+  const current = [eol + LAZY_SENTINEL, ...lazyPointer(copyPath, block.generation)].join(eol) + eol
+
+  return block.inner === current ? text : text.slice(0, block.from) + current + text.slice(block.end)
+}
+
+// Migrate the old copy path without losing either file when both names exist.
+// The newer mtime wins; ties keep the canonical orchestrator path.
+export const migrateOrchestratorCopy = ctx => {
+  const current = ctx.L.orchestratorCopy
+  const legacy = ctx.L.legacyOrchestratorCopy
+  if (!existsSync(legacy)) {
+    return { path: current, skipped: false }
+  }
+
+  const currentExists = existsSync(current)
+  const legacyWins = !currentExists || statSync(legacy).mtimeMs > statSync(current).mtimeMs
+  if (legacyWins) {
+    const result = ctx.writeOwned(current, readFileSync(legacy), {
+      force: true,
+      label: `${ctx.show(current)} (copia completa del bloque de gentle-ai)`,
+    })
+    if (result === 'skipped') {
+      return { path: current, skipped: true }
+    }
+  }
+
+  ctx.act(`respaldo y migro ${ctx.show(legacy)} a ${ctx.show(current)}`)
+  if (!ctx.dryRun) {
+    ctx.backup(legacy)
+    unlinkSync(legacy)
+  }
+
+  return { path: ctx.dryRun && !currentExists ? legacy : current, skipped: false }
+}
+
 // Pure: swaps the body for the pointer. Returns { text, saved (the exact body replaced) }, or { text, skipped } untouched.
 export const lazyifyBlock = (text, copyPath) => {
   const block = sddBlock(text)
@@ -207,9 +241,12 @@ export const readPersonalConfig = L => {
   }
 }
 
-// Personal config `gentle.sddOrchestrator`: 'lazy' (default) | 'full' | null when the value is not one of those.
-export const sddMode = config => {
-  const value = config?.gentle?.sddOrchestrator
+// New config wins when present; the legacy key remains a fallback during migration.
+export const orchestratorMode = config => {
+  const gentle = config?.gentle ?? {}
+  const value = Object.hasOwn(gentle, 'orchestrator') ? gentle.orchestrator : gentle.sddOrchestrator
 
   return value === undefined ? 'lazy' : value === 'lazy' || value === 'full' ? value : null
 }
+
+export const hasLegacyOrchestratorMode = config => Object.hasOwn(config?.gentle ?? {}, 'sddOrchestrator')

@@ -7,16 +7,19 @@ import { LAZY_SENTINEL, REVIEW_SECTIONS, lazyifyBlock, restoreBlock, sddBlock, t
 import { KEPT_V4, fakeGentle, fixture, fixtureV4, sddConfig, withPath } from './gentle-fixture.mjs'
 import { backups, cleanup, cli, read, snapshot, tempDir, write } from './helpers.mjs'
 
-const COPY = '/tmp/home/.orca-stack/gentle/sdd-orchestrator.md'
+const COPY = '/tmp/home/.orca-stack/gentle/orchestrator.md'
 const V4_OPEN = '<!-- gentle-ai:orchestrator -->'
 const V4_CLOSE = '<!-- /gentle-ai:orchestrator -->'
 const headings = text => text.split(/\r?\n/).filter(line => /^#{1,6} /.test(line))
 
 describe('gentle-ai v4 block helpers', () => {
-  test('rule 1: the v2 block keeps today\'s pointer, which still sends SDD to its workflow file', () => {
+  test('rule 1: the v2/v3 block does not claim ODD is the default workflow', () => {
     const { text } = lazyifyBlock(fixture('\n'), COPY)
-    assert.ok(text.includes('gentle-ai SDD / Judgment Day: only when the human explicitly asks for it.'))
-    assert.ok(text.includes('sdd-orchestrator-workflow.md'))
+    assert.ok(!text.includes('ODD is the default workflow'))
+    assert.ok(text.includes('The full gentle-ai coordinator rules are in'))
+    assert.ok(text.includes('complete and unsummarized'))
+    assert.ok(!text.includes('agent-routing block'))
+    assert.ok(!text.includes('sdd-orchestrator-workflow.md'))
   })
 
   test('rule 2: the v4 block is found, lazyfied between its own markers and restored losslessly (LF and CRLF)', () => {
@@ -72,7 +75,7 @@ describe('global, doctor and remove with a gentle-ai v4 block', () => {
     cleanup(bin)
   })
   const claudeMd = () => path.join(home, '.claude', 'CLAUDE.md')
-  const copy = () => path.join(home, '.orca-stack', 'gentle', 'sdd-orchestrator.md')
+  const copy = () => path.join(home, '.orca-stack', 'gentle', 'orchestrator.md')
   const global = (...extra) => cli(home, ['global', '--skip-pi', '--humano', 'Ana', ...extra], { env: withPath(bin) })
   const doctor = () => cli(home, ['doctor', '--offline', '--skip-pi'], { env: withPath(bin) })
 
