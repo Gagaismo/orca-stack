@@ -36,6 +36,7 @@ Opciones:
   --limite <n>     (sesiones) Cuántas sesiones mostrar (por defecto: 10).
   --humano <nombre> (global) Nombre que usan los mods para hablarte (por defecto: git config user.name).
   --with-pi        (remove) También desinstala los paquetes de Pi y gentle-pi global que instaló \`global\`.
+  --limpiar-sdd    (global) Respaldar y mover solo los restos SDD conocidos a ~/.orca-stack/backups.
   -v, --version    Muestra la versión.
   -h, --help       Muestra esta ayuda (también \`orca-stack <comando> --help\`).
 
@@ -44,7 +45,7 @@ Variables de entorno:
 `
 
 const COMMAND_HELP = {
-  global: `orca-stack global [--dry-run] [--force] [--skip-pi] [--humano <nombre>]
+  global: `orca-stack global [--dry-run] [--force] [--skip-pi] [--limpiar-sdd] [--humano <nombre>]
 
 Instala a nivel usuario:
   1. ~/orca/stack/ORCA-STACK.md y ROLE-BRIEFS.md
@@ -58,6 +59,7 @@ Instala a nivel usuario:
   7. ~/.orca-stack/state.json (para \`remove\`) y ~/.orca-stack/config.json (capa personal)
 
 Es idempotente: una segunda corrida no cambia nada ni genera respaldos nuevos.
+--limpiar-sdd respalda y mueve solo restos SDD conocidos a ~/.orca-stack/backups; sin la opci\u00f3n no mueve ninguno.
 `,
   init: `orca-stack init [--dry-run]
 
@@ -139,6 +141,7 @@ export const parseArgs = argv => {
     else if (arg === '--skip-pi') flags.skipPi = true
     else if (arg === '--offline') flags.offline = true
     else if (arg === '--with-pi') flags.withPi = true
+    else if (arg === '--limpiar-sdd') flags.limpiarSdd = true
     else if (arg === '-h' || arg === '--help') flags.help = true
     else if (arg === '-v' || arg === '--version') flags.version = true
     else if (arg === '--humano') {

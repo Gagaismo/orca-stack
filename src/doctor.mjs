@@ -8,6 +8,7 @@ import { codexAgentsMd, codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
 import { driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
+import { knownSddLeftovers } from './sdd-cleanup.mjs'
 import { removeAnyBlock } from './marker.mjs'
 import { checkPathCommand } from './path-command.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
@@ -143,6 +144,11 @@ export const doctorCommand = async flags => {
   }
 
   checkPathCommand(state, add)
+
+  const sddLeftovers = knownSddLeftovers(home)
+  if (sddLeftovers.length > 0) {
+    add('warn', 'restos SDD conocidos', `${sddLeftovers.map(({ absolute }) => tilde(absolute, home)).join(', ')}. Para respaldarlos y moverlos: orca-stack global --limpiar-sdd`)
+  }
 
   // Policy docs
   section('Política del stack')

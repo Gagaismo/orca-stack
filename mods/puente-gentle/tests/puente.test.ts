@@ -5,7 +5,6 @@ import {
   AUTH_MESSAGE,
   MARCO,
   buildArgs,
-  changeName,
   globToRegExp,
   implementerOf,
   merges,
@@ -51,7 +50,7 @@ const setup = (
         result: {
           status: 'completed',
           agentId: 'a',
-          content: [{ type: 'text', text: `Propuesta lista. Guardada en sdd/auditoria-cuotas/proposal` }],
+          content: [{ type: 'text', text: `Propuesta lista. Guardada en changes/auditoria-cuotas/proposal` }],
         },
       } as never
     }
@@ -240,50 +239,11 @@ test('a repo with only .orca-stack.local.json has the tool, the criterio section
   expect(denied.deny).toContain('grande (450 líneas)')
 })
 
-test('sdd-propose and sdd-design get the Gentle Shell block appended; other agents do not', async ($, on) => {
+test('Agent calls never trigger automatic consult', async ($, on) => {
   const w = setup(on, () => ok('Yo evitaría el cache.'))
   await boot($)
-  const agent = (subagent_type: string) =>
-    $.tool.call({ tool: 'Agent', description: 'd', prompt: 'hacé la propuesta', subagent_type } as never) as Promise<any>
-
-  const out = await agent('sdd-propose')
-  const texts = out.result.content.map((one: any) => one.text)
-  expect(texts[0]).toContain('Propuesta lista')
-  expect(texts.at(-1)).toBe('--- Mirada de Gentle Shell (tema sdd-auditoria-cuotas) ---\nYo evitaría el cache.')
-  const message = w.calls[0]!.argv.at(-1)!
-  expect(message).toContain('Propuesta lista')
-  expect(message).toContain('¿Qué ves distinto en esta propuesta/diseño? ¿Qué riesgos o alternativas no estamos viendo?')
-  expect(w.calls[0]!.argv).toContain('gentle-sdd-auditoria-cuotas')
-
-  expect((await agent('sdd-design')).result.content).toHaveLength(2)
-  const callsBefore = w.calls.length
-  expect((await agent('sdd-apply')).result.content).toHaveLength(1)
-  expect(w.calls.length).toBe(callsBefore)
-})
-
-test('a failed consult appends the error line and never fails the agent call', async ($, on) => {
-  setup(on, () => noAuth)
-  await boot($)
-  const out: any = await $.tool.call({ tool: 'Agent', description: 'd', prompt: 'p', subagent_type: 'sdd-design' } as never)
-  expect(out.deny).toBeUndefined()
-  expect(out.result.content.at(-1).text).toBe(`--- Mirada de Gentle Shell (tema sdd-auditoria-cuotas) ---\n${AUTH_MESSAGE}`)
-})
-
-test('a throwing process also leaves the agent result intact', async ($, on) => {
-  setup(on, () => {
-    throw new Error('spawn node ENOENT')
-  })
-  await boot($)
-  const out: any = await $.tool.call({ tool: 'Agent', description: 'd', prompt: 'p', subagent_type: 'sdd-propose' } as never)
-  expect(out.result.content.at(-1).text).toContain('No pude lanzar Gentle Shell')
-  expect(out.result.content[0].text).toContain('Propuesta lista')
-})
-
-test('change names come from the topic key, the openspec path, or a timestamp', () => {
-  expect(changeName('x sdd/mi-cambio/proposal y', AT)).toBe('sdd-mi-cambio')
-  expect(changeName('openspec/changes/otro-cambio/design.md', AT)).toBe('sdd-otro-cambio')
-  expect(changeName('change: foo_bar', AT)).toBe('sdd-foo_bar')
-  expect(changeName('nada', AT)).toBe('sdd-20261003-1000')
+  await $.tool.call({ tool: 'Agent', description: 'd', prompt: 'hac\u00e9 la propuesta', subagent_type: 'custom-agent' } as never)
+  expect(w.calls).toHaveLength(0)
 })
 
 test('/pi parses "tema: pregunta", derives a slug otherwise, and shows usage when empty', async ($, on) => {
@@ -300,11 +260,11 @@ test('/pi parses "tema: pregunta", derives a slug otherwise, and shows usage whe
   const run = (args: string) =>
     $.command.run({ command: 'pi', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
   expect((await run('')).text).toContain('Uso: /pi <tema>: <pregunta>')
-  expect((await run('sdd-auditoria: ¿está bien el corte?')).text).toBe('Consultando a Gentle Shell (tema sdd-auditoria)…')
+  expect((await run('auditoria: \u00BFest\u00E1 bien el corte?')).text).toBe('Consultando a Gentle Shell (tema auditoria)\u2026')
   await clock.advance(1)
   await clock.settle()
   expect(w.submitted).toEqual([
-    'Consultá a Gentle Shell (tema sdd-auditoria) sobre: ¿está bien el corte?. Usá consultar_gentle_shell con un planteo neutral y después mostrame las dos posturas.',
+    'Consult\u00E1 a Gentle Shell (tema auditoria) sobre: \u00BFest\u00E1 bien el corte?. Us\u00E1 consultar_gentle_shell con un planteo neutral y despu\u00E9s mostrame las dos posturas.',
   ])
 })
 

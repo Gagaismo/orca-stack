@@ -81,7 +81,7 @@ Son plugins de Claude Code que se recargan en caliente (`.claude-plugin/plugin.j
 ## Uso
 
 ```text
-orca-stack global [--dry-run] [--force] [--skip-pi] [--humano <nombre>]
+orca-stack global [--dry-run] [--force] [--skip-pi] [--limpiar-sdd] [--humano <nombre>]
 orca-stack init   [--dry-run]
 orca-stack doctor [--offline] [--skip-pi]
 orca-stack remove [--dry-run] [--with-pi]
@@ -92,6 +92,7 @@ orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi 
 
 - `--dry-run` cuenta cada acción sin escribir nada.
 - `--force` reemplaza archivos que ya existían y no son de orca-stack (por ejemplo, una skill tuya llamada igual). Sin `--force` se saltean con un aviso ⚠ y quedan como estaban; con `--force` se respaldan antes.
+- `global --limpiar-sdd` respalda en `~/.orca-stack/backups/sdd-<fecha>/` y mueve solo restos conocidos; `doctor` lista los que encuentra y muestra el comando exacto. Los nombres desconocidos nunca se mueven y `global` sin esta opción no limpia nada. Si algún movimiento falla, informa qué quedó pendiente; podés volver a ejecutar el mismo comando.
 - `init` escribe en el `AGENTS.md` del proyecto el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` con el contrato de trabajo completo (`assets/stack/CONTRATO.md`, igual en todos los proyectos) y las líneas de la política; a `CLAUDE.md` le pone un bloque corto con `@AGENTS.md`. Además crea `.orca-stack.json` y `.orca-stack.local.json` si faltan y agrega este último a `.gitignore`. Es idempotente y respalda lo que modifica. Los valores propios de cada proyecto no van en el bloque: viven en `.orca-stack.json`.
 - `orca-setup` es la skill con la que la sesión de `main` entrevista al humano, en una sola ronda, para completar `.orca-stack.json` (`"setup": "completo"`). La ofrece sola cuando falta y `doctor` avisa si quedó pendiente.
 - `sesiones` es de solo lectura: lista las sesiones recientes de Claude Code (`~/.claude/projects` y, si está, la carpeta de `agentes.pi.claudeConfigDir`), de Pi (`~/.pi/agent/sessions`) y de agy (`~/.gemini/antigravity-cli`, solo con Node 22.13 o más nuevo). Por sesión muestra la herramienta, la carpeta, inicio y fin, las llamadas, tus mensajes, las llamadas con error y los resultados de más de 15k caracteres. Es la entrada para quien corre `/retro` de Matt: `--desde` fija el día de inicio (por defecto, los últimos 2 días) y `--limite` cuántas sesiones (por defecto, 10).

@@ -67,13 +67,10 @@ export const skillsInGlobal = (npmRoot: string): string => joinPath(npmRoot.trim
 export const TIMEOUT_MS = 10 * 60 * 1000
 export const AUTH_MESSAGE =
   'Gentle Shell no tiene una cuenta conectada: abrí una terminal, corré pi y usá /login.'
-export const SDD_QUESTION =
-  '¿Qué ves distinto en esta propuesta/diseño? ¿Qué riesgos o alternativas no estamos viendo?'
 export const BIG_PR_LINES = 400
 export const MAX_PER_TEMA = 20
 export const MAX_TEMAS = 30
 export const PLANTEO_STORED = 2000
-export const PLANTEO_SDD = 8000
 export const PLANTEO_SENT = 12000
 
 export const MARCO =
@@ -516,31 +513,6 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
     `que no sean la de pi (${own ?? '?'}). ${have}.${notCounted}${next}`
   )
 }
-
-// ---- SDD auto-consult -------------------------------------------------------
-
-export const SDD_AGENTS = new Set(['sdd-propose', 'sdd-design'])
-
-const CHANGE_PATTERNS = [
-  /sdd\/([A-Za-z0-9][\w.-]*)\/(?:proposal|design|spec|explore|tasks)/,
-  /openspec\/changes\/([A-Za-z0-9][\w.-]*)/,
-  /change(?:[ _-]?name)?\s*[:=]\s*`?["']?([A-Za-z0-9][\w.-]*)/i,
-]
-
-export const changeName = (text: string, now: number): string => {
-  for (const pattern of CHANGE_PATTERNS) {
-    const name = slug(pattern.exec(text)?.[1] ?? '')
-    if (name !== '' && name !== 'archive') {
-      return `sdd-${name}`
-    }
-  }
-  const d = new Date(now)
-  const pad = (n: number): string => String(n).padStart(2, '0')
-
-  return `sdd-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`
-}
-
-export const block = (tema: string, body: string): string => `--- Mirada de Gentle Shell (tema ${tema}) ---\n${body}`
 
 export const clock = (at: number): string => {
   const d = new Date(at)
