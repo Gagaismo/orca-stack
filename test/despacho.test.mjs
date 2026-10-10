@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { citedPaths, dispatch, launcherFor, missingPaths, renderBrief } from '../src/despacho.mjs'
+import { citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, renderBrief } from '../src/despacho.mjs'
 import { layout } from '../src/util.mjs'
 import { cleanup, read, tempDir, write } from './helpers.mjs'
 
@@ -715,6 +715,27 @@ describe('pi: --perfil-pi', () => {
 })
 
 describe('--dry-run', () => {
+  test('keeps launch output stable for claude, codex, agy and pi', async () => {
+    for (const agent of ['claude', 'codex', 'agy', 'pi']) {
+      const env = fakeIo()
+      await run('ticket', { n: '7', agent, dryRun: true }, env)
+      const output = env.out.join('\n')
+      const briefPath = path.join(home, 'orca', 'briefs', 'proj-7.md')
+      const launcher = launcherFor({ agent, mode: 'ticket', config: PROJECT, win: true, home, briefPath, session: 'proj-7', skills: agent === 'pi' ? 'C:\\pi\\gentle-pi\\skills' : null })
+      const start = env.out.findIndex(line => line.startsWith(`Lanzador (${agent}):`))
+      const launchLines = env.out.slice(start)
+
+      assert.equal(launchLines[0], `Lanzador (${agent}): ${launcher}`)
+      assert.equal(launchLines[1], `[simulaci\u00f3n] orca terminal create --worktree path:<worktree> --title ${agent} --command ${JSON.stringify(launcher)} --json`)
+      if (agent !== 'pi') {
+        assert.equal(launchLines[2], `[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
+      } else {
+        assert.ok(!output.includes('esperar la TUI'))
+      }
+      assert.ok(!env.writes().some(call => call[0] === 'orca' && call[1] === 'terminal'))
+    }
+  })
+
   test('executes no write and prints the plan and the brief', async () => {
     const env = fakeIo()
     await run('ticket', { n: '7', agent: 'agy', dryRun: true, nota: 'ojo' }, env)
@@ -723,5 +744,34 @@ describe('--dry-run', () => {
     assert.ok(!existsSync(path.join(home, 'orca', 'briefs')))
     const text = env.out.join('\n')
     for (const part of ['[simulación] gh issue edit 7 --add-assignee @me', '[simulación] orca worktree create', '--base-branch origin/main', 'brief ->', 'Lanzador (agy)', '--- brief ---', 'ojo']) assert.ok(text.includes(part), part)
+  })
+})
+
+describe('launchInWorktree', () => {
+  test('builds and launches the configured agent using an existing worktree without dispatch reads', async () => {
+    const env = fakeIo()
+    const briefPath = path.join(home, 'orca', 'briefs', 'existing.md')
+    const config = { ...PROJECT, agentes: { ...PROJECT.agentes, modelos: { claude: 'launch-model' } } }
+
+    await launchInWorktree({
+      agent: 'claude',
+      mode: 'ticket',
+      worktree,
+      briefPath,
+      session: 'existing',
+      config,
+      win: true,
+      home,
+      io: env.io,
+    })
+
+    const create = env.calls.find(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    assert.equal(create[create.indexOf('--worktree') + 1], `path:${worktree}`)
+    assert.match(create[create.indexOf('--command') + 1], /claude-orca-stack\.cmd/)
+    assert.match(create[create.indexOf('--command') + 1], /--model launch-model/)
+    assert.ok(env.calls.some(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'send' && call.includes(`Read and follow the brief in ${briefPath}`)))
+    assert.ok(!env.calls.some(call => call[0] === 'gh' || (call[0] === 'git' && call[1] !== '')))
+    assert.ok(!env.calls.some(call => call[0] === 'orca' && call[1] === 'worktree'))
+    assert.ok(env.out.some(line => line.includes(`\u2714 claude despachado en ${worktree}. Brief: ${briefPath}`)))
   })
 })
