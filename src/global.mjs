@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { INSTALL_HINTS, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
-import { isLazyBlock, lazyifyBlock, rddMode, readPersonalConfig, restoreBlock, sddBlock, sddMode, trimReviewSections } from './gentle.mjs'
+import { NO_BLOCK, isLazyBlock, lazyifyBlock, rddMode, readPersonalConfig, restoreBlock, sddBlock, sddMode, trimReviewSections } from './gentle.mjs'
 import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE } from './codex-windows.mjs'
 import { removeAnyBlock, removeBlock, upsertBlock } from './marker.mjs'
 import { installPathCommand } from './path-command.mjs'
@@ -146,13 +146,13 @@ const removeClaudeMdBlock = ctx => {
   }
 }
 
-// Lazy mode: gentle-ai's whole block is a ~16 KB briefing for SDD, which the human asks for explicitly. Keep the full text in
-// ~/.orca-stack/gentle/sdd-orchestrator.md and leave a pointer between the markers (with a backup). `gentle-ai sync` rewrites
-// the block, so this step has to run again after each sync (it also refreshes the copy).
+// Lazy mode: gentle-ai's whole block is a ~16 KB briefing for SDD (v2/v3) or ODD (v4), which the human asks for explicitly.
+// Keep the full text in ~/.orca-stack/gentle/sdd-orchestrator.md and leave a pointer between the markers (with a backup).
+// `gentle-ai sync` rewrites the block, so this step has to run again after each sync (it also refreshes the copy).
 const lazyGentleBlock = (ctx, original) => {
   const block = sddBlock(original)
   if (block.status !== 'ok') {
-    ctx.say(`  se omite y no toco nada: ${block.status === 'none' ? 'no hay bloque gentle-ai:sdd-orchestrator (lo escribe \`gentle-ai sync\`)' : 'los marcadores del bloque de gentle-ai están incompletos, repetidos o desordenados'}`)
+    ctx.say(`  se omite y no toco nada: ${block.status === 'none' ? `${NO_BLOCK} (lo escribe \`gentle-ai sync\`)` : 'los marcadores del bloque de gentle-ai están incompletos, repetidos o desordenados'}`)
 
     return
   }
