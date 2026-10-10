@@ -9,6 +9,8 @@ import {
   ensurePiCodemode,
   piCodemodeStatus,
 } from '../src/codemode.mjs'
+import { checkCodemode, doctorCommand } from '../src/doctor.mjs'
+import { globalCommand } from '../src/global.mjs'
 import { createCtx } from '../src/ctx.mjs'
 import { backups, cleanup, read, tempDir, write } from './helpers.mjs'
 
@@ -193,5 +195,75 @@ describe('codemode rules 1-6', () => {
     ensureCodexCodemode(ctx, { codexBin })
     const codexBackups = backups(home).filter(b => b.includes('config.toml'))
     assert.equal(codexBackups.length, 1)
+  })
+
+  test('Rule 8: doctor shows a row per runtime: codemode on, off (with the command that turns it on), or not applicable', () => {
+    const rows = []
+    const add = (level, label, detail) => rows.push({ level, label, detail })
+    const ctx = createCtx({ home })
+
+    // Setup: Pi on, Codex off
+    const piBin = path.join(binDir, 'pi')
+    write(piBin, '#!/bin/sh\n')
+    const settingsFile = path.join(ctx.L.piAgent, 'settings.json')
+    write(settingsFile, JSON.stringify({ defaultTools: ['+codemode'] }, null, 2))
+
+    const codexBin = fakeCodex(binDir, { codeMode: 'false' })
+
+    const piStatus = piCodemodeStatus(ctx.L, { piBin })
+    assert.equal(piStatus.status, 'on')
+    assert.ok(piStatus.detail.includes('+codemode en defaultTools'))
+
+    const codexStatus = codexCodemodeStatus(ctx.L, { codexBin })
+    assert.equal(codexStatus.status, 'off')
+    assert.equal(codexStatus.command, 'codex features enable code_mode')
+
+    checkCodemode(add, { L: ctx.L, flags: { skipPi: false } })
+    const labels = rows.map(r => r.label)
+    assert.ok(labels.includes('Pi'))
+    assert.ok(labels.includes('Codex'))
+    assert.ok(labels.includes('Claude Code'))
+
+    const claudeRow = rows.find(r => r.label === 'Claude Code')
+    assert.equal(claudeRow.level, 'ok')
+    assert.ok(claudeRow.detail.includes('no aplicable'))
+  })
+
+  test('Rule 8: doctor shows off with command that turns it on, and not applicable when uninstalled', () => {
+    const ctx = createCtx({ home })
+
+    // Pi uninstalled:
+    const piUninstalled = piCodemodeStatus(ctx.L, { piBin: null })
+    assert.equal(piUninstalled.status, 'not_applicable')
+    assert.equal(piUninstalled.detail, 'no está instalado')
+
+    // Pi installed but settings missing -> off with orca-stack global:
+    const piBin = path.join(binDir, 'pi')
+    write(piBin, '#!/bin/sh\n')
+    const piMissingSettings = piCodemodeStatus(ctx.L, { piBin })
+    assert.equal(piMissingSettings.status, 'off')
+    assert.equal(piMissingSettings.command, 'orca-stack global')
+
+    // Codex uninstalled:
+    const codexUninstalled = codexCodemodeStatus(ctx.L, { codexBin: null })
+    assert.equal(codexUninstalled.status, 'not_applicable')
+    assert.equal(codexUninstalled.detail, 'no está instalado')
+
+    // Codex unsupported version:
+    const codexNoFeature = fakeCodex(binDir, { hasCodeMode: false })
+    const codexUnsupported = codexCodemodeStatus(ctx.L, { codexBin: codexNoFeature })
+    assert.equal(codexUnsupported.status, 'not_applicable')
+    assert.ok(codexUnsupported.detail.includes('no soporta code_mode'))
+  })
+
+  test('PRESERVE: globalCommand runs successfully and sets up codemode without crashing', async () => {
+    const prevHome = process.env.ORCA_STACK_HOME
+    process.env.ORCA_STACK_HOME = home
+    try {
+      const exitCode = await globalCommand({ dryRun: true, skipPi: true, force: false })
+      assert.equal(exitCode, 0)
+    } finally {
+      process.env.ORCA_STACK_HOME = prevHome
+    }
   })
 })
