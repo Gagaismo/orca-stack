@@ -348,6 +348,25 @@ describe('briefs', () => {
     }
   })
 
+  const contractStep = n => readFileSync(new URL('../assets/stack/CONTRATO.md', import.meta.url), 'utf8')
+    .split('\n').find(line => line.startsWith(`${n}. `))
+
+  test('step 7 (c): with CI, main needs no Suite: line of its own after a bounce', () => {
+    const c = contractStep(7).split('(c)')[1].split('(d)')[0]
+    assert.match(c, /solo en un repo sin CI, después de un rebote, el comentario de `main` lleva también su propia línea `Suite: <comando> en verde`/)
+  })
+
+  test('step 7 (c): without CI, main still adds Suite: on the bounced commit', () => {
+    const c = contractStep(7).split('(c)')[1].split('(d)')[0]
+    assert.match(c, /sin CI[^;]*`Suite: <comando> en verde`, corrida sobre ese mismo commit;/)
+  })
+
+  test('step 8: the Commit: sha is the one main ran, taken before the run and never re-read from gh', () => {
+    const step = contractStep(8)
+    assert.match(step, /ese `Commit:` es el `git rev-parse HEAD` del checkout donde la corriste, tomado antes de correrla con `git status --porcelain` vacío, y no lo volvés a leer de `gh` al escribir el comentario/)
+    assert.match(step, /si el autor pushea durante la corrida, el paso 7 \(b\) frena el merge/)
+  })
+
   test('ticket brief falls back to acceptance criteria and failure modes as RED list for legacy tickets', async () => {
     const env = fakeIo({
       'gh issue view': json({
