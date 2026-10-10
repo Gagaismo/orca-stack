@@ -4,8 +4,17 @@ import { run } from './util.mjs'
 
 // gentle-ai writes this managed block into ~/.claude/CLAUDE.md. With receipt-driven development (RDD) off,
 // its review sections are no-ops that every session still pays for, so `global` trims them.
-const BLOCK_BEGIN = '<!-- gentle-ai:sdd-orchestrator -->'
-const BLOCK_END = '<!-- /gentle-ai:sdd-orchestrator -->'
+// v2/v3 name it `sdd-orchestrator`; v4 retired SDD, renames the block in place to `orchestrator` and keeps the same
+// review sections (gentle-ai v4.0.0 internal/components/agentguidance/orchestrator.go:23-28,435-455).
+const MARKERS = {
+  v2: { begin: '<!-- gentle-ai:sdd-orchestrator -->', end: '<!-- /gentle-ai:sdd-orchestrator -->' },
+  v4: { begin: '<!-- gentle-ai:orchestrator -->', end: '<!-- /gentle-ai:orchestrator -->' },
+}
+
+const hasMarkers = (text, { begin, end }) => text.includes(begin) || text.includes(end)
+
+// The marker pair the text uses: v4 when any v4 marker is there, v2 otherwise.
+const generationOf = text => (hasMarkers(text, MARKERS.v4) ? 'v4' : 'v2')
 
 const REVIEW_CONTRACT = '#### Review Execution Contract'
 // Its subtree has `#`, `##` and `###` headings of its own, so it ends at a named heading, not at a level.
@@ -40,12 +49,13 @@ const levelOf = line => /^(#{1,6})\s/.exec(line)?.[1].length ?? 0
 // to remove holds a heading that is neither a listed section nor part of the contract's known subtree, or if a code fence is
 // left open, it returns the text unchanged with `skipped` saying why. Returns { text, removed (bytes), skipped? }.
 export const trimReviewSections = text => {
-  const begin = text.indexOf(BLOCK_BEGIN)
-  const end = text.indexOf(BLOCK_END)
+  const markers = MARKERS[generationOf(text)]
+  const begin = text.indexOf(markers.begin)
+  const end = text.indexOf(markers.end)
   if (begin === -1 || end === -1 || end < begin) {
     return { text, removed: 0 }
   }
-  const from = begin + BLOCK_BEGIN.length
+  const from = begin + markers.begin.length
   const kept = []
   let skipping = false
   let until = null // set while inside the Review Execution Contract
@@ -116,32 +126,47 @@ export const rddMode = bin => {
 // `gentle-ai sync` replaces the pointer instead of appending a second block.
 export const LAZY_SENTINEL = '<!-- orca-stack:gentle-lazy v1 -->'
 
-export const lazyPointer = copyPath => [
-  'gentle-ai SDD / Judgment Day: only when the human explicitly asks for it.',
-  `Before any SDD or Judgment-Day command or phase, read in full \`${copyPath}\`, then \`.claude/skills/_shared/sdd-orchestrator-workflow.md\` in the workspace if present, otherwise \`~/.claude/skills/_shared/sdd-orchestrator-workflow.md\`.`,
+// v4 ships no SDD workflow file: its block is the whole ODD orchestrator.
+export const lazyPointer = (copyPath, generation = 'v2') => [
+  ...(generation === 'v4'
+    ? [
+        'gentle-ai ODD orchestrator / Judgment Day: only when the human explicitly asks for it.',
+        `Before any gentle-ai ODD or Judgment-Day command or phase, read in full \`${copyPath}\`.`,
+      ]
+    : [
+        'gentle-ai SDD / Judgment Day: only when the human explicitly asks for it.',
+        `Before any SDD or Judgment-Day command or phase, read in full \`${copyPath}\`, then \`.claude/skills/_shared/sdd-orchestrator-workflow.md\` in the workspace if present, otherwise \`~/.claude/skills/_shared/sdd-orchestrator-workflow.md\`.`,
+      ]),
   "When a sub-agent or tool returns a blocking prompt, menu or consent envelope, present it complete and unsummarized, and never answer on the human's behalf.",
 ]
 
 const eolOf = text => (text.includes('\r\n') ? '\r\n' : '\n')
 
-// Locates the block body between the markers. { status: 'none' | 'malformed' | 'ok', from, end, inner }.
-// Anything but exactly one opener followed by exactly one closer is 'malformed' (nothing may be written).
+// Locates the block body between the markers. { status: 'none' | 'malformed' | 'ok', generation, from, end, inner }.
+// Anything but exactly one opener followed by exactly one closer of one generation is 'malformed' (nothing may be written).
 export const sddBlock = text => {
+  if (hasMarkers(text, MARKERS.v2) && hasMarkers(text, MARKERS.v4)) {
+    return { status: 'malformed' }
+  }
+  const generation = generationOf(text)
+  const { begin: open, end: close } = MARKERS[generation]
   const count = marker => text.split(marker).length - 1
-  const opens = count(BLOCK_BEGIN)
-  const closes = count(BLOCK_END)
+  const opens = count(open)
+  const closes = count(close)
   if (opens === 0 && closes === 0) {
     return { status: 'none' }
   }
-  const begin = text.indexOf(BLOCK_BEGIN)
-  const end = text.indexOf(BLOCK_END)
+  const begin = text.indexOf(open)
+  const end = text.indexOf(close)
   if (opens !== 1 || closes !== 1 || end < begin) {
     return { status: 'malformed' }
   }
-  const from = begin + BLOCK_BEGIN.length
+  const from = begin + open.length
 
-  return { status: 'ok', from, end, inner: text.slice(from, end) }
+  return { status: 'ok', generation, from, end, inner: text.slice(from, end) }
 }
+
+export const NO_BLOCK = 'no hay bloque gentle-ai:orchestrator (v4) ni gentle-ai:sdd-orchestrator (v2/v3)'
 
 export const isLazyBlock = block => block.status === 'ok' && block.inner.includes(LAZY_SENTINEL)
 
@@ -149,10 +174,10 @@ export const isLazyBlock = block => block.status === 'ok' && block.inner.include
 export const lazyifyBlock = (text, copyPath) => {
   const block = sddBlock(text)
   if (block.status !== 'ok') {
-    return { text, skipped: block.status === 'none' ? 'no hay bloque gentle-ai:sdd-orchestrator' : 'los marcadores del bloque de gentle-ai están incompletos, repetidos o desordenados' }
+    return { text, skipped: block.status === 'none' ? NO_BLOCK : 'los marcadores del bloque de gentle-ai están incompletos, repetidos o desordenados' }
   }
   const eol = eolOf(text)
-  const inner = [eol + LAZY_SENTINEL, ...lazyPointer(copyPath)].join(eol) + eol
+  const inner = [eol + LAZY_SENTINEL, ...lazyPointer(copyPath, block.generation)].join(eol) + eol
 
   return { text: text.slice(0, block.from) + inner + text.slice(block.end), saved: block.inner }
 }
