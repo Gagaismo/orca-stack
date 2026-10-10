@@ -88,6 +88,21 @@ Además, instalá lo que `global` marque como faltante.
 
 **`gentle-ai sync` reescribe el bloque** (reemplaza lo que hay entre los marcadores), así que después de cada sync corré `orca-stack global` de nuevo: refresca la copia y vuelve a achicar. `doctor` avisa si la sync lo reescribió y falla si el puntero quedó sin su copia. Para volver atrás: `"full"` y `orca-stack global`, o `gentle-ai sync`; `orca-stack remove` también restaura el bloque completo.
 
+### Codex en Windows: acentos rotos
+
+codex-cli en Windows lee los archivos con `powershell.exe -Command "Get-Content -Raw <archivo>"`, sin `-NoProfile`. Windows PowerShell 5.1 decodifica el UTF-8 sin BOM como cp1252, así que el modelo ve cada letra acentuada como dos caracteres raros (la `á` de `está` llega como `Ã` seguida de `¡`) y escribe ese mojibake de vuelta (#58). Hay dos arreglos, y conviene tener los dos:
+
+- **La regla ASCII, que escribe `global`.** Solo en Windows, y solo si existe `~/.codex`, `global` agrega a `~/.codex/AGENTS.md` un bloque entre `<!-- orca-stack:codex-ascii:begin -->` y `<!-- orca-stack:codex-ascii:end -->`: el código fuente queda en ASCII y los caracteres no ASCII de los literales van como escapes `\u`. No toca el texto fuera de los marcadores, hace respaldo, es idempotente y respeta `--dry-run`; `remove` saca el bloque y deja el resto del archivo. Si ya tenías una copia de la regla escrita a mano, sin marcadores, `global` no la detecta: sacala vos.
+- **La línea del perfil de PowerShell, que agregás a mano.** `global` nunca edita el perfil, porque afecta a todas tus sesiones de PowerShell. Abrí Windows PowerShell 5.1 (no `pwsh`) y agregá esta línea al archivo que muestra `$PROFILE` (si tu carpeta Documentos está en OneDrive, la ruta lo refleja):
+
+  ```powershell
+  $PSDefaultParameterValues['Get-Content:Encoding'] = 'UTF8'
+  ```
+
+  Si el archivo no existe: `New-Item -ItemType File -Force $PROFILE` y después `notepad $PROFILE`. Con la política de ejecución en `Restricted` el perfil no se carga: mirala con `Get-ExecutionPolicy -List`.
+
+`doctor`, en Windows y con `codex` en `agentes.usa`, revisa los dos: lee un archivo de prueba con el mismo comando que codex y avisa (nunca falla) con la línea y la ruta del perfil si no vuelve `está`, o con "no se pudo verificar" si `powershell.exe` no está o tarda más de 10 s; y avisa con "corré `orca-stack global`" si falta el bloque. En Linux y macOS, o sin `codex`, no imprime nada de esto.
+
 ### Qué va en la configuración personal
 
 `~/.orca-stack/config.json` vale para **todos** tus proyectos, así que ahí va solo lo tuyo: `humano` (cómo te nombran los mods), los modelos y esfuerzos de cada agente (`agentes.modelos`) la cuenta de Claude que usa pi (`agentes.pi.claudeConfigDir`) y, si no querés que te pregunten en cada despacho a pi, el perfil de modelos (`agentes.pi.perfil`). Todo lo que nombra personas, scripts o proveedores de un proyecto (destinatarios de mensajes, scripts de despacho, bloqueos, modelo obligatorio) va en la configuración de **ese** proyecto. Si no, aparece en cada setup nuevo y hay que apagarlo a mano.

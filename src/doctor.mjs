@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import { LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
+import { codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
 import { driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
@@ -107,7 +108,8 @@ export const codexTrustStatus = (root, file) => {
     : { level: 'warn', detail: codexTrustHint(root) }
 }
 
-const usesCodex = (...layers) => {
+// The merged agentes.usa, lowercased.
+const agentsUsed = (...layers) => {
   let agents = {}
   for (const layer of layers) {
     if (layer && typeof layer.agentes === 'object' && !Array.isArray(layer.agentes)) {
@@ -116,7 +118,7 @@ const usesCodex = (...layers) => {
   }
   const used = agents.usa
 
-  return Array.isArray(used) && used.some(agent => ['codex', 'codex-cc'].includes(String(agent).toLowerCase()))
+  return Array.isArray(used) ? used.map(agent => String(agent).toLowerCase()) : []
 }
 
 export const doctorCommand = async flags => {
@@ -353,10 +355,12 @@ export const doctorCommand = async flags => {
     add('warn', 'humano', 'vacío en config.json: puente-gentle dirá "el usuario"')
   }
   const root = projectRootOf(process.cwd())
+  let committed = null
+  let local = null
   if (root) {
-    const committed = checkJson(path.join(root, PROJECT_CONFIG), PROJECT_CONFIG)
-    const local = checkJson(path.join(root, PROJECT_LOCAL_CONFIG), PROJECT_LOCAL_CONFIG)
-    if (usesCodex(personal, committed, local)) {
+    committed = checkJson(path.join(root, PROJECT_CONFIG), PROJECT_CONFIG)
+    local = checkJson(path.join(root, PROJECT_LOCAL_CONFIG), PROJECT_LOCAL_CONFIG)
+    if (agentsUsed(personal, committed, local).some(agent => ['codex', 'codex-cc'].includes(agent))) {
       const trust = codexTrustStatus(root, path.join(home, '.codex', 'config.toml'))
       add(trust.level, 'codex repo root trust', trust.detail)
     }
@@ -378,6 +382,19 @@ export const doctorCommand = async flags => {
     }
     for (const { label, detail } of projectWarnings(root, committed)) {
       add('warn', label, detail)
+    }
+  }
+
+  // codex on Windows reads files through PowerShell 5.1 (#58). Off Windows or without codex, not even the title prints.
+  const codexChecks = codexWindowsChecks({
+    windows: isWindows(),
+    codex: agentsUsed(personal, committed, local).includes('codex'),
+    agentsMd: L.codexAgentsMd,
+  })
+  if (codexChecks.length > 0) {
+    section('Codex en Windows')
+    for (const { level, label, detail } of codexChecks) {
+      add(level, label, detail)
     }
   }
 
