@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
@@ -298,7 +298,7 @@ const screenAfterSend = async (io, handle, before) => {
   return undefined
 }
 
-const piSessionTools = (io, home, worktree) => {
+const piSessionTools = (io, home, worktree, after = 0) => {
   const root = path.join(home, '.pi', 'agent', 'sessions')
   const target = path.resolve(worktree)
   try {
@@ -310,6 +310,7 @@ const piSessionTools = (io, home, worktree) => {
     }).sort((a, b) => b.name.localeCompare(a.name))
     for (const { file } of matches) {
       try {
+        if (after > 0 && (io.modifiedAt ? io.modifiedAt(file) : statSync(file).mtimeMs) <= after) continue
         const lines = io.readFile(file).split(/\r?\n/)
         const session = JSON.parse(lines[0])
         if (!samePath(session.cwd ?? '', target)) continue
@@ -323,16 +324,16 @@ const piSessionTools = (io, home, worktree) => {
   return undefined
 }
 
-const waitForPiSession = async (io, home, worktree) => {
+const waitForPiSession = async (io, home, worktree, after = 0) => {
   for (let i = 0; i < 25; i += 1) {
-    const tools = piSessionTools(io, home, worktree)
+    const tools = piSessionTools(io, home, worktree, after)
     if (tools !== undefined) return tools
     await io.sleep(200)
   }
   return undefined
 }
 
-export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false }) => {
+export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0 }) => {
   const say = io.out
   const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking })
   const act = (cmd, argv, opts = {}) => {
@@ -376,8 +377,9 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     }
     if (!started) throw new Error(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
   } else {
-    const tools = await waitForPiSession(io, home, worktree)
+    const tools = await waitForPiSession(io, home, worktree, piSessionAfter)
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
+    if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el rebote por iniciado.`)
   }
   say(`\u2714 ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
 
@@ -454,9 +456,9 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido: ${agent ?? '(ninguno)'}. Los agentes son: ${AGENTS.join(', ')}.`)
 
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
-  if (git.status !== 0) throw new Error('Corré este comando dentro del checkout principal de un repo git.')
+  if (git.status !== 0) throw new Error('Corr\u00E9 este comando dentro del checkout principal de un repo git.')
   const [gitDir, commonDir, top] = git.stdout.split(/\r?\n/).map(l => l.trim())
-  if (!samePath(gitDir, commonDir)) throw new Error('Esto es un worktree: corré el comando desde el checkout principal del repo (la sesión de main).')
+  if (!samePath(gitDir, commonDir)) throw new Error('Esto es un worktree: corr\u00E9 el comando desde el checkout principal del repo (la sesi\u00F3n de main).')
   const root = path.resolve(top)
   const repo = path.basename(root)
 
@@ -465,7 +467,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   if (config.modo === 'un-agente') throw new Error('El modo del repo es "un-agente": no hay workers que despachar.')
   const base = config.ramaBase
   if (typeof base !== 'string' || base === '') throw new Error('Falta ramaBase en la configuración del repo.')
-  if (!(config.agentes?.usa ?? []).includes(agent)) throw new Error(`${agent} no está en agentes.usa de este repo (${(config.agentes?.usa ?? []).join(', ') || 'vacío'}).`)
+  if (!(config.agentes?.usa ?? []).includes(agent)) throw new Error(`${agent} no est\u00E1 en agentes.usa de este repo (${(config.agentes?.usa ?? []).join(', ') || 'vac\u00EDo'}).`)
   const blocked = blockOf(config, agent, (io.now ?? Date.now)())
   if (blocked) throw new Error(`No despacho a ${agent}: ${blocked}`)
   if ((config.agentes?.preguntarAntes ?? []).includes(agent) && !confirmado) {
@@ -521,7 +523,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const win = io.win
   const mode = review ? 'review' : 'ticket'
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
-  if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corré `orca-stack global`.')
+  if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corr\u00E9 `orca-stack global`.')
 
   const act = (cmd, argv, opts = {}) => {
     say(`${dryRun ? '[simulación] ' : ''}${cmd} ${argv.map(a => (/[\s"]/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
@@ -593,15 +595,115 @@ const command = kind => async (flags, n, agent) =>
 export const despacharCommand = command('ticket')
 export const revisarCommand = command('review')
 
+const reviewBody = review => typeof review?.body === 'string' ? review.body : ''
+const blockingSection = body => /^##\s+BLOQUEA\s*\r?\n([\s\S]*?)(?=^##\s|\s*$)/im.exec(body)?.[1]?.trim() ?? ''
+const blockingBody = body => {
+  const section = blockingSection(body)
+  return section !== '' && !/^nada\s*$/i.test(section)
+}
+
+export const reboteCommand = async (flags, n, io = defaultIo()) => {
+  const { nota, confirmado = false, perfilPi, dryRun = false } = flags
+  const say = io.out
+  if (!/^\d+$/.test(String(n ?? ''))) throw new Error('Falta el n\u00FAmero de PR. Uso: orca-stack rebote <pr>.')
+  const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
+  if (git.status !== 0) throw new Error('Corr\u00E9 este comando dentro del checkout principal de un repo git.')
+  const [gitDir, commonDir, top] = git.stdout.split(/\r?\n/).map(line => line.trim())
+  if (!samePath(gitDir, commonDir)) throw new Error('Esto es un worktree: corr\u00E9 el comando desde el checkout principal del repo (la sesi\u00F3n de main).')
+  const root = path.resolve(top)
+  const repo = path.basename(root)
+  const config = loadConfig(io.home, root)
+  if (config.setup !== 'completo') throw new Error(`El setup de orca-stack est\u00E1 pendiente en ${repo}: hacelo con la skill orca-setup antes de relanzar.`)
+  if (config.modo === 'un-agente') throw new Error('El modo del repo es "un-agente": no hay workers que relanzar.')
+
+  const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'state,headRefName,headRefOid,body,comments,reviews'], { cwd: root }), 'gh pr view'), 'gh pr view')
+  if (String(pr.state).toUpperCase() !== 'OPEN') throw new Error(`El PR #${n} est\u00E1 ${String(pr.state).toLowerCase()}; no se puede rebotar.`)
+  const agent = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim().toLowerCase()
+  if (!agent) throw new Error(`El PR #${n} no tiene la l\u00EDnea "Implementador: <agente>".`)
+  if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido en Implementador: ${agent}.`)
+  if (!(config.agentes?.usa ?? []).includes(agent)) throw new Error(`${agent} no est\u00E1 en agentes.usa de este repo (${(config.agentes?.usa ?? []).join(', ') || 'vac\u00EDo'}).`)
+  const blocked = blockOf(config, agent, (io.now ?? Date.now)())
+  if (blocked) throw new Error(`No relanzo a ${agent}: ${blocked}`)
+  if ((config.agentes?.preguntarAntes ?? []).includes(agent) && !confirmado) {
+    throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de relanzarlo. Si dijo que s\u00ED, repet\u00ED el comando con --confirmado.`)
+  }
+  if (perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
+
+  const sha = pr.headRefOid
+  if (typeof sha !== 'string' || sha.trim() === '') throw new Error(`No pude obtener headRefOid del PR #${n}.`)
+  const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
+  const markers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote:\s*(\S+)\s*$/gim)].map(match => match[1]))
+  if (markers.some(marker => marker !== sha)) throw new Error(`El head del PR avanz\u00F3 desde el rebote (${markers.at(-1)} -> ${sha}); lo que siga en pie lo decide main con Decidido por main.`)
+  const blockers = allReviews.filter(item => {
+    const body = reviewBody(item)
+    return blockingBody(body) && /^\s*Commit:\s*(\S+)/mi.exec(body)?.[1] === sha
+  })
+  if (blockers.length === 0) throw new Error(`El PR #${n} no tiene un review bloqueante vigente en ${sha}.`)
+  const interpretations = blockers.filter(item => /interpretaci[o\u00F3]n/i.test(blockingSection(reviewBody(item))))
+  if (interpretations.length > 0) {
+    const lines = interpretations.map(item => `${item.url ?? item.html_url ?? 'review'}: ${blockingSection(reviewBody(item)).split(/\r?\n/).filter(line => /interpretaci[o\u00F3]n/i.test(line)).join(' ')}`)
+    throw new Error(`Los bloqueos de interpretaci\u00F3n van al humano, no al autor:\n${lines.join('\n')}`)
+  }
+  const findings = blockers.map(item => {
+    return `${item.url ?? item.html_url ?? 'Review'}\n${blockingSection(reviewBody(item))}`
+  }).join('\n\n')
+
+  const listed = ok(io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root }), 'git worktree list').stdout
+  const worktree = listed.split(/\r?\n\s*\r?\n/).map(entry => {
+    const branch = /^branch refs\/heads\/(.+)$/m.exec(entry)?.[1]
+    const location = /^worktree (.+)$/m.exec(entry)?.[1]
+    return branch === pr.headRefName && location ? location : undefined
+  }).find(Boolean)
+  if (!worktree) throw new Error(`No hay un worktree para la rama ${pr.headRefName} del PR #${n}.`)
+  const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: worktree })
+  if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${worktree}: ${(status.stderr || status.stdout).trim()}`)
+  if (status.stdout.trim() !== '') throw new Error(`El worktree ${worktree} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de relanzar.`)
+  const head = ok(io.sh('git', ['rev-parse', 'HEAD'], { cwd: worktree }), 'git rev-parse HEAD').stdout.trim()
+  if (head !== sha) throw new Error(`El worktree ${worktree} est\u00E1 en ${head}, no en el head del PR ${sha}.`)
+  const ps = io.sh('orca', ['worktree', 'ps', '--json'])
+  if (ps.status !== 0) throw new Error(`Orca no contesta (orca worktree ps): ${(ps.stderr || ps.stdout).trim()}`)
+  const rows = parseJson(ps, 'orca worktree ps').result?.worktrees ?? []
+  const row = rows.find(item => samePath(item.path ?? '', worktree))
+  if ((row?.agents ?? []).some(item => /^(working|running|active)$/i.test(item.state ?? item.status ?? ''))) {
+    throw new Error(`Hay un agente vivo en ${worktree}; cerralo antes de rebotar.`)
+  }
+
+  const name = `${repo}-pr-${n}-rebote`
+  const session = `${name}-${(io.now ?? Date.now)()}`
+  const briefPath = path.join(io.home, 'orca', 'briefs', `${name}.md`)
+  const profilePin = agent === 'pi' ? readJson(path.join(worktree, '.pi', 'gentle-ai', 'profile.json'), io)?.profile : undefined
+  if (perfilPi !== undefined && perfilPi !== profilePin) throw new Error(`El worktree fija el perfil de Pi "${profilePin ?? '(ninguno)'}"; no se puede cambiar a "${perfilPi}" en un rebote.`)
+  const profile = agent === 'pi' ? piProfileFor({ flag: profilePin ?? perfilPi, config, home: io.home, commonDir, io }) : undefined
+  const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
+  if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corr\u00E9 `orca-stack global`.')
+  const brief = render(readAsset('stack', 'brief-rebote.md'), {
+    PR: String(n), SHA: sha, FINDINGS: findings, VERIFICATION: verificationBlock(config),
+    NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
+  })
+  if (!dryRun) {
+    io.mkdirp(path.dirname(briefPath))
+    io.writeFile(briefPath, brief)
+  }
+  say(`${dryRun ? '[simulaci\u00F3n] ' : ''}brief -> ${briefPath}`)
+  await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0 })
+  if (!dryRun) {
+    const markerPath = path.join(io.home, 'orca', 'briefs', `${name}-comment.md`)
+    io.writeFile(markerPath, `Rebote: ${sha}\n`)
+    ok(io.sh('gh', ['pr', 'comment', String(n), '--body-file', markerPath], { cwd: root }), 'gh pr comment')
+  }
+  say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote: ${sha}`)
+  return 0
+}
+
 export const briefRevisionCommand = async ({ n, modelo, dryRun = false }, io = defaultIo()) => {
   const say = io.out
   if (!/^\d+$/.test(String(n ?? ''))) throw new Error('Falta el número de PR. Uso: orca-stack brief-revision <pr> --modelo <modelo>.')
   if (typeof modelo !== 'string' || modelo.trim() === '') throw new Error('brief-revision necesita --modelo <modelo>.')
 
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
-  if (git.status !== 0) throw new Error('Corré este comando dentro del checkout principal de un repo git.')
+  if (git.status !== 0) throw new Error('Corr\u00E9 este comando dentro del checkout principal de un repo git.')
   const [gitDir, commonDir, top] = git.stdout.split(/\r?\n/).map(line => line.trim())
-  if (!samePath(gitDir, commonDir)) throw new Error('Esto es un worktree: corré el comando desde el checkout principal del repo (la sesión de main).')
+  if (!samePath(gitDir, commonDir)) throw new Error('Esto es un worktree: corr\u00E9 el comando desde el checkout principal del repo (la sesi\u00F3n de main).')
   const root = path.resolve(top)
   const repo = path.basename(root)
   const config = loadConfig(io.home, root)
@@ -648,7 +750,7 @@ export const briefRevisionCommand = async ({ n, modelo, dryRun = false }, io = d
     if (fetched !== sha) throw new Error(`El head del PR #${n} cambió durante la preparación: esperaba ${sha}, recibí ${fetched}.`)
   }
   act('git', ['worktree', 'add', '--detach', worktree, sha])
-  say(`${dryRun ? '[simulación] ' : ''}brief -> ${briefPath}`)
+  say(`${dryRun ? '[simulaci\u00F3n] ' : ''}brief -> ${briefPath}`)
   if (!dryRun) {
     io.mkdirp(path.dirname(briefPath))
     io.writeFile(briefPath, brief)

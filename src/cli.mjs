@@ -1,4 +1,4 @@
-import { briefRevisionCommand, despacharCommand, revisarCommand } from './despacho.mjs'
+import { briefRevisionCommand, despacharCommand, reboteCommand, revisarCommand } from './despacho.mjs'
 import { doctorCommand } from './doctor.mjs'
 import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
@@ -18,18 +18,19 @@ Comandos:
   doctor    Verifica la instalación con sondeos reales y sale con código 1 si hay fallas.
   remove    Deshace lo que instaló \`global\`, según ~/.orca-stack/state.json.
   despachar Despacha un ticket a un agente: worktree en Orca, brief y lanzamiento (desde el checkout principal).
+  rebote   Relanza al autor de un PR bloqueado en su worktree existente.
   revisar   Despacha el review de un PR a un agente que no sea su autor.
   brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar, brief-revision) Muestra cada acción sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision) Muestra cada acci\u00F3n sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
-  --nota <texto>   (despachar, revisar) Texto que se agrega al brief.
-  --confirmado     (despachar, revisar) El humano dijo que sí a un agente de agentes.preguntarAntes.
-  --perfil-pi <nombre> (despachar, revisar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver despachar --help).
+  --nota <texto>   (despachar, revisar, rebote) Texto que se agrega al brief.
+  --confirmado     (despachar, revisar, rebote) El humano dijo que s\u00ED a un agente de agentes.preguntarAntes.
+  --perfil-pi <nombre> (despachar, revisar, rebote) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver --help del comando).
   --modelo <modelo>  (brief-revision) Modelo del subagente revisor.
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
   --limite <n>     (sesiones) Cuántas sesiones mostrar (por defecto: 10).
@@ -96,6 +97,12 @@ Sin flag y sin agentes.pi.perfil, o con "preguntar", rige el perfil activo globa
 
 Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
 (línea \`Implementador:\`) o si codex y codex-cc se revisan entre sí.
+`,
+  rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
+
+Relanza al autor indicado por \`Implementador:\` en el worktree existente de la rama del PR. Exige un review bloqueante
+vigente sobre el head, worktree limpio y detenido en ese commit, y se niega ante hallazgos de interpretaci\u00F3n.
+Publica \`Rebote: <sha>\` solo despu\u00E9s de iniciar el agente.
 `,
   'brief-revision': `orca-stack brief-revision <pr> --modelo <modelo> [--dry-run]
 
@@ -201,6 +208,8 @@ export const main = async argv => {
         return await despacharCommand(flags, rest[1], rest[2])
       case 'revisar':
         return await revisarCommand(flags, rest[1], rest[2])
+      case 'rebote':
+        return await reboteCommand(flags, rest[1])
       case 'brief-revision':
         return await briefRevisionCommand({ ...flags, n: rest[1] })
       default:
