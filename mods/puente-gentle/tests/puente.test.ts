@@ -239,11 +239,10 @@ test('a repo with only .orca-stack.local.json has the tool, the criterio section
   expect(denied.deny).toContain('grande (450 líneas)')
 })
 
-test('a retired proposal agent type does not trigger an automatic Gentle Shell consult', async ($, on) => {
+test('Agent calls never trigger automatic consult', async ($, on) => {
   const w = setup(on, () => ok('Yo evitaría el cache.'))
   await boot($)
-  // Keep the retired identifier as regression input; it is not a supported workflow.
-  await $.tool.call({ tool: 'Agent', description: 'd', prompt: 'hacé la propuesta', subagent_type: 'sdd-propose' } as never)
+  await $.tool.call({ tool: 'Agent', description: 'd', prompt: 'hacé la propuesta', subagent_type: 'custom-agent' } as never)
   expect(w.calls).toHaveLength(0)
 })
 
