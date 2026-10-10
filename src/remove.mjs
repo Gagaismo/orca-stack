@@ -13,7 +13,7 @@ import path from 'node:path'
 
 import { createCtx, loadState } from './ctx.mjs'
 import { isLazyBlock, restoreBlock, sddBlock } from './gentle.mjs'
-import { CODEX_ASCII_MARKERS } from './codex-windows.mjs'
+import { CODEX_ASCII_MARKERS, codexBlock } from './codex-windows.mjs'
 import { removeAnyBlock, removeBlock } from './marker.mjs'
 import { piBinary } from './pi.mjs'
 import { parseSettings, removePluginDirs, stringifySettings } from './settings.mjs'
@@ -163,18 +163,24 @@ export const removeCommand = async flags => {
   // 4b. The codex ASCII block in ~/.codex/AGENTS.md (Windows); the rest of the file stays.
   if (st.codexAgentsMd && existsSync(st.codexAgentsMd.file)) {
     const file = st.codexAgentsMd.file
-    const { text, found } = removeBlock(readFileSync(file, 'utf8'), CODEX_ASCII_MARKERS)
-    if (found) {
-      ctx.backup(file)
-      if (text.trim() === '' && st.codexAgentsMd.createdFile) {
-        ctx.act(`borro ${show(file)} (lo había creado este instalador)`)
-        if (!dryRun) {
-          rmSync(file)
-        }
-      } else {
-        ctx.act(`quito la regla ASCII de codex de ${show(file)}`)
-        if (!dryRun) {
-          writeBack(file, null, text)
+    const original = readFileSync(file, 'utf8')
+    const block = codexBlock(original)
+    if (block.status === 'malformed') {
+      ctx.say('  se omite y no toco nada: los marcadores de la regla ASCII de codex están incompletos, repetidos o desordenados')
+    } else if (block.status === 'ok') {
+      const { text, found } = removeBlock(original, CODEX_ASCII_MARKERS)
+      if (found) {
+        ctx.backup(file)
+        if (text.trim() === '' && st.codexAgentsMd.createdFile) {
+          ctx.act(`borro ${show(file)} (lo había creado este instalador)`)
+          if (!dryRun) {
+            rmSync(file)
+          }
+        } else {
+          ctx.act(`quito la regla ASCII de codex de ${show(file)}`)
+          if (!dryRun) {
+            writeBack(file, null, text)
+          }
         }
       }
     }
