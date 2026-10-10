@@ -332,6 +332,58 @@ const waitForPiSession = async (io, home, worktree) => {
   return undefined
 }
 
+export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false }) => {
+  const say = io.out
+  const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking })
+  const act = (cmd, argv, opts = {}) => {
+    say(`${dryRun ? '[simulaci\u00f3n] ' : ''}${cmd} ${argv.map(a => (/\s|"/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
+
+    return dryRun ? { status: 0, stdout: '', stderr: '' } : ok(io.sh(cmd, argv, opts), `${cmd} ${argv[0]}`)
+  }
+
+  say(`Lanzador (${agent}): ${launcher}`)
+  const term = act('orca', ['terminal', 'create', '--worktree', `path:${worktree}`, '--title', agent, '--command', launcher, '--json'])
+  if (dryRun) {
+    if (agent !== 'pi') say(`[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
+    say(`\n--- brief ---\n${brief}`)
+
+    return 0
+  }
+  if (agent !== 'pi') {
+    const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
+    if (!handle) throw new Error('orca terminal create no devolvi\u00f3 el handle de la terminal.')
+    const before = await waitForTui(io, handle, agent, repositoryRoot)
+    if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
+    const prompt = `Read and follow the brief in ${briefPath}`
+    const observed = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', '10', '--json'])
+    let sent = observed
+    let oldHost = false
+    if (observed.status !== 0 && /(?:unknown|unrecognized|unsupported)[^\n]*--wait-submit/i.test(observed.stderr || observed.stdout)) {
+      oldHost = true
+      sent = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter'])
+    }
+    ok(sent, 'orca terminal send')
+    let started = false
+    if (!oldHost) {
+      const receipt = parseJson(sent, 'orca terminal send')
+      if (receipt.ok === false) throw new Error(`orca terminal send no inici\u00f3 el turno: ${receipt.error?.message ?? JSON.stringify(receipt)}`)
+      started = submittedTurn(receipt)
+    }
+    if (!started) started = worktreeAgentStarted(io, worktree)
+    if (!started) {
+      const screen = await screenAfterSend(io, handle, before)
+      if (screen && !shellPrompt(screen) && !/trust this folder\?/i.test(screen)) started = true
+    }
+    if (!started) throw new Error(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
+  } else {
+    const tools = await waitForPiSession(io, home, worktree)
+    if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
+  }
+  say(`\u2714 ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
+
+  return 0
+}
+
 // The gentle-pi profile a pi dispatch is pinned to: --perfil-pi wins over agentes.pi.perfil; absent or "preguntar" means
 // the globally active profile (today's behavior). Fails before any side effect when it cannot be honored.
 export const piProfileFor = ({ flag, config, home, commonDir, io }) => {
@@ -470,7 +522,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const mode = review ? 'review' : 'ticket'
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corré `orca-stack global`.')
-  const launcher = launcherFor({ agent, mode, config, win, home: io.home, briefPath, session, skills, piModel: profile?.model, piThinking: profile?.thinking })
+
   const act = (cmd, argv, opts = {}) => {
     say(`${dryRun ? '[simulación] ' : ''}${cmd} ${argv.map(a => (/[\s"]/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
 
@@ -524,45 +576,10 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       io.writeFile(briefPath, brief)
       left.brief = briefPath
     }
-    say(`Lanzador (${agent}): ${launcher}`)
-    const term = act('orca', ['terminal', 'create', '--worktree', `path:${worktree}`, '--title', agent, '--command', launcher, '--json'])
-    if (dryRun) {
-      if (agent !== 'pi') say(`[simulación] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
-      say(`\n--- brief ---\n${brief}`)
-
-      return 0
-    }
-    if (agent !== 'pi') {
-      const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
-      if (!handle) throw new Error('orca terminal create no devolvió el handle de la terminal.')
-      const before = await waitForTui(io, handle, agent, root)
-      if (!before) throw new Error(`La TUI de ${agent} no apareció a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
-      const prompt = `Read and follow the brief in ${briefPath}`
-      const observed = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', '10', '--json'])
-      let sent = observed
-      let oldHost = false
-      if (observed.status !== 0 && /(?:unknown|unrecognized|unsupported)[^\n]*--wait-submit/i.test(observed.stderr || observed.stdout)) {
-        oldHost = true
-        sent = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter'])
-      }
-      ok(sent, 'orca terminal send')
-      let started = false
-      if (!oldHost) {
-        const receipt = parseJson(sent, 'orca terminal send')
-        if (receipt.ok === false) throw new Error(`orca terminal send no inició el turno: ${receipt.error?.message ?? JSON.stringify(receipt)}`)
-        started = submittedTurn(receipt)
-      }
-      if (!started) started = worktreeAgentStarted(io, worktree)
-      if (!started) {
-        const screen = await screenAfterSend(io, handle, before)
-        if (screen && !shellPrompt(screen) && !/trust this folder\?/i.test(screen)) started = true
-      }
-      if (!started) throw new Error(`orca terminal send aceptó o envió el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
-    } else {
-      const tools = await waitForPiSession(io, io.home, worktree)
-      if (tools === 'none') throw new Error(`La nueva sesión de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revisá la configuración de herramientas de Pi para el worktree ${worktree}.`)
-    }
-    say(`✔ ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
+    await launchInWorktree({
+      agent, mode, worktree, briefPath, brief, session, config, win, home: io.home, skills,
+      piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun,
+    })
 
     return 0
   } catch (error) {
