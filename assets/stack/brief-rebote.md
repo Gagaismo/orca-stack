@@ -13,6 +13,7 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 ## Work
 
 - Work only in this existing worktree and stay on its PR branch.
+- Resume the ODD feature `issue-{{ISSUE}}` with ODD's resume protocol (the document is still in the worktree).
 - Fix every listed review finding and failed check. Do not resolve interpretation findings; those are never sent in a bounce brief.
 - Do not delete, skip or weaken a test to make CI pass.
 - Do not edit `.github/workflows/` unless the ticket asks for it.
@@ -25,4 +26,11 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 
 - Push the fix to the same branch.
 - Comment on PR #{{PR}} with what changed for each finding and check.
+
+## Remote authorization
+
+- Destination: {{REMOTE_HOST}}, repository {{REMOTE_REPO}}
+- Credential/session: the GitHub CLI (`gh`) session and the git credentials already configured on this machine.
+- Operations: {{REMOTE_OPERATIONS}}
+- Explicitly not authorized: merge, force push, deleting branches or issues, other repos, remotes or hosts.
 {{NOTE_SECTION}}

@@ -35,7 +35,7 @@ const ORCA_VARS_CLEARED = [
   'ORCA_STACK_CAVEMAN_LEVEL',
 ]
 // Only a review closes pi's tools (read-only). A ticket gets all of them: an allowlist would also drop gentle-pi's
-// subagents, SDD and engram tools.
+// subagents, ODD and engram tools.
 const PI_TOOLS = { review: 'read,bash,grep,find,ls' }
 const PI_THINKING = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 // gentle-pi profile names: 1-64 ASCII slug characters. Also keeps the name harmless inside a path or a command.
@@ -163,7 +163,7 @@ export const citedPaths = text => {
   const found = []
   for (const [, token] of text.replace(/```[\s\S]*?```/g, '').matchAll(/`([^`\n]+)`/g)) {
     const t = token.replace(/:\d+(-\d+)?$/, '')
-    if (/[\s<>{}*$=:@#]/.test(t) || /^(-|~|\/|origin\/|refs\/)/.test(t) || /^[a-z]:[\\/]/i.test(t)) continue
+    if (/[\s<>{}*$=:@#]/.test(t) || /^(-|~|\/|origin\/|refs\/|odd(\/|$))/.test(t) || /^[a-z]:[\\/]/i.test(t)) continue
     if ((t.includes('/') || PATH_EXTENSIONS.test(t)) && !found.includes(t)) found.push(t)
   }
 
@@ -178,15 +178,67 @@ const verificationBlock = config => {
   return lines.length === 0 ? "(none configured: run the project's own checks)" : lines.join('\n')
 }
 
-export const renderBrief = (kind, vars, nota) =>
-  render(readAsset('stack', kind === 'ticket' ? 'brief-ticket.md' : 'brief-revision.md'), {
+export const parseRemoteUrl = url => {
+  if (typeof url !== 'string') return undefined
+  const raw = url.trim()
+  if (!raw) return undefined
+
+  const scpMatch = /^(?:[^@\s]+@)?([a-zA-Z0-9.-]+):([^/\s][^:\s]*)$/.exec(raw)
+  if (scpMatch) {
+    const host = scpMatch[1]
+    const repoPath = scpMatch[2].replace(/\.git$/i, '').replace(/^\/+/, '')
+    const parts = repoPath.split('/')
+    if (parts.length === 2 && parts[0] && parts[1]) {
+      return { host, ownerRepo: `${parts[0]}/${parts[1]}` }
+    }
+    return undefined
+  }
+
+  try {
+    const parsed = new URL(raw)
+    const host = parsed.hostname
+    if (!host) return undefined
+    const repoPath = parsed.pathname.replace(/\.git$/i, '').replace(/^\/+/, '')
+    const parts = repoPath.split('/')
+    if (parts.length === 2 && parts[0] && parts[1]) {
+      return { host, ownerRepo: `${parts[0]}/${parts[1]}` }
+    }
+  } catch {
+    return undefined
+  }
+
+  return undefined
+}
+
+export const getRemoteOrigin = (root, io) => {
+  const res = io.sh('git', ['remote', 'get-url', 'origin'], { cwd: root })
+  if (res.status !== 0 || !res.stdout || !res.stdout.trim()) {
+    throw new Error('El repo no tiene un remote origin configurado: no puedo determinar el destino remoto para autorizar al worker.')
+  }
+  const url = res.stdout.trim().split(/\r?\n/)[0].trim()
+  const parsed = parseRemoteUrl(url)
+  if (!parsed) {
+    throw new Error(`No pude interpretar el remote origin "${url}" como host y owner/repo: no puedo determinar el destino remoto para autorizar al worker.`)
+  }
+  return { ...parsed, url }
+}
+
+export const renderBrief = (kind, vars, nota) => {
+  const defaultOps = kind === 'ticket'
+    ? `read issue #${vars.ISSUE ?? '<n>'} and its comments and the repo; comment on the issue; push only the ticket branch to \`origin\`; open the PR against ${vars.BASE ?? 'main'}.`
+    : 'read the PR, its diff, its checks and the issue it closes; publish the review with the command the brief already gives. No push.'
+  return render(readAsset('stack', kind === 'ticket' ? 'brief-ticket.md' : 'brief-revision.md'), {
     ...vars,
+    REMOTE_HOST: vars.REMOTE_HOST ?? 'github.com',
+    REMOTE_REPO: vars.REMOTE_REPO ?? (vars.REPO ? `owner/${vars.REPO}` : 'owner/repo'),
+    REMOTE_OPERATIONS: vars.REMOTE_OPERATIONS ?? defaultOps,
     WORKTREE_INSTRUCTIONS: vars.WORKTREE_INSTRUCTIONS ?? `Repo: ${vars.REPO}. PR #${vars.PR} is written by ${vars.IMPLEMENTER}; its head commit is ${vars.SHA}. This worktree must be at that commit: run git rev-parse HEAD, and if it differs, git fetch origin and git checkout --detach ${vars.SHA}.`,
     PUBLISH_INSTRUCTIONS: vars.PUBLISH_INSTRUCTIONS ?? 'Write the review in a UTF-8 file and publish it with a body file, never through a pipe:',
     PUBLISH_COMMAND: vars.PUBLISH_COMMAND ?? `gh pr review ${vars.PR} --comment --body-file <file>`,
     REVIEWER_LINE: vars.REVIEWER_LINE ?? vars.AGENT,
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
   })
+}
 
 const deepFind = (value, keys) => {
   if (!isPlain(value) && !Array.isArray(value)) return undefined
@@ -474,6 +526,8 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de despacharlo. Si dijo que sí, repetí el comando con --confirmado.`)
   }
 
+  const remote = getRemoteOrigin(root, io)
+
   if (perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
   const profile = agent === 'pi' ? piProfileFor({ flag: perfilPi, config, home: io.home, commonDir, io }) : undefined
 
@@ -536,7 +590,13 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     if (fetched.status !== 0) throw new Error(`git fetch origin falló, no asigné ni creé nada: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
   }
   const briefFor = branch => renderBrief(kind, {
-    REPO: repo, AGENT: agent, BASE: base, BRANCH: branch, VERIFICATION: verificationBlock(config),
+    REPO: repo,
+    REMOTE_HOST: remote.host,
+    REMOTE_REPO: remote.ownerRepo,
+    AGENT: agent,
+    BASE: base,
+    BRANCH: branch,
+    VERIFICATION: verificationBlock(config),
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
   }, nota)
   // Validate the cited paths against the tree the worktree will be created from, before any side effect.
@@ -615,6 +675,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const config = loadConfig(io.home, root)
   if (config.setup !== 'completo') throw new Error(`El setup de orca-stack est\u00E1 pendiente en ${repo}: hacelo con la skill orca-setup antes de relanzar.`)
   if (config.modo === 'un-agente') throw new Error('El modo del repo es "un-agente": no hay workers que relanzar.')
+
+  const remote = getRemoteOrigin(root, io)
 
   const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'state,headRefName,headRefOid,body,comments,reviews,statusCheckRollup'], { cwd: root }), 'gh pr view'), 'gh pr view')
   if (String(pr.state).toUpperCase() !== 'OPEN') throw new Error(`El PR #${n} est\u00E1 ${String(pr.state).toLowerCase()}; no se puede rebotar.`)
@@ -713,8 +775,13 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const profile = agent === 'pi' ? piProfileFor({ flag: profilePin ?? perfilPi, config, home: io.home, commonDir, io }) : undefined
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corr\u00E9 `orca-stack global`.')
+  const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
   const brief = render(readAsset('stack', 'brief-rebote.md'), {
     PR: String(n), SHA: sha,
+    ISSUE: issue,
+    REMOTE_HOST: remote.host,
+    REMOTE_REPO: remote.ownerRepo,
+    REMOTE_OPERATIONS: 'read the PR, its reviews and checks (including `gh run view ... --log-failed`); push only the PR branch to `origin`; comment on the PR.',
     FINDINGS: findings || 'No current blocking review findings; this is a CI-only bounce.',
     FAILED_CHECKS: failedChecksText,
     VERIFICATION: verificationBlock(config),
@@ -752,6 +819,8 @@ export const briefRevisionCommand = async ({ n, modelo, dryRun = false }, io = d
   if (config.setup !== 'completo') throw new Error(`El setup de orca-stack está pendiente en ${repo}: hacelo con la skill orca-setup antes de despachar.`)
   if (config.modo !== 'un-agente') throw new Error('El modo del repo no es "un-agente": usá `orca-stack revisar <pr> <agente>` en modo multiagente.')
 
+  const remote = getRemoteOrigin(root, io)
+
   const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'headRefOid,body,number'], { cwd: root }), 'gh pr view'), 'gh pr view')
   const implementer = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim()
   if (!implementer) throw new Error(`El PR #${n} no tiene la línea "Implementador: <agente>".`)
@@ -770,6 +839,9 @@ export const briefRevisionCommand = async ({ n, modelo, dryRun = false }, io = d
 
   const brief = renderBrief('review', {
     REPO: repo,
+    REMOTE_HOST: remote.host,
+    REMOTE_REPO: remote.ownerRepo,
+    REMOTE_OPERATIONS: 'read-only (PR, diff, checks, issue). main publishes the review. No push.',
     PR: String(n),
     IMPLEMENTER: implementer,
     SHA: sha,

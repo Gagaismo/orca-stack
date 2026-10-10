@@ -32,7 +32,7 @@ Si `.orca-stack.json` no existe o no tiene `"setup": "completo"`, la sesión de 
 
 El rol lo da el checkout, no el agente. Comparalo con `git rev-parse --git-dir` y `git rev-parse --git-common-dir`:
 
-- Iguales y en la rama `ramaBase`: sos la sesión de **`main`**. Orquestás, despachás, mergeás e integrás `GLOSSARY.md` y los ADRs. No implementás tickets ni revisás PRs.
+- Iguales y en la rama `ramaBase`: sos la sesión de **`main`**. Orquestás, despachás, mergeás e integrás `GLOSSARY.md` y los ADRs; corrés ODD para tu propio trabajo de orquestación, nunca implementás tickets ni revisás PRs.
 - Iguales pero en otra rama: actuás como `main`, pero no mergeás hasta volver a `ramaBase`.
 - Distintos: estás en un **worktree**. Si su nombre empieza con `revision`, sos revisor; si no, implementás el ticket de tu brief vos mismo, de punta a punta. Las reglas de coordinación y delegación del `CLAUDE.md` global (gentle-ai) valen solo para `main`.
 
@@ -42,12 +42,12 @@ Si el repo todavía tiene `CONTEXT.md` en vez de `GLOSSARY.md`, leelo como si fu
 
 | Agente | Implementa | Revisa | Cómo trabaja |
 |---|---|---|---|
-| claude (`main`) | No | No | Orquesta. Método de Matt por defecto; el SDD/ODD de gentle-ai (SDD hasta v3, ODD desde v4) solo si el humano lo pide. En modo `un-agente` esta misma sesión planifica e implementa (ver abajo). |
-| claude (worker) | Sí, con `implement` | Solo si el humano lo pide | Modo desatendido. |
-| agy | Sí | Sí, es el revisor por defecto | Las skills se le piden en prosa ("seguí el skill `implement`"). |
+| claude (`main`) | No | No | Orquesta. Planificación con las skills de Matt (`grilling`, `to-spec`, `to-tickets`, disparadas por el humano), implementación con gentle-ai ODD (main corre ODD para su trabajo de orquestación, nunca implementa tickets). En modo `un-agente` esta misma sesión planifica e implementa con ODD (ver abajo). |
+| claude (worker) | Sí, con ODD | Solo si el humano lo pide | Modo desatendido. |
+| agy | Sí | Sí, es el revisor por defecto | Las skills se le piden en prosa. |
 | codex | Sí | Sí | Codex directo. |
 | codex-cc | Sí; si figura en `preguntarAntes` (lo normal, porque usa créditos de Command Code), preguntale al humano antes de despacharlo | Sí | Codex por Command Code, con el modelo que diga `agentes.modelos` (GPT, GLM u otro). |
-| pi (Gentle Shell) | Sí, con su propia metodología (puede usar SDD/ODD) | Sí, como segundo review de los PRs que tocan `riesgo`, salvo los que escribió pi. Corre sobre Claude: al lado de claude aporta otra metodología, no otro modelo | También es el par que `main` consulta con `consultar_gentle_shell`. Esa consulta es de solo lectura y no reemplaza un review. |
+| pi (Gentle Shell) | Sí, con su propia metodología (puede usar ODD) | Sí, como segundo review de los PRs que tocan `riesgo`, salvo los que escribió pi. Corre sobre Claude: al lado de claude aporta otra metodología, no otro modelo | También es el par que `main` consulta con `consultar_gentle_shell`. Esa consulta es de solo lectura y no reemplaza un review. |
 
 Revisa agy, salvo que el PR lo haya escrito agy: entonces revisa codex, o codex-cc si codex no está disponible (una regla `guardia.bloquear` vigente cuenta como no disponible: `despachar` y `revisar` se niegan a despacharlo y dicen el motivo). Un revisor nunca corre un modelo de la misma familia que el autor: dos modelos de una familia comparten puntos ciegos. La familia sale del modelo que cada agente tiene en `agentes.modelos` (si codex-cc corre GLM, es otra familia que codex; si corre un GPT, la misma), y `revisar` se niega cuando coinciden. pi es la excepción: corre sobre Claude, y al lado de claude aporta otra metodología. Un PR de codex o de codex-cc lo revisa agy. Qué agentes están en uso en este repo lo dice `agentes` en `.orca-stack.json`; los que figuran en `preguntarAntes` se despachan solo con el OK del humano.
 
@@ -55,11 +55,11 @@ Nadie revisa su propio PR y un worktree de ticket nunca revisa. Preferí que rev
 
 ### Modo `un-agente`
 
-Cuando `modo` es `"un-agente"` no hay workers: la misma sesión planifica e implementa, y los pasos de despacho de este contrato no aplican. Con una spec que ya tiene tickets, proponé `implement-spec` (la dispara el humano): implementa la frontera de tickets con subagentes y deja todo en una rama de integración. El review que cuenta lo hace igual un contexto distinto del que escribió el código: un subagente de contexto limpio, de otra familia de modelos si hay una disponible, con el mismo formato `## BLOQUEA` / `## SUGERENCIAS` y antes de mergear. La sesión de `main` ejecuta `orca-stack brief-revision <pr> --modelo <modelo>`, le da al subagente la ruta del brief impresa por el comando. El comando imprime también la ruta de un archivo UTF-8 fuera del worktree, `~/orca/briefs/<repo>-revision-<pr>-subagente.review.md`; el subagente escribe allí el cuerpo del review. Después publica ese archivo con `gh pr review <n> --comment --body-file <file>` y remueve el worktree descartable con `git worktree remove <path>` (es detached y no tiene rama que borrar). El review mantiene las primeras líneas `Revisor: subagente (<modelo>)` y `Commit: <sha>`; la línea `Implementador:` del PR nombra al agente de esa sesión. Si `review` es `"humano"`, el review lo hace el humano y `main` solo registra su veredicto con las líneas `Revisor: humano` y `Commit: <sha>`. Sin un review hecho por otro contexto no se mergea, porque quien escribió el código comparte con él todos sus puntos ciegos.
+Cuando `modo` es `"un-agente"` no hay workers: la misma sesión planifica e implementa con ODD, y los pasos de despacho de este contrato no aplican. El review que cuenta lo hace igual un contexto distinto del que escribió el código: un subagente de contexto limpio, de otra familia de modelos si hay una disponible, con el mismo formato `## BLOQUEA` / `## SUGERENCIAS` y antes de mergear. La sesión de `main` ejecuta `orca-stack brief-revision <pr> --modelo <modelo>`, le da al subagente la ruta del brief impresa por el comando. El comando imprime también la ruta de un archivo UTF-8 fuera del worktree, `~/orca/briefs/<repo>-revision-<pr>-subagente.review.md`; el subagente escribe allí el cuerpo del review. Después publica ese archivo con `gh pr review <n> --comment --body-file <file>` y remueve el worktree descartable con `git worktree remove <path>` (es detached y no tiene rama que borrar). El review mantiene las primeras líneas `Revisor: subagente (<modelo>)` y `Commit: <sha>`; la línea `Implementador:` del PR nombra al agente de esa sesión. Si `review` es `"humano"`, el review lo hace el humano y `main` solo registra su veredicto con las líneas `Revisor: humano` y `Commit: <sha>`. Sin un review hecho por otro contexto no se mergea, porque quien escribió el código comparte con él todos sus puntos ciegos.
 
 ### Permisos
 
-Sin preguntar: crear ramas, commitear, pushear, abrir PRs, comentar y etiquetar issues, despachar, elegir revisor y, en `main`, mergear cuando se cumple la condición de merge. Se hace y después se cuenta.
+Sin preguntar: crear ramas, commitear, pushear, abrir PRs, comentar y etiquetar issues, despachar, elegir revisor y, en `main`, mergear cuando se cumple la condición de merge. Se hace y después se cuenta; esta lista cuenta como la autorización explícita de ODD para esas acciones.
 
 Se pregunta: lo irreversible (reescribir historia, force push, borrar ramas o issues, tocar algo ya publicado), gastar plata, credenciales, mensajes a terceros y cambios al stack global. Si Pi discrepa en algo material, se le muestran al humano las dos posturas con sus razones.
 
@@ -110,7 +110,7 @@ Cada regla del repo vive en un solo archivo; los demás apuntan a ella sin copia
 
 ### Review
 
-El review que cuenta es el cruzado. `/code-review` dentro de `implement`, y el review RDD de gentle-ai si alguien lo prende, son autochequeos del autor y no lo reemplazan.
+El review que cuenta es el cruzado. La skill `code-review` del brief antes del PR, y el review RDD de gentle-ai si alguien lo prende, son autochequeos del autor y no lo reemplazan.
 
 Los ejes, los tests derivados, la comprobación de que un test del autor falle sin el cambio y la limpieza de tests están en el brief de revisión que arman `orca-stack revisar` y `orca-stack brief-revision`.
 
@@ -137,7 +137,7 @@ Sin bloqueos, `## BLOQUEA` dice `nada`. Si el repo no tiene CI, corré la suite 
 
 | Situación | Skill |
 |---|---|
-| Implementar un ticket | `implement` (corre `tdd` y `code-review` por dentro) |
+| Implementar un ticket | gentle-ai ODD |
 | Escribir el cuerpo de un PR | `pr` |
 | Revisar un PR ajeno | `code-review`, con los ejes de arriba |
 | Un bug difícil o una regresión de performance | `diagnosing-bugs` |
@@ -146,7 +146,7 @@ Sin bloqueos, `## BLOQUEA` dice `nada`. Si el repo no tiene CI, corré la suite 
 | La interfaz de un módulo o dónde va un seam | `codebase-design` |
 | Un paso que solo puede hacer un humano | `wizard` |
 
-En Claude se invocan con `/mattpocock-skills:<skill>`, con el slash al principio del mensaje. En agy y codex se piden en prosa. `to-spec`, `to-tickets`, `wayfinder`, `triage`, `implement-spec`, `retro` y `ask-matt` solo las puede disparar el humano. Si una invocación no toma, abrí el `SKILL.md` por ruta y seguilo.
+En Claude se invocan con `/mattpocock-skills:<skill>`, con el slash al principio del mensaje. En agy y codex se piden en prosa. `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano. Si una invocación no toma, abrí el `SKILL.md` por ruta y seguilo.
 
 ### Avances
 
@@ -158,7 +158,7 @@ Política canónica: `~/orca/stack/ORCA-STACK.md` (se puede cambiar con `$ORCA_S
 Si faltan, corré `npx github:Gagaismo/orca-stack global`.
 
 - El runtime de Orca y el Dispatch activo manejan el ciclo de vida, la delegación, los workers, el cierre y la limpieza. Un worker ejecuta su brief: no arranca otro flujo de trabajo ni espera al humano.
-- Las skills de Matt Pocock son la metodología por defecto. Gentle Shell (Pi) trabaja con la suya y puede usar SDD/ODD. El SDD/ODD de gentle-ai se usa solo cuando el humano lo pide explícitamente. Ponytail se aplica en el trabajo de implementación con el nivel configurado, pero nunca contra un requisito explícito.
+- Planificación con las skills de Matt Pocock (grilling, to-spec, to-tickets, disparadas por el humano), e implementación con gentle-ai ODD en todo el stack. Gentle Shell (Pi) trabaja con la suya y puede usar ODD. Ponytail se aplica en el trabajo de implementación con el nivel configurado, pero nunca contra un requisito explícito.
 - Respetá los requisitos explícitos de la spec, el ticket y los ADRs, y también la validación, la seguridad, la accesibilidad, el manejo de errores, la protección contra pérdida de datos y los tests que se piden: son lo que el humano espera recibir.
 - Caveman sigue el ajuste Auto/Off del stack y comprime solo prosa pesada en tokens. Conservá el código, los comandos, las rutas, los errores exactos, las decisiones, los riesgos, las dudas, los tests y la evidencia de aceptación.
 - Engram es solo memoria: no es autoridad ni planificador. Para las reglas de cada rol, leé la política canónica.
