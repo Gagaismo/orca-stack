@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { currentConfig, forgetConfig } from '../hooks/orca-config'
 import { chosenProfile, configuredProfile, piDispatchSlots, profileNames, profileOptions, withProfile } from '../hooks/perfil-pi'
-import { buildRules, checkRemovals, inspect, modelReason, parseUntil, unmergedReason, worktreeRemovals } from '../hooks/inspect'
+import { buildRules, checkRemovals, inspect, modelReason, parseUntil, unmergedReason, unresolvedReason, worktreeRemovals } from '../hooks/inspect'
 
 const CODEX_REASON = 'Codex no tiene cuota: despachá a claude o agy.'
 const MODEL = 'claude-sonnet-5-5'
@@ -252,8 +252,8 @@ test('worktreeRemovals finds orca and git removals in bash and PowerShell forms 
   expect(worktreeRemovals(`orca.cmd worktree rm --worktree "path:C:${bs}r${bs}ws${bs}issue-5"`)).toEqual([
     { by: 'path', value: `C:${bs}r${bs}ws${bs}issue-5` },
   ])
-  expect(worktreeRemovals('git -C ../repo worktree remove -f C:/r/ws/issue-5')).toEqual([{ by: 'path', value: 'C:/r/ws/issue-5' }])
-  expect(worktreeRemovals(`cd x; & git worktree remove ..${bs}ws${bs}issue-5`)).toEqual([{ by: 'path', value: `..${bs}ws${bs}issue-5` }])
+  expect(worktreeRemovals('git -C ../repo worktree remove -f C:/r/ws/issue-5')).toEqual([{ by: 'path', value: 'C:/r/ws/issue-5', repo: '../repo' }])
+  expect(worktreeRemovals(`cd x; & git worktree remove ..${bs}ws${bs}issue-5`)).toEqual([{ by: 'path', value: `..${bs}ws${bs}issue-5`, repo: 'x' }])
   expect(worktreeRemovals('orca worktree rm')).toEqual([{ by: 'none', value: '' }])
   for (const line of ['orca worktree ps --json', 'git worktree list', 'echo "orca worktree rm"', 'grep -r "git worktree remove" docs/']) {
     expect(worktreeRemovals(line)).toEqual([])
@@ -322,6 +322,92 @@ test('anything git cannot resolve is denied (fail closed)', async () => {
     throw new Error('sin git')
   }
   expect(await checkRemovals('git worktree remove x', boom)).toContain('no pude correr git')
+})
+
+// Two repos: the session runs in one, the scratch worktree belongs to the other (the 2026-10-10 incident).
+// `claude plugin test` has no process, so this git answers as the real one would in each repo: by `-C <dir>`.
+const SESSION = 'C:/u/Documents/orca-stack'
+const OTHER = 'C:/u/Documents/other-repo'
+const SCRATCH = 'C:/u/AppData/Local/Temp/claude/scratchpad/init-other-repo'
+const SCRATCH_BRANCH = 'chore/orca-stack-v0.7.0'
+
+type RepoState = { porcelain: string; unpushed: Record<string, string> }
+
+const twoRepos = (opts: { dirty?: string; unpushed?: string } = {}) => {
+  const repos: Record<string, RepoState> = {
+    [SESSION]: { porcelain: `worktree ${SESSION}\nHEAD aaa\nbranch refs/heads/main\n`, unpushed: { main: '' } },
+    [OTHER]: {
+      porcelain: `worktree ${OTHER}\nHEAD bbb\nbranch refs/heads/main\n\nworktree ${SCRATCH}\nHEAD ccc\nbranch refs/heads/${SCRATCH_BRANCH}\n`,
+      unpushed: { main: '', [SCRATCH_BRANCH]: opts.unpushed ?? '' },
+    },
+  }
+  const calls: string[][] = []
+  const git = async (argv: string[]) => {
+    calls.push(argv)
+    const [, flag, dir] = argv
+    const where = flag === '-C' ? (dir ?? '') : SESSION
+    const rest = flag === '-C' ? argv.slice(3) : argv.slice(1)
+    if (rest[0] === 'status') {
+      return { exitCode: where === SCRATCH || repos[where] !== undefined ? 0 : 128, stdout: where === SCRATCH ? (opts.dirty ?? '') : '' }
+    }
+    const repo = repos[where]
+    if (repo === undefined) {
+      return { exitCode: 128, stdout: '' } // fatal: not a git repository
+    }
+    if (rest[0] === 'worktree' && rest[1] === 'list') {
+      return { exitCode: 0, stdout: repo.porcelain }
+    }
+    const unpushed = repo.unpushed[(rest[1] ?? '').replace(/^refs\/heads\//, '')]
+
+    return unpushed === undefined ? { exitCode: 128, stdout: '' } : { exitCode: 0, stdout: unpushed } // unknown revision
+  }
+
+  return { git, calls }
+}
+
+test('rule 1: a clean, pushed worktree of another repo can be removed with git -C', async () => {
+  const { git, calls } = twoRepos()
+  expect(await checkRemovals(`git -C ${OTHER} worktree remove ${SCRATCH}`, git)).toBeUndefined()
+  expect(calls).toContainEqual(['git', '-C', OTHER, 'worktree', 'list', '--porcelain'])
+  expect(calls).toContainEqual(['git', '-C', OTHER, 'log', `refs/heads/${SCRATCH_BRANCH}`, '--not', '--remotes', '--oneline'])
+})
+
+test('rule 2: cd <repo> && git worktree remove resolves against <repo>', async () => {
+  expect(await checkRemovals(`cd ${OTHER} && git worktree remove ${SCRATCH}`, twoRepos().git)).toBeUndefined()
+  expect(await checkRemovals(`cd "${OTHER}"; git worktree remove ${SCRATCH}`, twoRepos().git)).toBeUndefined()
+  expect(await checkRemovals(`cd C:/u/Documents && git -C other-repo worktree remove ${SCRATCH}`, twoRepos().git)).toBeUndefined()
+})
+
+test('rule 3: a worktree of another repo with uncommitted changes is denied', async () => {
+  for (const form of [`git -C ${OTHER} worktree remove ${SCRATCH}`, `cd ${OTHER} && git worktree remove ${SCRATCH}`]) {
+    expect(await checkRemovals(form, twoRepos({ dirty: ' M src/a.ts\n' }).git), form).toContain('cambios sin commitear')
+  }
+})
+
+test('rule 4: a worktree of another repo with commits on no remote is denied, naming them', async () => {
+  for (const form of [`git -C ${OTHER} worktree remove ${SCRATCH}`, `cd ${OTHER} && git worktree remove ${SCRATCH}`]) {
+    const reason = await checkRemovals(form, twoRepos({ unpushed: 'abc1234 wip\n' }).git)
+    expect(reason, form).toBe(unmergedReason(SCRATCH_BRANCH, ['abc1234 wip']))
+  }
+})
+
+test('rule 5: a -C or cd target that is a variable or glob stays unresolved and is denied', async () => {
+  for (const form of [`git -C $REPO worktree remove ${SCRATCH}`, `cd "$d" && git worktree remove ${SCRATCH}`, `cd ${OTHER}* && git worktree remove ${SCRATCH}`, `cd && git worktree remove ${SCRATCH}`, `cd - && git worktree remove ${SCRATCH}`]) {
+    const { git, calls } = twoRepos()
+    expect(await checkRemovals(form, git), form).toContain('no puedo resolver el repo')
+    expect(calls, form).toEqual([])
+  }
+})
+
+test('rule 6: a -C that is not a git repo is denied as unresolved', async () => {
+  const reason = await checkRemovals(`git -C C:/u/Downloads worktree remove ${SCRATCH}`, twoRepos().git)
+  expect(reason).toBe(unresolvedReason('git worktree list en C:/u/Downloads falló'))
+})
+
+test('rule 7: without -C or cd the session cwd is used, as before', async () => {
+  const { git, calls } = twoRepos()
+  expect(await checkRemovals(`git worktree remove ${SCRATCH}`, git)).toContain(`no encuentro el worktree ${SCRATCH}`)
+  expect(calls).toEqual([['git', 'worktree', 'list', '--porcelain']])
 })
 
 test('the hook denies a worktree removal through the engine even with no config', async ($, on) => {
