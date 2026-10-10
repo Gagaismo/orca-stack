@@ -166,6 +166,24 @@ describe('global, doctor and remove over the three runtime files', () => {
     assert.match(doctor().out, /⚠ mandato ODD de gentle-ai en ~\/\.codex\/AGENTS\.md - global no lo recorta: falta el ancla "Resume an interrupted feature"/)
   })
 
+  test('rule 5: a protocol heading glued to step 1 leaves the file untouched and names the swallowed anchor', () => {
+    const glued = fresh.codex().replace('### ODD protocol (MANDATORY, in this order, on every request)\n\n1. **Authorize.**', '### ODD protocol (MANDATORY, in this order, on every request)\n1. **Authorize.**')
+    writeAll({ codex: glued })
+    const result = global()
+    assert.equal(result.status, 0, result.out)
+    assert.match(result.out, /se omite y no toco nada:.*"1\. \*\*Authorize\.\*\*".*falta una l\u00ednea en blanco/)
+    assert.equal(read(files().codex), glued)
+  })
+
+  test('rule 5: Resume glued to the routes paragraph leaves the file untouched and names the swallowed anchor', () => {
+    const glued = fresh.codex().replace('Resume an interrupted feature with `mem_context`, then the task file itself.\n\nAfter explicit change intent', 'Resume an interrupted feature with `mem_context`, then the task file itself.\nAfter explicit change intent')
+    writeAll({ codex: glued })
+    const result = global()
+    assert.equal(result.status, 0, result.out)
+    assert.match(result.out, /se omite y no toco nada:.*"After explicit change intent is established".*falta una l\u00ednea en blanco/)
+    assert.equal(read(files().codex), glued)
+  })
+
   test('rule 6: an unknown heading leaves that file untouched and names the heading', () => {
     const odd = fresh.gemini().replace('### Mandatory Delegation Triggers', '### Something New\n\n### Mandatory Delegation Triggers')
     writeAll({ gemini: odd })

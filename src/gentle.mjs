@@ -296,6 +296,19 @@ export const trimRoutingBlock = (text, copyPath, runtime) => {
   if (at.codex !== undefined) {
     drop.push([at.codex, sectionEnd(at.codex)])
   }
+  // A paragraph with no blank line before a kept anchor would swallow it: refuse instead of dropping text that must stay.
+  const keep = [
+    ['authorize', [at.authorize, at.explore]],
+    ...['routes', 'triggers', 'rdd'].filter(key => at[key] !== undefined).map(key => [key, [at[key], at[key] + 1]]),
+    ...(nestedFrom !== -1 && nestedTo > nestedFrom ? [['remote', [nestedFrom, nestedTo + 1]]] : []),
+  ]
+  const swallowed = keep.find(([, [from, to]]) => drop.some(([dropFrom, dropTo]) => from < dropTo && dropFrom < to))
+  if (swallowed) {
+    const [key] = swallowed
+    const name = key === 'remote' ? REMOTE_MARKERS.begin : ANCHOR[key]
+
+    return skipRouting(text, `"${name}" quedar\u00eda dentro de un p\u00e1rrafo que se borra (falta una l\u00ednea en blanco antes)`)
+  }
   const cr = block.inner.includes('\r\n') ? '\r' : ''
   const kept = lines.flatMap((line, i) => [
     ...(i === at.intro ? [LAZY_SENTINEL, ...routingPointer(copyPath), ''].map(added => added + cr) : []),
