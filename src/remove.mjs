@@ -12,7 +12,7 @@ import {
 import path from 'node:path'
 
 import { createCtx, loadState } from './ctx.mjs'
-import { isLazyBlock, restoreBlock, sddBlock } from './gentle.mjs'
+import { isLazyBlock, migrateOrchestratorCopy, restoreBlock, sddBlock } from './gentle.mjs'
 import { CODEX_ASCII_MARKERS, codexBlock } from './codex-windows.mjs'
 import { removeAnyBlock, removeBlock } from './marker.mjs'
 import { piBinary } from './pi.mjs'
@@ -56,14 +56,16 @@ export const removeCommand = async flags => {
   if (existsSync(ctx.L.claudeMd)) {
     const current = readFileSync(ctx.L.claudeMd, 'utf8')
     if (isLazyBlock(sddBlock(current))) {
-      if (existsSync(ctx.L.sddCopy)) {
+      migrateOrchestratorCopy(ctx)
+      const copy = existsSync(ctx.L.orchestratorCopy) ? ctx.L.orchestratorCopy : ctx.L.legacyOrchestratorCopy
+      if (existsSync(copy)) {
         ctx.backup(ctx.L.claudeMd)
-        ctx.act(`restauro el bloque completo de gentle-ai en ${show(ctx.L.claudeMd)} desde ${show(ctx.L.sddCopy)}`)
+        ctx.act(`restauro el bloque completo de gentle-ai en ${show(ctx.L.claudeMd)} desde ${show(copy)}`)
         if (!dryRun) {
-          writeBack(ctx.L.claudeMd, null, restoreBlock(current, readFileSync(ctx.L.sddCopy, 'utf8')))
+          writeBack(ctx.L.claudeMd, null, restoreBlock(current, readFileSync(copy, 'utf8')))
         }
       } else {
-        ctx.say(`  el bloque de gentle-ai de ${show(ctx.L.claudeMd)} sigue en modo lazy y falta ${show(ctx.L.sddCopy)}: corré \`gentle-ai sync\` para que lo escriba completo`)
+        ctx.say(`  el bloque de gentle-ai de ${show(ctx.L.claudeMd)} sigue en modo lazy y falta ${show(ctx.L.orchestratorCopy)}: corré \`gentle-ai sync\` para que lo escriba completo`)
       }
     }
   }

@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { INSTALL_HINTS, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
-import { NO_BLOCK, isLazyBlock, lazyifyBlock, rddMode, readPersonalConfig, restoreBlock, sddBlock, sddMode, trimReviewSections } from './gentle.mjs'
+import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestratorMode, rddMode, readPersonalConfig, refreshLazyPointer, restoreBlock, sddBlock, trimReviewSections } from './gentle.mjs'
 import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, codexAgentsMd } from './codex-windows.mjs'
 import { removeAnyBlock, removeBlock, upsertBlock } from './marker.mjs'
 import { installPathCommand } from './path-command.mjs'
@@ -146,8 +146,7 @@ const removeClaudeMdBlock = ctx => {
   }
 }
 
-// Lazy mode: gentle-ai's whole block is a ~16 KB briefing for SDD (v2/v3) or ODD (v4), which the human asks for explicitly.
-// Keep the full text in ~/.orca-stack/gentle/sdd-orchestrator.md and leave a pointer between the markers (with a backup).
+// Lazy mode keeps the full coordinator text in ~/.orca-stack/gentle/orchestrator.md and leaves a short pointer between the markers.
 // `gentle-ai sync` rewrites the block, so this step has to run again after each sync (it also refreshes the copy).
 const lazyGentleBlock = (ctx, original) => {
   const block = sddBlock(original)
@@ -169,9 +168,26 @@ const lazyGentleBlock = (ctx, original) => {
 
     return
   }
-  const copy = ctx.L.sddCopy
+  const migration = migrateOrchestratorCopy(ctx)
+  if (migration.skipped) {
+    ctx.say('  se omite y no toco nada: no pude migrar la copia completa del bloque de gentle-ai')
+
+    return
+  }
+  const copy = ctx.L.orchestratorCopy
   if (isLazyBlock(block)) {
-    ctx.say(`  ya está en modo lazy${existsSync(copy) ? '' : `; pero falta ${ctx.show(copy)}: corré \`gentle-ai sync\` y después \`orca-stack global\``}`)
+    const hasCopy = existsSync(copy) || existsSync(ctx.L.legacyOrchestratorCopy)
+    if (hasCopy) {
+      const refreshed = refreshLazyPointer(original, copy)
+      if (refreshed !== original) {
+        ctx.writeShared(ctx.L.claudeMd, refreshed, `${ctx.show(ctx.L.claudeMd)} (puntero gentle-ai actualizado)`)
+        ctx.say(`  actualicé el puntero gentle-ai; la copia completa queda en ${ctx.show(copy)}`)
+      } else {
+        ctx.say(`  ya está en modo lazy${existsSync(copy) ? '' : `; la copia migrada queda en ${ctx.show(copy)}`}`)
+      }
+    } else {
+      ctx.say(`  ya está en modo lazy; pero falta ${ctx.show(copy)}: corré \`gentle-ai sync\` y después \`orca-stack global\``)
+    }
 
     return
   }
@@ -192,9 +208,16 @@ const restoreGentleBlock = (ctx, original) => {
   if (!isLazyBlock(sddBlock(original))) {
     return original
   }
-  const saved = readTextIfExists(ctx.L.sddCopy)
+  const migration = migrateOrchestratorCopy(ctx)
+  if (migration.skipped) {
+    ctx.say('  el bloque está en modo lazy pero no pude migrar la copia completa del bloque de gentle-ai')
+
+    return original
+  }
+  const copy = existsSync(ctx.L.orchestratorCopy) ? ctx.L.orchestratorCopy : ctx.L.legacyOrchestratorCopy
+  const saved = readTextIfExists(copy)
   if (saved === null) {
-    ctx.say(`  el bloque está en modo lazy pero falta ${ctx.show(ctx.L.sddCopy)}: corré \`gentle-ai sync\` para que gentle-ai lo escriba de nuevo`)
+    ctx.say(`  el bloque está en modo lazy pero falta ${ctx.show(ctx.L.orchestratorCopy)}: corré \`gentle-ai sync\` para que gentle-ai lo escriba de nuevo`)
 
     return original
   }
@@ -210,16 +233,17 @@ const restoreGentleBlock = (ctx, original) => {
 
 const gentleBlockStep = ctx => {
   ctx.say('\nBloque de gentle-ai en CLAUDE.md')
-  const mode = sddMode(readPersonalConfig(ctx.L))
+  const mode = orchestratorMode(readPersonalConfig(ctx.L))
   const original = readTextIfExists(ctx.L.claudeMd)
   if (mode === null) {
-    ctx.say(`  se omite y no toco nada: gentle.sddOrchestrator en ${ctx.show(ctx.L.config)} tiene que ser "lazy" o "full"`)
+    ctx.say(`  se omite y no toco nada: gentle.orchestrator en ${ctx.show(ctx.L.config)} tiene que ser "lazy" o "full"`)
   } else if (original === null) {
     ctx.say('  se omite: no hay ~/.claude/CLAUDE.md')
   } else if (mode === 'lazy') {
     lazyGentleBlock(ctx, original)
   } else {
     // Full: the block stays as gentle-ai writes it, minus the review sections while RDD is off.
+    migrateOrchestratorCopy(ctx)
     trimGentleReview(ctx, restoreGentleBlock(ctx, original))
   }
 }

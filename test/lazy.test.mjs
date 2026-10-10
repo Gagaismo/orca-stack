@@ -3,11 +3,11 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { LAZY_SENTINEL, lazyifyBlock, restoreBlock, sddBlock, sddMode } from '../src/gentle.mjs'
+import { LAZY_SENTINEL, lazyifyBlock, orchestratorMode, restoreBlock, sddBlock } from '../src/gentle.mjs'
 import { fakeGentle, fixture, sddConfig, withPath } from './gentle-fixture.mjs'
 import { backups, cleanup, cli, read, snapshot, tempDir, write } from './helpers.mjs'
 
-const COPY = '/tmp/home/.orca-stack/gentle/sdd-orchestrator.md'
+const COPY = '/tmp/home/.orca-stack/gentle/orchestrator.md'
 
 describe('lazy block helpers', () => {
   test('lazyify keeps the markers, saves the exact body and restore is lossless (LF and CRLF)', () => {
@@ -36,11 +36,11 @@ describe('lazy block helpers', () => {
     }
   })
 
-  test('sddMode defaults to lazy and rejects anything but lazy or full', () => {
-    assert.equal(sddMode(null), 'lazy')
-    assert.equal(sddMode({}), 'lazy')
-    assert.equal(sddMode({ gentle: { sddOrchestrator: 'full' } }), 'full')
-    assert.equal(sddMode({ gentle: { sddOrchestrator: 'nope' } }), null)
+  test('orchestratorMode defaults to lazy and rejects anything but lazy or full', () => {
+    assert.equal(orchestratorMode(null), 'lazy')
+    assert.equal(orchestratorMode({}), 'lazy')
+    assert.equal(orchestratorMode({ gentle: { orchestrator: 'full' } }), 'full')
+    assert.equal(orchestratorMode({ gentle: { orchestrator: 'nope' } }), null)
   })
 })
 
@@ -57,7 +57,7 @@ describe('global and the lazy gentle-ai block', () => {
     cleanup(bin)
   })
   const claudeMd = () => path.join(home, '.claude', 'CLAUDE.md')
-  const copy = () => path.join(home, '.orca-stack', 'gentle', 'sdd-orchestrator.md')
+  const copy = () => path.join(home, '.orca-stack', 'gentle', 'orchestrator.md')
   const global = (...extra) => cli(home, ['global', '--skip-pi', '--humano', 'Ana', ...extra], { env: withPath(bin) })
   const doctor = () => cli(home, ['doctor', '--offline', '--skip-pi'], { env: withPath(bin) })
 
@@ -131,7 +131,7 @@ describe('global and the lazy gentle-ai block', () => {
     const kept = read(copy())
     cleanup(path.dirname(copy()))
     const missing = global()
-    assert.match(missing.out, /falta .*sdd-orchestrator\.md: corré `gentle-ai sync`/)
+    assert.match(missing.out, /falta .*orchestrator\.md: corré `gentle-ai sync`/)
     assert.equal(read(claudeMd()), lazy)
     write(copy(), kept)
     fakeGentle(bin, 'on') // RDD off would also trim the review sections
@@ -185,7 +185,7 @@ describe('global and the lazy gentle-ai block', () => {
     sddConfig(home, 'lazy')
     assert.equal(global().status, 0)
     sddConfig(home, 'full')
-    assert.match(doctor().out, /⚠ bloque de gentle-ai .* sigue en modo lazy pero gentle\.sddOrchestrator es "full"/)
+    assert.match(doctor().out, /⚠ bloque de gentle-ai .* sigue en modo lazy pero gentle\.orchestrator es "full"/)
   })
 
   test('RDD on keeps the full block (it carries the review contract) and says why', () => {
@@ -234,7 +234,7 @@ describe('global and the lazy gentle-ai block', () => {
     assert.equal(broken.status, 1)
   })
 
-  test('an invalid gentle.sddOrchestrator value changes nothing and says so', () => {
+  test('an invalid gentle.orchestrator value changes nothing and says so', () => {
     sddConfig(home, 'nope')
     write(claudeMd(), fixture('\n'))
     const result = global()

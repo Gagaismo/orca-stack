@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { INSTALL_HINTS, MATT_MIN_VERSION, MATT_REQUIRED_SKILLS } from './constants.mjs'
-import { isLazyBlock, rddMode, readPersonalConfig, sddBlock, sddMode, trimReviewSections } from './gentle.mjs'
+import { hasLegacyOrchestratorMode, isLazyBlock, orchestratorMode, rddMode, readPersonalConfig, sddBlock, trimReviewSections } from './gentle.mjs'
 import { which } from './util.mjs'
 
 const readJson = file => {
@@ -79,27 +79,51 @@ export const driftWarnings = L => {
   const gentle = which('gentle-ai')
   const rdd = gentle ? rddMode(gentle) : { mode: 'off', source: null }
   const md = existsSync(L.claudeMd) ? readFileSync(L.claudeMd, 'utf8') : ''
-  const mode = sddMode(readPersonalConfig(L))
-  const block = sddBlock(md)
-  if (isLazyBlock(block) && !existsSync(L.sddCopy)) {
+  const config = readPersonalConfig(L)
+  const mode = orchestratorMode(config)
+  const hasNewMode = Object.hasOwn(config?.gentle ?? {}, 'orchestrator')
+  if (hasLegacyOrchestratorMode(config)) {
     found.push({
-      level: 'fail',
-      label: 'bloque de gentle-ai en modo lazy sin su copia',
-      detail: `falta ${L.sddCopy}: el puntero de ~/.claude/CLAUDE.md apunta a un archivo que no existe. Corré \`gentle-ai sync\` y después \`orca-stack global\``,
+      label: 'gentle.sddOrchestrator',
+      detail: hasNewMode
+        ? 'gentle.orchestrator gana sobre la clave antigua; borrá gentle.sddOrchestrator cuando puedas'
+        : 'clave antigua: renombrá gentle.sddOrchestrator a gentle.orchestrator en ~/.orca-stack/config.json',
     })
   }
+  const block = sddBlock(md)
+  if (isLazyBlock(block)) {
+    const hasCurrentCopy = existsSync(L.orchestratorCopy)
+    const hasLegacyCopy = existsSync(L.legacyOrchestratorCopy)
+    if (!hasCurrentCopy && hasLegacyCopy) {
+      found.push({
+        label: 'copia antigua del bloque de gentle-ai',
+        detail: `existe ${L.legacyOrchestratorCopy}; corré \`orca-stack global\` para migrarla a ${L.orchestratorCopy}`,
+      })
+    } else if (!hasCurrentCopy) {
+      found.push({
+        level: 'fail',
+        label: 'bloque de gentle-ai en modo lazy sin su copia',
+        detail: `falta ${L.orchestratorCopy}: el puntero de ~/.claude/CLAUDE.md apunta a un archivo que no existe. Corré \`gentle-ai sync\` y después \`orca-stack global\``,
+      })
+    } else if (hasLegacyCopy) {
+      found.push({
+        label: 'copia antigua del bloque de gentle-ai',
+        detail: `también existe ${L.legacyOrchestratorCopy}; corré \`orca-stack global\` para conservar la más nueva y respaldar la otra`,
+      })
+    }
+  }
   if (mode === null) {
-    found.push({ label: 'gentle.sddOrchestrator', detail: 'en ~/.orca-stack/config.json tiene que ser "lazy" o "full"' })
+    found.push({ label: 'gentle.orchestrator', detail: 'en ~/.orca-stack/config.json tiene que ser "lazy" o "full"' })
   } else if (mode === 'lazy') {
     // With RDD on (or unreadable) `global` keeps the full block on purpose: it carries the review contract.
     const keepFull = Boolean(gentle) && rdd.mode !== 'off'
     if (isLazyBlock(block) && keepFull) {
       found.push({ label: 'bloque de gentle-ai en ~/.claude/CLAUDE.md', detail: 'está en modo lazy pero el RDD de gentle-ai no está apagado y necesita el contrato de review: corré `orca-stack global` para restaurarlo' })
     } else if (block.status === 'ok' && !isLazyBlock(block) && !keepFull) {
-      found.push({ label: 'bloque de gentle-ai en ~/.claude/CLAUDE.md', detail: 'gentle-ai sync lo reescribió: corré `orca-stack global` (gentle.sddOrchestrator es "lazy")' })
+      found.push({ label: 'bloque de gentle-ai en ~/.claude/CLAUDE.md', detail: 'gentle-ai sync lo reescribió: corré `orca-stack global` (gentle.orchestrator es "lazy")' })
     }
   } else if (isLazyBlock(block)) {
-    found.push({ label: 'bloque de gentle-ai en ~/.claude/CLAUDE.md', detail: 'sigue en modo lazy pero gentle.sddOrchestrator es "full": corré `orca-stack global` para restaurarlo' })
+    found.push({ label: 'bloque de gentle-ai en ~/.claude/CLAUDE.md', detail: 'sigue en modo lazy pero gentle.orchestrator es "full": corré `orca-stack global` para restaurarlo' })
   }
   const trim = gentle && mode === 'full' ? trimReviewSections(md) : null
   if (trim && (trim.removed > 0 || trim.skipped !== undefined) && rdd.mode === 'off') {
