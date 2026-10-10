@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -32,11 +32,14 @@ const setFixtureVersion = (dir, from, to) => {
 let baseDir
 let remote
 let local
+let tmp
 
 const setupFixture = (opts = {}) => {
   baseDir = tempDir('release-test')
   remote = path.join(baseDir, 'remote.git')
   local = path.join(baseDir, 'local')
+  tmp = path.join(baseDir, 'tmp')
+  mkdirSync(tmp, { recursive: true })
 
   mkdirSync(remote, { recursive: true })
   git(remote, 'init', '--bare', '-q', '-b', 'main')
@@ -93,8 +96,27 @@ const runRelease = (...args) =>
   spawnSync(process.execPath, [RELEASE_SCRIPT, ...args], {
     cwd: local,
     encoding: 'utf8',
-    env: { ...process.env, GIT_CONFIG_GLOBAL: path.join(baseDir, 'none') },
+    // Temp dirs point inside the fixture so a leftover message file is visible.
+    env: { ...process.env, GIT_CONFIG_GLOBAL: path.join(baseDir, 'none'), TMPDIR: tmp, TEMP: tmp, TMP: tmp },
   })
+
+// Writes a release body outside the fixture repo (a file inside it would make the tree dirty).
+const writeBody = (name, text) => {
+  const file = path.join(baseDir, name)
+  writeFileSync(file, text, 'utf8')
+
+  return file
+}
+
+const leftoverMessageFiles = () => readdirSync(tmp).filter(name => name.startsWith('orca-release-'))
+
+const assertUntouched = () => {
+  assert.equal(git(local, 'branch', '--show-current').stdout.trim(), 'main')
+  assert.equal(git(local, 'status', '--porcelain').stdout.trim(), '')
+  assert.ok(!git(local, 'branch').stdout.includes('release-0.7.2'))
+  assert.equal(git(local, 'log', '-1', '--format=%s').stdout.trim(), 'initial commit')
+  assert.equal(JSON.parse(readFileSync(path.join(local, 'package.json'), 'utf8')).version, '0.7.1')
+}
 
 afterEach(() => {
   if (baseDir) {
@@ -427,5 +449,82 @@ describe('scripts/release.mjs', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout)
     assert.match(res.stdout, /Release v0\.7\.2 committed on branch release-0\.7\.2/)
     assert.equal(git(local, 'branch', '--show-current').stdout.trim(), 'release-0.7.2')
+  })
+
+  test('issue 81 rule 1: --body-file ending in a Co-Authored-By trailer gives title, blank line, body and a trailer git recognizes', () => {
+    setupFixture()
+    const body = 'Ships the --body-file flag.\n\n## Notes\n- release.mjs builds the message in a temp file\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n'
+    const bodyFile = writeBody('body.md', body)
+
+    const res = runRelease('0.7.2', '--body-file', bodyFile)
+    assert.equal(res.status, 0, res.stderr || res.stdout)
+
+    assert.equal(git(local, 'log', '-1', '--format=%B').stdout, `chore: release v0.7.2\n\n${body}\n`)
+    assert.equal(
+      git(local, 'log', '-1', '--format=%(trailers)').stdout.trim(),
+      'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>',
+    )
+  })
+
+  test('issue 81 rule 2: a body with ñ and é keeps them byte for byte', () => {
+    setupFixture()
+    const body = 'Configuración de la señal: café, versión ñandú.\n'
+    const bodyFile = writeBody('body-acentos.md', body)
+
+    const res = runRelease('0.7.2', '--body-file', bodyFile)
+    assert.equal(res.status, 0, res.stderr || res.stdout)
+
+    const raw = spawnSync('git', ['log', '-1', '--format=%B'], { cwd: local }).stdout
+    assert.deepEqual(raw, Buffer.from(`chore: release v0.7.2\n\n${body}\n`, 'utf8'))
+  })
+
+  test('issue 81 rule 3: --body-file missing, empty or whitespace-only aborts before any change, naming the path', () => {
+    setupFixture()
+    const cases = [
+      path.join(baseDir, 'does-not-exist.md'),
+      writeBody('empty.md', ''),
+      writeBody('blank.md', '  \n\t\n  \n'),
+    ]
+
+    for (const bodyFile of cases) {
+      const res = runRelease('0.7.2', '--body-file', bodyFile)
+      assert.equal(res.status, 1, `${bodyFile}: ${res.stdout}`)
+      assert.ok(res.stderr.includes(bodyFile), `stderr must name ${bodyFile}: ${res.stderr}`)
+      assertUntouched()
+    }
+  })
+
+  test('issue 81 rule 4: without --body-file the commit message is exactly chore: release v<version>', () => {
+    setupFixture()
+
+    const res = runRelease('0.7.2')
+    assert.equal(res.status, 0, res.stderr || res.stdout)
+    assert.equal(git(local, 'log', '-1', '--format=%B').stdout, 'chore: release v0.7.2\n\n')
+  })
+
+  test('issue 81 rule 5: the temp message file is removed after the commit and when the commit fails and the tree is restored', () => {
+    setupFixture()
+    const ok = runRelease('0.7.2', '--body-file', writeBody('body.md', 'Release body.\n'))
+    assert.equal(ok.status, 0, ok.stderr || ok.stdout)
+    assert.deepEqual(leftoverMessageFiles(), [])
+
+    setupFixture()
+    writeFileSync(path.join(local, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+    const failed = runRelease('0.7.2', '--body-file', writeBody('body.md', 'Release body.\n'))
+    assert.equal(failed.status, 1, failed.stderr || failed.stdout)
+    assert.match(failed.stderr, /git commit failed/)
+    assertUntouched()
+    assert.deepEqual(leftoverMessageFiles(), [])
+  })
+
+  test('issue 81: the usage line and the printed next steps mention --body-file', () => {
+    setupFixture()
+
+    const bad = runRelease('0.7')
+    assert.match(bad.stderr, /Usage: node scripts\/release\.mjs X\.Y\.Z \[--body-file <path>\]/)
+
+    const res = runRelease('0.7.2')
+    assert.equal(res.status, 0, res.stderr || res.stdout)
+    assert.match(res.stdout, /--body-file <path>/)
   })
 })
