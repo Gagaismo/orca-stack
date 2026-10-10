@@ -18,9 +18,9 @@ Provider instruction files point here for the durable policy.
   errors, decisions, risks, uncertainty, tests, or acceptance evidence.
 - **Engram**: persistent memory only. It is not an authority or a scheduler.
 - **Gentle Shell (Pi)**: another engineer on the team with its own methodology
-  (it may use SDD). It implements tickets, reviews with Judgment Day, and is
-  consulted as a peer. gentle-ai's SDD is available to Claude sessions on
-  explicit request.
+  (it may use SDD/ODD). It implements tickets, reviews with Judgment Day, and is
+  consulted as a peer. gentle-ai's SDD/ODD (SDD up to v3, ODD from v4) is
+  available to Claude sessions on explicit request.
 - **Claude / Codex / Antigravity**: execution providers attached to Orca. Provider
   choice never changes lifecycle authority.
 

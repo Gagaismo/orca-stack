@@ -26,7 +26,7 @@ Versión de referencia: `orca-stack v0.7.2` (octubre de 2026). Si sale una versi
 | gentle-ai | Context7, permisos de Claude Code y skills extra | Instalador propio de gentle-ai |
 | Caveman | Comprime la prosa larga para ahorrar tokens | `claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman` |
 
-Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con el suyo y puede usar SDD; el SDD de gentle-ai se usa solo si lo pedís. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
+Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con el suyo y puede usar SDD/ODD; el SDD/ODD de gentle-ai (SDD hasta v3, ODD desde v4) se usa solo si lo pedís. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
 
 **Nota sobre las skills de Matt:**
 - El plugin solo las instala para Claude Code. Si Codex o Antigravity van a usarlas, tienen que estar en `~/.agents/skills`: `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`.
@@ -81,12 +81,22 @@ Además, instalá lo que `global` marque como faltante.
 
 `global` no escribe metodología en `~/.claude/CLAUDE.md`: instala herramientas, skills, mods y wrappers, y nada más. La metodología llega solo por el proyecto (`init`), así que una sesión en un repo sin `.orca-stack.json` no recibe texto del stack; `puente-gentle` tampoco inyecta su instrucción de consulta ni registra `consultar_gentle_shell` ahí. Si una versión anterior dejó en ese archivo el bloque `orca-stack:begin` / `orca-stack:end` (o el viejo `orca-stack:auto`), `global` lo saca, con respaldo, y lo avisa.
 
-**El bloque de gentle-ai.** `~/.claude/CLAUDE.md` trae el bloque `gentle-ai:sdd-orchestrator` (unos 16 KB) que se carga en cada sesión, aunque el SDD de gentle-ai se use solo si lo pedís. `global` lo achica según `gentle.sddOrchestrator` en `~/.orca-stack/config.json`:
+**El bloque de gentle-ai.** `~/.claude/CLAUDE.md` trae el bloque `gentle-ai:sdd-orchestrator` (v2/v3) o `gentle-ai:orchestrator` (v4), unos 16 KB que se cargan en cada sesión, aunque el SDD/ODD de gentle-ai se use solo si lo pedís. `global` lo achica según `gentle.sddOrchestrator` en `~/.orca-stack/config.json`:
 
-- `"lazy"` (por defecto): guarda el bloque completo en `~/.orca-stack/gentle/sdd-orchestrator.md` y deja entre los marcadores un puntero corto (con la marca `<!-- orca-stack:gentle-lazy v1 -->`). El puntero conserva lo esencial: SDD y Judgment Day solo a pedido del humano, leer la copia y el `sdd-orchestrator-workflow.md` antes de cualquier fase, y presentar completos los menús y pedidos de consentimiento. Hace respaldo, es idempotente, respeta `--dry-run` e imprime los KB ahorrados. Se omite mientras el RDD de gentle-ai esté prendido (el bloque trae su contrato de review): si ya estaba en lazy, `global` lo restaura desde la copia.
+- `"lazy"` (por defecto): guarda el bloque completo en `~/.orca-stack/gentle/sdd-orchestrator.md` y deja entre los marcadores un puntero corto (con la marca `<!-- orca-stack:gentle-lazy v1 -->`). El puntero conserva lo esencial: SDD (u ODD, en v4) y Judgment Day solo a pedido del humano, leer la copia (y en v2/v3 el `sdd-orchestrator-workflow.md`) antes de cualquier fase, y presentar completos los menús y pedidos de consentimiento. Hace respaldo, es idempotente, respeta `--dry-run` e imprime los KB ahorrados. Se omite mientras el RDD de gentle-ai esté prendido (el bloque trae su contrato de review): si ya estaba en lazy, `global` lo restaura desde la copia.
 - `"full"`: el bloque queda como lo escribe gentle-ai. Si estaba en lazy, `global` lo restaura desde la copia (con respaldo). Con el RDD de gentle-ai apagado (`gentle-ai review mode status` empieza con `receipt-driven development: off`) también recorta sus secciones de review (unos 26 KB); con RDD prendido o sin gentle-ai, lo omite y dice por qué.
 
 **`gentle-ai sync` reescribe el bloque** (reemplaza lo que hay entre los marcadores), así que después de cada sync corré `orca-stack global` de nuevo: refresca la copia y vuelve a achicar. `doctor` avisa si la sync lo reescribió y falla si el puntero quedó sin su copia. Para volver atrás: `"full"` y `orca-stack global`, o `gentle-ai sync`; `orca-stack remove` también restaura el bloque completo.
+
+**Pasar a gentle-ai v4 (Windows).** v4 retiró SDD: ODD es su único flujo, y la sync renombra el bloque a `gentle-ai:orchestrator` (mismas secciones de review). orca-stack trata igual los dos nombres; en v4 el puntero manda al ODD de gentle-ai solo a pedido y a leer la copia, sin `sdd-orchestrator-workflow.md`. Con Go 1.25.10 o más nuevo en el `PATH`:
+
+```powershell
+go install github.com/gentleman-programming/gentle-ai/v4/cmd/gentle-ai@v4.0.0
+gentle-ai sync
+npx github:Gagaismo/orca-stack global
+```
+
+Después de la sync, `doctor` avisa que el bloque quedó completo; `orca-stack global` refresca la copia con el texto de v4 y vuelve a dejar el puntero.
 
 ### Codex en Windows: acentos rotos
 
@@ -454,7 +464,7 @@ This repo uses Matt Pocock's engineering skills as the default process authority
 
 - Planning ends at `/to-tickets`. `/implement` does not re-debate the plan; if the
   ticket is wrong, escalate instead of reinterpreting it.
-- Do not start or propose Gentle AI SDD, superpowers, or gstack planning/review
+- Do not start or propose Gentle AI SDD/ODD, superpowers, or gstack planning/review
   flows unless the human asks for them explicitly. Any injected section that mentions "optional SDD" is overridden by this file.
 - Parallel execution is handled by Orca. See `docs/agents/orca-dag.md`.
 
