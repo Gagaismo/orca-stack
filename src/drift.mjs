@@ -77,6 +77,7 @@ export const driftWarnings = L => {
     })
   }
   const gentle = which('gentle-ai')
+  const rdd = gentle ? rddMode(gentle) : { mode: 'off', source: null }
   const md = existsSync(L.claudeMd) ? readFileSync(L.claudeMd, 'utf8') : ''
   const mode = sddMode(readPersonalConfig(L))
   const block = sddBlock(md)
@@ -91,7 +92,7 @@ export const driftWarnings = L => {
     found.push({ label: 'gentle.sddOrchestrator', detail: 'en ~/.orca-stack/config.json tiene que ser "lazy" o "full"' })
   } else if (mode === 'lazy') {
     // With RDD on (or unreadable) `global` keeps the full block on purpose: it carries the review contract.
-    const keepFull = Boolean(gentle) && rddMode(gentle) !== 'off'
+    const keepFull = Boolean(gentle) && rdd.mode !== 'off'
     if (isLazyBlock(block) && keepFull) {
       found.push({ label: 'bloque de gentle-ai en ~/.claude/CLAUDE.md', detail: 'está en modo lazy pero el RDD de gentle-ai no está apagado y necesita el contrato de review: corré `orca-stack global` para restaurarlo' })
     } else if (block.status === 'ok' && !isLazyBlock(block) && !keepFull) {
@@ -101,7 +102,7 @@ export const driftWarnings = L => {
     found.push({ label: 'bloque de gentle-ai en ~/.claude/CLAUDE.md', detail: 'sigue en modo lazy pero gentle.sddOrchestrator es "full": corré `orca-stack global` para restaurarlo' })
   }
   const trim = gentle && mode === 'full' ? trimReviewSections(md) : null
-  if (trim && (trim.removed > 0 || trim.skipped !== undefined) && rddMode(gentle) === 'off') {
+  if (trim && (trim.removed > 0 || trim.skipped !== undefined) && rdd.mode === 'off') {
     found.push(
       trim.skipped === undefined
         ? {
@@ -113,6 +114,12 @@ export const driftWarnings = L => {
             detail: `cambió de forma y el recorte de sus secciones de review está en pausa (no se toca nada): ${trim.skipped}`,
           },
     )
+  }
+  if (rdd.mode === 'on' && rdd.source === 'default') {
+    found.push({
+      label: 'RDD de gentle-ai',
+      detail: 'está prendido solo por defecto en gentle-ai v4: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`',
+    })
   }
 
   return found

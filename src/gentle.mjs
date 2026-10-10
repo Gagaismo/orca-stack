@@ -113,12 +113,21 @@ export const trimReviewSections = text => {
   return { text: next, removed: Buffer.byteLength(text) - Buffer.byteLength(next) }
 }
 
-// 'on' | 'off' | null (gentle-ai missing or unreadable): the first line of `gentle-ai review mode status`.
+// { mode: 'on' | 'off' | null, source: string | null }: the first line of `gentle-ai review mode status`.
 export const rddMode = bin => {
+  if (!bin) {
+    return { mode: null, source: null }
+  }
   const result = run(bin, ['review', 'mode', 'status'], { timeout: 20_000 })
-  const mode = result.status === 0 ? /receipt-driven development:\s*(\w+)/i.exec(result.stdout)?.[1]?.toLowerCase() : undefined
+  if (result.status !== 0) {
+    return { mode: null, source: null }
+  }
+  const match = /receipt-driven development:\s*(\w+)(?:[^\r\n]*\(decided by\s*([\w-]+)\))?/i.exec(result.stdout)
+  const rawMode = match?.[1]?.toLowerCase()
+  const mode = rawMode === 'on' || rawMode === 'off' ? rawMode : null
+  const source = mode ? (match?.[2]?.toLowerCase() ?? null) : null
 
-  return mode === 'on' || mode === 'off' ? mode : null
+  return { mode, source }
 }
 
 // Lazy mode (`gentle.sddOrchestrator: "lazy"`, the default): the block's body is replaced by a short pointer that starts with

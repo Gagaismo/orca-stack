@@ -159,9 +159,12 @@ const lazyGentleBlock = (ctx, original) => {
   // The block carries gentle-ai's Review Execution Contract: a pointer would silently turn receipt-driven development off.
   // Without the gentle-ai binary there is no review to protect.
   const bin = which('gentle-ai')
-  const rdd = bin ? rddMode(bin) : 'off'
-  if (rdd !== 'off') {
-    ctx.say(`  RDD de gentle-ai ${rdd === 'on' ? 'prendido' : 'en un estado que no pude leer'}: el bloque queda completo (lazy le sacaría el contrato de review)`)
+  const rdd = bin ? rddMode(bin) : { mode: 'off', source: null }
+  if (rdd.mode !== 'off') {
+    ctx.say(`  RDD de gentle-ai ${rdd.mode === 'on' ? 'prendido' : 'en un estado que no pude leer'}: el bloque queda completo (lazy le sacaría el contrato de review)`)
+    if (rdd.mode === 'on' && rdd.source === 'default') {
+      ctx.say('  está prendido solo por defecto en gentle-ai v4: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`')
+    }
     restoreGentleBlock(ctx, original)
 
     return
@@ -198,7 +201,7 @@ const restoreGentleBlock = (ctx, original) => {
   const text = restoreBlock(original, saved)
   ctx.writeShared(ctx.L.claudeMd, text, `${ctx.show(ctx.L.claudeMd)} (bloque completo de gentle-ai, restaurado desde la copia)`)
   const bin = which('gentle-ai')
-  if (bin && !saved.includes('#### Review Execution Contract') && rddMode(bin) !== 'off') {
+  if (bin && !saved.includes('#### Review Execution Contract') && rddMode(bin).mode !== 'off') {
     ctx.say('  la copia no tiene el contrato de review: corré `gentle-ai sync`')
   }
 
@@ -231,9 +234,12 @@ const trimGentleReview = (ctx, original) => {
 
     return
   }
-  const mode = rddMode(bin)
-  if (mode !== 'off') {
-    ctx.say(`  se omite: el desarrollo guiado por recibos (RDD) está ${mode === 'on' ? 'prendido' : 'en un estado que no pude leer'}`)
+  const rdd = rddMode(bin)
+  if (rdd.mode !== 'off') {
+    ctx.say(`  se omite: el desarrollo guiado por recibos (RDD) está ${rdd.mode === 'on' ? 'prendido' : 'en un estado que no pude leer'}`)
+    if (rdd.mode === 'on' && rdd.source === 'default') {
+      ctx.say('  está prendido solo por defecto en gentle-ai v4: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`')
+    }
 
     return
   }
