@@ -15,6 +15,7 @@ export const emptyState = () => ({
   skills: [],
   settings: null, // { file, pluginDirsAdded, createdFile, createdEnv, createdKey }
   claudeMd: null, // { file, createdFile }
+  codexAgentsMd: null, // { file, createdFile }: the codex ASCII block, Windows only
   config: null, // { file, sha256 }
   pi: { packagesInstalled: [], npmGlobalInstalled: false },
   backups: [],

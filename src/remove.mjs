@@ -13,7 +13,8 @@ import path from 'node:path'
 
 import { createCtx, loadState } from './ctx.mjs'
 import { isLazyBlock, restoreBlock, sddBlock } from './gentle.mjs'
-import { removeAnyBlock } from './marker.mjs'
+import { CODEX_ASCII_MARKERS } from './codex-windows.mjs'
+import { removeAnyBlock, removeBlock } from './marker.mjs'
 import { piBinary } from './pi.mjs'
 import { parseSettings, removePluginDirs, stringifySettings } from './settings.mjs'
 import { homeDir, run, sha256, which } from './util.mjs'
@@ -152,6 +153,26 @@ export const removeCommand = async flags => {
         }
       } else {
         ctx.act(`quito el bloque orca-stack de ${show(file)}`)
+        if (!dryRun) {
+          writeBack(file, null, text)
+        }
+      }
+    }
+  }
+
+  // 4b. The codex ASCII block in ~/.codex/AGENTS.md (Windows); the rest of the file stays.
+  if (st.codexAgentsMd && existsSync(st.codexAgentsMd.file)) {
+    const file = st.codexAgentsMd.file
+    const { text, found } = removeBlock(readFileSync(file, 'utf8'), CODEX_ASCII_MARKERS)
+    if (found) {
+      ctx.backup(file)
+      if (text.trim() === '' && st.codexAgentsMd.createdFile) {
+        ctx.act(`borro ${show(file)} (lo había creado este instalador)`)
+        if (!dryRun) {
+          rmSync(file)
+        }
+      } else {
+        ctx.act(`quito la regla ASCII de codex de ${show(file)}`)
         if (!dryRun) {
           writeBack(file, null, text)
         }
