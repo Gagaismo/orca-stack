@@ -8,6 +8,27 @@ import { ROOT, cleanup, git, tempDir } from './helpers.mjs'
 
 const RELEASE_SCRIPT = path.join(ROOT, 'scripts', 'release.mjs')
 
+// Version every fixture starts at, whatever the repo's own package.json says.
+const FIXTURE_VERSION = '0.7.1'
+
+// Rewrites the fixture's version files from one version to another.
+const setFixtureVersion = (dir, from, to) => {
+  const pkgPath = path.join(dir, 'package.json')
+  writeFileSync(pkgPath, readFileSync(pkgPath, 'utf8').replace(`"version": "${from}"`, `"version": "${to}"`))
+  assert.equal(JSON.parse(readFileSync(pkgPath, 'utf8')).version, to)
+
+  const lockPath = path.join(dir, 'package-lock.json')
+  const lock = JSON.parse(readFileSync(lockPath, 'utf8'))
+  lock.version = to
+  lock.packages[''].version = to
+  writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n')
+
+  for (const file of ['README.md', path.join('docs', 'guia-setup.md')]) {
+    const filePath = path.join(dir, file)
+    writeFileSync(filePath, readFileSync(filePath, 'utf8').replaceAll(`v${from}`, `v${to}`))
+  }
+}
+
 let baseDir
 let remote
 let local
@@ -41,6 +62,14 @@ const setupFixture = (opts = {}) => {
   }
   mkdirSync(path.join(local, 'docs'), { recursive: true })
   cpSync(path.join(ROOT, 'docs', 'guia-setup.md'), path.join(local, 'docs', 'guia-setup.md'))
+
+  // opts.repoVersion simulates the repo's own package.json at that version (as during a release run).
+  let repoVersion = JSON.parse(readFileSync(path.join(local, 'package.json'), 'utf8')).version
+  if (opts.repoVersion) {
+    setFixtureVersion(local, repoVersion, opts.repoVersion)
+    repoVersion = opts.repoVersion
+  }
+  setFixtureVersion(local, repoVersion, FIXTURE_VERSION)
 
   // Older AGENTS.md so `init` refreshes it
   writeFileSync(path.join(local, 'AGENTS.md'), '# agents\n<!-- orca-stack:begin -->\nold\n<!-- orca-stack:end -->\n')
@@ -368,6 +397,25 @@ describe('scripts/release.mjs', () => {
     // File survives
     assert.equal(readFileSync(untrackedPath, 'utf8'), 'precious untracked work\n')
     assert.equal(git(local, 'branch', '--show-current').stdout.trim(), 'main')
+  })
+
+  test('issue 76 rule 1 and rule 3: repo package.json at 0.7.2 (release run, or after v0.7.2 merges) still starts the fixture at 0.7.1 and releases 0.7.2', () => {
+    setupFixture({ repoVersion: '0.7.2' })
+    assert.equal(JSON.parse(readFileSync(path.join(local, 'package.json'), 'utf8')).version, '0.7.1')
+    assert.ok(readFileSync(path.join(local, 'README.md'), 'utf8').includes('v0.7.1'))
+    assert.ok(!readFileSync(path.join(local, 'docs', 'guia-setup.md'), 'utf8').includes('v0.7.2'))
+
+    const res = runRelease('0.7.2')
+    assert.equal(res.status, 0, res.stderr || res.stdout)
+    assert.match(res.stdout, /Release v0\.7\.2 committed on branch release-0\.7\.2/)
+  })
+
+  test('issue 76 rule 2: repo package.json at 0.7.1 (current main) still releases 0.7.2', () => {
+    setupFixture({ repoVersion: '0.7.1' })
+
+    const res = runRelease('0.7.2')
+    assert.equal(res.status, 0, res.stderr || res.stdout)
+    assert.match(res.stdout, /Release v0\.7\.2 committed on branch release-0\.7\.2/)
   })
 
   test('finding 3: suite with output larger than 1 MiB completes without buffer overflow', () => {
