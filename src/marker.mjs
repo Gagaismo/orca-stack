@@ -2,6 +2,8 @@ import { LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, MARKER_END } from './constants.
 
 const eolOf = text => (text.includes('\r\n') ? '\r\n' : '\n')
 
+const MARKERS = { begin: MARKER_BEGIN, end: MARKER_END }
+
 const locate = (text, open = MARKER_BEGIN, close = MARKER_END) => {
   const begin = text.indexOf(open)
   const end = text.indexOf(close)
@@ -33,22 +35,23 @@ const cut = (text, { begin, end }) => {
   return before + eol + eol + after
 }
 
-export const hasBlock = text => locate(text) !== null
+export const hasBlock = (text, markers = MARKERS) => locate(text, markers.begin, markers.end) !== null
 
-export const buildBlock = (body, eol = '\n') =>
-  [MARKER_BEGIN, ...body.replace(/\s+$/, '').split('\n'), MARKER_END].join(eol)
+export const buildBlock = (body, eol = '\n', markers = MARKERS) =>
+  [markers.begin, ...body.replace(/\s+$/, '').split('\n'), markers.end].join(eol)
 
 // Replaces the marker-delimited block, or appends it; everything outside the markers stays untouched.
 // A legacy block takes the new block's place, or is dropped when the new block already exists.
-export const upsertBlock = (text, body) => {
+// Other markers (a block of a different file) have no legacy form.
+export const upsertBlock = (text, body, markers = MARKERS) => {
   const eol = eolOf(text)
-  const block = buildBlock(body, eol)
-  const legacy = locate(text, LEGACY_BEGIN, LEGACY_END)
+  const block = buildBlock(body, eol, markers)
+  const legacy = markers === MARKERS ? locate(text, LEGACY_BEGIN, LEGACY_END) : null
   if (legacy && !hasBlock(text)) {
     return text.slice(0, legacy.begin) + block + text.slice(legacy.end)
   }
   const current = legacy ? cut(text, legacy) : text
-  const found = locate(current)
+  const found = locate(current, markers.begin, markers.end)
   if (found) {
     return current.slice(0, found.begin) + block + current.slice(found.end)
   }
@@ -60,8 +63,8 @@ export const upsertBlock = (text, body) => {
 }
 
 // Removes the block and the blank line that separated it. Returns { text, found }.
-export const removeBlock = text => {
-  const found = locate(text)
+export const removeBlock = (text, markers = MARKERS) => {
+  const found = locate(text, markers.begin, markers.end)
 
   return found ? { text: cut(text, found), found: true } : { text, found: false }
 }
