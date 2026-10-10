@@ -557,7 +557,7 @@ describe('launchers', () => {
     assert.ok(!ps.includes('--tools'), "a ticket keeps all of pi's tools: subagents, SDD, engram")
     const sh = launcherFor({ ...base, agent: 'pi', win: false, mode: 'review', home: '/h', briefPath: '/b.md', skills: '/s' })
     assert.ok(sh.startsWith('unset ORCA_AGENT_HOOK_ENDPOINT ') && sh.includes("export ENGRAM_DATA_DIR='/h/.gentle-shell/engram' GENTLE_PI_AUTONOMOUS_MODE='1';"))
-    assert.ok(sh.includes("--tools 'read,bash,grep,find,ls'") && !sh.includes('CLAUDE_CONFIG_DIR'))
+    assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode'") && !sh.includes('CLAUDE_CONFIG_DIR'))
   })
 
   test('the Claude account of pi comes from the personal layer only', async () => {

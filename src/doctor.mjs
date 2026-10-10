@@ -13,6 +13,7 @@ import { removeAnyBlock } from './marker.mjs'
 import { checkPathCommand } from './path-command.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
 import { installedPackageVersion, piBinary, piModulesDir, piVersion, resolveGentleSkills } from './pi.mjs'
+import { codexCodemodeStatus, piCodemodeStatus } from './codemode.mjs'
 import { parseSettings } from './settings.mjs'
 import { assetPath, listDirs, wrapperFile } from './templates.mjs'
 import { PACKAGE_ROOT, homeDir, isWindows, layout, run, samePath, tilde, which } from './util.mjs'
@@ -120,6 +121,32 @@ const agentsUsed = (...layers) => {
   const used = agents.usa
 
   return Array.isArray(used) ? used.map(agent => String(agent).toLowerCase()) : []
+}
+
+export const checkCodemode = (add, { L, flags = {} } = {}) => {
+  if (flags.skipPi) {
+    add('warn', 'Pi', 'omitido por --skip-pi')
+  } else {
+    const pi = piCodemodeStatus(L)
+    if (pi.status === 'on') {
+      add('ok', 'Pi', `activado (${pi.detail})`)
+    } else if (pi.status === 'off') {
+      add('warn', 'Pi', `desactivado: para activar, corré \`${pi.command}\``)
+    } else {
+      add('ok', 'Pi', `no aplicable (${pi.detail})`)
+    }
+  }
+
+  const codex = codexCodemodeStatus(L)
+  if (codex.status === 'on') {
+    add('ok', 'Codex', `activado (${codex.detail})`)
+  } else if (codex.status === 'off') {
+    add('warn', 'Codex', `desactivado: para activar, corré \`${codex.command}\``)
+  } else {
+    add('ok', 'Codex', `no aplicable (${codex.detail})`)
+  }
+
+  add('ok', 'Claude Code', 'no aplicable (sin soporte de codemode)')
 }
 
 export const doctorCommand = async flags => {
@@ -285,6 +312,10 @@ export const doctorCommand = async flags => {
       }
     }
   }
+
+  // Codemode
+  section('Codemode')
+  checkCodemode(add, { L, flags })
 
   // External tools
   section('Herramientas externas')

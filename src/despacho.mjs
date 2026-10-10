@@ -36,7 +36,7 @@ const ORCA_VARS_CLEARED = [
 ]
 // Only a review closes pi's tools (read-only). A ticket gets all of them: an allowlist would also drop gentle-pi's
 // subagents, ODD and engram tools.
-const PI_TOOLS = { review: 'read,bash,grep,find,ls' }
+export const PI_TOOLS = { review: 'read,bash,grep,find,ls,codemode' }
 const PI_THINKING = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 // gentle-pi profile names: 1-64 ASCII slug characters. Also keeps the name harmless inside a path or a command.
 const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/

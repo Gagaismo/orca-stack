@@ -9,6 +9,7 @@ import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, codexAgentsMd } from './codex-wi
 import { removeAnyBlock, removeBlock, upsertBlock } from './marker.mjs'
 import { installPathCommand } from './path-command.mjs'
 import { orcaInstalled } from './orca.mjs'
+import { ensureCodexCodemode, ensurePiCodemode } from './codemode.mjs'
 import { setupPi } from './pi.mjs'
 import { mergePluginDirs, parseSettings, stringifySettings } from './settings.mjs'
 import {
@@ -401,6 +402,24 @@ export const preflight = ctx => {
   if (codexMd !== null) {
     removeBlock(codexMd, CODEX_ASCII_MARKERS) // same
   }
+  const piSettings = readTextIfExists(path.join(ctx.L.piAgent, 'settings.json'))
+  if (piSettings !== null && piSettings.trim() !== '') {
+    try {
+      JSON.parse(piSettings)
+    } catch (error) {
+      throw new Error(`${path.join(ctx.L.piAgent, 'settings.json')}: JSON inválido (${error.message}). No lo toqué.`)
+    }
+  }
+}
+
+const setupCodemode = (ctx, { skipPi } = {}) => {
+  ctx.say('\nCodemode')
+  if (skipPi) {
+    ctx.say('  pi omitido por --skip-pi')
+  } else {
+    ensurePiCodemode(ctx)
+  }
+  ensureCodexCodemode(ctx)
 }
 
 export const globalCommand = async flags => {
@@ -423,6 +442,7 @@ export const globalCommand = async flags => {
     gentleBlockStep(ctx)
     installCodexAsciiRule(ctx)
     setupPi(ctx, { skipPi: flags.skipPi })
+    setupCodemode(ctx, { skipPi: flags.skipPi })
     installPersonalConfig(ctx, { humano: flags.humano })
     installPathCommand(ctx)
   } finally {

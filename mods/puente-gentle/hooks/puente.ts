@@ -2,7 +2,7 @@ import type { Intercambio } from '../types'
 import { FAMILIES, blockOf, familyOf } from './orca-config'
 import type { StackConfig } from './orca-config'
 
-export const READ_ONLY_TOOLS = 'read,grep,find,ls'
+export const READ_ONLY_TOOLS = 'read,grep,find,ls,codemode'
 // Variables this session inherits from its Orca terminal. A consult must not carry them: Pi's Orca
 // extensions would report as this terminal (Orca then sees this pane as `pi`), and the ORCA_STACK_* markers
 // belong to our stack, not to Gentle Shell's. Set over the host environment, an empty value unsets them.
