@@ -95,7 +95,7 @@ export const createCtx = ({ dryRun = false, force = false, home, out = console.l
 
     // Writes a file we own. status: 'created' | 'updated' | 'unchanged' | 'skipped'.
     // A file that exists, differs and is not ours is left alone unless --force.
-    writeOwned(file, content, { mode, label } = {}) {
+    writeOwned(file, content, { mode, label, force: forceWrite = force } = {}) {
       const data = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8')
       const hash = sha256(data)
       const exists = existsSync(file)
@@ -111,7 +111,7 @@ export const createCtx = ({ dryRun = false, force = false, home, out = console.l
 
         return 'unchanged'
       }
-      if (exists && !prev && !force) {
+      if (exists && !prev && !forceWrite) {
         ctx.skipped.push(file)
         out(`  ⚠ ${show(file)} ya existe y no es de orca-stack: lo dejo como está (usá --force para reemplazarlo, con respaldo)`)
 

@@ -39,7 +39,8 @@ export const layout = (home = homeDir()) => ({
   state: path.join(home, '.orca-stack', 'state.json'),
   config: path.join(home, '.orca-stack', 'config.json'),
   gentleDir: path.join(home, '.orca-stack', 'gentle'),
-  sddCopy: path.join(home, '.orca-stack', 'gentle', 'sdd-orchestrator.md'),
+  orchestratorCopy: path.join(home, '.orca-stack', 'gentle', 'orchestrator.md'),
+  legacyOrchestratorCopy: path.join(home, '.orca-stack', 'gentle', 'sdd-orchestrator.md'),
   piAgent: path.join(home, '.pi', 'agent'),
   codexDir: codexHome(home),
 })
