@@ -93,29 +93,31 @@ describe('doctor: codex Get-Content probe on Windows', () => {
     assert.equal(probed, 0)
   })
 
-  test('rule 1: a probe file path containing [ and ] still reads the sample and reports ok', () => {
+  test('rule 1: a probe file path containing [ and ] still reads the sample (ok or mojibake, not error)', () => {
     const bracketDir = path.join(tempDir('probe-brackets'), '[a]')
     mkdirSync(bracketDir, { recursive: true })
     try {
-      if (process.platform === 'win32') {
-        const result = probeGetContent({ tmpdir: bracketDir })
-        assert.equal(result.status, 'ok')
-        assert.equal(result.text, 'está')
-      } else {
-        let commandScript = ''
-        const exec = (cmd, args) => {
-          commandScript = args.at(-1)
-          const fileMatch = /Get-Content -LiteralPath '([^']+)' -Raw/.exec(commandScript)
-          if (!fileMatch) {
-            return { status: 1, stdout: '', stderr: 'Get-Content : ItemNotFound', error: null, timedOut: false }
-          }
-          const content = readFileSync(fileMatch[1], 'utf8')
-          return { status: 0, stdout: `ORCA_TEXT=${codes(content)}\r\nORCA_PROFILE=${codes(PROFILE)}\r\n`, stderr: '', error: null, timedOut: false }
+      let commandScript = ''
+      const exec = (cmd, args) => {
+        commandScript = args.at(-1)
+        const fileMatch = /Get-Content -LiteralPath '([^']+)' -Raw/.exec(commandScript)
+        if (!fileMatch) {
+          return { status: 1, stdout: '', stderr: 'Get-Content : ItemNotFound', error: null, timedOut: false }
         }
-        const result = probeGetContent({ exec, tmpdir: bracketDir })
-        assert.equal(result.status, 'ok')
-        assert.equal(result.text, 'está')
-        assert.match(commandScript, /Get-Content -LiteralPath '.*\[a\].*' -Raw/)
+        const content = readFileSync(fileMatch[1], 'utf8')
+
+        return { status: 0, stdout: `ORCA_TEXT=${codes(content)}\r\nORCA_PROFILE=${codes(PROFILE)}\r\n`, stderr: '', error: null, timedOut: false }
+      }
+      const injected = probeGetContent({ exec, tmpdir: bracketDir })
+      assert.equal(injected.status, 'ok')
+      assert.equal(injected.text, 'está')
+      assert.match(commandScript, /Get-Content -LiteralPath '.*\[a\].*' -Raw/)
+
+      if (process.platform === 'win32') {
+        const real = probeGetContent({ tmpdir: bracketDir })
+        assert.notEqual(real.status, 'error', `powershell failed to find or read file: ${real.reason}`)
+        assert.ok(real.status === 'ok' || real.status === 'mojibake')
+        assert.ok(real.text === 'está' || real.text === MOJIBAKE)
       }
     } finally {
       cleanup(path.dirname(bracketDir))
