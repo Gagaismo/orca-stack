@@ -993,4 +993,98 @@ describe('rebote', () => {
     assert.match(contract, /gh run view.*--log-failed/i)
     assert.match(contract, /gh run rerun.*--failed/i)
   })
+
+  describe('BLOQUEA section boundary (issue #105)', () => {
+    test('Rule 1: review with findings 1 and 2 separated by newlines followed by SUGERENCIAS includes both findings in brief', async () => {
+      const env = bounceEnv(pr({
+        reviews: [{
+          body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. first blocker\n2. second blocker\n\n## SUGERENCIAS\nsuggestion text',
+          url: 'https://example.test/review/1',
+        }],
+      }))
+      await reboteCommand({}, '12', env.io)
+      const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+      assert.match(brief, /1\. first blocker/)
+      assert.match(brief, /2\. second blocker/)
+      assert.ok(!brief.includes('SUGERENCIAS'))
+      assert.ok(!brief.includes('suggestion text'))
+    })
+
+    test('Rule 2: BLOQUEA as last section with three findings and trailing newline includes all three in brief', async () => {
+      const env = bounceEnv(pr({
+        reviews: [{
+          body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. first finding\n2. second finding\n3. third finding\n',
+          url: 'https://example.test/review/2',
+        }],
+      }))
+      await reboteCommand({}, '12', env.io)
+      const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+      assert.match(brief, /1\. first finding/)
+      assert.match(brief, /2\. second finding/)
+      assert.match(brief, /3\. third finding/)
+    })
+
+    test('Rule 3: interpretación finding on line 2 of section causes rebote to refuse and list it', async () => {
+      const env = bounceEnv(pr({
+        reviews: [{
+          body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. first mechanical finding\n2. `src/x.js:5` (inferida, interpretaci\u00F3n): product disagreement\n\n## SUGERENCIAS\n(none)',
+          url: 'https://example.test/review/3',
+        }],
+      }))
+      await assert.rejects(reboteCommand({}, '12', env.io), /Los bloqueos de interpretaci[o\u00F3]n van al humano[\s\S]*product disagreement/)
+      assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+    })
+
+    test('Rule 4: BLOQUEA followed by nada and then SUGERENCIAS with text is not blocking', async () => {
+      const env = bounceEnv(pr({
+        reviews: [{
+          body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\nnada\n\n## SUGERENCIAS\nconsider refactoring helper\n',
+          url: 'https://example.test/review/4',
+        }],
+      }))
+      await assert.rejects(reboteCommand({}, '12', env.io), /no tiene un review bloqueante vigente/)
+    })
+
+    test('Rule 5: finding with ## in middle of line is kept whole and does not terminate section prematurely', async () => {
+      const env = bounceEnv(pr({
+        reviews: [{
+          body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. check docs under `## Desv\u00EDos del ticket` in PR\n2. next line finding\n\n## SUGERENCIAS\nother suggestions',
+          url: 'https://example.test/review/5',
+        }],
+      }))
+      await reboteCommand({}, '12', env.io)
+      const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+      assert.match(brief, /under `## Desv\u00EDos del ticket` in PR/)
+      assert.match(brief, /2\. next line finding/)
+      assert.ok(!brief.includes('other suggestions'))
+    })
+
+    test('Rule 6: CRLF line endings produce same results as LF', async () => {
+      const env = bounceEnv(pr({
+        reviews: [{
+          body: 'Revisor: codex\r\nCommit: abc123\r\n\r\n## BLOQUEA\r\n1. first crlf finding\r\n2. second crlf finding\r\n\r\n## SUGERENCIAS\r\ncrlf suggestion\r\n',
+          url: 'https://example.test/review/6',
+        }],
+      }))
+      await reboteCommand({}, '12', env.io)
+      const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+      assert.match(brief, /1\. first crlf finding/)
+      assert.match(brief, /2\. second crlf finding/)
+      assert.ok(!brief.includes('crlf suggestion'))
+    })
+
+    test('PRESERVE: reboteCommand retains existing single-finding blocker bounce behavior', async () => {
+      const env = bounceEnv(pr({
+        reviews: [{
+          body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, concreta, implementaci\u00F3n): fix it.\n\n## SUGERENCIAS\n(none)',
+          url: 'https://example.test/review/1',
+        }],
+      }))
+      await reboteCommand({}, '12', env.io)
+      const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+      assert.match(brief, /1\. `src\/app\.mjs:1`.*fix it\./)
+      assert.ok(env.written.some(([file]) => file.endsWith('-comment.md')))
+    })
+  })
 })
+

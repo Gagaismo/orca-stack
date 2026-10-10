@@ -656,7 +656,7 @@ export const despacharCommand = command('ticket')
 export const revisarCommand = command('review')
 
 const reviewBody = review => typeof review?.body === 'string' ? review.body : ''
-const blockingSection = body => /^##\s+BLOQUEA\s*\r?\n([\s\S]*?)(?=^##\s|\s*$)/im.exec(body)?.[1]?.trim() ?? ''
+const blockingSection = body => /(?:^|\r?\n)##\s+BLOQUEA\s*(?:\r?\n|$)([\s\S]*?)(?=\r?\n##\s|$)/i.exec(body)?.[1]?.trim() ?? ''
 const blockingBody = body => {
   const section = blockingSection(body)
   return section !== '' && !/^nada\s*$/i.test(section)
