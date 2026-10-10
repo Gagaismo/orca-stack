@@ -69,6 +69,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Require every CI job to succeed
         env:
           ORCA_CI_NEEDS: ${{ toJSON(needs) }}

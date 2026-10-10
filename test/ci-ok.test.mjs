@@ -66,6 +66,11 @@ describe('ci-ok aggregate check', () => {
     assert.equal(result.status, 0, result.stderr)
   })
 
+  test('ci-ok checks out the checker script before running it', () => {
+    const block = ciOk().get('ci-ok').join('\n')
+    assert.match(block, /uses: actions\/checkout@v4/)
+  })
+
   test('a red matrix job fails ci-ok and names the failing job', () => {
     const result = runChecker({ test: { result: 'failure' }, hygiene: { result: 'success' } })
     assert.equal(result.status, 1)
