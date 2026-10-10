@@ -340,4 +340,44 @@ describe('scripts/release.mjs', () => {
     assert.notEqual(thirdRes.status, 0)
     assert.match(thirdRes.stderr, /branch release-0\.7\.2 already exists/)
   })
+
+  test('finding 1: restore failure reports RESTORE INCOMPLETE with manual steps and exits with code 2', () => {
+    // Failing suite creates index.lock (simulating locked file during checkout) and exits 1
+    const failingSuite = 'node -e "const fs = require(\'node:fs\'); fs.writeFileSync(\'.git/index.lock\', \'\'); process.exit(1)"'
+    setupFixture({ suite: failingSuite })
+
+    const res = runRelease('0.7.2')
+    assert.equal(res.status, 2)
+    assert.match(res.stderr, /RESTORE INCOMPLETE/)
+    assert.match(res.stderr, /Manual commands to restore repository:/)
+    assert.match(res.stderr, /git checkout -f main/)
+    assert.match(res.stderr, /git branch -D release-0\.7\.2/)
+  })
+
+  test('finding 2: status.showUntrackedFiles=no refuses on untracked file and file survives', () => {
+    setupFixture()
+    git(local, 'config', 'status.showUntrackedFiles', 'no')
+    const untrackedPath = path.join(local, 'untracked-custom.txt')
+    writeFileSync(untrackedPath, 'precious untracked work\n')
+
+    const res = runRelease('0.7.2')
+    assert.notEqual(res.status, 0)
+    assert.match(res.stderr, /uncommitted changes in working tree/)
+    assert.match(res.stderr, /untracked-custom\.txt/)
+
+    // File survives
+    assert.equal(readFileSync(untrackedPath, 'utf8'), 'precious untracked work\n')
+    assert.equal(git(local, 'branch', '--show-current').stdout.trim(), 'main')
+  })
+
+  test('finding 3: suite with output larger than 1 MiB completes without buffer overflow', () => {
+    // Generate ~2 MiB of stdout in the test suite
+    const bigOutputSuite = 'node -e "for(let i=0; i<40000; i++) process.stdout.write(\'01234567890123456789012345678901234567890123456789\\n\'); process.exit(0)"'
+    setupFixture({ suite: bigOutputSuite })
+
+    const res = runRelease('0.7.2')
+    assert.equal(res.status, 0, res.stderr || res.stdout)
+    assert.match(res.stdout, /Release v0\.7\.2 committed on branch release-0\.7\.2/)
+    assert.equal(git(local, 'branch', '--show-current').stdout.trim(), 'release-0.7.2')
+  })
 })

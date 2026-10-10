@@ -30,7 +30,8 @@ export const bumpPackageJson = (content, oldV, newV) => {
   if (allMatches.length !== 1) return null
 
   const result = content.replace(versionRegex, `$1${newV}$3`)
-  JSON.parse(result)
+  const parsed = JSON.parse(result)
+  if (parsed.version !== newV) return null
 
   return result
 }
@@ -80,7 +81,10 @@ export const bumpPackageLock = (content, oldV, newV) => {
 
   if (count !== 2) return null
   const result = updatedBefore + updatedAfter
-  JSON.parse(result)
+  const parsed = JSON.parse(result)
+  if (parsed.version !== newV || parsed.packages?.['']?.version !== newV) {
+    return null
+  }
 
   return result
 }
@@ -114,7 +118,7 @@ export const runRelease = (versionArg, cwd = process.cwd()) => {
   }
 
   // Check uncommitted changes before touching anything
-  const statusRes = gitCmd(repoRoot, ['status', '--porcelain'])
+  const statusRes = gitCmd(repoRoot, ['status', '--porcelain', '--untracked-files=all'])
   if (statusRes.status !== 0) {
     console.error('Refusing: git status failed:\n' + (statusRes.stderr || statusRes.stdout))
 
@@ -204,13 +208,32 @@ export const runRelease = (versionArg, cwd = process.cwd()) => {
     if (tail) {
       console.error(tail)
     }
-    try {
-      gitCmd(repoRoot, ['checkout', '-f', 'main'])
-      gitCmd(repoRoot, ['reset', '--hard', 'HEAD'])
-      gitCmd(repoRoot, ['clean', '-fd'])
-      gitCmd(repoRoot, ['branch', '-D', `release-${versionArg}`])
-    } catch (cleanupErr) {
-      console.error('Warning during restore:', cleanupErr)
+
+    const checkoutMainRes = gitCmd(repoRoot, ['checkout', '-f', 'main'])
+    gitCmd(repoRoot, ['reset', '--hard', 'HEAD'])
+    gitCmd(repoRoot, ['clean', '-fd'])
+    gitCmd(repoRoot, ['branch', '-D', `release-${versionArg}`])
+
+    const currentBranchRes = gitCmd(repoRoot, ['branch', '--show-current'])
+    const statusCleanRes = gitCmd(repoRoot, ['status', '--porcelain', '--untracked-files=all'])
+    const branchCheckRes = gitCmd(repoRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/release-${versionArg}`])
+
+    const restoredOnMain = currentBranchRes.status === 0 && currentBranchRes.stdout.trim() === 'main'
+    const restoredClean = statusCleanRes.status === 0 && statusCleanRes.stdout.trim() === ''
+    const branchDeleted = branchCheckRes.status !== 0
+    const checkoutSucceeded = checkoutMainRes.status === 0
+
+    if (!checkoutSucceeded || !restoredOnMain || !restoredClean || !branchDeleted) {
+      console.error(
+        `RESTORE INCOMPLETE: failed to fully restore the repository to clean main.\n` +
+          `Manual commands to restore repository:\n` +
+          `  git checkout -f main\n` +
+          `  git reset --hard HEAD\n` +
+          `  git clean -fd\n` +
+          `  git branch -D release-${versionArg}`,
+      )
+
+      return 2
     }
 
     return 1
@@ -263,13 +286,19 @@ export const runRelease = (versionArg, cwd = process.cwd()) => {
         }
       } catch {}
     }
-    const suiteRes = spawnSync(suiteCmd, { cwd: repoRoot, shell: true, encoding: 'utf8' })
+    const suiteRes = spawnSync(suiteCmd, {
+      cwd: repoRoot,
+      shell: true,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    })
     if (suiteRes.status !== 0) {
       const output = (suiteRes.stdout || '') + (suiteRes.stderr || '')
       const lines = output.trim().split(/\r?\n/)
       const tail = lines.slice(-25).join('\n')
+      const errorDetail = suiteRes.error ? ` (${suiteRes.error.message})` : ''
 
-      return abortAndRestore(`Suite "${suiteCmd}" failed with exit code ${suiteRes.status}. Aborting and restoring repo to main.\nTail of output:\n${tail}`)
+      return abortAndRestore(`Suite "${suiteCmd}" failed with exit code ${suiteRes.status}${errorDetail}. Aborting and restoring repo to main.\nTail of output:\n${tail}`)
     }
 
     // 8. Commit chore: release vX.Y.Z
