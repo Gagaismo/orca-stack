@@ -411,6 +411,23 @@ describe('briefs', () => {
     assert.match(step, /si el autor pushea durante la corrida, el paso 7 \(b\) frena el merge/)
   })
 
+  test('step 7, rule 6: a merge refused because the branch is behind ramaBase is update-branch, CI on the new head, merge', () => {
+    const step = contractStep(7)
+    assert.match(step, /Si `gh pr merge` se niega porque la rama del PR está atrás de `ramaBase`[^.]*corré `gh pr update-branch <n>`, esperá la CI sobre el head nuevo y mergeá; no busques otra forma de rodearlo\./)
+    assert.match(step, /los merges de una tanda van de a uno/)
+  })
+
+  test('step 7 (b): the update-branch merge keeps the review of its first parent, except the step 6 reviews of a riesgo PR', () => {
+    const step = contractStep(7)
+    assert.match(step, /siguen contando con el `Commit:` del commit anterior si ese commit es el primer padre del head nuevo \(`git rev-parse <headRefOid>\^1`\)/)
+    assert.match(step, /en un PR que toca `riesgo`, los reviews del paso 6 se piden de nuevo sobre el head nuevo/)
+  })
+
+  test('step 9, rule 5: with a protected ramaBase, main integrates GLOSSARY and ADR proposals in its own orchestration PR', () => {
+    const step = contractStep(9)
+    assert.match(step, /`## Propuesta de ADR` \(si `ramaBase` está protegida, en un PR de orquestación tuyo y no con un push directo a `ramaBase`, porque la protección lo rechaza\)/)
+  })
+
   test('ticket brief falls back to acceptance criteria and failure modes as RED list for legacy tickets', async () => {
     const env = fakeIo({
       'gh issue view': json({

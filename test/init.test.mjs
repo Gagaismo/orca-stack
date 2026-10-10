@@ -179,3 +179,31 @@ describe('init', () => {
     }
   })
 })
+
+describe('orca-setup: branch protection on ramaBase', () => {
+  const setup = () => read(path.join(process.cwd(), 'assets', 'skills', 'orca-setup', 'SKILL.md'))
+  const step10 = () => setup().split('\n').find(line => line.startsWith('10. '))
+  const written = () => setup().split('## 3. Escribí lo decidido')[1]
+
+  test('rule 1: with CI, step 10 offers strict, one aggregate check and enforce_admins, with the serial-merge cost', () => {
+    const step = step10()
+    assert.match(step, /ofrecé también proteger `ramaBase`/)
+    assert.match(step, /`required_status_checks\.strict = true`/)
+    assert.match(step, /un solo check requerido[^.]*job `ci-ok` con `needs:` sobre todos los jobs, `if: always\(\)`/)
+    assert.match(step, /`enforce_admins = true`/)
+    assert.match(step, /Decí el costo: dentro de una tanda los merges pasan a ser de a uno, cada uno con `gh pr update-branch <n>` y una corrida completa de la CI/)
+    assert.match(written(), /La protección de `ramaBase` se aplica con `gh api` solo si el humano dijo que sí/)
+  })
+
+  test('rule 2: a 403 asking to upgrade to GitHub Pro is told to the human and the setup goes on without protection', () => {
+    assert.match(written(), /Si GitHub responde 403 "Upgrade to GitHub Pro or make this repository public"[^.]*decíselo al humano y seguí el setup sin protección/)
+  })
+
+  test('rule 3: without CI and with the proposed CI declined, no protection is offered', () => {
+    assert.match(step10(), /Si el repo no tiene CI y el humano no quiso la propuesta, no hay check que exigir: no ofrezcas protección/)
+  })
+
+  test('rule 4: an already protected ramaBase shows what is set and proposes only what is missing', () => {
+    assert.match(step10(), /Si `ramaBase` ya tiene protección \(`gh api repos\/<owner>\/<repo>\/branches\/<ramaBase>\/protection`\), mostrá lo que está puesto y proponé solo lo que falta/)
+  })
+})
