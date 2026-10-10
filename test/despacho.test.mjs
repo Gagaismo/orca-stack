@@ -417,10 +417,21 @@ describe('briefs', () => {
     assert.match(step, /los merges de una tanda van de a uno/)
   })
 
-  test('step 7 (b): the update-branch merge keeps the review of its first parent, except the step 6 reviews of a riesgo PR', () => {
+  test('step 7 (b), rule 1: a GitHub-made update-branch merge (web-flow, verified, first parent reviewed) keeps the review', () => {
     const step = contractStep(7)
-    assert.match(step, /siguen contando con el `Commit:` del commit anterior si ese commit es el primer padre del head nuevo \(`git rev-parse <headRefOid>\^1`\)/)
-    assert.match(step, /en un PR que toca `riesgo`, los reviews del paso 6 se piden de nuevo sobre el head nuevo/)
+    assert.match(step, /siguen contando con el `Commit:` del commit anterior solo si el head nuevo es un merge hecho por GitHub: su committer es `web-flow`, su firma está verificada y su primer padre es ese commit/)
+    assert.ok(step.includes("`gh api repos/<owner>/<repo>/commits/<headRefOid> --jq '{committer: .committer.login, verified: .commit.verification.verified, parents: [.parents[].sha]}'`"))
+    assert.match(step, /el chequeo vale para github\.com/)
+  })
+
+  test('step 7 (b), rule 2: a hand-pushed merge on the reviewed commit needs a review on headRefOid', () => {
+    const step = contractStep(7)
+    assert.match(step, /Un merge pusheado a mano no cuenta aunque su primer padre sea el commit revisado: el review tiene que ser sobre el `headRefOid`, como siempre\./)
+  })
+
+  test('step 7 (b), rule 3: a riesgo PR still requests the step 6 reviews on the new head', () => {
+    const step = contractStep(7)
+    assert.match(step, /En un PR que toca `riesgo`, los reviews del paso 6 se piden de nuevo sobre el head nuevo/)
   })
 
   test('step 9, rule 5: with a protected ramaBase, main integrates GLOSSARY and ADR proposals in its own orchestration PR', () => {
