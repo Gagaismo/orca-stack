@@ -61,7 +61,7 @@ describe('doctor: drift warnings', () => {
   })
 
   test('a current plugin without duplicates, full agent skills and trimmed or RDD-on CLAUDE.md are clean', () => {
-    fakeGentle(bin, 'on')
+    fakeGentle(bin, 'on', 'global')
     plugin('1.3.1', ['tdd'])
     for (const name of ['pr', 'implement-spec', 'retro']) {
       write(path.join(home, '.agents', 'skills', name, 'SKILL.md'), 'x')
