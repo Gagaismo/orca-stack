@@ -50,7 +50,7 @@ const setup = (
         result: {
           status: 'completed',
           agentId: 'a',
-          content: [{ type: 'text', text: `Propuesta lista. Guardada en sdd/auditoria-cuotas/proposal` }],
+          content: [{ type: 'text', text: `Propuesta lista. Guardada en changes/auditoria-cuotas/proposal` }],
         },
       } as never
     }
@@ -239,9 +239,10 @@ test('a repo with only .orca-stack.local.json has the tool, the criterio section
   expect(denied.deny).toContain('grande (450 líneas)')
 })
 
-test('SDD agents do not trigger an automatic Gentle Shell consult', async ($, on) => {
+test('a retired proposal agent type does not trigger an automatic Gentle Shell consult', async ($, on) => {
   const w = setup(on, () => ok('Yo evitaría el cache.'))
   await boot($)
+  // Keep the retired identifier as regression input; it is not a supported workflow.
   await $.tool.call({ tool: 'Agent', description: 'd', prompt: 'hacé la propuesta', subagent_type: 'sdd-propose' } as never)
   expect(w.calls).toHaveLength(0)
 })
@@ -260,11 +261,11 @@ test('/pi parses "tema: pregunta", derives a slug otherwise, and shows usage whe
   const run = (args: string) =>
     $.command.run({ command: 'pi', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
   expect((await run('')).text).toContain('Uso: /pi <tema>: <pregunta>')
-  expect((await run('sdd-auditoria: ¿está bien el corte?')).text).toBe('Consultando a Gentle Shell (tema sdd-auditoria)…')
+  expect((await run('auditoria: \u00BFest\u00E1 bien el corte?')).text).toBe('Consultando a Gentle Shell (tema auditoria)\u2026')
   await clock.advance(1)
   await clock.settle()
   expect(w.submitted).toEqual([
-    'Consultá a Gentle Shell (tema sdd-auditoria) sobre: ¿está bien el corte?. Usá consultar_gentle_shell con un planteo neutral y después mostrame las dos posturas.',
+    'Consult\u00E1 a Gentle Shell (tema auditoria) sobre: \u00BFest\u00E1 bien el corte?. Us\u00E1 consultar_gentle_shell con un planteo neutral y despu\u00E9s mostrame las dos posturas.',
   ])
 })
 

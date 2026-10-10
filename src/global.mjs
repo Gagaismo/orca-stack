@@ -439,7 +439,7 @@ Estado guardado en ${ctx.show(ctx.L.state)}`)
 ⚠ ${ctx.skipped.length} archivos existentes que no son de orca-stack quedaron como estaban. Para reemplazarlos (con respaldo): orca-stack global --force`)
   }
   if (cleanupResult.status !== 0) {
-    ctx.say('\nSDD cleanup was incomplete; rerun `orca-stack global --limpiar-sdd` for the remaining files.')
+    ctx.say('\nLa limpieza SDD qued\u00F3 incompleta; volv\u00E9 a ejecutar `orca-stack global --limpiar-sdd` para procesar los archivos pendientes.')
 
     return 1
   }

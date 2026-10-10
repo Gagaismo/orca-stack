@@ -51,7 +51,7 @@ const pluginSkills = installPath => {
 }
 
 // Things that drifted from what the work contract expects. Each one is a warning, except `level: 'fail'` (a lazy block whose
-// saved copy is gone: SDD would have nothing to read).
+// saved copy is gone: the coordinator would have nothing to read).
 export const driftWarnings = L => {
   const found = []
   const matt = installedMatt(L)

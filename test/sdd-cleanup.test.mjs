@@ -16,6 +16,18 @@ const knownFiles = [
   '.agents/skills/sdd-apply/SKILL.md',
   '.claude/commands/gentle-sdd-apply.md',
 ]
+const phaseNames = ['apply', 'archive', 'design', 'explore', 'init', 'onboard', 'propose', 'research', 'spec', 'tasks', 'verify']
+const knownInventory = [
+  ...phaseNames.map(name => `.claude/agents/sdd-${name}.md`),
+  ...phaseNames.map(name => `.claude/skills/sdd-${name}`),
+  ...['sdd-orchestrator-sections.md', 'sdd-orchestrator-workflow.md', 'sdd-phase-common.md', 'sdd-status-contract.md']
+    .map(name => `.claude/skills/_shared/${name}`),
+  ...phaseNames.map(name => `.agents/skills/sdd-${name}`),
+  ...['apply', 'archive', 'continue', 'explore', 'ff', 'init', 'new', 'onboard', 'research', 'status', 'verify']
+    .map(name => `.claude/commands/gentle-sdd-${name}.md`),
+  ...['apply', 'archive', 'continue', 'explore', 'ff', 'init', 'new', 'onboard', 'research', 'status', 'verify']
+    .map(name => `.claude/skills/gentle-sdd-${name}`),
+]
 
 describe('explicit SDD cleanup', () => {
   test('global help documents cleanup as explicit and backup-only', () => {
@@ -35,13 +47,42 @@ describe('explicit SDD cleanup', () => {
     assert.match(result.out, new RegExp(knownFiles[0].replaceAll('/', '[\\\\/]')))
   })
 
+  test('doctor lists every known path family and cleanup removes the inventory', () => {
+    for (const entry of knownInventory) {
+      const file = entry.endsWith('.md') ? entry : `${entry}/SKILL.md`
+      write(path.join(home, file), `leftover:${entry}`)
+    }
+
+    const doctorBefore = cli(home, ['doctor', '--offline', '--skip-pi'])
+    for (const entry of knownInventory) {
+      assert.match(doctorBefore.out, new RegExp(entry.replaceAll('/', '[\\\\/]')))
+    }
+    assert.match(doctorBefore.out, /orca-stack global --limpiar-sdd/)
+    assert.equal((doctorBefore.out.match(/orca-stack global --limpiar-sdd/g) ?? []).length, 1)
+
+    const result = cli(home, ['global', '--limpiar-sdd', '--skip-pi'])
+    assert.equal(result.status, 0, result.out)
+    const doctorAfter = cli(home, ['doctor', '--offline', '--skip-pi'])
+    assert.doesNotMatch(doctorAfter.out, /restos SDD conocidos/)
+  })
+
+  test('cleanup leaves unknown SDD-named files untouched', () => {
+    const unknown = path.join(home, '.claude', 'agents', 'sdd-my-custom-agent.md')
+    write(unknown, 'user-owned')
+
+    const result = cli(home, ['global', '--limpiar-sdd', '--skip-pi'])
+
+    assert.equal(result.status, 0, result.out)
+    assert.equal(read(unknown), 'user-owned')
+  })
+
   test('explicit cleanup backs up known files while preserving paths', () => {
     for (const file of knownFiles) write(path.join(home, file), `contents:${file}`)
 
     const result = cli(home, ['global', '--limpiar-sdd', '--skip-pi'])
 
     assert.equal(result.status, 0, result.out)
-    assert.match(result.out, /Backed up 4 known SDD leftover\(s\)/i)
+    assert.match(result.out, /Se respaldaron 4 restos SDD conocidos/i)
     const backupRoot = path.join(home, '.orca-stack', 'backups')
     const backups = readdirSync(backupRoot).filter(name => name.startsWith('sdd-'))
     assert.equal(backups.length, 1)
@@ -72,7 +113,7 @@ describe('explicit SDD cleanup', () => {
     const result = cli(home, ['global', '--limpiar-sdd', '--dry-run', '--skip-pi'])
 
     assert.equal(result.status, 0, result.out)
-    assert.match(result.out, /Would back up 1 known SDD leftover/)
+    assert.match(result.out, /Se respaldar\u00EDan 1 restos SDD conocidos/)
     assert.equal(read(known), 'known')
     assert.equal(existsSync(path.join(home, '.orca-stack', 'backups')), false)
   })
@@ -81,7 +122,7 @@ describe('explicit SDD cleanup', () => {
     const result = cli(home, ['global', '--limpiar-sdd', '--skip-pi'])
 
     assert.equal(result.status, 0, result.out)
-    assert.match(result.out, /No known SDD leftovers found/i)
+    assert.match(result.out, /No hay restos SDD conocidos/i)
   })
 
   test('partial backup failures keep failed paths and allow retry of the remainder', () => {
@@ -102,8 +143,8 @@ describe('explicit SDD cleanup', () => {
     assert.equal(partial.status, 1, messages.join('\n'))
     assert.equal(existsSync(path.join(home, knownFiles[0])), true)
     assert.ok(partial.moved.length > 0)
-    assert.match(messages.join('\n'), /Failed to back up.*sdd-apply/)
-    assert.match(messages.join('\n'), /run orca-stack global --limpiar-sdd again/i)
+    assert.match(messages.join('\n'), /No se pudo respaldar.*sdd-apply/)
+    assert.match(messages.join('\n'), /Volv\u00E9 a ejecutar orca-stack global --limpiar-sdd/)
 
     cleanup(path.join(backupRoot, '.claude', 'agents'))
     const retry = cli(home, ['global', '--limpiar-sdd', '--skip-pi'])
