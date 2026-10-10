@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, renderBrief } from '../src/despacho.mjs'
+import { citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, reboteCommand, renderBrief } from '../src/despacho.mjs'
 import { layout } from '../src/util.mjs'
 import { cleanup, read, tempDir, write } from './helpers.mjs'
 
@@ -773,5 +773,107 @@ describe('launchInWorktree', () => {
     assert.ok(!env.calls.some(call => call[0] === 'gh' || (call[0] === 'git' && call[1] !== '')))
     assert.ok(!env.calls.some(call => call[0] === 'orca' && call[1] === 'worktree'))
     assert.ok(env.out.some(line => line.includes(`\u2714 claude despachado en ${worktree}. Brief: ${briefPath}`)))
+  })
+})
+
+describe('rebote', () => {
+  const pr = (overrides = {}) => ({
+    state: 'OPEN', headRefName: 'feat/fix', headRefOid: 'abc123', body: 'Implementador: agy',
+    reviews: [{ body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, concreta, implementaci\u00F3n): fix it.\n\n## SUGERENCIAS\n(none)', url: 'https://example.test/review/1' }],
+    comments: [], ...overrides,
+  })
+  const bounceEnv = (pull = pr(), extra = {}, config = PROJECT) => {
+    const env = fakeIo({ 'gh pr': json(pull), 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`), 'git status': okRes(''), ...extra }, { config })
+    const original = env.io.sh
+    env.io.sh = (cmd, args, opts) => {
+      if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return okRes('abc123\n')
+      return original(cmd, args, opts)
+    }
+    return env
+  }
+
+  test('Rule 1: relaunches author with current blockers and posts Rebote only after launch', async () => {
+    const env = bounceEnv(pr({ comments: [{ body: 'Commit: abc123\n## BLOQUEA\n2. otra cosa', url: 'https://example.test/comment/2' }] }))
+    await reboteCommand({}, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.match(brief, /fix it/)
+    assert.match(brief, /otra cosa/)
+    assert.match(brief, /https:\/\/example\.test\/comment\/2/)
+    assert.ok(env.calls.some(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create'))
+    const comment = env.calls.findIndex(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+    const launch = env.calls.findIndex(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'send')
+    assert.ok(comment > launch)
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
+  })
+
+  test('Rule 2: permits same-head retry marker but refuses when head advanced', async () => {
+    const same = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }))
+    await reboteCommand({ dryRun: true }, '12', same.io)
+    const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }] }))
+    await assert.rejects(reboteCommand({}, '12', advanced.io), /avanz\u00F3 desde el rebote.*Decidido por main/)
+  })
+
+  test('Rule 3: interpretation blockers are listed and never relaunched', async () => {
+    const env = bounceEnv(pr({ reviews: [{ body: 'Commit: abc123\n## BLOQUEA\n1. (inferida, interpretaci\u00F3n): product disagreement' }] }))
+    await assert.rejects(reboteCommand({}, '12', env.io), /interpretaci\u00F3n.*product disagreement/)
+    assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+  })
+
+  test('Rule 4: refuses absent current blocker and stale review commit', async () => {
+    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ reviews: [{ body: 'Commit: abc123\n## BLOQUEA\nnada' }] })).io), /no tiene un review bloqueante vigente/)
+    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ reviews: [{ body: 'Commit: oldsha\n## BLOQUEA\n1. finding' }] })).io), /no tiene un review bloqueante vigente/)
+  })
+
+  test('Rule 5: refuses closed or merged PRs', async () => {
+    for (const state of ['CLOSED', 'MERGED']) await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ state })).io), /no se puede rebotar/)
+  })
+
+  test('Rule 6: requires the matching clean worktree at the PR head', async () => {
+    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(), { 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n`) }).io), /No hay un worktree/)
+    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(), { 'git status': okRes(' M src/app.mjs\n') }).io), /worktree .* est\u00E1 sucio/)
+    const wrong = bounceEnv()
+    const base = wrong.io.sh
+    wrong.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('oldsha\n') : base(cmd, args, opts)
+    await assert.rejects(reboteCommand({}, '12', wrong.io), /no en el head del PR/)
+  })
+
+  test('Rule 7: refuses a live agent in the existing worktree', async () => {
+    const env = bounceEnv(pr(), { 'orca worktree': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'working' }] }] } }) })
+    await assert.rejects(reboteCommand({}, '12', env.io), /agente vivo/)
+  })
+
+  test('Rule 8: applies agent use, block and preguntarAntes guards', async () => {
+    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'Implementador: claude' }), {}, { ...PROJECT, agentes: { usa: ['agy'] } }).io), /no est\u00E1 en agentes\.usa/)
+    const blocked = { ...PROJECT, guardia: { bloquear: [{ agente: 'agy', hasta: '2999-01-01', motivo: 'paused' }] } }
+    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(), {}, blocked).io), /paused/)
+    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'Implementador: codex-cc' })).io), /preguntarle al humano/)
+  })
+
+  test('Rule 9: refuses missing Implementador marker', async () => {
+    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'no author' })).io), /no tiene la l\u00EDnea "Implementador/)
+  })
+
+  test('Rule 10: Pi bounce uses a fresh session id', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: pi' }))
+    env.io.gentleSkills = () => 'C:\\pi\\skills'
+    env.io.now = () => 100
+    env.io.modifiedAt = () => 101
+    await reboteCommand({}, '12', env.io)
+    const launch = env.calls.find(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    assert.match(launch[launch.indexOf('--command') + 1], /--session-id proj-pr-12-rebote-100/)
+    const stale = bounceEnv(pr({ body: 'Implementador: pi' }))
+    stale.io.gentleSkills = () => 'C:\\pi\\skills'
+    stale.io.now = () => 100
+    stale.io.modifiedAt = () => 99
+    await assert.rejects(reboteCommand({}, '12', stale.io), /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+    assert.ok(!stale.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+  })
+
+  test('Rule 11: launch failure does not post a Rebote marker', async () => {
+    const env = bounceEnv()
+    const original = env.io.sh
+    env.io.sh = (cmd, args, opts) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create' ? { status: 1, stdout: '', stderr: 'launch failed' } : original(cmd, args, opts)
+    await assert.rejects(reboteCommand({}, '12', env.io), /launch failed/)
+    assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
   })
 })
