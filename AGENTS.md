@@ -42,12 +42,12 @@ Si el repo todavía tiene `CONTEXT.md` en vez de `GLOSSARY.md`, leelo como si fu
 
 | Agente | Implementa | Revisa | Cómo trabaja |
 |---|---|---|---|
-| claude (`main`) | No | No | Orquesta. Método de Matt por defecto; el SDD de gentle-ai solo si el humano lo pide. En modo `un-agente` esta misma sesión planifica e implementa (ver abajo). |
+| claude (`main`) | No | No | Orquesta. Método de Matt por defecto; el SDD/ODD de gentle-ai (SDD hasta v3, ODD desde v4) solo si el humano lo pide. En modo `un-agente` esta misma sesión planifica e implementa (ver abajo). |
 | claude (worker) | Sí, con `implement` | Solo si el humano lo pide | Modo desatendido. |
 | agy | Sí | Sí, es el revisor por defecto | Las skills se le piden en prosa ("seguí el skill `implement`"). |
 | codex | Sí | Sí | Codex directo. |
 | codex-cc | Sí; si figura en `preguntarAntes` (lo normal, porque usa créditos de Command Code), preguntale al humano antes de despacharlo | Sí | Codex por Command Code, con el modelo que diga `agentes.modelos` (GPT, GLM u otro). |
-| pi (Gentle Shell) | Sí, con su propia metodología (puede usar SDD) | Sí, como segundo review de los PRs que tocan `riesgo`, salvo los que escribió pi. Corre sobre Claude: al lado de claude aporta otra metodología, no otro modelo | También es el par que `main` consulta con `consultar_gentle_shell`. Esa consulta es de solo lectura y no reemplaza un review. |
+| pi (Gentle Shell) | Sí, con su propia metodología (puede usar SDD/ODD) | Sí, como segundo review de los PRs que tocan `riesgo`, salvo los que escribió pi. Corre sobre Claude: al lado de claude aporta otra metodología, no otro modelo | También es el par que `main` consulta con `consultar_gentle_shell`. Esa consulta es de solo lectura y no reemplaza un review. |
 
 Revisa agy, salvo que el PR lo haya escrito agy: entonces revisa codex, o codex-cc si codex no está disponible (una regla `guardia.bloquear` vigente cuenta como no disponible: `despachar` y `revisar` se niegan a despacharlo y dicen el motivo). Un revisor nunca corre un modelo de la misma familia que el autor: dos modelos de una familia comparten puntos ciegos. La familia sale del modelo que cada agente tiene en `agentes.modelos` (si codex-cc corre GLM, es otra familia que codex; si corre un GPT, la misma), y `revisar` se niega cuando coinciden. pi es la excepción: corre sobre Claude, y al lado de claude aporta otra metodología. Un PR de codex o de codex-cc lo revisa agy. Qué agentes están en uso en este repo lo dice `agentes` en `.orca-stack.json`; los que figuran en `preguntarAntes` se despachan solo con el OK del humano.
 
@@ -158,7 +158,7 @@ Política canónica: `~/orca/stack/ORCA-STACK.md` (se puede cambiar con `$ORCA_S
 Si faltan, corré `npx github:Gagaismo/orca-stack global`.
 
 - El runtime de Orca y el Dispatch activo manejan el ciclo de vida, la delegación, los workers, el cierre y la limpieza. Un worker ejecuta su brief: no arranca otro flujo de trabajo ni espera al humano.
-- Las skills de Matt Pocock son la metodología por defecto. Gentle Shell (Pi) trabaja con la suya y puede usar SDD. El SDD de gentle-ai se usa solo cuando el humano lo pide explícitamente. Ponytail se aplica en el trabajo de implementación con el nivel configurado, pero nunca contra un requisito explícito.
+- Las skills de Matt Pocock son la metodología por defecto. Gentle Shell (Pi) trabaja con la suya y puede usar SDD/ODD. El SDD/ODD de gentle-ai se usa solo cuando el humano lo pide explícitamente. Ponytail se aplica en el trabajo de implementación con el nivel configurado, pero nunca contra un requisito explícito.
 - Respetá los requisitos explícitos de la spec, el ticket y los ADRs, y también la validación, la seguridad, la accesibilidad, el manejo de errores, la protección contra pérdida de datos y los tests que se piden: son lo que el humano espera recibir.
 - Caveman sigue el ajuste Auto/Off del stack y comprime solo prosa pesada en tokens. Conservá el código, los comandos, las rutas, los errores exactos, las decisiones, los riesgos, las dudas, los tests y la evidencia de aceptación.
 - Engram es solo memoria: no es autoridad ni planificador. Para las reglas de cada rol, leé la política canónica.
