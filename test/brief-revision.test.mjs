@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, test } from 'node:test'
@@ -186,19 +187,143 @@ describe('brief-revision', () => {
     assert.match(contract, /<repo>-revision-<pr>-subagente\.review\.md/)
     assert.match(contract, /worktree descartable/)
   })
-  test('all files under src are free of the mojibake marker', () => {
-    const sourceRoot = path.join(PACKAGE_ROOT, 'src')
-    const files = []
-    const walk = dir => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const fullPath = path.join(dir, entry.name)
-        if (entry.isDirectory()) walk(fullPath)
-        else files.push(fullPath)
+  const MOJIBAKE_REGEX = /(?:[\u00C2\u00C3][\u0080-\u00BF\u0152\u0153\u0160\u0161\u017D\u017E\u0178\u0192\u02C6\u02DC\u2013\u2014\u2018\u2019\u201A\u201C\u201D\u201E\u2020\u2021\u2022\u2026\u2030\u2039\u203A\u20AC\u2122]|\u00E2\u20AC|\uFFFD)/
+
+  const BINARY_EXTENSIONS = new Set([
+    '.png', '.ico', '.jpg', '.jpeg', '.gif', '.webp', '.svgz',
+    '.pdf', '.zip', '.gz', '.tgz', '.tar', '.7z',
+    '.woff', '.woff2', '.ttf', '.eot', '.otf',
+    '.exe', '.dll', '.so', '.dylib', '.bin',
+  ])
+
+  const isBinaryFile = filePath => BINARY_EXTENSIONS.has(path.extname(filePath).toLowerCase())
+  const isBinaryBuffer = buf => {
+    if (Buffer.isBuffer(buf)) return buf.includes(0)
+    if (typeof buf === 'string') return buf.includes('\0')
+    return false
+  }
+
+  const scanTrackedFiles = ({
+    root = PACKAGE_ROOT,
+    files = null,
+    readFile = null,
+    exclude = [],
+  } = {}) => {
+    let tracked = files
+    if (!tracked) {
+      const result = spawnSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
+      if (result.status !== 0) {
+        throw new Error(`git ls-files failed: ${result.stderr}`)
+      }
+      tracked = result.stdout.split(/\r?\n/).filter(Boolean)
+    }
+    const excludeSet = new Set(exclude)
+    const offenders = []
+    for (const rawRel of tracked) {
+      const rel = rawRel.replace(/\\/g, '/')
+      if (excludeSet.has(rel)) continue
+      if (isBinaryFile(rel)) continue
+      const full = path.join(root, rel)
+      if (!readFile && !existsSync(full)) continue
+      const buf = readFile ? readFile(full, rel) : readFileSync(full)
+      if (!buf) continue
+      if (isBinaryBuffer(buf)) continue
+      const text = typeof buf === 'string' ? buf : buf.toString('utf8')
+      const lines = text.split(/\r?\n/)
+      for (let i = 0; i < lines.length; i++) {
+        if (MOJIBAKE_REGEX.test(lines[i])) {
+          offenders.push(`${rel}:${i + 1}`)
+        }
       }
     }
-    walk(sourceRoot)
-    const marker = String.fromCharCode(0x00c3)
-    const offenders = files.filter(file => readFileSync(file, 'utf8').includes(marker))
-    assert.deepEqual(offenders.map(file => path.relative(PACKAGE_ROOT, file)), [])
+    return offenders
+  }
+
+  test('Rule 1: a cp1252 mojibake sequence in any tracked text file fails (e.g. assets/stack/CONTRATO.md containing revisi\\u00C3\\u00B3n)', () => {
+    const file = 'assets/stack/CONTRATO.md'
+    const fakeContent = 'line 1\nrevisi\u00C3\u00B3n\nline 3'
+    const offenders = scanTrackedFiles({
+      files: [file],
+      readFile: () => fakeContent,
+    })
+    assert.deepEqual(offenders, [`${file}:2`])
+  })
+
+  test('Rule 2: an invisible broken í (\\u00C3 + U+00AD) in README.md fails', () => {
+    const file = 'README.md'
+    const fakeContent = 'line 1\ninv\u00C3\u00ADsible\nline 3'
+    const offenders = scanTrackedFiles({
+      files: [file],
+      readFile: () => fakeContent,
+    })
+    assert.deepEqual(offenders, [`${file}:2`])
+  })
+
+  test('Rule 3: U+FFFD in a tracked text file fails', () => {
+    const file = 'src/despacho.mjs'
+    const fakeContent = 'const err = "bad \uFFFD replacement"\n'
+    const offenders = scanTrackedFiles({
+      files: [file],
+      readFile: () => fakeContent,
+    })
+    assert.deepEqual(offenders, [`${file}:1`])
+  })
+
+  test('Rule 4: valid accented Spanish never fails (current README.md and docs/guia-setup.md pass)', () => {
+    const files = ['README.md', 'docs/guia-setup.md']
+    const offenders = scanTrackedFiles({ files })
+    assert.deepEqual(offenders, [])
+
+    const validSpanish = 'acción, está, ¿cómo estás?, niño, pingüino, ¡bienvenido!, verificación'
+    assert.deepEqual(
+      scanTrackedFiles({
+        files: ['README.md'],
+        readFile: () => validSpanish,
+      }),
+      []
+    )
+  })
+
+  test('Rule 5: binary files (.png, .ico, etc.) are not scanned', () => {
+    const binaryFiles = ['assets/logo.png', 'assets/favicon.ico']
+    const offenders = scanTrackedFiles({
+      files: binaryFiles,
+      readFile: () => 'revisi\u00C3\u00B3n\uFFFD',
+    })
+    assert.deepEqual(offenders, [])
+
+    const nullByteFile = 'assets/data.bin'
+    const offendersWithNull = scanTrackedFiles({
+      files: [nullByteFile],
+      readFile: () => Buffer.from([0x00, 0xC3, 0xB3, 0xFF]),
+    })
+    assert.deepEqual(offendersWithNull, [])
+  })
+
+  test('excludes explicit fixtures from scanning', () => {
+    const fixturePath = 'test/fixtures/mojibake-fixture.txt'
+    const offenders = scanTrackedFiles({
+      files: [fixturePath],
+      exclude: [fixturePath],
+      readFile: () => 'revisi\u00C3\u00B3n',
+    })
+    assert.deepEqual(offenders, [])
+  })
+
+  test('all tracked text files are free of mojibake', () => {
+    const result = spawnSync('git', ['ls-files'], { cwd: PACKAGE_ROOT, encoding: 'utf8' })
+    assert.equal(result.status, 0, `git ls-files failed: ${result.stderr}`)
+    const tracked = result.stdout.split(/\r?\n/).filter(Boolean)
+
+    const requiredAreas = ['assets/', 'docs/', 'README.md', 'mods/', 'test/', 'scripts/', 'bin/', 'shared/', 'src/']
+    for (const area of requiredAreas) {
+      assert.ok(
+        tracked.some(file => file === area || file.startsWith(area)),
+        `git ls-files must include entries under ${area}`
+      )
+    }
+
+    const offenders = scanTrackedFiles()
+    assert.deepEqual(offenders, [])
   })
 })
