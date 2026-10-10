@@ -25,4 +25,11 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 
 - Push the fix to the same branch.
 - Comment on PR #{{PR}} with what changed for each finding and check.
+
+## Remote authorization
+
+- Destination: {{REMOTE_HOST}}, repository {{REMOTE_REPO}}
+- Credential/session: the GitHub CLI (`gh`) session and the git credentials already configured on this machine.
+- Operations: {{REMOTE_OPERATIONS}}
+- Explicitly not authorized: merge, force push, deleting branches or issues, other repos, remotes or hosts.
 {{NOTE_SECTION}}
