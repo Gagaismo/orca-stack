@@ -616,7 +616,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (config.setup !== 'completo') throw new Error(`El setup de orca-stack est\u00E1 pendiente en ${repo}: hacelo con la skill orca-setup antes de relanzar.`)
   if (config.modo === 'un-agente') throw new Error('El modo del repo es "un-agente": no hay workers que relanzar.')
 
-  const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'state,headRefName,headRefOid,body,comments,reviews'], { cwd: root }), 'gh pr view'), 'gh pr view')
+  const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'state,headRefName,headRefOid,body,comments,reviews,statusCheckRollup'], { cwd: root }), 'gh pr view'), 'gh pr view')
   if (String(pr.state).toUpperCase() !== 'OPEN') throw new Error(`El PR #${n} est\u00E1 ${String(pr.state).toLowerCase()}; no se puede rebotar.`)
   const agent = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim().toLowerCase()
   if (!agent) throw new Error(`El PR #${n} no tiene la l\u00EDnea "Implementador: <agente>".`)
@@ -633,20 +633,57 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (typeof sha !== 'string' || sha.trim() === '') throw new Error(`No pude obtener headRefOid del PR #${n}.`)
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
   const markers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote:\s*(\S+)\s*$/gim)].map(match => match[1]))
+  const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
+  const checks = Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : []
+  const checkName = check => check.name ?? check.context ?? 'Unnamed check'
+  const checkUrl = check => check.detailsUrl ?? check.targetUrl ?? ''
+  const cancelledChecks = checks.filter(check => check.__typename === 'CheckRun' && check.conclusion === 'CANCELLED')
+  if (cancelledChecks.length > 0) {
+    const reruns = cancelledChecks.map(check => {
+      const runId = /\/actions\/runs\/(\d+)(?:\/|$)/i.exec(checkUrl(check))?.[1]
+      return `${checkName(check)}${runId ? `: gh run rerun ${runId} --failed` : `: ${checkUrl(check) || 'run URL unavailable'} (rerun the failed jobs)`}`
+    })
+    throw new Error(`El PR #${n} tiene checks CANCELLED en ${sha}; no lo rebotes hasta volver a ejecutar CI:\n${reruns.join('\n')}`)
+  }
+  const pendingChecks = checks.filter(check =>
+    (check.__typename === 'CheckRun' && ['QUEUED', 'IN_PROGRESS', 'WAITING', 'REQUESTED', 'PENDING'].includes(check.status)) ||
+    (check.__typename === 'StatusContext' && ['EXPECTED', 'PENDING'].includes(check.state)),
+  )
+  if (pendingChecks.length > 0) {
+    throw new Error(`El PR #${n} todavía tiene checks pendientes en ${sha}: ${pendingChecks.map(checkName).join(', ')}. Esperá a que termine la CI antes de rebotar.`)
+  }
+  const failedChecks = checks.filter(check =>
+    (check.__typename === 'CheckRun' && ['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE', 'ACTION_REQUIRED'].includes(check.conclusion)) ||
+    (check.__typename === 'StatusContext' && ['FAILURE', 'ERROR'].includes(check.state)),
+  )
+  if (failedChecks.length > 0) {
+    const previousCiShas = new Set(ciMarkers.filter(marker => marker !== sha))
+    if (previousCiShas.size >= 2) {
+      throw new Error(`Ya hubo dos rebotes de CI distintos para el PR #${n}; la CI sigue roja en ${sha}. Pasalo al humano para resolverlo.`)
+    }
+  }
   if (markers.some(marker => marker !== sha)) throw new Error(`El head del PR avanz\u00F3 desde el rebote (${markers.at(-1)} -> ${sha}); lo que siga en pie lo decide main con Decidido por main.`)
   const blockers = allReviews.filter(item => {
     const body = reviewBody(item)
     return blockingBody(body) && /^\s*Commit:\s*(\S+)/mi.exec(body)?.[1] === sha
   })
-  if (blockers.length === 0) throw new Error(`El PR #${n} no tiene un review bloqueante vigente en ${sha}.`)
   const interpretations = blockers.filter(item => /interpretaci[o\u00F3]n/i.test(blockingSection(reviewBody(item))))
-  if (interpretations.length > 0) {
+  if (interpretations.length > 0 && failedChecks.length === 0) {
     const lines = interpretations.map(item => `${item.url ?? item.html_url ?? 'review'}: ${blockingSection(reviewBody(item)).split(/\r?\n/).filter(line => /interpretaci[o\u00F3]n/i.test(line)).join(' ')}`)
     throw new Error(`Los bloqueos de interpretaci\u00F3n van al humano, no al autor:\n${lines.join('\n')}`)
   }
-  const findings = blockers.map(item => {
+  const reviewBlockers = blockers.filter(item => !interpretations.includes(item))
+  const findings = reviewBlockers.map(item => {
     return `${item.url ?? item.html_url ?? 'Review'}\n${blockingSection(reviewBody(item))}`
   }).join('\n\n')
+  if (reviewBlockers.length === 0 && failedChecks.length === 0) throw new Error(`El PR #${n} no tiene un review bloqueante vigente en ${sha}.`)
+  const failedChecksText = failedChecks.length > 0
+    ? failedChecks.map(check => {
+      const url = checkUrl(check)
+      const jobId = /\/actions\/runs\/\d+\/job\/(\d+)(?:[/?#]|$)/i.exec(url)?.[1]
+      return `- **${checkName(check)}**\n  Link: ${url || '(no link available)'}${jobId ? `\n  Inspect: \`gh run view --job ${jobId} --log-failed\`` : ''}`
+    }).join('\n')
+    : 'None.'
 
   const listed = ok(io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root }), 'git worktree list').stdout
   const worktree = listed.split(/\r?\n\s*\r?\n/).map(entry => {
@@ -677,7 +714,10 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corr\u00E9 `orca-stack global`.')
   const brief = render(readAsset('stack', 'brief-rebote.md'), {
-    PR: String(n), SHA: sha, FINDINGS: findings, VERIFICATION: verificationBlock(config),
+    PR: String(n), SHA: sha,
+    FINDINGS: findings || 'No current blocking review findings; this is a CI-only bounce.',
+    FAILED_CHECKS: failedChecksText,
+    VERIFICATION: verificationBlock(config),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
   })
   if (!dryRun) {
@@ -688,10 +728,12 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0 })
   if (!dryRun) {
     const markerPath = path.join(io.home, 'orca', 'briefs', `${name}-comment.md`)
-    io.writeFile(markerPath, `Rebote: ${sha}\n`)
+    const markersToPost = [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null].filter(Boolean)
+    io.writeFile(markerPath, `${markersToPost.join('\n')}\n`)
     ok(io.sh('gh', ['pr', 'comment', String(n), '--body-file', markerPath], { cwd: root }), 'gh pr comment')
   }
-  say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote: ${sha}`)
+  if (reviewBlockers.length > 0) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote: ${sha}`)
+  if (failedChecks.length > 0) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote CI: ${sha}`)
   return 0
 }
 

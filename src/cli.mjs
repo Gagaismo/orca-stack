@@ -18,7 +18,7 @@ Comandos:
   doctor    Verifica la instalación con sondeos reales y sale con código 1 si hay fallas.
   remove    Deshace lo que instaló \`global\`, según ~/.orca-stack/state.json.
   despachar Despacha un ticket a un agente: worktree en Orca, brief y lanzamiento (desde el checkout principal).
-  rebote   Relanza al autor de un PR bloqueado en su worktree existente.
+  rebote   Relanza al autor de un PR bloqueado o con CI roja en su worktree existente.
   revisar   Despacha el review de un PR a un agente que no sea su autor.
   brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
@@ -101,8 +101,8 @@ Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en l
   rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 
 Relanza al autor indicado por \`Implementador:\` en el worktree existente de la rama del PR. Exige un review bloqueante
-vigente sobre el head, worktree limpio y detenido en ese commit, y se niega ante hallazgos de interpretaci\u00F3n.
-Publica \`Rebote: <sha>\` solo despu\u00E9s de iniciar el agente.
+vigente o checks fallidos sobre el head, worktree limpio y detenido en ese commit; los hallazgos de interpretaci\u00F3n solo bloquean el rebote por review.
+Para CI roja agrega los checks fallidos al brief y publica \`Rebote CI: <sha>\`; publica \`Rebote: <sha>\` solo con bloqueos de review.
 `,
   'brief-revision': `orca-stack brief-revision <pr> --modelo <modelo> [--dry-run]
 
