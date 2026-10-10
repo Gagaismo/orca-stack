@@ -37,6 +37,8 @@ export const layout = (home = homeDir()) => ({
   gentleDir: path.join(home, '.orca-stack', 'gentle'),
   sddCopy: path.join(home, '.orca-stack', 'gentle', 'sdd-orchestrator.md'),
   piAgent: path.join(home, '.pi', 'agent'),
+  codexDir: path.join(home, '.codex'),
+  codexAgentsMd: path.join(home, '.codex', 'AGENTS.md'),
 })
 
 export const tilde = (p, home = homeDir()) => {
