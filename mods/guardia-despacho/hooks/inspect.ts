@@ -164,7 +164,8 @@ export const inspect = (command: string, nowMs: number, rules: Rules, shell: She
 // ---- worktree removal ---------------------------------------------------------------------------
 // `orca worktree rm` also deletes the local branch, even with commits that exist nowhere else.
 
-export type Removal = { by: 'path' | 'branch' | 'name' | 'issue' | 'none' | 'opaque'; value: string }
+// `repo` is the directory a `git -C <dir>` or an earlier `cd <dir>` points the removal at; absent, the session's cwd.
+export type Removal = { by: 'path' | 'branch' | 'name' | 'issue' | 'none' | 'opaque'; value: string; repo?: string }
 export type Worktree = { path: string; branch: string | undefined }
 export type RunGit = (argv: string[]) => Promise<{ exitCode: number; stdout: string }>
 
@@ -235,11 +236,17 @@ const psPositionalText = (args: Token[], pwsh: boolean): string => {
 const NESTED = /\borca(\.exe|\.cmd)?['"]?\s+worktree\s+rm\b|\bgit(\.exe)?['"]?[^|;&]*\bworktree\s+remove\b/i
 const bare = (token: string): string => baseName(token).replace(/\.(exe|cmd|ps1)$/i, '').toLowerCase()
 
+const UNKNOWABLE = /[$`%*?]/
+
+// `cd b` after `cd a` (or `git -C b` after `cd a`) lands in a/b unless b is absolute.
+const within = (base: string | undefined, dir: string): string =>
+  base === undefined || /^([A-Za-z]:|[\\/])/.test(dir) ? dir : `${base}/${dir}`
+
 const selectorOf = (value: string | undefined): Removal => {
   if (value === undefined || value === '') {
     return { by: 'none', value: '' }
   }
-  if (/[$`%*?]/.test(value)) {
+  if (UNKNOWABLE.test(value)) {
     return { by: 'none', value } // a loop variable or glob: the target cannot be known
   }
   const at = value.indexOf(':')
@@ -262,6 +269,7 @@ const selectorOf = (value: string | undefined): Removal => {
 // `{`, `sudo`, `xargs`...). A shell given the removal as text (`bash -c`, `pwsh -Command`) is opaque: denied.
 export const worktreeRemovals = (command: string): Removal[] => {
   const found: Removal[] = []
+  let dir: string | undefined // where the `cd`s seen so far leave the shell
   for (const segment of splitSegments(command)) {
     const tokens = tokensOf(segment)
     for (let i = 0; i < tokens.length; i += 1) {
@@ -287,13 +295,22 @@ export const worktreeRemovals = (command: string): Removal[] => {
         const flag = rest.findIndex(arg => arg === '--worktree' || arg.startsWith('--worktree='))
         const raw = rest[flag]
         found.push(selectorOf(flag === -1 ? undefined : raw?.startsWith('--worktree=') ? raw.slice(11) : rest[flag + 1]))
+      } else if (word === 'cd' && !token.quoted) {
+        // A bare `cd`, `cd -` or `cd ~` goes somewhere the command does not say: `$` keeps it unknowable.
+        const to = texts.find(arg => !/^-[LPe@]+$/.test(arg))
+        dir = to === undefined || to === '-' || to.startsWith('~') ? '$' : within(dir, to)
       } else if (word === 'git') {
         let j = 0
+        let repo = dir
         while (j < texts.length && texts[j] !== 'worktree') {
+          if (texts[j] === '-C' && texts[j + 1] !== undefined) {
+            repo = within(repo, texts[j + 1] ?? '')
+          }
           j += texts[j] === '-C' || texts[j] === '-c' ? 2 : 1
         }
         if (texts[j] === 'worktree' && texts[j + 1] === 'remove') {
-          found.push(selectorOf(texts.slice(j + 2).find(arg => !arg.startsWith('-'))))
+          const removal = selectorOf(texts.slice(j + 2).find(arg => !arg.startsWith('-')))
+          found.push(repo === undefined ? removal : { ...removal, repo })
         }
       }
     }
@@ -385,15 +402,23 @@ export const checkRemovals = async (command: string, git: RunGit): Promise<strin
   if (removals.length === 0) {
     return undefined
   }
-  let list: Worktree[]
-  try {
-    const out = await git(['git', 'worktree', 'list', '--porcelain'])
-    if (out.exitCode !== 0) {
-      return unresolvedReason('git worktree list falló')
+  // Each repo's worktrees, listed once. A string is the reason they cannot be listed.
+  const lists = new Map<string, Worktree[] | string>()
+  const worktreesOf = async (repo: string | undefined): Promise<Worktree[] | string> => {
+    const known = lists.get(repo ?? '')
+    if (known !== undefined) {
+      return known
     }
-    list = parseWorktrees(out.stdout)
-  } catch {
-    return unresolvedReason('no pude correr git')
+    let listed: Worktree[] | string
+    try {
+      const out = await git(repo === undefined ? ['git', 'worktree', 'list', '--porcelain'] : ['git', '-C', repo, 'worktree', 'list', '--porcelain'])
+      listed = out.exitCode === 0 ? parseWorktrees(out.stdout) : repo === undefined ? 'git worktree list falló' : `git worktree list en ${repo} falló`
+    } catch {
+      listed = 'no pude correr git'
+    }
+    lists.set(repo ?? '', listed)
+
+    return listed
   }
   for (const original of removals) {
     if (original.by === 'opaque') {
@@ -401,6 +426,14 @@ export const checkRemovals = async (command: string, git: RunGit): Promise<strin
     }
     if (original.by === 'none' && original.value !== '') {
       return unresolvedReason(`no puedo resolver el selector ${original.value}: es una variable o un patrón`)
+    }
+    const repo = original.repo
+    if (repo !== undefined && UNKNOWABLE.test(repo)) {
+      return unresolvedReason(`no puedo resolver el repo ${repo}: es una variable o un patrón`)
+    }
+    const list = await worktreesOf(repo)
+    if (typeof list === 'string') {
+      return unresolvedReason(list)
     }
     let removal = original
     if (original.by === 'issue') {
@@ -427,7 +460,8 @@ export const checkRemovals = async (command: string, git: RunGit): Promise<strin
       continue // detached: nothing to lose, no branch is deleted
     }
     try {
-      const log = await git(['git', 'log', `refs/heads/${target.branch}`, '--not', '--remotes', '--oneline'])
+      const range = [`refs/heads/${target.branch}`, '--not', '--remotes', '--oneline']
+      const log = await git(repo === undefined ? ['git', 'log', ...range] : ['git', '-C', repo, 'log', ...range])
       if (log.exitCode !== 0) {
         return unresolvedReason(`git log de ${target.branch} falló`)
       }
