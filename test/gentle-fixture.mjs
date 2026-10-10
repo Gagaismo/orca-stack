@@ -1,6 +1,8 @@
 import { chmodSync } from 'node:fs'
 import path from 'node:path'
 
+import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE } from '../src/codex-windows.mjs'
+import { upsertBlock } from '../src/marker.mjs'
 import { write } from './helpers.mjs'
 
 // Mirrors the headings of the block gentle-ai writes (the review sections sit between kept ones).
@@ -70,6 +72,105 @@ export const fixture = eol =>
     '',
   ].join(eol)
 
+// The agent-routing block gentle-ai v4 writes (v4.0.0 internal/components/agentguidance/routing.go:24-145, inject.go:94-150), with
+// the real headings and anchor lines and short bodies. `rdd` runtimes (claude, codex) get the RDD switch; codex also gets its
+// worker table. The nested remote-authorization block comes last (remote_authorization.go:13-16).
+export const routingV4 = runtime => [
+  '<!-- gentle-ai:agent-routing -->',
+  '## Implementation Routing',
+  '',
+  'Organic Driven Development (ODD) is the predefined workflow of this orchestrator. Every request enters it, on every runtime, without the user asking for a workflow, a plan, or task tracking.',
+  '',
+  '### ODD protocol (MANDATORY, in this order, on every request)',
+  '',
+  '1. **Authorize.** First establish whether the requested outcome explicitly authorizes a change.',
+  '   - Read-only work may inspect, explain, compare, and recommend.',
+  '   - If change intent is ambiguous or conditional, ask one clarification and remain read-only until answered.',
+  '2. **Explore.** Explore the existing code and requirements first.',
+  '3. **Resolve uncertainty.** Recommend optional research only for a named uncertainty.',
+  '4. **Classify.** The work is substantial when exploration yields two or more meaningful implementation steps.',
+  '5. **Track before the first write.** For substantial authorized implementation, create `odd/tasks/<feature-name>.md` and its Engram mirror.',
+  '6. **Implement task by task.** Route each task through the smallest useful topology below.',
+  '7. **Close.** Report the verified outcome, every failed, skipped, or pending check, and the next step.',
+  '',
+  'Resume an interrupted feature with `mem_context`, then the task file itself.',
+  '',
+  'After explicit change intent is established, route work for the requested outcome with the smallest useful topology.',
+  '',
+  '- **Direct inline:** decide or verify with one parallel batch.',
+  '- **Delegated direct:** larger evidence require one read-only explorer.',
+  '',
+  '### Mandatory Delegation Triggers',
+  '',
+  'These triggers are mandatory, not advisory.',
+  '',
+  '- **Route declaration:** for substantial work, record the chosen route per task in the feature document.',
+  '- These triggers only choose between direct inline and delegated direct inside the organic flow.',
+  '',
+  '### Organic Driven Development',
+  '',
+  'Use this flow for direct and delegated work.',
+  '',
+  '- Keep `odd/tasks/<feature-name>.md` and an Engram recovery copy.',
+  ...(runtime === 'gemini'
+    ? []
+    : [
+        '- When RDD is enabled, first use the existing native candidate risk assessment.',
+        '',
+        '### Receipt-driven development is user-owned',
+        '',
+        'The user controls receipt-driven development with a switch: `gentle-ai review mode enable|disable|status`.',
+      ]),
+  ...(runtime === 'codex'
+    ? ['', '', '### Codex ODD worker assignments', '', 'Use the exact model and reasoning_effort for the selected worker class.', '', '| ODD worker class | Model |', '|---|---|', '| `odd-worker` | `gpt` |']
+    : []),
+  '',
+  '<!-- gentle-ai:remote-authorization -->',
+  '## Remote operation authorization',
+  '',
+  'Permission to develop locally does not authorize remote execution or file transfer.',
+  '<!-- /gentle-ai:remote-authorization -->',
+  '<!-- /gentle-ai:agent-routing -->',
+]
+
+// What survives the routing trim, in order (rule 1): the ODD paragraphs and sections are gone, the rest is verbatim.
+export const ROUTING_KEPT = [
+  '1. **Authorize.**',
+  'After explicit change intent is established',
+  '### Mandatory Delegation Triggers',
+  '<!-- gentle-ai:remote-authorization -->',
+  '## Remote operation authorization',
+  '<!-- /gentle-ai:remote-authorization -->',
+]
+export const ROUTING_GONE = [
+  'Organic Driven Development (ODD) is the predefined workflow',
+  'ODD protocol (MANDATORY',
+  '2. **Explore.**',
+  '5. **Track before the first write.**',
+  '7. **Close.**',
+  'Resume an interrupted feature',
+  '### Organic Driven Development',
+  'Codex ODD worker assignments',
+]
+
+// The orchestrator block of a codex or antigravity file: same markers as claude's v4 block, another layout
+// (~/.codex/AGENTS.md: `# ODD Orchestrator for Codex`; ~/.gemini/GEMINI.md: `# Agent Teams Lite — Orchestrator Instructions (Antigravity)`).
+export const runtimeFile = (runtime, eol = '\n') =>
+  [
+    `## Hand-written ${runtime} rules`,
+    'mine, outside every marker',
+    '',
+    ...routingV4(runtime),
+    '',
+    '<!-- gentle-ai:orchestrator -->',
+    runtime === 'codex' ? '# ODD Orchestrator for Codex' : '# Agent Teams Lite — Orchestrator Instructions (Antigravity)',
+    '### Organic Driven Development Is The Default Workflow (MANDATORY)',
+    'odd body',
+    ...(runtime === 'codex' ? ['#### Review Execution Contract', 'contract body'] : []),
+    '<!-- /gentle-ai:orchestrator -->',
+    '',
+  ].join(eol) + (runtime === 'codex' ? upsertBlock('', CODEX_ASCII_RULE, CODEX_ASCII_MARKERS).replaceAll('\n', eol) : '')
+
 // The block gentle-ai v4 writes for Claude Code: `<!-- gentle-ai:orchestrator -->` (v4.0.0
 // internal/components/agentguidance/orchestrator.go:23 and :454-455), rendered from internal/assets/claude/orchestrator.md with
 // the shared ODD sections expanded and the review contract (internal/assets/skills/_shared/review-ledger-contract.md plus the
@@ -78,6 +179,11 @@ export const fixture = eol =>
 export const KEPT_V4 = [
   '## Engram Persistent Memory',
   '## Implementation Routing',
+  '### ODD protocol (MANDATORY, in this order, on every request)',
+  '### Mandatory Delegation Triggers',
+  '### Organic Driven Development',
+  '### Receipt-driven development is user-owned',
+  '## Remote operation authorization',
   '# Agent Teams Lite — Orchestrator Instructions',
   '## Agent Teams Orchestrator',
   '### Identity Contract',
@@ -96,10 +202,7 @@ export const fixtureV4 = eol =>
     '## Engram Persistent Memory',
     'engram body',
     '',
-    '<!-- gentle-ai:agent-routing -->',
-    '## Implementation Routing',
-    'routing body',
-    '<!-- /gentle-ai:agent-routing -->',
+    ...routingV4('claude'),
     '',
     '<!-- gentle-ai:orchestrator -->',
     '# Agent Teams Lite — Orchestrator Instructions',

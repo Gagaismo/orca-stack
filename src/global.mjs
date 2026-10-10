@@ -3,7 +3,20 @@ import path from 'node:path'
 
 import { INSTALL_HINTS, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
-import { NO_BLOCK, isLazyBlock, lazyifyBlock, rddMode, readPersonalConfig, restoreBlock, sddBlock, sddMode, trimReviewSections } from './gentle.mjs'
+import {
+  NO_BLOCK,
+  blocksOf,
+  gentleTargets,
+  isLazyBlock,
+  planLazyFile,
+  rddMode,
+  readPersonalConfig,
+  restoreLazyBlocks,
+  routingBlock,
+  sddBlock,
+  sddMode,
+  trimReviewSections,
+} from './gentle.mjs'
 import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, codexAgentsMd } from './codex-windows.mjs'
 import { removeAnyBlock, removeBlock, upsertBlock } from './marker.mjs'
 import { installPathCommand } from './path-command.mjs'
@@ -146,62 +159,70 @@ const removeClaudeMdBlock = ctx => {
   }
 }
 
-// Lazy mode: gentle-ai's whole block is a ~16 KB briefing for SDD (v2/v3) or ODD (v4), which the human asks for explicitly.
-// Keep the full text in ~/.orca-stack/gentle/sdd-orchestrator.md and leave a pointer between the markers (with a backup).
-// `gentle-ai sync` rewrites the block, so this step has to run again after each sync (it also refreshes the copy).
-const lazyGentleBlock = (ctx, original) => {
-  const block = sddBlock(original)
-  if (block.status !== 'ok') {
-    ctx.say(`  se omite y no toco nada: ${block.status === 'none' ? `${NO_BLOCK} (lo escribe \`gentle-ai sync\`)` : 'los marcadores del bloque de gentle-ai están incompletos, repetidos o desordenados'}`)
-
-    return
-  }
-  // The block carries gentle-ai's Review Execution Contract: a pointer would silently turn receipt-driven development off.
-  // Without the gentle-ai binary there is no review to protect.
-  const bin = which('gentle-ai')
-  const rdd = bin ? rddMode(bin) : { mode: 'off', source: null }
-  if (rdd.mode !== 'off') {
-    ctx.say(`  RDD de gentle-ai ${rdd.mode === 'on' ? 'prendido' : 'en un estado que no pude leer'}: el bloque queda completo (lazy le sacaría el contrato de review)`)
+// Lazy mode: gentle-ai's orchestrator block is a ~16 KB briefing for SDD (v2/v3) or ODD (v4), and v4's routing block makes ODD
+// mandatory on every request; the human asks for either explicitly. In each runtime file, keep the full text of each block in
+// ~/.orca-stack/gentle/ and leave a pointer between the markers (with a backup). `gentle-ai sync` rewrites the blocks, so this
+// step has to run again after each sync (it also refreshes the copies).
+const lazyGentleFile = (ctx, target, original, rdd) => {
+  // Claude's and codex's blocks carry the review contract and the ODD work units that trigger `review assess`: a pointer would
+  // silently turn receipt-driven development off.
+  if (target.rdd && rdd.mode !== 'off') {
+    ctx.say(`  RDD de gentle-ai ${rdd.mode === 'on' ? 'prendido' : 'en un estado que no pude leer'}: el bloque queda completo (lazy le sacaría el contrato de review) y el mandato ODD sigue, porque el RDD lo necesita`)
     if (rdd.mode === 'on' && rdd.source === 'default') {
       ctx.say('  está prendido solo por defecto en gentle-ai v4: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`')
     }
-    restoreGentleBlock(ctx, original)
+    restoreGentleFile(ctx, target, original)
 
     return
   }
-  const copy = ctx.L.sddCopy
-  if (isLazyBlock(block)) {
-    ctx.say(`  ya está en modo lazy${existsSync(copy) ? '' : `; pero falta ${ctx.show(copy)}: corré \`gentle-ai sync\` y después \`orca-stack global\``}`)
+  const plan = planLazyFile(original, target)
+  if (plan.skipped !== undefined) {
+    ctx.say(`  se omite y no toco nada: ${plan.skipped}`)
 
     return
   }
-  const { text, saved } = lazyifyBlock(original, copy)
-  // The copy goes first: if it cannot be written, the block stays as it is.
-  if (ctx.writeOwned(copy, saved, { label: `${ctx.show(copy)} (copia completa del bloque de gentle-ai)` }) === 'skipped') {
-    ctx.say('  se omite y no toco nada: no pude guardar la copia completa del bloque')
+  if (plan.copies.length === 0 && sddBlock(original).status === 'none' && routingBlock(original).status === 'none') {
+    ctx.say(`  se omite y no toco nada: ${NO_BLOCK} ni gentle-ai:agent-routing (los escribe \`gentle-ai sync\`)`)
 
     return
   }
-  const kb = ((Buffer.byteLength(original) - Buffer.byteLength(text)) / 1024).toFixed(1)
-  ctx.writeShared(ctx.L.claudeMd, text, `${ctx.show(ctx.L.claudeMd)} (bloque de gentle-ai en modo lazy: -${kb} KB)`)
-  ctx.say(`  ${kb} KB menos en cada sesión. El texto completo queda en ${ctx.show(copy)}. \`gentle-ai sync\` lo reescribe: volvé a correr \`orca-stack global\` después de cada sync.`)
+  for (const note of plan.notes) {
+    ctx.say(`  ${note}`)
+  }
+  for (const { name, locate, copy } of blocksOf(target)) {
+    if (isLazyBlock(locate(original)) && !existsSync(copy)) {
+      ctx.say(`  pero falta ${ctx.show(copy)}, la copia de ${name}: corré \`gentle-ai sync\` y después \`orca-stack global\``)
+    }
+  }
+  if (plan.copies.length === 0) {
+    return
+  }
+  // The copies go first: if one cannot be written, the file stays as it is.
+  for (const { file, content, name } of plan.copies) {
+    if (ctx.writeOwned(file, content, { label: `${ctx.show(file)} (copia completa de ${name})` }) === 'skipped') {
+      ctx.say(`  se omite y no toco nada: no pude guardar la copia completa de ${name}`)
+
+      return
+    }
+  }
+  const kb = ((Buffer.byteLength(original) - Buffer.byteLength(plan.text)) / 1024).toFixed(1)
+  ctx.writeShared(target.file, plan.text, `${ctx.show(target.file)} (${plan.copies.map(copy => copy.name).join(' y ')} en modo lazy: -${kb} KB)`)
+  ctx.say(`  ${kb} KB menos en cada sesión. El texto completo queda en ${plan.copies.map(copy => ctx.show(copy.file)).join(' y ')}. \`gentle-ai sync\` lo reescribe: volvé a correr \`orca-stack global\` después de cada sync.`)
 }
 
-// Full mode over a lazy block: put the saved body back (with a backup). Returns the resulting text.
-const restoreGentleBlock = (ctx, original) => {
-  if (!isLazyBlock(sddBlock(original))) {
+// Full mode, or RDD on, over lazy blocks: put the saved bodies back (with a backup). Returns the resulting text.
+const restoreGentleFile = (ctx, target, original) => {
+  const { text, restored, missing } = restoreLazyBlocks(original, target, readTextIfExists)
+  for (const copy of missing) {
+    ctx.say(`  hay un bloque en modo lazy pero falta ${ctx.show(copy)}: corré \`gentle-ai sync\` para que gentle-ai lo escriba de nuevo`)
+  }
+  if (restored.length === 0) {
     return original
   }
-  const saved = readTextIfExists(ctx.L.sddCopy)
-  if (saved === null) {
-    ctx.say(`  el bloque está en modo lazy pero falta ${ctx.show(ctx.L.sddCopy)}: corré \`gentle-ai sync\` para que gentle-ai lo escriba de nuevo`)
-
-    return original
-  }
-  const text = restoreBlock(original, saved)
-  ctx.writeShared(ctx.L.claudeMd, text, `${ctx.show(ctx.L.claudeMd)} (bloque completo de gentle-ai, restaurado desde la copia)`)
+  ctx.writeShared(target.file, text, `${ctx.show(target.file)} (bloque completo de gentle-ai, restaurado desde la copia)`)
   const bin = which('gentle-ai')
-  if (bin && !saved.includes('#### Review Execution Contract') && rddMode(bin).mode !== 'off') {
+  const orchestrator = sddBlock(text)
+  if (target.rdd && bin && restored.includes(target.orchestratorCopy) && !orchestrator.inner.includes('#### Review Execution Contract') && rddMode(bin).mode !== 'off') {
     ctx.say('  la copia no tiene el contrato de review: corré `gentle-ai sync`')
   }
 
@@ -209,18 +230,26 @@ const restoreGentleBlock = (ctx, original) => {
 }
 
 const gentleBlockStep = ctx => {
-  ctx.say('\nBloque de gentle-ai en CLAUDE.md')
   const mode = sddMode(readPersonalConfig(ctx.L))
-  const original = readTextIfExists(ctx.L.claudeMd)
-  if (mode === null) {
-    ctx.say(`  se omite y no toco nada: gentle.sddOrchestrator en ${ctx.show(ctx.L.config)} tiene que ser "lazy" o "full"`)
-  } else if (original === null) {
-    ctx.say('  se omite: no hay ~/.claude/CLAUDE.md')
-  } else if (mode === 'lazy') {
-    lazyGentleBlock(ctx, original)
-  } else {
-    // Full: the block stays as gentle-ai writes it, minus the review sections while RDD is off.
-    trimGentleReview(ctx, restoreGentleBlock(ctx, original))
+  // Without the gentle-ai binary there is no review to protect.
+  const bin = which('gentle-ai')
+  const rdd = mode === 'lazy' && bin ? rddMode(bin) : { mode: 'off', source: null }
+  for (const target of gentleTargets(ctx.L)) {
+    ctx.say(`\nBloques de gentle-ai en ${target.label}`)
+    const original = readTextIfExists(target.file)
+    if (mode === null) {
+      ctx.say(`  se omite y no toco nada: gentle.sddOrchestrator en ${ctx.show(ctx.L.config)} tiene que ser "lazy" o "full"`)
+    } else if (original === null) {
+      ctx.say(`  se omite: no hay ${target.label}`)
+    } else if (mode === 'lazy') {
+      lazyGentleFile(ctx, target, original, rdd)
+    } else {
+      const text = restoreGentleFile(ctx, target, original)
+      if (target.runtime === 'claude') {
+        // Full: the block stays as gentle-ai writes it, minus the review sections while RDD is off.
+        trimGentleReview(ctx, text)
+      }
+    }
   }
 }
 

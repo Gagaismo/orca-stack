@@ -12,7 +12,7 @@ import {
 import path from 'node:path'
 
 import { createCtx, loadState } from './ctx.mjs'
-import { isLazyBlock, restoreBlock, sddBlock } from './gentle.mjs'
+import { gentleTargets, restoreLazyBlocks } from './gentle.mjs'
 import { CODEX_ASCII_MARKERS, codexBlock } from './codex-windows.mjs'
 import { removeAnyBlock, removeBlock } from './marker.mjs'
 import { piBinary } from './pi.mjs'
@@ -52,19 +52,23 @@ export const removeCommand = async flags => {
   const st = ctx.state
   ctx.say(`orca-stack remove${dryRun ? ' (simulación: no se borra nada)' : ''}\nOrigen: ${home}\n`)
 
-  // 0. gentle-ai's block back to full, before its saved copy is deleted below.
-  if (existsSync(ctx.L.claudeMd)) {
-    const current = readFileSync(ctx.L.claudeMd, 'utf8')
-    if (isLazyBlock(sddBlock(current))) {
-      if (existsSync(ctx.L.sddCopy)) {
-        ctx.backup(ctx.L.claudeMd)
-        ctx.act(`restauro el bloque completo de gentle-ai en ${show(ctx.L.claudeMd)} desde ${show(ctx.L.sddCopy)}`)
-        if (!dryRun) {
-          writeBack(ctx.L.claudeMd, null, restoreBlock(current, readFileSync(ctx.L.sddCopy, 'utf8')))
-        }
-      } else {
-        ctx.say(`  el bloque de gentle-ai de ${show(ctx.L.claudeMd)} sigue en modo lazy y falta ${show(ctx.L.sddCopy)}: corré \`gentle-ai sync\` para que lo escriba completo`)
+  // 0. gentle-ai's blocks back to full, in every runtime file, before their saved copies are deleted below.
+  for (const target of gentleTargets(ctx.L)) {
+    if (!existsSync(target.file)) {
+      continue
+    }
+    const current = readFileSync(target.file, 'utf8')
+    const readCopy = copy => (existsSync(copy) ? readFileSync(copy, 'utf8') : null)
+    const { text, restored, missing } = restoreLazyBlocks(current, target, readCopy)
+    if (restored.length > 0) {
+      ctx.backup(target.file)
+      ctx.act(`restauro el bloque completo de gentle-ai en ${show(target.file)} desde ${restored.map(show).join(' y ')}`)
+      if (!dryRun) {
+        writeBack(target.file, null, text)
       }
+    }
+    for (const copy of missing) {
+      ctx.say(`  un bloque de gentle-ai de ${show(target.file)} sigue en modo lazy y falta ${show(copy)}: corré \`gentle-ai sync\` para que lo escriba completo`)
     }
   }
 

@@ -3,7 +3,8 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { LAZY_SENTINEL, REVIEW_SECTIONS, lazyifyBlock, restoreBlock, sddBlock, trimReviewSections } from '../src/gentle.mjs'
+import { LAZY_SENTINEL, REVIEW_SECTIONS, gentleTargets, lazyifyBlock, restoreBlock, restoreLazyBlocks, sddBlock, trimReviewSections } from '../src/gentle.mjs'
+import { layout } from '../src/util.mjs'
 import { KEPT_V4, fakeGentle, fixture, fixtureV4, sddConfig, withPath } from './gentle-fixture.mjs'
 import { backups, cleanup, cli, read, snapshot, tempDir, write } from './helpers.mjs'
 
@@ -28,7 +29,7 @@ describe('gentle-ai v4 block helpers', () => {
       assert.ok(lazy.includes(LAZY_SENTINEL) && lazy.includes(COPY))
       assert.ok(lazy.includes(V4_OPEN) && lazy.includes(V4_CLOSE))
       assert.ok(!lazy.includes('sdd-orchestrator-workflow.md'), 'v4 ships no SDD workflow file to point at')
-      assert.ok(!lazy.includes('odd body') && lazy.includes('routing body') && lazy.includes('engram body'))
+      assert.ok(!lazy.includes('odd body') && lazy.includes('After explicit change intent') && lazy.includes('engram body'))
       assert.ok(!(eol === '\r\n' && /[^\r]\n/.test(lazy)), 'no bare LF in a CRLF file')
       assert.equal(restoreBlock(lazy, saved), text)
     }
@@ -119,7 +120,7 @@ describe('global, doctor and remove with a gentle-ai v4 block', () => {
     assert.equal(result.status, 0, result.out)
     assert.equal(read(copy()), sddBlock(fixtureV4('\n')).inner)
     assert.ok(read(claudeMd()).includes(LAZY_SENTINEL))
-    assert.equal(restoreBlock(read(claudeMd()), read(copy())), fixtureV4('\n'))
+    assert.equal(restoreLazyBlocks(read(claudeMd()), gentleTargets(layout(home))[0], read).text, fixtureV4('\n'))
     assert.doesNotMatch(doctor().out, /bloque de gentle-ai/)
   })
 

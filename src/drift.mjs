@@ -2,7 +2,17 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { INSTALL_HINTS, MATT_MIN_VERSION, MATT_REQUIRED_SKILLS } from './constants.mjs'
-import { isLazyBlock, rddMode, readPersonalConfig, sddBlock, sddMode, trimReviewSections } from './gentle.mjs'
+import {
+  blocksOf,
+  carriesOddMandate,
+  gentleTargets,
+  isLazyBlock,
+  planLazyFile,
+  rddMode,
+  readPersonalConfig,
+  sddMode,
+  trimReviewSections,
+} from './gentle.mjs'
 import { which } from './util.mjs'
 
 const readJson = file => {
@@ -51,7 +61,7 @@ const pluginSkills = installPath => {
 }
 
 // Things that drifted from what the work contract expects. Each one is a warning, except `level: 'fail'` (a lazy block whose
-// saved copy is gone: SDD would have nothing to read).
+// saved copy is gone: SDD or ODD would have nothing to read).
 export const driftWarnings = L => {
   const found = []
   const matt = installedMatt(L)
@@ -78,29 +88,45 @@ export const driftWarnings = L => {
   }
   const gentle = which('gentle-ai')
   const rdd = gentle ? rddMode(gentle) : { mode: 'off', source: null }
-  const md = existsSync(L.claudeMd) ? readFileSync(L.claudeMd, 'utf8') : ''
   const mode = sddMode(readPersonalConfig(L))
-  const block = sddBlock(md)
-  if (isLazyBlock(block) && !existsSync(L.sddCopy)) {
-    found.push({
-      level: 'fail',
-      label: 'bloque de gentle-ai en modo lazy sin su copia',
-      detail: `falta ${L.sddCopy}: el puntero de ~/.claude/CLAUDE.md apunta a un archivo que no existe. Corré \`gentle-ai sync\` y después \`orca-stack global\``,
-    })
-  }
   if (mode === null) {
     found.push({ label: 'gentle.sddOrchestrator', detail: 'en ~/.orca-stack/config.json tiene que ser "lazy" o "full"' })
-  } else if (mode === 'lazy') {
-    // With RDD on (or unreadable) `global` keeps the full block on purpose: it carries the review contract.
-    const keepFull = Boolean(gentle) && rdd.mode !== 'off'
-    if (isLazyBlock(block) && keepFull) {
-      found.push({ label: 'bloque de gentle-ai en ~/.claude/CLAUDE.md', detail: 'está en modo lazy pero el RDD de gentle-ai no está apagado y necesita el contrato de review: corré `orca-stack global` para restaurarlo' })
-    } else if (block.status === 'ok' && !isLazyBlock(block) && !keepFull) {
-      found.push({ label: 'bloque de gentle-ai en ~/.claude/CLAUDE.md', detail: 'gentle-ai sync lo reescribió: corré `orca-stack global` (gentle.sddOrchestrator es "lazy")' })
-    }
-  } else if (isLazyBlock(block)) {
-    found.push({ label: 'bloque de gentle-ai en ~/.claude/CLAUDE.md', detail: 'sigue en modo lazy pero gentle.sddOrchestrator es "full": corré `orca-stack global` para restaurarlo' })
   }
+  for (const target of gentleTargets(L)) {
+    const md = existsSync(target.file) ? readFileSync(target.file, 'utf8') : ''
+    const lazy = blocksOf(target).filter(({ locate }) => isLazyBlock(locate(md)))
+    for (const { copy } of lazy.filter(({ copy }) => !existsSync(copy))) {
+      found.push({
+        level: 'fail',
+        label: 'bloque de gentle-ai en modo lazy sin su copia',
+        detail: `falta ${copy}: el puntero de ${target.label} apunta a un archivo que no existe. Corré \`gentle-ai sync\` y después \`orca-stack global\``,
+      })
+    }
+    // With RDD on (or unreadable) `global` keeps claude's and codex's blocks full on purpose: they carry the review contract.
+    const keepFull = target.rdd && Boolean(gentle) && rdd.mode !== 'off'
+    if (mode === 'lazy') {
+      const plan = keepFull ? null : planLazyFile(md, target)
+      if (lazy.length > 0 && keepFull) {
+        found.push({ label: `bloque de gentle-ai en ${target.label}`, detail: 'está en modo lazy pero el RDD de gentle-ai no está apagado y necesita el contrato de review: corré `orca-stack global` para restaurarlo' })
+      } else if (plan?.copies?.length > 0) {
+        found.push({ label: `bloque de gentle-ai en ${target.label}`, detail: 'gentle-ai sync lo reescribió: corré `orca-stack global` (gentle.sddOrchestrator es "lazy")' })
+      }
+      // The ODD mandate left after global, and why global leaves it.
+      const why = keepFull
+        ? `sigue porque el RDD de gentle-ai está ${rdd.mode === 'on' ? 'prendido' : 'en un estado que no pude leer'}: el review necesita los commits de trabajo de ODD`
+        : plan.skipped !== undefined
+          ? `global no lo recorta: ${plan.skipped}`
+          : plan.copies.length === 0
+            ? 'está fuera de los bloques de gentle-ai que global recorta'
+            : null
+      if (carriesOddMandate(md) && why !== null) {
+        found.push({ label: `mandato ODD de gentle-ai en ${target.label}`, detail: why })
+      }
+    } else if (mode === 'full' && lazy.length > 0) {
+      found.push({ label: `bloque de gentle-ai en ${target.label}`, detail: 'sigue en modo lazy pero gentle.sddOrchestrator es "full": corré `orca-stack global` para restaurarlo' })
+    }
+  }
+  const md = existsSync(L.claudeMd) ? readFileSync(L.claudeMd, 'utf8') : ''
   const trim = gentle && mode === 'full' ? trimReviewSections(md) : null
   if (trim && (trim.removed > 0 || trim.skipped !== undefined) && rdd.mode === 'off') {
     found.push(
