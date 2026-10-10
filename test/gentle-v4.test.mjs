@@ -13,10 +13,11 @@ const V4_CLOSE = '<!-- /gentle-ai:orchestrator -->'
 const headings = text => text.split(/\r?\n/).filter(line => /^#{1,6} /.test(line))
 
 describe('gentle-ai v4 block helpers', () => {
-  test('rule 1: the v2 block uses the ODD default pointer without an agent-routing reference', () => {
+  test('rule 1: the v2/v3 block does not claim ODD is the default workflow', () => {
     const { text } = lazyifyBlock(fixture('\n'), COPY)
-    assert.ok(text.includes('ODD is the default workflow.'))
+    assert.ok(!text.includes('ODD is the default workflow'))
     assert.ok(text.includes('The full gentle-ai coordinator rules are in'))
+    assert.ok(text.includes('complete and unsummarized'))
     assert.ok(!text.includes('agent-routing block'))
     assert.ok(!text.includes('sdd-orchestrator-workflow.md'))
   })

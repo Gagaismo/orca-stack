@@ -137,7 +137,7 @@ export const LAZY_SENTINEL = '<!-- orca-stack:gentle-lazy v1 -->'
 
 // v4 ships no SDD workflow file: its block is the whole ODD orchestrator.
 export const lazyPointer = (copyPath, generation = 'v2') => [
-  `ODD is the default workflow${generation === 'v4' ? ' (see the agent-routing block)' : ''}.`,
+  ...(generation === 'v4' ? ['ODD is the default workflow (see the agent-routing block).'] : []),
   `The full gentle-ai coordinator rules are in \`${copyPath}\`: read them in full when you are the orchestrating session (\`main\`).`,
   "When a sub-agent or tool returns a blocking prompt, menu or consent envelope, present it complete and unsummarized, and never answer on the human's behalf.",
 ]
