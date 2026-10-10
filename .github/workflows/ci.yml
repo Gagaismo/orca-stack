@@ -60,3 +60,17 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  ci-ok:
+    name: ci-ok
+    needs:
+      - test
+      - hygiene
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require every CI job to succeed
+        env:
+          ORCA_CI_NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/check-ci-ok.mjs
