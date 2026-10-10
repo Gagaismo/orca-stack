@@ -168,3 +168,6 @@ Si faltan, corré `npx github:Gagaismo/orca-stack global`.
 ## Project rules
 
 - **No reviews in this repo for now (speed first).** This overrides step 7 (a), (b) and (d) of "Ciclo de `main`" and step 6 (no review dispatch): `main` merges a PR as soon as CI is green and the PR body has its `## Evidencia`. Do not run `orca-stack revisar` unless the human asks. `riesgo` is empty on purpose. A PR over 400 lines still gets a Gentle Shell consult before merging (`puente-gentle` enforces it).
+- **`main` is protected** (turned on once #65 merges): branches must be up to date, the `ci-ok` check is required, and admins are included, so every change reaches `main` through a PR. When `gh pr merge` refuses a PR because it is behind `main`, run `gh pr update-branch <n>`, wait for `ci-ok` on the new head, and merge.
+- **Emergency only:** if CI itself is broken (a runner or `gitleaks-action` down) and a merge cannot wait, ask the human before lifting admin enforcement with `gh api -X DELETE repos/Gagaismo/orca-stack/branches/main/protection/enforce_admins`, and restore it with `-X POST` on the same path right after the merge.
+- **Mods load at session start.** After a release that changes `mods/`, this session keeps running the old hooks: propose a handoff to a new session before any work that depends on the new ones.
