@@ -1,8 +1,12 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseArgs } from 'node:util'
+
+const USAGE = 'Usage: node scripts/release.mjs X.Y.Z [--body-file <path>]'
 
 export const parseVersion = text => {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(text ?? '').trim())
@@ -106,15 +110,30 @@ export const bumpMarkdown = (filePath, oldV, newV) => {
 const gitCmd = (repoRoot, args) =>
   spawnSync('git', args, { cwd: repoRoot, encoding: 'utf8' })
 
-export const runRelease = (versionArg, cwd = process.cwd()) => {
+export const runRelease = (versionArg, cwd = process.cwd(), { bodyFile } = {}) => {
   const rootRes = gitCmd(cwd, ['rev-parse', '--show-toplevel'])
   const repoRoot = rootRes.status === 0 ? path.resolve(rootRes.stdout.trim()) : path.resolve(cwd)
 
   // Validate version format
   if (!versionArg || !/^\d+\.\d+\.\d+$/.test(versionArg)) {
-    console.error(`Refusing: invalid version format "${versionArg ?? ''}". Expected format is X.Y.Z (e.g. 0.7.2).`)
+    console.error(`Refusing: invalid version format "${versionArg ?? ''}". Expected format is X.Y.Z (e.g. 0.7.2).\n${USAGE}`)
 
     return 1
+  }
+
+  // Read the commit body before touching anything
+  let body
+  if (bodyFile !== undefined) {
+    try {
+      body = readFileSync(path.resolve(cwd, bodyFile), 'utf8')
+    } catch {
+      body = ''
+    }
+    if (!body.trim()) {
+      console.error(`Refusing: --body-file "${bodyFile}" is missing, unreadable or empty.`)
+
+      return 1
+    }
   }
 
   // Check uncommitted changes before touching anything
@@ -308,13 +327,28 @@ export const runRelease = (versionArg, cwd = process.cwd()) => {
         gitCmd(repoRoot, ['add', f])
       }
     }
-    const commitRes = gitCmd(repoRoot, ['commit', '-m', `chore: release v${versionArg}`])
+    const title = `chore: release v${versionArg}`
+    let commitRes
+    if (body === undefined) {
+      commitRes = gitCmd(repoRoot, ['commit', '-m', title])
+    } else {
+      // -F from a UTF-8 file keeps accents intact on Windows; whitespace cleanup keeps "#" lines in the body
+      const msgDir = mkdtempSync(path.join(os.tmpdir(), 'orca-release-'))
+      try {
+        const msgPath = path.join(msgDir, 'COMMIT_MSG')
+        writeFileSync(msgPath, `${title}\n\n${body}`, 'utf8')
+        commitRes = gitCmd(repoRoot, ['commit', '--cleanup=whitespace', '-F', msgPath])
+      } finally {
+        rmSync(msgDir, { recursive: true, force: true })
+      }
+    }
     if (commitRes.status !== 0) {
       return abortAndRestore('git commit failed:\n' + (commitRes.stderr || commitRes.stdout).trim())
     }
 
     // 9. Print remaining steps for main
-    console.log(`Release v${versionArg} committed on branch release-${versionArg}.\n`)
+    console.log(`Release v${versionArg} committed on branch release-${versionArg}.`)
+    console.log(body === undefined ? 'Commit body: none (pass --body-file <path> to add one).\n' : `Commit body: from ${bodyFile}.\n`)
     console.log('Remaining steps for main:')
     console.log(`- Push:           git push -u origin release-${versionArg}`)
     console.log(`- PR:             gh pr create --base main --head release-${versionArg} --title "chore: release v${versionArg}"`)
@@ -331,6 +365,13 @@ export const runRelease = (versionArg, cwd = process.cwd()) => {
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 if (isMain) {
-  const code = runRelease(process.argv[2])
+  let parsed
+  try {
+    parsed = parseArgs({ options: { 'body-file': { type: 'string' } }, allowPositionals: true })
+  } catch (err) {
+    console.error(`Refusing: ${err.message}\n${USAGE}`)
+    process.exit(1)
+  }
+  const code = runRelease(parsed.positionals[0], process.cwd(), { bodyFile: parsed.values['body-file'] })
   process.exit(code)
 }
