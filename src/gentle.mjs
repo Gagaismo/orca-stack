@@ -4,8 +4,8 @@ import { run } from './util.mjs'
 
 // gentle-ai writes this managed block into ~/.claude/CLAUDE.md. With receipt-driven development (RDD) off,
 // its review sections are no-ops that every session still pays for, so `global` trims them.
-// v2/v3 name it `sdd-orchestrator`; v4 retired SDD, renames the block in place to `orchestrator` and keeps the same
-// review sections (gentle-ai v4.0.0 internal/components/agentguidance/orchestrator.go:23-28,435-455).
+// v2/v3 name it `sdd-orchestrator`; v4 retired SDD and renamed the block in place to `orchestrator`. The v4.1.1
+// review contract adds Lens selection (gentle-ai v4.1.1 internal/assets/skills/_shared/review-ledger-contract.md:1-103).
 const MARKERS = {
   v2: { begin: '<!-- gentle-ai:sdd-orchestrator -->', end: '<!-- /gentle-ai:sdd-orchestrator -->' },
   v4: { begin: '<!-- gentle-ai:orchestrator -->', end: '<!-- /gentle-ai:orchestrator -->' },
