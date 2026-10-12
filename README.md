@@ -47,7 +47,7 @@ El bloque `gentle-ai:sdd-orchestrator` (v2/v3) o `gentle-ai:orchestrator` (v4) d
 **gentle-ai v4.** v4 retiró SDD y OpenSpec: ODD es su único flujo y `gentle-ai sync` renombra el bloque en el lugar a `gentle-ai:orchestrator`, con el orquestador ODD adentro y las mismas secciones de review. `global`, `doctor` y `remove` reconocen los dos nombres: el modo lazy, el recorte y la restauración funcionan igual; el puntero indica que ODD es el flujo predeterminado y que la sesión `main` lee la copia completa. La copia queda en `~/.orca-stack/gentle/orchestrator.md`. Para pasar a v4 en Windows (necesita Go 1.25.10 o más nuevo en el `PATH`):
 
 ```powershell
-go install github.com/gentleman-programming/gentle-ai/v4/cmd/gentle-ai@v4.0.0
+go install github.com/gentleman-programming/gentle-ai/v4/cmd/gentle-ai@v4.1.1
 gentle-ai sync
 npx github:Gagaismo/orca-stack global
 ```

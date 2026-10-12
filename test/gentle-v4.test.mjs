@@ -11,8 +11,29 @@ const COPY = '/tmp/home/.orca-stack/gentle/orchestrator.md'
 const V4_OPEN = '<!-- gentle-ai:orchestrator -->'
 const V4_CLOSE = '<!-- /gentle-ai:orchestrator -->'
 const headings = text => text.split(/\r?\n/).filter(line => /^#{1,6} /.test(line))
+const fixtureV41 = eol => fixtureV4(eol).replace('## Entry rule' + eol + 'entry body', '## Entry rule' + eol + 'entry body' + eol + '## Lens selection' + eol + 'lens selection body')
 
 describe('gentle-ai v4 block helpers', () => {
+  test('rule 1: v4.1 lens selection is trimmed while cost and later content remain', () => {
+    const original = fixtureV41('\n')
+    const result = trimReviewSections(original)
+    assert.equal(result.skipped, undefined)
+    assert.ok(!result.text.includes('## Lens selection'))
+    assert.ok(!result.text.includes('lens selection body'))
+    assert.ok(!result.text.includes('## Entry rule'))
+    assert.ok(result.text.includes('#### Cost and Context Balance'))
+    assert.ok(result.text.includes('cost body'))
+    assert.ok(result.text.includes('### Work Routing Ladder'))
+  })
+
+  test('rule 3: an unknown v4 review-contract heading remains unchanged and is skipped', () => {
+    const original = fixtureV41('\n').replace('## Lens selection', '## Unknown review section')
+    const result = trimReviewSections(original)
+    assert.equal(result.text, original)
+    assert.equal(result.removed, 0)
+    assert.match(result.skipped, /encabezado que no reconozco: ## Unknown review section/)
+  })
+
   test('rule 1: the v2/v3 block does not claim ODD is the default workflow', () => {
     const { text } = lazyifyBlock(fixture('\n'), COPY)
     assert.ok(!text.includes('ODD is the default workflow'))
@@ -109,6 +130,17 @@ describe('global, doctor and remove with a gentle-ai v4 block', () => {
     assert.match(result.out, /sin las secciones de review de gentle-ai/)
     assert.equal(read(claudeMd()), trimReviewSections(fixtureV4('\n')).text)
     assert.doesNotMatch(doctor().out, /gentle-ai en ~\/\.claude|secciones de review/)
+  })
+
+  test('rule 1 and 4: full mode trims v4.1 lens selection and doctor reports no review drift', () => {
+    sddConfig(home, 'full')
+    write(claudeMd(), fixtureV41('\n'))
+    const result = global()
+    assert.equal(result.status, 0, result.out)
+    assert.equal(read(claudeMd()), trimReviewSections(fixtureV41('\n')).text)
+    assert.doesNotMatch(read(claudeMd()), /Lens selection|Entry rule/)
+    assert.match(read(claudeMd()), /#### Cost and Context Balance/)
+    assert.doesNotMatch(doctor().out, /secciones de review de gentle-ai/)
   })
 
   test('rule 3: a v2 lazy block rewritten by a v4 sync makes doctor ask for global, and global refreshes the copy', () => {
