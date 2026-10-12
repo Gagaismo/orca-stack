@@ -25,6 +25,7 @@ export const REVIEW_SECTIONS = new Set([
   '#### Delegated Verification Gate (MANDATORY)',
   '#### Native Checking Contract',
   REVIEW_CONTRACT,
+  '## Lens selection',
   '### Concurrent Reviewer Group (MANDATORY)',
 ])
 

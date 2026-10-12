@@ -91,7 +91,7 @@ Además, instalá lo que `global` marque como faltante.
 **Pasar a gentle-ai v4 (Windows).** v4 retiró SDD: ODD es su único flujo, y la sync renombra el bloque a `gentle-ai:orchestrator` (mismas secciones de review). orca-stack trata igual los dos nombres; en v4 el puntero dice que ODD es el flujo predeterminado y que la sesión `main` lee la copia completa. Con Go 1.25.10 o más nuevo en el `PATH`:
 
 ```powershell
-go install github.com/gentleman-programming/gentle-ai/v4/cmd/gentle-ai@v4.0.0
+go install github.com/gentleman-programming/gentle-ai/v4/cmd/gentle-ai@v4.1.1
 gentle-ai sync
 npx github:Gagaismo/orca-stack global
 ```
