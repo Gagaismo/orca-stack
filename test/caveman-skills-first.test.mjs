@@ -15,7 +15,8 @@ const PLUGIN = 'claude plugin marketplace add JuliusBrussee/caveman && claude pl
 
 let home
 beforeEach(() => {
-  home = tempDir('caveman-skills')
+  // No "caveman" in the prefix: doctor prints the home path in some rows, and rule 4 looks for caveman in any row.
+  home = tempDir('skills-first')
 })
 afterEach(() => cleanup(home))
 
