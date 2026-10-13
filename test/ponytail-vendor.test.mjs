@@ -99,3 +99,53 @@ describe('vendored ponytail skills (upstream v5.2.0)', () => {
     assert.match(reviewer, /Lean/)
   })
 })
+
+describe('#139 ponytail follow-ups', () => {
+  test('rule 1: README, next to the hooks exclusion, says to disable the ponytail plugin in Orca sessions and why', () => {
+    const lines = read(ROOT, 'README.md').split('\n')
+    const exclusion = lines.findIndex(line => line.startsWith('- **Los hooks de ciclo de vida completos de Ponytail'))
+    assert.ok(exclusion >= 0, 'README lost the Ponytail hooks exclusion')
+    const next = lines[exclusion + 1]
+    assert.match(next, /plugin `ponytail`/)
+    assert.match(next, /desactivalo en las sesiones de Orca/)
+    assert.match(next, /skills adaptadas/)
+    assert.match(next, /hooks duplican el control de Orca/)
+  })
+
+  test('rule 3: ponytail-help keeps the v5.2.0 body and adds an In Orca section on what applies', () => {
+    const entry = provenance.skills['ponytail-help']
+    assert.equal(entry.adapted, true)
+    assert.equal(entry.upstreamSha256, '2927276bc9c10221ce8bcf80adb798db130cd70eb33a95db91ab3a0d105f5109')
+    const help = skill('ponytail-help')
+    assert.ok(help.includes('\n## In Orca\n'), 'ponytail-help has no "## In Orca" section')
+    const helpBody = body(help)
+    assert.equal(sha256(helpBody.slice(0, helpBody.indexOf('\n## In Orca\n'))), entry.upstreamBodySha256)
+    const section = help.slice(help.indexOf('\n## In Orca\n')).replace(/\s+/g, ' ')
+    assert.match(section, /`ORCA_STACK_PONYTAIL_LEVEL`/)
+    for (const inert of ['`PONYTAIL_DEFAULT_MODE`', 'ponytail `config.json`', '`/ponytail-gain`', '`/plugin`']) {
+      assert.ok(section.includes(inert), `In Orca does not name ${inert}`)
+    }
+    assert.match(section, /do not apply in Orca/)
+    assert.match(section, /`orca-stack global`/)
+  })
+
+  test('rule 4: the Ponytail reviewer passes a non-Lean Must fix to main and names its output format', () => {
+    const briefs = read(ROOT, 'assets', 'stack', 'ROLE-BRIEFS.md')
+    const reviewer = briefs.split('\n## Ponytail reviewer\n')[1].split('\n## ')[0].replace(/\s+/g, ' ')
+    assert.match(reviewer, /report only its Lean findings/)
+    assert.match(reviewer, /non-Lean \*Must fix\*/)
+    assert.match(reviewer, /pass it to main in one line, never drop it/)
+    assert.match(reviewer, /Output format: `## BLOQUEA` \/ `## SUGERENCIAS`/)
+  })
+
+  test('rule 5: an unattended worker never waits for the user, and at ultra ships the ticket and records its objections', () => {
+    assert.match(orcaSection, /At any level, an unattended worker never waits for the user/)
+    assert.match(orcaSection, /at `ultra` it builds what was asked and records its objections in its report or `## Desvíos del ticket`/)
+    assert.match(orcaSection, /a ticket it thinks over-scoped/)
+  })
+
+  test('rule 6: a level the human sets mid-session with /ponytail wins over ORCA_STACK_PONYTAIL_LEVEL', () => {
+    assert.match(orcaSection, /`\/ponytail <level>`/)
+    assert.match(orcaSection, /the human's choice wins over `ORCA_STACK_PONYTAIL_LEVEL`/)
+  })
+})
