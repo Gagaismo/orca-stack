@@ -112,9 +112,9 @@ export const codexTrustStatus = (root, file) => {
     : { level: 'warn', detail: codexTrustHint(root) }
 }
 
-// Ids of the upstream ponytail plugin installed for Claude Code (`ponytail@<marketplace>`), minus the ones
+// Ids of an upstream plugin installed for Claude Code (`<name>@<marketplace>`), minus the ones
 // ~/.claude/settings.json disables. Unreadable files mean none: doctor only warns about what it can see.
-export const ponytailPluginIds = home => {
+export const pluginIds = (home, name) => {
   const { claudeDir, settings } = layout(home)
   const readJson = file => {
     try {
@@ -127,7 +127,13 @@ export const ponytailPluginIds = home => {
   if (!plugins || typeof plugins !== 'object') return []
   const enabled = readJson(settings)?.enabledPlugins ?? {}
 
-  return Object.keys(plugins).filter(id => id.split('@')[0] === 'ponytail' && enabled[id] !== false)
+  return Object.keys(plugins).filter(id => id.split('@')[0] === name && enabled[id] !== false)
+}
+
+// Upstream plugins whose hooks duplicate Orca's control, and why.
+const PLUGIN_WARNINGS = {
+  ponytail: 'sus hooks duplican el control de Orca y su skill `ponytail` no trae `## In Orca`',
+  caveman: 'sus hooks inyectan caveman en cada subagente y duplican el control de Orca',
 }
 
 // The merged agentes.usa, lowercased.
@@ -251,8 +257,10 @@ export const doctorCommand = async flags => {
       add('fail', tilde(root, home), `faltan: ${missing.join(', ')}`)
     }
   }
-  for (const id of ponytailPluginIds(home)) {
-    add('warn', 'plugin ponytail de Claude Code', `${id} está instalado: sus hooks duplican el control de Orca y su skill \`ponytail\` no trae \`## In Orca\`. Desactivalo con \`claude plugin disable ${id}\``)
+  for (const [name, why] of Object.entries(PLUGIN_WARNINGS)) {
+    for (const id of pluginIds(home, name)) {
+      add('warn', `plugin ${name} de Claude Code`, `${id} está instalado: ${why}. Desactivalo con \`claude plugin disable ${id}\``)
+    }
   }
 
   // Mods + settings

@@ -118,7 +118,7 @@ No se queda en "el archivo existe":
 - sondea con un `pi -p` corto (con tiempo máximo) si falta el `/login` (se omite con `--offline`);
 - verifica que las skills de gentle-pi se resuelvan igual que lo hace `puente-gentle` en ejecución (primero la carpeta de Pi, después `npm root -g`);
 - comprueba que cada mod esté en `CLAUDE_CODE_PLUGIN_DIRS`;
-- avisa si el plugin `ponytail` de Claude Code está instalado y activo, con el comando que lo desactiva;
+- avisa si los plugins `ponytail` o `caveman` de Claude Code están instalados y activos, con el comando que los desactiva;
 - combina las tres capas de configuración igual que los mods y avisa si un script de `despacho` no existe;
 - avisa de la deriva: el plugin `mattpocock-skills` por debajo de 1.3.1, skills que están en `~/.claude/skills` y también en el plugin (quedan dos veces en el contexto), `pr`, `implement-spec` o `retro` ausentes de `~/.agents/skills`, el bloque orca-stack viejo que sigue en `~/.claude/CLAUDE.md` (`orca-stack global` lo saca) el bloque de gentle-ai que la sync reescribió completo (o, en modo `full`, las secciones de review que siguen ahí con RDD apagado) y, como falla, un puntero lazy sin su copia. Son avisos, no fallas, y cada uno trae el comando que lo arregla;
 - detecta `engram` (y avisa si es anterior a 3.4.0: con un servidor más viejo, Gentle Shell 4.2.0 deja la memoria apagada), `gentle-ai`, `gh` y Orca, y **solo lee** `orca-data.json` de los perfiles de Orca para decirte si los overrides de los agentes apuntan a los wrappers. Nunca lo escribe.
