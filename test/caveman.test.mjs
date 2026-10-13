@@ -17,11 +17,8 @@ const LEGACY_LEVEL = /`(lite|full|ultra|wenyan(-lite|-full|-ultra)?)`/
 const cavemanPassages = text => text.split(/\n(?=- |\n)/).filter(passage => /caveman/i.test(passage))
 
 describe('caveman 3.2.0', () => {
-  test('rule 1: the install hints are the v3.2.0 README commands, installed from the origin, and the docs name 3.2.0', () => {
-    // README.md at tag v3.2.0: "Other ways in" (Claude Code plugin) and "Small rock: the skill".
-    assert.equal(INSTALL_HINTS.caveman[0], 'claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman')
-    assert.ok(INSTALL_HINTS.caveman[1].endsWith(': npx skills add JuliusBrussee/caveman -g'), INSTALL_HINTS.caveman[1])
-    assert.equal(INSTALL_HINTS.caveman.length, 2)
+  test('rule 1: caveman is installed from the origin, and the docs name 3.2.0 next to the install command', () => {
+    // The command itself is #142 rule 1 (test/caveman-skills-first.test.mjs): skills only, from "Small rock: the skill".
     assert.ok(!existsSync(path.join(ROOT, 'assets', 'skills', 'caveman')), 'caveman is installed from its origin, not vendored')
     for (const doc of [['README.md'], ['docs', 'guia-setup.md']]) {
       const line = read(...doc).split('\n').find(text => text.includes(INSTALL_HINTS.caveman[0]))

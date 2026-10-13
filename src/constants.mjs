@@ -71,8 +71,6 @@ export const INSTALL_HINTS = {
   ],
   // For codex and agy, which read ~/.agents/skills.
   mattpocockAgents: ["npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y"],
-  caveman: [
-    'claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman',
-    'Otras formas (todos los agentes): npx skills add JuliusBrussee/caveman -g',
-  ],
+  // Skills only: the Claude Code plugin's hooks inject caveman into every subagent (ORCA-STACK.md, "Deliberate exclusions").
+  caveman: ['npx skills add JuliusBrussee/caveman -g'],
 }

@@ -24,7 +24,7 @@ Versión de referencia: `orca-stack v0.7.6` (octubre de 2026). Si sale una versi
 | Gentle Shell (Pi) | Un segundo orquestador al que Claude consulta en las decisiones | Pi con su instalador oficial; los paquetes los instala `global` |
 | Engram | Memoria entre sesiones (no planifica ni decide) | Instalador propio de Engram |
 | gentle-ai | Context7, permisos de Claude Code y skills extra | Instalador propio de gentle-ai |
-| Caveman | Comprime la prosa larga para ahorrar tokens | `claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman` (verificado con la 3.2.0) |
+| Caveman | Comprime la prosa larga para ahorrar tokens | Solo las skills: `npx skills add JuliusBrussee/caveman -g` (verificado con la 3.2.0). Si tenés el plugin de Claude Code, desactivalo en las sesiones de Orca: `claude plugin disable caveman@caveman` |
 
 Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con su propio criterio. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
 
