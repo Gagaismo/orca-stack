@@ -1,10 +1,13 @@
 // Versions and names the installer pins. Everything else is discovered from the package contents.
 
 export const PINNED = {
-  pi: '1.1.0',
-  gentlePi: '4.0.0',
+  pi: '1.2.0',
+  gentlePi: '4.2.0',
   claudeBridge: '0.9.2',
 }
+
+// Oldest Pi that gentle-pi PINNED.gentlePi runs on (its peer range): an older Pi makes gentle-shell exit.
+export const PI_MIN_VERSION = '1.2.0'
 
 // Pi packages installed with `pi install npm:<name>@<version>`.
 export const PI_PACKAGES = [

@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
-import { INSTALL_HINTS, PINNED, PI_PACKAGES } from './constants.mjs'
+import { INSTALL_HINTS, PINNED, PI_MIN_VERSION, PI_PACKAGES } from './constants.mjs'
+import { compareVersions } from './drift.mjs'
 import { isFile, run, which } from './util.mjs'
 
 export const piBinary = L => {
@@ -25,6 +26,12 @@ export const piVersion = bin => {
 
   return result.status === 0 && match ? match[0] : null
 }
+
+// Why the installed Pi cannot run the pinned gentle-pi, or null when it can (or its version is unreadable).
+export const piTooOld = version =>
+  version !== null && compareVersions(version, PI_MIN_VERSION) < 0
+    ? `gentle-pi ${PINNED.gentlePi} necesita Pi ${PI_MIN_VERSION} o más nuevo y tenés Pi ${version}`
+    : null
 
 export const installedPackageVersion = (modulesDir, name) => {
   const file = path.join(modulesDir, name, 'package.json')
@@ -100,6 +107,16 @@ export const setupPi = (ctx, { skipPi }) => {
     return
   }
   const version = piVersion(bin)
+  const tooOld = piTooOld(version)
+  if (tooOld) {
+    ctx.fail(`${tooOld}: no instalo gentle-pi. Actualizá Pi con el instalador oficial:`)
+    for (const line of INSTALL_HINTS.pi) {
+      ctx.say(`    ${line}`)
+    }
+    ctx.say('  Después de actualizarlo, volvé a correr este comando.')
+
+    return
+  }
   if (version && version !== PINNED.pi) {
     ctx.say(`  aviso: Pi ${version} instalado; este stack se probó con ${PINNED.pi}.`)
   }

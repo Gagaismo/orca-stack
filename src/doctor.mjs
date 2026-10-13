@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
+import { INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { codexAgentsMd, codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
@@ -12,7 +12,7 @@ import { knownSddLeftovers } from './sdd-cleanup.mjs'
 import { removeAnyBlock } from './marker.mjs'
 import { checkPathCommand } from './path-command.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
-import { installedPackageVersion, piBinary, piModulesDir, piVersion, resolveGentleSkills } from './pi.mjs'
+import { installedPackageVersion, piBinary, piModulesDir, piTooOld, piVersion, resolveGentleSkills } from './pi.mjs'
 import { codexCodemodeStatus, piCodemodeStatus } from './codemode.mjs'
 import { parseSettings } from './settings.mjs'
 import { assetPath, listDirs, wrapperFile } from './templates.mjs'
@@ -280,7 +280,14 @@ export const doctorCommand = async flags => {
     add('fail', 'pi', 'no está instalado (ver `orca-stack global` para el comando oficial)')
   } else {
     const version = piVersion(bin)
-    add(version === PINNED.pi ? 'ok' : 'warn', `pi ${version ?? '(versión ilegible)'}`, version === PINNED.pi ? tilde(bin, home) : `el stack se probó con ${PINNED.pi}`)
+    const tooOld = piTooOld(version)
+    if (tooOld) {
+      // The platform's line of the official install hint, without its label.
+      const install = INSTALL_HINTS.pi[isWindows() ? 1 : 0].replace(/^[^:]+:\s+/, '')
+      add('fail', `pi ${version}`, `${tooOld}: actualizalo con el instalador oficial (${install})`)
+    } else {
+      add(version === PINNED.pi ? 'ok' : 'warn', `pi ${version ?? '(versión ilegible)'}`, version === PINNED.pi ? tilde(bin, home) : `el stack se probó con ${PINNED.pi}`)
+    }
     for (const pkg of PI_PACKAGES) {
       const have = installedPackageVersion(piModulesDir(L), pkg.name)
       if (have === null) {
