@@ -2,23 +2,25 @@ import { existsSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
+import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { codexAgentsMd, codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
-import { driftWarnings } from './drift.mjs'
+import { compareVersions, driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
 import { knownSddLeftovers } from './sdd-cleanup.mjs'
 import { removeAnyBlock } from './marker.mjs'
 import { checkPathCommand } from './path-command.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
-import { installedPackageVersion, piBinary, piModulesDir, piVersion, resolveGentleSkills } from './pi.mjs'
+import { installedPackageVersion, piBinary, piModulesDir, piTooOld, resolveGentleSkills } from './pi.mjs'
 import { codexCodemodeStatus, piCodemodeStatus } from './codemode.mjs'
 import { parseSettings } from './settings.mjs'
 import { assetPath, listDirs, wrapperFile } from './templates.mjs'
-import { PACKAGE_ROOT, homeDir, isWindows, layout, run, samePath, tilde, which } from './util.mjs'
+import { PACKAGE_ROOT, binaryVersion, homeDir, isWindows, layout, run, samePath, tilde, which } from './util.mjs'
 
 const ICON = { ok: '✔', warn: '⚠', fail: '✖' }
+// The command or link of an INSTALL_HINTS line, without its label.
+const hintCommand = line => line.replace(/^[^:]+:\s+/, '')
 const AUTH_ERROR = /\/login|no api key|not logged|unauthori[sz]ed|\b401\b|invalid api key|authentication|credential|no models? available|no provider/i
 
 const tomlString = source => {
@@ -279,8 +281,13 @@ export const doctorCommand = async flags => {
   } else if (!bin) {
     add('fail', 'pi', 'no está instalado (ver `orca-stack global` para el comando oficial)')
   } else {
-    const version = piVersion(bin)
-    add(version === PINNED.pi ? 'ok' : 'warn', `pi ${version ?? '(versión ilegible)'}`, version === PINNED.pi ? tilde(bin, home) : `el stack se probó con ${PINNED.pi}`)
+    const version = binaryVersion(bin)
+    const tooOld = piTooOld(version)
+    if (tooOld) {
+      add('fail', `pi ${version}`, `${tooOld}: actualizalo con el instalador oficial (${hintCommand(INSTALL_HINTS.pi[isWindows() ? 1 : 0])})`)
+    } else {
+      add(version === PINNED.pi ? 'ok' : 'warn', `pi ${version ?? '(versión ilegible)'}`, version === PINNED.pi ? tilde(bin, home) : `el stack se probó con ${PINNED.pi}`)
+    }
     for (const pkg of PI_PACKAGES) {
       const have = installedPackageVersion(piModulesDir(L), pkg.name)
       if (have === null) {
@@ -319,12 +326,18 @@ export const doctorCommand = async flags => {
 
   // External tools
   section('Herramientas externas')
-  for (const [name, hint] of [
-    ['engram', 'memoria persistente'],
-    ['gentle-ai', 'sincroniza los agentes'],
-  ]) {
-    add(which(name) ? 'ok' : 'warn', name, which(name) ? '' : `no se encontró (${hint})`)
+  const engram = which('engram')
+  if (!engram) {
+    add('warn', 'engram', 'no se encontró (memoria persistente)')
+  } else {
+    const version = binaryVersion(engram)
+    if (version !== null && compareVersions(version, ENGRAM_MIN_VERSION) >= 0) {
+      add('ok', `engram ${version}`)
+    } else {
+      add('warn', `engram ${version ?? '(versión ilegible)'}`, `Gentle Shell ${PINNED.gentlePi} deja la memoria apagada con un Engram anterior a ${ENGRAM_MIN_VERSION}: actualizalo y reiniciá el servidor (${hintCommand(INSTALL_HINTS.engram[1])})`)
+    }
   }
+  add(which('gentle-ai') ? 'ok' : 'warn', 'gentle-ai', which('gentle-ai') ? '' : 'no se encontró (sincroniza los agentes)')
   if (which('gh')) {
     const auth = flags.offline ? null : run(which('gh'), ['auth', 'status'], { timeout: 20_000 })
     add(auth === null || auth.status === 0 ? 'ok' : 'warn', 'gh', auth === null ? '' : auth.status === 0 ? 'autenticado' : 'sin sesión: `gh auth login`')
