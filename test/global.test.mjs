@@ -431,7 +431,7 @@ describe('wrappers', () => {
     const run = spawnSync(file, ['--orca-stack-self-test'], { encoding: 'utf8', shell: process.platform === 'win32' })
     assert.equal(run.status, 0, run.stdout + run.stderr)
     assert.match(run.stdout, /ORCA_STACK_MODE=auto/)
-    assert.match(run.stdout, /ORCA_STACK_CAVEMAN_LEVEL=full/)
+    assert.match(run.stdout, /ORCA_STACK_CAVEMAN_LEVEL=caveman/)
     assert.match(run.stdout, /ORCA_STACK_PONYTAIL_LEVEL=full/)
     assert.ok(run.stdout.includes(path.join(home, 'orca', 'stack', 'ORCA-STACK.md')), run.stdout)
   })

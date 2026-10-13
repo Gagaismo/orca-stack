@@ -222,15 +222,16 @@ export const doctorCommand = async flags => {
     }
     const probe = run(file, ['--orca-stack-self-test'], { timeout: 20_000 })
     const policy = /ORCA_STACK_POLICY_PATH=(.+)/.exec(probe.stdout)?.[1]?.trim()
-    const healthy =
-      probe.status === 0 &&
+    const markers =
       /ORCA_STACK_MODE=auto/.test(probe.stdout) &&
-      /ORCA_STACK_CAVEMAN_LEVEL=full/.test(probe.stdout) &&
-      /ORCA_STACK_PONYTAIL_LEVEL=full/.test(probe.stdout) &&
-      policy &&
-      existsSync(policy)
+      /ORCA_STACK_CAVEMAN_LEVEL=caveman/.test(probe.stdout) &&
+      /ORCA_STACK_PONYTAIL_LEVEL=full/.test(probe.stdout)
+    const healthy = probe.status === 0 && markers && policy && existsSync(policy)
     if (healthy) {
       add('ok', `${agent}-orca-stack --orca-stack-self-test`, 'marcadores y política OK')
+    } else if (probe.status === 0 && !markers) {
+      // A wrapper written by an older orca-stack (caveman `full` before 3.2.0, say) runs, but with other markers.
+      add('fail', `${agent}-orca-stack --orca-stack-self-test`, 'marcadores desactualizados: volvé a correr `orca-stack global`')
     } else {
       add('fail', `${agent}-orca-stack --orca-stack-self-test`, probe.error ? probe.error.message : `salida ${probe.status}; ${probe.stderr.trim().split('\n')[0] ?? ''}`)
     }

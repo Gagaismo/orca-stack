@@ -19,6 +19,8 @@ Provider instruction files point here for the durable policy.
 - **Caveman (modular)**: communication compression. Orca Auto applies it when
   the work is token-heavy, but never compresses code, commands, paths, exact
   errors, decisions, risks, uncertainty, tests, or acceptance evidence.
+  Its level is a caveman 3.2.0 mode: `caveman`, `ultracave` or `megacave` (the
+  wrappers set `caveman`).
 - **Engram**: persistent memory only. It is not an authority or a scheduler.
 - **Gentle Shell (Pi)**: another engineer on the team with its own methodology
   (it may use ODD). It implements tickets, reviews with Judgment Day, and is
