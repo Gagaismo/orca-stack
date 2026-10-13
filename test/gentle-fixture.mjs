@@ -160,10 +160,14 @@ export const fakeGentle = (dir, mode, source = 'default') => {
     chmodSync(file, 0o755)
   }
 }
+// The fake bin plus the system dirs the wrappers need (dirname), never the runner's PATH: tests that run `global` with that
+// PATH install and remove their own orca-stack command in its writable directories, and `global` records `command: null`
+// when it sees a command it did not write (#137).
 export const withPath = bin => {
   const key = Object.keys(process.env).find(name => name.toLowerCase() === 'path') ?? 'PATH'
+  const system = process.platform === 'win32' ? [] : ['/usr/bin', '/bin']
 
-  return { [key]: `${bin}${path.delimiter}${process.env[key]}` }
+  return { [key]: [bin, ...system].join(path.delimiter) }
 }
 
 

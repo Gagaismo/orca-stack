@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 
 import { buildBlock } from '../src/marker.mjs'
 import { packageVersion, samePath } from '../src/util.mjs'
-import { sddConfig } from './gentle-fixture.mjs'
+import { sddConfig, withPath } from './gentle-fixture.mjs'
 import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const MODS = ['bandeja-mensajes', 'grilling-ok', 'guardia-despacho', 'modo-autonomo', 'puente-gentle', 'reloj-cache', 'tablero-despacho']
@@ -263,9 +263,13 @@ describe('global', () => {
   })
 
   test('a second run is idempotent: same bytes, no backups, no duplicate plugin dirs', () => {
-    cli(home, ['global', '--skip-pi', '--humano', 'Ana'])
+    // Not the runner's PATH: other test files install and remove their orca-stack command there in parallel (#137).
+    const commandDir = path.join(home, 'path-bin')
+    write(path.join(commandDir, '.probe'), '')
+    const env = withPath(commandDir)
+    cli(home, ['global', '--skip-pi', '--humano', 'Ana'], { env })
     const first = snapshot(home)
-    const second = cli(home, ['global', '--skip-pi', '--humano', 'Ana'])
+    const second = cli(home, ['global', '--skip-pi', '--humano', 'Ana'], { env })
     assert.equal(second.status, 0, second.out)
     assert.deepEqual(snapshot(home), first)
     assert.deepEqual(backups(home), [])

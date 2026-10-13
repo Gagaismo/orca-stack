@@ -84,6 +84,40 @@ describe('global and the lazy gentle-ai block', () => {
     assert.deepEqual(snapshot(home), after)
   })
 
+  // CI run 38429324489: a test in another file ran `global` with the runner's PATH and left its own orca-stack command in a
+  // writable directory of that PATH (setup-node's bin on ubuntu-latest) between the two runs. `shared` stands in for it.
+  const twoRunsWhileAnotherTestInstalls = () => {
+    const key = Object.keys(process.env).find(name => name.toLowerCase() === 'path') ?? 'PATH'
+    const runnerPath = process.env[key]
+    const shared = tempDir('lazy-shared-path')
+    process.env[key] = shared
+    try {
+      write(claudeMd(), fixture('\n'))
+      assert.equal(global().status, 0)
+      const after = snapshot(home)
+      const command = JSON.parse(read(path.join(home, '.orca-stack', 'state.json'))).command
+      write(path.join(shared, 'orca-stack'), '#!/bin/sh\nexec node \'/tmp/another-home/.orca-stack/cli/bin/orca-stack.mjs\' "$@"\n')
+      const second = global()
+      assert.equal(second.status, 0, second.out)
+
+      return { after, command }
+    } finally {
+      process.env[key] = runnerPath
+      cleanup(shared)
+    }
+  }
+
+  test('a second run leaves state.json byte-identical while another test installs its command on the runner PATH', () => {
+    const { after } = twoRunsWhileAnotherTestInstalls()
+    assert.deepEqual(snapshot(home), after)
+  })
+
+  test('state.json "command", the field that changed in CI, stays the command global installed', () => {
+    const { command } = twoRunsWhileAnotherTestInstalls()
+    assert.notEqual(command, null)
+    assert.deepEqual(JSON.parse(read(path.join(home, '.orca-stack', 'state.json'))).command, command)
+  })
+
   test('--dry-run reports the change and writes nothing', () => {
     write(claudeMd(), fixture('\n'))
     const before = snapshot(home)
