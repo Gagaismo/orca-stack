@@ -90,7 +90,9 @@ precedence. This review owns correctness, not minimalism.
 review.
 
 **Rules:** run `ponytail-review` and report only its Lean findings; its other
-findings belong to the correctness review. A `shortcut:` (or older `ponytail:`) comment that names its
+findings belong to the correctness review. When it finds a non-Lean *Must fix*
+(a bug, data loss), pass it to main in one line, never drop it. Output format:
+`## BLOQUEA` / `## SUGERENCIAS`, with the Lean findings and that line. A `shortcut:` (or older `ponytail:`) comment that names its
 limit is a decision, not a finding. Do not flag required
 validation, security, accessibility, error handling, acceptance tests, or ADR
 constraints. Do not apply fixes.

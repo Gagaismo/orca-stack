@@ -62,15 +62,19 @@ conflict.
 - Level: the launch sets `ORCA_STACK_PONYTAIL_LEVEL`. `lite`, `full` or
   `ultra` selects that level; unset, empty or any other value means `full`.
   An unknown value never turns Ponytail off: only the human does, with "stop
-  ponytail" or "normal mode".
+  ponytail" or "normal mode". When the human sets a level mid-session with
+  `/ponytail <level>`, the human's choice wins over `ORCA_STACK_PONYTAIL_LEVEL`.
 - At every level, never cut or question a requirement the spec, ticket or ADRs
   make explicit: `ultra` pushes back only on what nobody required. On top of
   the "Never cut" list, keep the ADR, spec and ticket obligations, the
   performance requirements and the tests the project or ticket requires; the
   one small test above is the floor for logic nobody asked tests for, not a cap.
 - Do not change Orca lifecycle, delegation, ask/reply, worker ownership, review
-  order, GitHub workflow, or stop criteria. An unattended worker never waits
-  for the user to pick: at `lite` it builds what was asked and names the
-  smaller option in its report.
+  order, GitHub workflow, or stop criteria. At any level, an unattended worker
+  never waits for the user: at `lite` it builds what was asked and names the
+  smaller option in its report; at `ultra` it builds what was asked and records
+  its objections in its report or `## Desvíos del ticket`. Example: a worker at
+  `ultra` given a ticket it thinks over-scoped ships the ticket and lists the
+  objection.
 - `ponytail-review` is a separate, read-only pass after the normal correctness/spec
   review. It reports findings and applies no fixes.

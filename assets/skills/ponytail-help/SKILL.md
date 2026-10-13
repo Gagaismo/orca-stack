@@ -68,3 +68,14 @@ If `/plugin` is not recognized, your Claude Code is out of date. Update it (`npm
 ## More
 
 Full docs + examples: https://github.com/DietrichGebert/ponytail
+
+## In Orca
+
+These rules come from the Orca stack and win over the text above when they
+conflict.
+
+- The level comes from `ORCA_STACK_PONYTAIL_LEVEL`, which the Orca launch sets;
+  `/ponytail <level>` still changes it for the session.
+- `PONYTAIL_DEFAULT_MODE`, the ponytail `config.json`, `/ponytail-gain` and the
+  `/plugin` updates above do not apply in Orca: Orca ships these skills itself.
+- Update them with `orca-stack global`.
