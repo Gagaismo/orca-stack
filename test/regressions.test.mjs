@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { INSTALL_HINTS, PINNED } from '../src/constants.mjs'
-import { backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
+import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
 let home
 beforeEach(() => {
@@ -257,6 +257,16 @@ describe('6. Pi 1.2.0, gentle-pi 4.2.0 and Engram 3.4.0 (#115)', () => {
     assert.match(old.find(text => text.includes(' engram 3.3.2')) ?? '', /^⚠ engram 3\.3\.2 - Gentle Shell 4\.2\.0 deja la memoria apagada con un Engram anterior a 3\.4\.0: actualizalo y reiniciá el servidor \(https:\/\/github\.com\/Gentleman-Programming\/engram\/blob\/main\/docs\/INSTALLATION\.md\)$/)
     const current = doctorLines(cli(home, ['doctor', '--offline', '--skip-pi'], { env: fake.env({ FAKE_ENGRAM_VERSION: '3.4.0' }) }).out)
     assert.ok(current.includes('✔ engram 3.4.0'), current.join('\n'))
+  })
+
+  test('rule 7: README and docs/guia-setup.md name Pi 1.2.0, gentle-pi 4.2.0 and the gentle-shell update refusal', () => {
+    for (const doc of ['README.md', path.join('docs', 'guia-setup.md')]) {
+      const text = read(path.join(ROOT, doc))
+      assert.match(text, /Pi `?1\.2\.0/, doc)
+      assert.ok(text.includes('pi install npm:gentle-pi@4.2.0'), doc)
+      assert.match(text, /`gentle-shell update`[^\n]*no puede probar qué paquete global es dueño de Pi/, doc)
+      assert.doesNotMatch(text, /gentle-pi@4\.0\.0|Pi `1\.1\.0`/, doc)
+    }
   })
 
   test('global (preserved): already at the pinned versions it installs nothing and says ya está instalado', () => {
