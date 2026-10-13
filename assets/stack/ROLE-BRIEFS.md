@@ -89,9 +89,8 @@ precedence. This review owns correctness, not minimalism.
 **Mission:** second-pass review for over-engineering only, after correctness/spec
 review.
 
-**Rules:** run `ponytail-review` and report only its Lean findings (delete,
-reuse, stdlib/native, yagni, merge, split); its other groups belong to the
-correctness review. A `shortcut:` (or older `ponytail:`) comment that names its
+**Rules:** run `ponytail-review` and report only its Lean findings; its other
+findings belong to the correctness review. A `shortcut:` (or older `ponytail:`) comment that names its
 limit is a decision, not a finding. Do not flag required
 validation, security, accessibility, error handling, acceptance tests, or ADR
 constraints. Do not apply fixes.
