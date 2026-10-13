@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { ponytailPluginIds } from '../src/doctor.mjs'
+import { pluginIds } from '../src/doctor.mjs'
 import { cleanup, cli, tempDir, write } from './helpers.mjs'
 
 let home
@@ -27,14 +27,14 @@ describe('#139 rule 2: doctor warns when the ponytail plugin is installed for Cl
   })
 
   test('negative: no plugin, another plugin, an unreadable file or a disabled plugin prints no ponytail-plugin row', () => {
-    assert.deepEqual(ponytailPluginIds(home), [])
+    assert.deepEqual(pluginIds(home, 'ponytail'), [])
     installed({ 'caveman@caveman': entry, 'ponytail-like@other': entry })
-    assert.deepEqual(ponytailPluginIds(home), [])
+    assert.deepEqual(pluginIds(home, 'ponytail'), [])
     write(path.join(home, '.claude', 'plugins', 'installed_plugins.json'), '{ broken')
-    assert.deepEqual(ponytailPluginIds(home), [])
+    assert.deepEqual(pluginIds(home, 'ponytail'), [])
     installed({ 'ponytail@ponytail': entry })
     write(path.join(home, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { 'ponytail@ponytail': false } }))
-    assert.deepEqual(ponytailPluginIds(home), [])
+    assert.deepEqual(pluginIds(home, 'ponytail'), [])
     assert.doesNotMatch(doctor().out, /plugin ponytail/)
   })
 })

@@ -118,7 +118,7 @@ No se queda en "el archivo existe":
 - sondea con un `pi -p` corto (con tiempo máximo) si falta el `/login` (se omite con `--offline`);
 - verifica que las skills de gentle-pi se resuelvan igual que lo hace `puente-gentle` en ejecución (primero la carpeta de Pi, después `npm root -g`);
 - comprueba que cada mod esté en `CLAUDE_CODE_PLUGIN_DIRS`;
-- avisa si el plugin `ponytail` de Claude Code está instalado y activo, con el comando que lo desactiva;
+- avisa si los plugins `ponytail` o `caveman` de Claude Code están instalados y activos, con el comando que los desactiva;
 - combina las tres capas de configuración igual que los mods y avisa si un script de `despacho` no existe;
 - avisa de la deriva: el plugin `mattpocock-skills` por debajo de 1.3.1, skills que están en `~/.claude/skills` y también en el plugin (quedan dos veces en el contexto), `pr`, `implement-spec` o `retro` ausentes de `~/.agents/skills`, el bloque orca-stack viejo que sigue en `~/.claude/CLAUDE.md` (`orca-stack global` lo saca) el bloque de gentle-ai que la sync reescribió completo (o, en modo `full`, las secciones de review que siguen ahí con RDD apagado) y, como falla, un puntero lazy sin su copia. Son avisos, no fallas, y cada uno trae el comando que lo arregla;
 - detecta `engram` (y avisa si es anterior a 3.4.0: con un servidor más viejo, Gentle Shell 4.2.0 deja la memoria apagada), `gentle-ai`, `gh` y Orca, y **solo lee** `orca-data.json` de los perfiles de Orca para decirte si los overrides de los agentes apuntan a los wrappers. Nunca lo escribe.
@@ -216,9 +216,10 @@ Al terminar, `global` imprime la lista con tus rutas exactas. Resumen:
 
 - **Binarios de terceros** (Orca, engram, gentle-ai, Pi, `gh`): son de otros proyectos con su propio ciclo de versiones y firmas. Se detectan y se imprime cómo instalarlos.
 - **Las skills de Matt Pocock** (`mattpocock/skills`): es la metodología de ingeniería por defecto del stack (Pi trabaja con la suya) y la mantiene su autor. Se instala desde su origen, con el marketplace del propio Matt (el oficial fija una versión vieja): `claude plugin marketplace add mattpocock/skills` y `claude plugin install mattpocock-skills@mattpocock`, que trae la 1.3.1 con el mismo nombre de plugin, así que `/mattpocock-skills:<skill>` sigue andando. Para agy y codex: `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`. La 1.3 agrega `pr`, `implement-spec` y `retro`, quita `resolving-merge-conflicts` y solo busca `GLOSSARY.md` (antes `CONTEXT.md`).
-- **Caveman** (`JuliusBrussee/caveman`, Apache-2.0): se instala desde su origen, sin fijar versión: `claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman` (el stack se verificó con la 3.2.0).
+- **Caveman** (`JuliusBrussee/caveman`, Apache-2.0): se instala desde su origen, sin fijar versión y solo como skills: `npx skills add JuliusBrussee/caveman -g` (el stack se verificó con la 3.2.0). El comando detecta los agentes que tenés instalados (Claude Code, Codex, Antigravity) y deja las skills en la carpeta de cada uno. En Claude Code ya no arranca sola: la aplica el modo Auto de Orca.
 - **Los hooks de ciclo de vida completos de Ponytail y Caveman**: duplicarían el control que ya tienen Orca y los proveedores (ver `ORCA-STACK.md`, sección "Deliberate exclusions").
 - **El plugin `ponytail` de Claude Code**: si lo tenés instalado, desactivalo en las sesiones de Orca (`claude plugin disable ponytail@ponytail`), porque Orca trae sus propias skills adaptadas y sus hooks duplican el control de Orca.
+- **El plugin `caveman` de Claude Code**: si lo tenés instalado, desactivalo en las sesiones de Orca (`claude plugin disable caveman@caveman`), porque sus hooks inyectan caveman en cada subagente y duplican el control de Orca. Las skills de `npx skills add` alcanzan.
 - **Credenciales y datos locales**: nada de `auth.json`, `models.json`, `~/.claude.json`, bases de engram ni datos de la aplicación de Orca.
 - **Los datos de la aplicación de Orca**: solo se leen en `doctor`, nunca se escriben.
 
