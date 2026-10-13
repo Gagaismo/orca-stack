@@ -251,6 +251,14 @@ describe('6. Pi 1.2.0, gentle-pi 4.2.0 and Engram 3.4.0 (#115)', () => {
     assert.match(readFileSync(fake.log, 'utf8'), /^pi install npm:pi-claude-bridge@0\.9\.2$/m)
   })
 
+  test('rule 4: doctor reports the Engram version and warns, with the update hint, below 3.4.0', () => {
+    const fake = fakeBin()
+    const old = doctorLines(cli(home, ['doctor', '--offline', '--skip-pi'], { env: fake.env({ FAKE_ENGRAM_VERSION: '3.3.2' }) }).out)
+    assert.match(old.find(text => text.includes(' engram 3.3.2')) ?? '', /^⚠ engram 3\.3\.2 - Gentle Shell 4\.2\.0 deja la memoria apagada con un Engram anterior a 3\.4\.0: actualizalo y reiniciá el servidor \(https:\/\/github\.com\/Gentleman-Programming\/engram\/blob\/main\/docs\/INSTALLATION\.md\)$/)
+    const current = doctorLines(cli(home, ['doctor', '--offline', '--skip-pi'], { env: fake.env({ FAKE_ENGRAM_VERSION: '3.4.0' }) }).out)
+    assert.ok(current.includes('✔ engram 3.4.0'), current.join('\n'))
+  })
+
   test('global (preserved): already at the pinned versions it installs nothing and says ya está instalado', () => {
     const fake = fakeBin()
     write(piModules('gentle-pi'), '{"version":"4.2.0"}')

@@ -118,6 +118,14 @@ export const run = (cmd, args = [], { cwd, env, timeout = 120_000, input } = {})
   }
 }
 
+// The x.y.z a binary prints for --version, or null when it fails or prints none.
+export const binaryVersion = bin => {
+  const result = run(bin, ['--version'], { timeout: 30_000 })
+  const match = /\d+\.\d+\.\d+/.exec(result.stdout + result.stderr)
+
+  return result.status === 0 && match ? match[0] : null
+}
+
 export const timestamp = (date = new Date()) => {
   const pad = n => String(n).padStart(2, '0')
 

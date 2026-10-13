@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { INSTALL_HINTS, PINNED, PI_MIN_VERSION, PI_PACKAGES } from './constants.mjs'
 import { compareVersions } from './drift.mjs'
-import { isFile, run, which } from './util.mjs'
+import { binaryVersion, isFile, run, which } from './util.mjs'
 
 export const piBinary = L => {
   const onPath = which('pi')
@@ -18,13 +18,6 @@ export const piBinary = L => {
   }
 
   return null
-}
-
-export const piVersion = bin => {
-  const result = run(bin, ['--version'], { timeout: 30_000 })
-  const match = /\d+\.\d+\.\d+/.exec(result.stdout + result.stderr)
-
-  return result.status === 0 && match ? match[0] : null
 }
 
 // Why the installed Pi cannot run the pinned gentle-pi, or null when it can (or its version is unreadable).
@@ -106,7 +99,7 @@ export const setupPi = (ctx, { skipPi }) => {
 
     return
   }
-  const version = piVersion(bin)
+  const version = binaryVersion(bin)
   const tooOld = piTooOld(version)
   if (tooOld) {
     ctx.fail(`${tooOld}: no instalo gentle-pi. Actualizá Pi con el instalador oficial:`)
