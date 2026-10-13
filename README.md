@@ -223,7 +223,7 @@ Al terminar, `global` imprime la lista con tus rutas exactas. Resumen:
 | Componente | Origen | Licencia |
 | --- | --- | --- |
 | Este repositorio: CLI, wrappers, mods, `ORCA-STACK.md`, `ROLE-BRIEFS.md`, skill `orca-stack-policy` | Propio | MIT (ver `LICENSE`) |
-| Skills `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail). `ponytail` y `ponytail-review` están adaptadas para Orca; las otras tres son copias locales que pueden diferir del último upstream | MIT, © 2026 DietrichGebert. La nota de licencia viaja en `LICENSE` dentro de cada carpeta de skill |
+| Skills `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail), tag `v5.2.0` (commit `2961b52`); el origen exacto y el hash de cada archivo están en `assets/skills/ponytail-upstream.json`. `ponytail` agrega al texto de upstream una sección `## In Orca`; las otras cuatro son copias textuales. `ponytail-gain` no se incluye: es un tablero del benchmark, no una política de implementación ni un review | MIT, © 2026 DietrichGebert. La nota de licencia viaja en `LICENSE` dentro de cada carpeta de skill |
 | `caveman` | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) | Apache-2.0. **No se incluye**: se instala desde su origen |
 | Matt Pocock skills | [mattpocock/skills](https://github.com/mattpocock/skills) (plugin `mattpocock-skills@mattpocock`) | Según su repo. **No se incluye**: se instala desde su origen |
 | Pi | [earendil-works/pi](https://github.com/earendil-works/pi) (`@earendil-works/pi-coding-agent`) | Se instala con el instalador oficial |
