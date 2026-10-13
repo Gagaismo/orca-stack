@@ -13,6 +13,9 @@ Provider instruction files point here for the durable policy.
 - **Ponytail (modular)**: implementation policy only: avoid unnecessary work and
   choose the smallest correct solution after understanding the task and code.
   Orca Auto applies it to implementation turns; it never overrides requirements.
+  Its level is `lite`, `full` or `ultra` (the wrappers set `full`), and a
+  shortcut with a known limit gets a `shortcut: <the limit>, <when to upgrade>`
+  code comment.
 - **Caveman (modular)**: communication compression. Orca Auto applies it when
   the work is token-heavy, but never compresses code, commands, paths, exact
   errors, decisions, risks, uncertainty, tests, or acceptance evidence.
@@ -61,8 +64,10 @@ may reduce the
 implementation footprint inside an approved ticket; it may not remove research,
 domain modeling, explicit spec obligations, ADR decisions, security, validation,
 accessibility, data-loss handling, or required tests. `ponytail-review` is a
-second-pass complexity review after correctness/spec review; it reports only and
-never applies changes. `ponytail-audit` is opt-in and repo-wide.
+second pass after correctness/spec review; it reports only and never applies
+changes. It reviews quality as a whole (bugs, risk, scale, tests, speed, lean);
+the Ponytail reviewer role keeps only its Lean findings. `ponytail-audit` is
+opt-in and repo-wide.
 
 Ticket authoring rules are defined in the project's `AGENTS.md` contract. `main`
 follows that contract when writing tickets; do not copy a second version here.
@@ -139,7 +144,7 @@ switches, or new global settings to the official build.
 ## Deliberate exclusions
 
 Do not install the full Ponytail or Caveman lifecycle-hook stacks. Their
-always-on hooks, subagent injection, MCP proxy, statusline ownership, cavecrew
+always-on hooks, session-start codebase map, subagent injection, MCP proxy, statusline ownership, cavecrew
 workers, and alternate planning loops would duplicate provider/Orca control.
 The wrappers own the small safe bridge: launch-scoped environment markers
 (`ORCA_STACK_MODE`, `ORCA_STACK_CAVEMAN_LEVEL`, `ORCA_STACK_PONYTAIL_LEVEL`,
@@ -147,8 +152,9 @@ The wrappers own the small safe bridge: launch-scoped environment markers
 The installed modular skills remain available explicitly:
 
 - `ponytail` — implementation policy card, no lifecycle hook.
-- `ponytail-review` — complexity-only second pass.
-- `ponytail-audit` / `ponytail-debt` — explicit maintenance tools.
+- `ponytail-review` — read-only quality review, second pass.
+- `ponytail-audit` / `ponytail-debt` — explicit maintenance tools;
+  `ponytail-debt` lists the `shortcut:` comments and older `ponytail:` ones.
 - `caveman` — communication-only mode; Auto is selected in Orca, not by a
   provider hook.
 
