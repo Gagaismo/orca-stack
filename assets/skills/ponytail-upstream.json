@@ -10,7 +10,11 @@
     },
     "ponytail-audit": { "adapted": false, "upstreamSha256": "2b3223a02c386d1263e1b08343cb8eb3a53e444cdafb1d79e26c8ec2a8fcad28" },
     "ponytail-debt": { "adapted": false, "upstreamSha256": "c82bb352bab21e081e71b70430af451b91750760fa776a4a807c8cfa52d4c85f" },
-    "ponytail-help": { "adapted": false, "upstreamSha256": "2927276bc9c10221ce8bcf80adb798db130cd70eb33a95db91ab3a0d105f5109" },
+    "ponytail-help": {
+      "adapted": true,
+      "upstreamSha256": "2927276bc9c10221ce8bcf80adb798db130cd70eb33a95db91ab3a0d105f5109",
+      "upstreamBodySha256": "4dbd9225538db3dcd3959977ab3e2a3289267f5c63abe9a9e14c716e54cb19b5"
+    },
     "ponytail-review": { "adapted": false, "upstreamSha256": "33fe4ebe22a460924e5d4a261e223df22e409cc94ab76182bee9fb91a3ef022e" }
   },
   "notVendored": {

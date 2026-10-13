@@ -68,7 +68,8 @@ domain modeling, explicit spec obligations, ADR decisions, security, validation,
 accessibility, data-loss handling, or required tests. `ponytail-review` is a
 second pass after correctness/spec review; it reports only and never applies
 changes. It reviews quality as a whole (bugs, risk, scale, tests, speed, lean);
-the Ponytail reviewer role keeps only its Lean findings. `ponytail-audit` is
+the Ponytail reviewer role keeps only its Lean findings and passes any
+non-Lean *Must fix* to main in one line. `ponytail-audit` is
 opt-in and repo-wide.
 
 Ticket authoring rules are defined in the project's `AGENTS.md` contract. `main`

@@ -112,6 +112,24 @@ export const codexTrustStatus = (root, file) => {
     : { level: 'warn', detail: codexTrustHint(root) }
 }
 
+// Ids of the upstream ponytail plugin installed for Claude Code (`ponytail@<marketplace>`), minus the ones
+// ~/.claude/settings.json disables. Unreadable files mean none: doctor only warns about what it can see.
+export const ponytailPluginIds = home => {
+  const { claudeDir, settings } = layout(home)
+  const readJson = file => {
+    try {
+      return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''))
+    } catch {
+      return null
+    }
+  }
+  const plugins = readJson(path.join(claudeDir, 'plugins', 'installed_plugins.json'))?.plugins
+  if (!plugins || typeof plugins !== 'object') return []
+  const enabled = readJson(settings)?.enabledPlugins ?? {}
+
+  return Object.keys(plugins).filter(id => id.split('@')[0] === 'ponytail' && enabled[id] !== false)
+}
+
 // The merged agentes.usa, lowercased.
 const agentsUsed = (...layers) => {
   let agents = {}
@@ -232,6 +250,9 @@ export const doctorCommand = async flags => {
     } else {
       add('fail', tilde(root, home), `faltan: ${missing.join(', ')}`)
     }
+  }
+  for (const id of ponytailPluginIds(home)) {
+    add('warn', 'plugin ponytail de Claude Code', `${id} está instalado: sus hooks duplican el control de Orca y su skill \`ponytail\` no trae \`## In Orca\`. Desactivalo con \`claude plugin disable ${id}\``)
   }
 
   // Mods + settings
