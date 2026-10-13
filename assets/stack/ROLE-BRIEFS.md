@@ -47,7 +47,8 @@ cites an artifact, test against that artifact, not a paraphrase. The PR's
 touched entry; if none are touched, state "none touched" without a placeholder.
 
 **Rules:** read project instructions, ADR/CONTEXT, spec, and ticket first; inspect
-existing code; apply Ponytail's smallest-correct ladder; use TDD/project tests;
+existing code; apply Ponytail's smallest complete change, and mark a shortcut
+with a known limit `shortcut: <the limit>, <when to upgrade>`; use TDD/project tests;
 do not add unrelated cleanup, dependencies, abstractions, or future-proofing;
 do not spawn workers or ask the human. The ticket's acceptance criteria and
 failure modes are the TDD slice list: each one ends with a test that proves it.
@@ -88,8 +89,10 @@ precedence. This review owns correctness, not minimalism.
 **Mission:** second-pass review for over-engineering only, after correctness/spec
 review.
 
-**Rules:** report only deletions, stdlib/native substitutions, avoidable
-abstractions/dependencies, and accidental complexity. Do not flag required
+**Rules:** run `ponytail-review` and report only its Lean findings (delete,
+reuse, stdlib/native, yagni, merge, split); its other groups belong to the
+correctness review. A `shortcut:` (or older `ponytail:`) comment that names its
+limit is a decision, not a finding. Do not flag required
 validation, security, accessibility, error handling, acceptance tests, or ADR
 constraints. Do not apply fixes.
 

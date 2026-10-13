@@ -85,4 +85,17 @@ describe('vendored ponytail skills (upstream v5.2.0)', () => {
     assert.match(orcaSection, /unset, empty or any other value means `full`/)
     assert.match(orcaSection, /never turns Ponytail off/)
   })
+
+  test('policy and briefs use the v5 vocabulary', () => {
+    const policy = read(ROOT, 'assets', 'stack', 'ORCA-STACK.md')
+    assert.match(policy, /`lite`, `full` or `ultra`/)
+    assert.match(policy, /`shortcut: <the limit>, <when to upgrade>`/)
+    assert.doesNotMatch(policy, /complexity-only/)
+    const briefs = read(ROOT, 'assets', 'stack', 'ROLE-BRIEFS.md')
+    assert.match(briefs, /smallest complete change/)
+    assert.match(briefs, /`shortcut: <the limit>, <when to upgrade>`/)
+    const reviewer = briefs.split('\n## Ponytail reviewer\n')[1].split('\n## ')[0]
+    assert.match(reviewer, /`ponytail-review`/)
+    assert.match(reviewer, /Lean/)
+  })
 })
