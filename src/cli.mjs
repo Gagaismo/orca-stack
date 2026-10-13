@@ -55,7 +55,8 @@ Instala a nivel usuario:
   5. Nada de metodología en ~/.claude/CLAUDE.md (llega por el proyecto, con \`init\`); saca el bloque
      <!-- orca-stack:begin --> que haya dejado una versión anterior, con respaldo.
      Con el RDD de gentle-ai apagado, saca de ese archivo sus secciones de review (\`gentle-ai sync\` las restaura: volvé a correr \`global\`)
-  6. Pi: gentle-pi y pi-claude-bridge con \`pi install\` + gentle-pi global (omitido con --skip-pi)
+  6. Pi: gentle-pi y pi-claude-bridge con \`pi install\` + gentle-pi global (omitido con --skip-pi). Con un Pi anterior
+     a 1.2.0 no instala gentle-pi y falla: gentle-pi 4.2.0 no arranca con él
   7. ~/.orca-stack/state.json (para \`remove\`) y ~/.orca-stack/config.json (capa personal)
 
 Es idempotente: una segunda corrida no cambia nada ni genera respaldos nuevos.
@@ -70,8 +71,8 @@ agrega .orca-stack.local.json a .gitignore. No pisa archivos de config que ya ex
   doctor: `orca-stack doctor [--offline] [--skip-pi]
 
 Verifica de verdad, sin mirar solo si los archivos existen: corre el autodiagnóstico de cada wrapper, compara
-las versiones de Pi y sus paquetes con las fijadas, sondea el login de Pi, comprueba que cada mod esté en
-CLAUDE_CODE_PLUGIN_DIRS y lee (solo lectura) la configuración de Orca para ver si los agentes apuntan a los wrappers.
+las versiones de Pi y sus paquetes con las fijadas (un Pi anterior a 1.2.0 es una falla), sondea el login de Pi,
+avisa si engram es anterior a 3.4.0, comprueba que cada mod esté en CLAUDE_CODE_PLUGIN_DIRS y lee (solo lectura) la configuración de Orca para ver si los agentes apuntan a los wrappers.
 Sale con código 1 si hay alguna falla (✖). Los avisos (⚠) no cambian el código de salida.
 `,
   sesiones: `orca-stack sesiones [--desde <AAAA-MM-DD>] [--limite <n>]
