@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
+import { ensureCandidateWorktreesExclude } from './candidate-worktrees.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
@@ -618,6 +619,9 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   let worktree = '<worktree>'
   let branch = name
   try {
+    if (agent === 'claude') {
+      ensureCandidateWorktreesExclude({ root, commonDir, io, dryRun, say })
+    }
     const created = act('orca', createArgs)
     if (!dryRun) {
       const json = parseJson(created, 'orca worktree create')

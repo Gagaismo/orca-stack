@@ -32,15 +32,34 @@ Provider instruction files point here for the durable policy.
 
 1. Orca runtime, active Dispatch, and worker contract.
 2. Project instructions, ADRs, CONTEXT, spec, and ticket acceptance criteria.
-3. Role brief supplied by the coordinator (research, implementation, review, etc.).
-4. Specialized skill for the current role.
-5. Ponytail implementation policy.
-6. Caveman communication policy.
-7. Provider defaults.
+3. Main's current gear, which only turns the closed gear-knob list below. It never broadens anything above it.
+4. Role brief supplied by the coordinator (research, implementation, review, etc.).
+5. Specialized skill for the current role.
+6. Ponytail implementation policy.
+7. Caveman communication policy.
+8. Provider defaults.
 
 A lower layer cannot cancel, replace, or broaden a higher layer. If a generic
 minimalism rule conflicts with an explicit requirement, preserve the requirement.
 If a communication rule would hide evidence, use normal prose for that passage.
+
+## Gear knobs
+
+These are the only process settings that a gear may turn. Every knob cites its source by heading. The contract's "Ciclo de `main`" references are checked against the shipped contract by CI. The gentle-ai ODD headings cited for K1-K3 and K5 are external to this repository and are intentionally unchecked; the check covers only citations to the shipped contract and policy.
+
+- **K1 — Exploration depth** changes how deeply main explores before deciding; it does not change the evidence required by the task. Internal heading: CONTRATO.md — Ciclo de `main`; external gentle-ai ODD heading: Evidence budget rule (unchecked).
+- **K2 — Delegation of main's own work** changes how readily main delegates its own work; it does not change Orca's worker ownership or dispatch lifecycle. Internal heading: CONTRATO.md — Ciclo de `main`; external gentle-ai ODD heading: Mandatory Delegation Triggers (unchecked).
+- **K3 — Research and assumption challenge** changes how readily main recommends optional research or challenges a consequential premise; it does not decide product questions for the human. Internal heading: CONTRATO.md — Ciclo de `main`; external gentle-ai ODD heading: Resolve uncertainty (unchecked).
+- **K4 — Gentle Shell consults above a floor** changes extra consults beyond any required floor; it does not remove a required consult. Internal heading: CONTRATO.md — Ciclo de `main`.
+- **K5 — Non-product questions** changes how readily main asks non-product questions; it does not move the human's product decisions to main. Internal heading: CONTRATO.md — Ciclo de `main`; external gentle-ai ODD heading: Ask trigger (unchecked).
+- **K6 — Beyond-request proposals** changes whether main proposes additional work; proposals do not authorize implementation. Internal heading: CONTRATO.md — Ciclo de `main`.
+- **K7 — Worker supervision** changes whether main supervises workers when the human requests it in Proactive; it does not change worker lifecycle ownership. Internal heading: CONTRATO.md — Ciclo de `main`.
+- **K8 — Narration amount** changes how much main narrates; it does not omit evidence, decisions, risks, uncertainty, or test results. Internal heading: CONTRATO.md — Avances.
+- **K9 — Watch cadence** changes how often main checks progress; it does not change the requirement to preserve worker and dispatch ownership. Internal heading: CONTRATO.md — Ciclo de `main`.
+- **K10 — Effort and model** changes the effort or model used for main's own work; it does not change the provider routing configured for workers. Internal heading: ORCA-STACK.md — Provider routing.
+- **K11 — Arena/swarm readiness** changes how readily main considers an arena or swarm; who authorizes it and its cost cap stay fixed. Internal heading: CONTRATO.md — Ciclo de `main`.
+
+Everything outside K1-K11 is a fixed rule. A new or unclear rule becomes a gear knob only if it passes the four-harm test: could the human get something different unknowingly, could it cause an irreversible effect, could it corrupt shared state, or could it produce a false report? A later ticket may add a knob only by passing that test and recording it in its resolution. Caveman, Ponytail, and Engram are orthogonal to gears.
 
 ## Worker contract
 

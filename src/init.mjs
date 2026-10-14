@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { copyToBackup } from './backup.mjs'
+import { CANDIDATE_WORKTREES_EXCLUDE, CANDIDATE_WORKTREES_PROBE, findGitignoreNegation } from './candidate-worktrees.mjs'
 import { LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, MARKER_END, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { removeBlock, upsertBlock } from './marker.mjs'
 import { policyBlock } from './templates.mjs'
@@ -111,6 +112,33 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
     }
     mkdirSync(path.dirname(file), { recursive: true })
     writeFileSync(file, content)
+  }
+
+  const git = which('git')
+  let commonDir = path.join(root, '.git')
+  if (git) {
+    const res = run(git, ['rev-parse', '--git-common-dir'], { cwd: root, timeout: 10_000, env: process.env })
+    if (res.status === 0) commonDir = path.resolve(root, res.stdout.trim())
+  }
+  const exclude = path.join(commonDir, 'info', 'exclude')
+  const excludeText = readTextIfExists(exclude)
+  const hasExclude = (excludeText ?? '').split(/\r?\n/).some(line => line.trim() === CANDIDATE_WORKTREES_EXCLUDE)
+  if (hasExclude) {
+    console.log(`info/exclude: ya ignora ${CANDIDATE_WORKTREES_EXCLUDE}`)
+  } else {
+    console.log(`${prefix}agrego ${CANDIDATE_WORKTREES_EXCLUDE} a info/exclude`)
+    if (!dryRun) {
+      mkdirSync(path.dirname(exclude), { recursive: true })
+      const text = excludeText ?? ''
+      const eol = text.includes('\r\n') ? '\r\n' : '\n'
+      const base = text === '' || text.endsWith('\n') ? text : text + eol
+      writeFileSync(exclude, `${base}${CANDIDATE_WORKTREES_EXCLUDE}${eol}`)
+    }
+  }
+  const negation = findGitignoreNegation(root)
+  const ignored = git ? run(git, ['check-ignore', '-q', CANDIDATE_WORKTREES_PROBE], { cwd: root, timeout: 5_000, env: process.env }).status === 0 : true
+  if (negation || (!dryRun && !ignored)) {
+    console.log(`⚠ git no ignora ${CANDIDATE_WORKTREES_EXCLUDE} (un .gitignore con \`${negation ?? '!.claude/worktrees/'}\` gana sobre info/exclude)`)
   }
 
   console.log(
