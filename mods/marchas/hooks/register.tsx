@@ -18,6 +18,33 @@ const marker = (gear: Gear): string => {
   return `Marcha: ${gear} (${effort})`
 }
 const sessionKey = async ($: EngineInterface): Promise<string> => `marchas:${await $.session.id()}`
+// modo-autonomo's own value: any plugin reads another's `$.state`, only its owner writes it.
+const AUTONOMOUS = { plugin: 'modo-autonomo', key: 'isOn' } as const
+// Ultracode is per process and `$.state` lasts one: unset (after `/clear`) means the mod cannot see it.
+const ULTRACODE = { plugin: 'marchas', key: 'ultracode' } as const
+const LAZY_WARNING = 'Modo aut\u00f3nomo en Lazy: los items que no est\u00e9n especificados van a esperar un cambio de marcha.'
+
+const costWarning = (gear: Gear, ultracode: boolean | undefined): string | undefined => {
+  const proactive = gear === 'proactive'
+  if (!proactive && ultracode !== true) return undefined
+  const costs = [
+    ...(proactive ? ['la exploraci\u00f3n, las consultas y la vigilancia de Proactive'] : []),
+    ...(ultracode === true ? ['el workflow de ultracode para cada tarea sustantiva, sin l\u00edmite de concurrencia'] : []),
+  ]
+  const blind = proactive && ultracode === undefined ? ' No puedo ver si ultracode est\u00e1 activo.' : ''
+  const fixes = [...(ultracode === true ? ['apag\u00e1 ultracode'] : []), ...(proactive ? ['/marcha medium'] : [])]
+
+  return `Modo aut\u00f3nomo, lo que puede costar m\u00e1s sin supervisi\u00f3n: ${costs.join('; ')}.${blind} Para bajarlo: ${fixes.join(' o ')}`
+}
+
+// A transcript notice the model never reads; a toast if the notice is refused.
+const warn = async ($: EngineInterface, text: string | undefined): Promise<void> => {
+  if (text === undefined) return
+  const appended = await $.session.append({ message: { type: 'system', content: [{ type: 'text', text }] } }).catch(() => undefined)
+  if (appended?.uuid === undefined) $.ui.toast(text)
+}
+
+const autonomous = async ($: EngineInterface): Promise<boolean> => (await $.state.get(AUTONOMOUS)).value === true
 const isGear = (value: unknown): value is Gear => GEARS.includes(value as Gear)
 const isEffort = (value: unknown): value is Effort => EFFORTS.includes(value as Effort)
 type GearState = {
@@ -195,6 +222,8 @@ export const register: Register = on => {
     }
     await $.command.register({ name: 'marcha', description: 'Muestra o cambia la marcha de main', argumentHint: '[lazy|medium|proactive]' })
     await pruneOldKeys($)
+    // A new process, a resume included, starts with ultracode off; a hot reload keeps what it saw.
+    if ((await $.state.get(ULTRACODE)).value === undefined) await $.state.set(ULTRACODE, false)
 
     return next(e)
   })
@@ -211,6 +240,7 @@ export const register: Register = on => {
       return { text: 'Marchas disponibles: lazy|medium|proactive' }
     }
     const gear = args as Gear
+    const before = await currentGear($)
     const key = await sessionKey($)
     const previous = gearState(await $.store.get(key))
     await $.store.set(key, {
@@ -221,13 +251,17 @@ export const register: Register = on => {
       effortOverride: false,
       modelChanged: previous?.modelChanged ?? false,
     } satisfies GearState)
+    if (gear === 'proactive' && before !== 'proactive' && await autonomous($)) {
+      await warn($, costWarning(gear, (await $.state.get(ULTRACODE)).value))
+    }
 
     return { text: marker(gear), context: [posture(gear)] }
   })
 
   on('command.run', { command: 'effort' }, async ($, e, next) => {
     const effort = e.args.trim().toLowerCase()
-    if (await enabled($) && e.origin.kind === 'composer' && isEffort(effort)) {
+    const active = await enabled($)
+    if (active && e.origin.kind === 'composer' && isEffort(effort)) {
       const key = await sessionKey($)
       const value = await $.store.get(key)
       await saveEffortState($, value, {
@@ -236,8 +270,34 @@ export const register: Register = on => {
         modelChanged: false,
       })
     }
+    const result = await next(e)
+    if (active && effort === 'ultracode') {
+      const { value: before } = await $.state.get(ULTRACODE)
+      await $.state.set(ULTRACODE, true)
+      if (before !== true && await autonomous($)) await warn($, costWarning(await currentGear($), true))
+    }
+
+    return result
+  })
+
+  // The latest ultracode attachment tells its state; a resume asks the history's again, ending on exit (#153).
+  on('prompt.attachment', { type: ['ultra_effort_enter', 'ultra_effort_exit'] }, async ($, e, next) => {
+    if (await enabled($)) await $.state.set(ULTRACODE, e.type === 'ultra_effort_enter')
 
     return next(e)
+  })
+
+  // modo-autonomo answers /autonomo itself, so the mod watches its write instead of the command.
+  on('state.set', { plugin: 'modo-autonomo', key: 'isOn' }, async ($, e, next) => {
+    const wasOn = await autonomous($)
+    const result = await next(e)
+    const landed = 'value' in result && result.value.isSet
+    if (e.value !== true || wasOn || !landed || !(await enabled($))) return result
+    const gear = await currentGear($)
+    await warn($, gear === 'lazy' ? LAZY_WARNING : undefined)
+    await warn($, costWarning(gear, (await $.state.get(ULTRACODE)).value))
+
+    return result
   })
 
   on('command.run', { command: 'model' }, async ($, e, next) => {

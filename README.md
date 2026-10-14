@@ -69,7 +69,7 @@ Son plugins de Claude Code que se recargan en caliente (`.claude-plugin/plugin.j
 | `bandeja-mensajes` | Captura los bloques ` ```mensaje <destinatario> ` que redacta Claude y deja copiarlos o guardarlos | `mensajes.destinatarios` |
 | `grilling-ok` | Responde con un clic (o con un `ok`) a las preguntas Q1…Qn de una sesión de grilling | — |
 | `modo-autonomo` | Instrucción permanente de trabajo autónomo hasta la meta, con recordatorio anti-parada acotado | — |
-| `marchas` | `/marcha` muestra o cambia la marcha de `main`: Lazy, Medium o Proactive; cada sesión nueva empieza en Medium | — |
+| `marchas` | `/marcha` muestra o cambia la marcha de `main`: Lazy, Medium o Proactive; cada sesión nueva empieza en Medium; avisa en una línea cuando el modo autónomo coincide con Lazy, Proactive o ultracode | — |
 | `reloj-cache` | Muestra cuánto falta para que venza el caché del prompt y ofrece `/compactar-ya` | — |
 
 El mod `marchas` actúa solo en el checkout principal de un repo con `.orca-stack.json` o `.orca-stack.local.json` cuyo contrato incluye la sección `Marchas`. Para mostrar la marcha actual, usá `/marcha`; para cambiarla, `/marcha lazy`, `/marcha medium` o `/marcha proactive`. Para apagarlo, corré `claude plugin disable marchas@inline --scope user`; usá `--scope local` para este repo en esta máquina o `--scope project` para el equipo.
