@@ -82,7 +82,9 @@ test('Rule 7: pending setup does not turn gears off', async ($, on) => {
 })
 
 test('Rule 8: a resumed session loads its gear by session id', async ($, on) => {
-  setup(on, { store: { 'marchas:session-1': 'proactive' } })
+  setup(on)
+  await start($)
+  await $.command.run(RUN('proactive'))
   await start($)
   expect((await $.command.run(RUN(''))).text).toBe('Marcha: proactive')
 })
