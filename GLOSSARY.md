@@ -44,5 +44,17 @@ _Avoid_: contract rule, safety rule, hard rule
 **Arena**:
 Several independent attempts at the same task, judged against one rubric; the best attempt becomes the base and takes the best parts of the others.
 
+**Candidate**:
+One of the independent attempts in an arena. Spanish: *candidato*.
+_Avoid_: variant, attempt
+
+**Judge**:
+The one who picks the base among an arena's candidates against its rubric; picking a candidate is not a review. Spanish: *juez*.
+_Avoid_: reviewer, cross-judge
+
+**Graft**:
+Bringing into the base the parts worth keeping from the candidates that lost. Spanish: *injerto*.
+_Avoid_: merge, combine
+
 **Swarm**:
-Several parallel workers, each on its own slice of a task or racing on the same one, whose results come back as one aggregated report.
+Several parallel subagents doing read work, each on its own slice of a task or racing on the same one, whose results come back as one aggregated report. A race that writes is an arena.
