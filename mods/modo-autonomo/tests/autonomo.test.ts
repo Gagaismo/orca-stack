@@ -74,6 +74,32 @@ test('/autonomo delivers the active instructions to the next turn', async ($, on
   expect(out.context?.[0]).toContain('Modo aut\u00f3nomo activo. Meta: prueba.')
 })
 
+test('/autonomo tells main to record user decisions and keep going', async ($, on) => {
+  setup(on)
+
+  const out = await $.command.run(run('prueba'))
+
+  expect(out.context?.[0]).toContain(
+    'Ante decisiones que son genuinamente del usuario (credenciales, gastar plata, mensajes a clientes o acciones destructivas), no las tomes: registralas y seguí con el resto.',
+  )
+  expect(out.context?.[0]).not.toContain('Pará solo')
+})
+
+test('/autonomo asks for a closing record of unwatched work, linked and without token counts', async ($, on) => {
+  setup(on)
+
+  const out = await $.command.run(run('prueba'))
+
+  const text = out.context?.[0]
+  expect(text).toContain('cada fan-out que corriste (técnica, artefacto, N, resultado y qué caso fijó N)')
+  expect(text).toContain('cada workflow de ultracode')
+  expect(text).toContain('cada propuesta registrada pero no ejecutada')
+  expect(text).toContain(
+    'Cada entrada lleva el enlace a donde se publicó (`## Arena`, `## Swarm` o la propuesta en su artefacto).',
+  )
+  expect(text).toContain('El resumen no lleva conteos de tokens.')
+})
+
 test('a compacted session receives the current autonomous instructions', async ($, on) => {
   setup(on, { sessionStartContext: ['existing context'] })
   await $.command.run(run('prueba'))
@@ -141,6 +167,18 @@ test('the done token turns the mode off and toasts', async ($, on) => {
   expect(w.toasts).toEqual(['Modo autónomo: meta alcanzada'])
   expect(w.statuses.at(-1)).toBeUndefined()
   expect((await $.prompt.compose(COMPOSE)).sections.map(s => s.id)).toEqual(['intro'])
+})
+
+test('a stop that leaves items waiting on a gear change goes through without a nudge', async ($, on) => {
+  const w = setup(on)
+  await $.command.run(run(''))
+
+  const out = await $.classic.Stop(stop('Solo quedan items en espera.\nEsperando marcha: #41'))
+
+  expect(out.block).toBeUndefined()
+  expect(w.toasts).toEqual([])
+  expect(w.state.get('modo-autonomo/isOn')?.value).toBe(true)
+  expect(w.statuses.at(-1)).toBe('AUTÓNOMO → producción')
 })
 
 test('no nudge while off or while a background task will wake the session', async ($, on) => {
