@@ -22,7 +22,8 @@ const PROJECT = {
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SHIPPED_STACK_FILES = ['CONTRATO.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']
 const packageOnlyPathRegex = (packageRoot = PACKAGE_ROOT) => {
-  const allowedDirectories = new Set(['docs', '.github', '.git'])
+  // .claude/ is the project's Claude Code directory (for example .claude/worktrees/), never package code.
+  const allowedDirectories = new Set(['docs', '.github', '.git', '.claude'])
   const packageOnlyDirectories = readdirSync(packageRoot, { withFileTypes: true })
     .filter(entry => entry.isDirectory() && !allowedDirectories.has(entry.name))
     .map(entry => entry.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
@@ -46,6 +47,8 @@ describe('shipped stack file paths', () => {
       write(path.join(fixture, 'future-module', 'index.mjs'), '')
       assert.match('new shipped file cites future-module/index.mjs', packageOnlyPathRegex(fixture))
       assert.doesNotMatch('docs/adr/decision.md is a project path', packageOnlyPathRegex(fixture))
+      write(path.join(fixture, '.claude', 'worktrees', 'agent-a1b2', 'index.mjs'), '')
+      assert.doesNotMatch('git ignores .claude/worktrees/ in the project', packageOnlyPathRegex(fixture))
     } finally {
       cleanup(fixture)
     }
