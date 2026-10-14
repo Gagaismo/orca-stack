@@ -9,7 +9,7 @@ import { packageVersion, samePath } from '../src/util.mjs'
 import { sddConfig, withPath } from './gentle-fixture.mjs'
 import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
-const MODS = ['bandeja-mensajes', 'grilling-ok', 'guardia-despacho', 'modo-autonomo', 'puente-gentle', 'reloj-cache', 'tablero-despacho']
+const MODS = ['bandeja-mensajes', 'grilling-ok', 'guardia-despacho', 'marchas', 'modo-autonomo', 'puente-gentle', 'reloj-cache', 'tablero-despacho']
 
 let home
 beforeEach(() => {
