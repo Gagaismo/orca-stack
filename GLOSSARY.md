@@ -39,6 +39,10 @@ _Avoid_: process rule, soft rule
 Any rule main follows that is not a gear knob; it holds the same in every gear. Spanish: *regla fija*.
 _Avoid_: contract rule, safety rule, hard rule
 
+**Autonomous mode**:
+The state the human puts a session in so main works toward a goal they set without them: main does not wait for the human, records what needs them and carries on with the rest. It is independent of the gear. Spanish: *modo autónomo*.
+_Avoid_: autopilot, unattended gear
+
 ### Fan-out techniques
 
 **Arena**:
