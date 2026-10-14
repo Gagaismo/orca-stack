@@ -27,6 +27,14 @@ The gear that goes beyond the request and collaborates actively with workers.
 A change from one gear to another during a session.
 _Avoid_: swap, profile switch
 
+**Gear knob**:
+A process setting that a gear may turn, such as how deep main explores or how much it narrates. The knobs are a closed list; a gear names only knobs on it. Spanish: *perilla de marcha*.
+_Avoid_: process rule, soft rule
+
+**Fixed rule**:
+Any rule main follows that is not a gear knob; it holds the same in every gear. Spanish: *regla fija*.
+_Avoid_: contract rule, safety rule, hard rule
+
 ### Fan-out techniques
 
 **Arena**:
