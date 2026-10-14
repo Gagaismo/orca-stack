@@ -189,7 +189,7 @@ describe('the repository itself', () => {
   })
 
   test('vendored pstack skills keep the upstream license notice', () => {
-    for (const name of ['principle-make-operations-idempotent', 'principle-attack-the-premise', 'principle-explain-the-number']) {
+    for (const name of ['principle-make-operations-idempotent', 'principle-attack-the-premise', 'principle-explain-the-number', 'arena', 'swarm']) {
       const license = readFileSync(path.join(ROOT, 'assets', 'skills', name, 'LICENSE'), 'utf8')
       assert.match(license, /Copyright \(c\) 2026 Lauren Tan/)
     }

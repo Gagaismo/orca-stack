@@ -14,6 +14,16 @@
     "principle-explain-the-number": {
       "adapted": false,
       "upstreamSha256": "cd5a25f9e7cf023627ccb470dc5faa97542f29b4319496a32b839a8e1e988047"
+    },
+    "arena": {
+      "adapted": true,
+      "upstreamSha256": "cdc931b0f0cb3bda818d117a173aa62b84d58882222847e85c3ea6eb22a0e218",
+      "shippedSha256": "253adb5506c358760bf46bdb8424cbb92a72f09a1a8fc3764a3d2f8a2a6cc6d3"
+    },
+    "swarm": {
+      "adapted": true,
+      "upstreamSha256": "c8fe1b28282e7a051a4041a146a11f076e0fd95252bb010106a58209805303d5",
+      "shippedSha256": "d4966fc9b042837c8fb3b6c9c18962d2fb9d4e58ffde8d2f561e32da46992dcb"
     }
   }
 }
