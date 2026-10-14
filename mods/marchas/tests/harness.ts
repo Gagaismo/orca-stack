@@ -12,9 +12,35 @@ export const harness = (
   const registered: string[] = []
   const reads: string[] = []
   const existsCalls: string[] = []
+  // `$.state` lasts one process (#153): `emptyState` empties it, as a resume in a new process or `/clear` does.
+  const state = new Map<string, { value: unknown; version: number }>()
+  const notices: string[] = []
+  const toasts: string[] = []
   const git = options.git ?? MAIN_GIT
   const contract = options.contract ?? AGENTS
   let sessionId = options.sessionId ?? 'session-1'
+  on('state.get', (_$, e) => ({
+    value: state.get(`${e.plugin}/${e.key}`) ?? { value: undefined, version: 0 },
+  }))
+  on('state.set', (_$, e) => {
+    const version = (state.get(`${e.plugin}/${e.key}`)?.version ?? 0) + 1
+    state.set(`${e.plugin}/${e.key}`, { value: e.value, version })
+
+    return { value: { isSet: true as const, version } }
+  })
+  // The kit keeps the row beneath this hook, which only records the notices the mod appends.
+  on('session.append', async (_$, e, next) => {
+    notices.push(e.message.content.map(block => ('text' in block ? block.text : '')).join(''))
+
+    return next(e)
+  })
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+
+    return { value: undefined }
+  })
+  on('ui.status', () => ({ value: undefined }))
+  on('prompt.attachment', (_$, e) => ({ text: e.text }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('classic.SessionStart', () => ({ additionalContext: [] }))
   on('session.compact', () => ({ messages: [{ role: 'user' as const, text: 'resumen', toolUses: [] }] }))
@@ -48,5 +74,13 @@ export const harness = (
   })
   on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Text', children: ['engine'] }))
 
-  return { registered, reads, existsCalls, setSessionId: (next: string) => { sessionId = next } }
+  return {
+    registered,
+    reads,
+    existsCalls,
+    notices,
+    toasts,
+    setSessionId: (next: string) => { sessionId = next },
+    emptyState: () => { state.clear() },
+  }
 }
