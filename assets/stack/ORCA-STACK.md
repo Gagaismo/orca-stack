@@ -57,7 +57,7 @@ These are the only process settings that a gear may turn. Every knob cites its s
 - **K8 — Narration amount** changes how much main narrates; it does not omit evidence, decisions, risks, uncertainty, or test results. Internal heading: CONTRATO.md — Avances.
 - **K9 — Watch cadence** changes how often main checks progress; it does not change the requirement to preserve worker and dispatch ownership. Internal heading: CONTRATO.md — Ciclo de `main`.
 - **K10 — Effort and model** changes the effort or model used for main's own work; it does not change the provider routing configured for workers. Internal heading: ORCA-STACK.md — Provider routing.
-- **K11 — Arena/swarm readiness** changes how readily main considers an arena or swarm; who authorizes it and its cost cap stay fixed. Internal heading: CONTRATO.md — Ciclo de `main`.
+- **K11 — Arena/swarm readiness** changes how readily main considers an arena or swarm; who authorizes it and its cost cap stay fixed. Internal heading: CONTRATO.md — Arena y swarm.
 
 Everything outside K1-K11 is a fixed rule. A new or unclear rule becomes a gear knob only if it passes the four-harm test: could the human get something different unknowingly, could it cause an irreversible effect, could it corrupt shared state, or could it produce a false report? A later ticket may add a knob only by passing that test and recording it in its resolution. Caveman, Ponytail, and Engram are orthogonal to gears.
 
