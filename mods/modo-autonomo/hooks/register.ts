@@ -7,6 +7,7 @@ const nudges = { plugin: 'modo-autonomo', key: 'nudges' } as const
 export const DEFAULT_GOAL = 'producción'
 export const DONE_TOKEN = '[AUTONOMO-LISTO]'
 export const MAX_NUDGES = 3
+const OFF_NOTICE = 'Modo aut\u00f3nomo apagado; las instrucciones aut\u00f3nomas anteriores ya no aplican.'
 
 export const instructions = (target: string): string =>
   [
@@ -49,9 +50,15 @@ export const register: Register = on => {
   on('command.run', { command: 'autonomo' }, async ($, e) => {
     const args = e.args.trim()
     if (args.toLowerCase() === 'off') {
+      const { value: active = false } = await $.state.get(isOn)
       await turnOff($)
 
-      return { text: 'Modo autónomo apagado.' }
+      return active
+        ? {
+            text: 'Modo autónomo apagado.',
+            context: [OFF_NOTICE],
+          }
+        : { text: 'Modo autónomo apagado.' }
     }
     const target = args === '' ? DEFAULT_GOAL : args
     await $.state.set(isOn, true)
@@ -59,7 +66,27 @@ export const register: Register = on => {
     await $.state.set(nudges, 0)
     await show($)
 
-    return { text: `Modo autónomo activado → ${target}. Para apagarlo: /autonomo off.` }
+    return {
+      text: `Modo autónomo activado → ${target}. Para apagarlo: /autonomo off.`,
+      context: [instructions(target)],
+    }
+  })
+
+  on('classic.SessionStart', async ($, e, next) => {
+    const result = await next(e)
+    if (e.source !== 'compact') {
+      return result
+    }
+    const { value: active = false } = await $.state.get(isOn)
+    if (!active) {
+      return result
+    }
+    const { value: target = DEFAULT_GOAL } = await $.state.get(goal)
+
+    return {
+      ...result,
+      additionalContext: [...(result.additionalContext ?? []), instructions(target)],
+    }
   })
 
   on('prompt.compose', async ($, e, next) => {
@@ -95,7 +122,12 @@ export const register: Register = on => {
       await turnOff($)
       $.ui.toast('Modo autónomo: meta alcanzada')
 
-      return next(e)
+      const result = await next(e)
+
+      return {
+        ...result,
+        additionalContext: [...(result.additionalContext ?? []), OFF_NOTICE],
+      }
     }
     // Paused on a monitor or a cron that will wake the session: that is not a stop to fight.
     if ((e.background_tasks?.length ?? 0) > 0 || (e.session_crons?.length ?? 0) > 0) {
