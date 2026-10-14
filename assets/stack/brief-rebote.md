@@ -1,6 +1,6 @@
 # PR bounce brief
 
-You are relaunching the author of PR #{{PR}} in its existing worktree at commit {{SHA}}. Read only the findings and failed checks below, fix their causes, and do not broaden the change.
+You are relaunching the author of PR #{{PR}} in its existing worktree at commit {{SHA}}. Read only the findings and failed checks below, fix their causes, and do not broaden the change. If you are blocked, ask with a `Consulta:` comment on PR #{{PR}} (gh pr comment {{PR}} --body-file <file>), then continue with whatever is not blocked.
 
 ## Review findings
 
@@ -18,6 +18,7 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 - Do not delete, skip or weaken a test to make CI pass.
 - Do not edit `.github/workflows/` unless the ticket asks for it.
 - If a failure depends on the environment, make the test hermetic.
+- If you are blocked, ask with a `Consulta:` comment on PR #{{PR}}.
 - Run the configured verification:
 
 ```text

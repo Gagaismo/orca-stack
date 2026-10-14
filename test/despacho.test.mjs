@@ -1086,5 +1086,41 @@ describe('rebote', () => {
       assert.ok(env.written.some(([file]) => file.endsWith('-comment.md')))
     })
   })
+
+  describe('issue #165: worker questions in briefs', () => {
+    test('Rule 5: The brief despachar renders for every implementing agent carries the Consulta: line and the re-read line, and the bounce brief names the PR as the place to ask', () => {
+      for (const agent of ['claude', 'codex', 'agy', 'pi']) {
+        const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '165', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+        assert.ok(brief.includes(`Consulta: ${agent}`), `${agent} brief must carry Consulta: ${agent}`)
+        assert.ok(brief.includes('Before opening the PR, re-read the issue comments and handle any `Respuesta de main:` / `Respuesta del humano:`.'), `${agent} brief must carry the re-read line`)
+      }
+      const bounceBrief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-rebote.md'), 'utf8')
+      assert.match(bounceBrief, /ask.*`Consulta:`.*PR/i, 'bounce brief must name the PR as the place to ask with Consulta:')
+    })
+
+    test('Rule 6: The review brief does not change', () => {
+      const reviewBrief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-revision.md'), 'utf8')
+      assert.ok(!reviewBrief.includes('Consulta:'), 'review brief must not mention Consulta:')
+      assert.ok(!reviewBrief.includes('Respuesta de main:'), 'review brief must not mention Respuesta de main:')
+      assert.ok(!reviewBrief.includes('Respuesta del humano:'), 'review brief must not mention Respuesta del humano:')
+    })
+
+    test("Rule 8: Brief rendering and despachar's refusals behave as before for every agent", async () => {
+      for (const agent of ['claude', 'codex', 'agy', 'pi']) {
+        const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '165', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+        assert.ok(brief.startsWith('# Ticket brief: issue #165 (orca-stack)'))
+        assert.ok(brief.includes('## Setup'))
+        assert.ok(brief.includes('## Verification'))
+        assert.ok(brief.includes('## Pull request'))
+        assert.ok(brief.includes('## Rules'))
+        assert.ok(brief.includes('## Remote authorization'))
+        assert.ok(brief.includes('## Method: gentle-ai ODD'))
+      }
+      await assert.rejects(
+        () => dispatch('ticket', { n: '165', agent: 'unknown' }),
+        /Agente desconocido: unknown/,
+      )
+    })
+  })
 })
 
