@@ -79,7 +79,7 @@ describe('vendored pstack principles (upstream v0.15.24)', () => {
     const cycle = contract.split('### Ciclo de `main`')[1].split('\n### Verificación')[0]
     const step8 = cycle.split('\n').find(line => line.startsWith('8. '))
     assert.ok(step8, 'step 8 not found in Ciclo de main')
-    assert.match(step8, /Before deciding what still stands after the second review or CI round, or passing it to the human:\s*read `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
+    assert.match(step8, /Antes de decidir qué sigue en pie después de la segunda ronda de review o de CI, o de pasárselo al humano:\s*leé `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
     // 5. explain-the-number in role briefs, Research worker
     const researchWorker = roleBriefs.split('## Research worker')[1].split('## ')[0]
     assert.match(researchWorker, /The answer is a measured number:\s*read `~\/\.claude\/skills\/principle-explain-the-number\/SKILL\.md`\./)
@@ -87,7 +87,7 @@ describe('vendored pstack principles (upstream v0.15.24)', () => {
     const evidenciaSection = ticketBrief.split('## Evidencia')[1].split('## Merge Danger')[0]
     assert.match(evidenciaSection, /A row's evidence is a measured number \(time, size, throughput, cost\):\s*read `~\/\.claude\/skills\/principle-explain-the-number\/SKILL\.md`\./)
     // 7. explain-the-number in CONTRATO.md (main)
-    assert.match(cycle, /Before acting on a measured number from research, an Evidencia table or a retro:\s*read `~\/\.claude\/skills\/principle-explain-the-number\/SKILL\.md`\./)
+    assert.match(cycle, /Antes de actuar sobre un número medido que viene de una investigación, de una tabla de Evidencia o de una retro:\s*leé `~\/\.claude\/skills\/principle-explain-the-number\/SKILL\.md`\./)
   })
 
   test('rule 6: the review brief has no principle line', () => {
