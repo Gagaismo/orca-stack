@@ -21,7 +21,7 @@ The gear for work that is already specified: main carries it out (dispatching, w
 The default gear: main works as the work contract and ODD say, at the baseline effort.
 
 **Proactive gear**:
-The gear that goes beyond the request and collaborates actively with workers.
+The gear that goes beyond the request and collaborates with running workers: it answers their questions and tells them what they cannot see.
 
 **Gear shift**:
 A change from one gear to another during a session.
