@@ -7,15 +7,19 @@ export const WITHOUT_MARCHAS = '<!-- orca-stack:begin -->\n### Metodo\nreglas\n<
 
 export const harness = (
   on: On,
-  options: { git?: string; config?: boolean; contract?: string } = {},
+  options: { git?: string; config?: boolean; contract?: string; sessionId?: string } = {},
 ) => {
   const registered: string[] = []
   const reads: string[] = []
   const existsCalls: string[] = []
   const git = options.git ?? MAIN_GIT
   const contract = options.contract ?? AGENTS
+  let sessionId = options.sessionId ?? 'session-1'
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
-  on('session.id', () => ({ value: 'session-1' }))
+  on('classic.SessionStart', () => ({ additionalContext: [] }))
+  on('session.compact', () => ({ messages: [{ role: 'user' as const, text: 'resumen', toolUses: [] }] }))
+  on('session.id', () => ({ value: sessionId }))
+  on('clock.now', () => ({ value: 1000000000000 }))
   on('command.register', (_$, e) => {
     registered.push(e.name)
 
@@ -44,5 +48,5 @@ export const harness = (
   })
   on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Text', children: ['engine'] }))
 
-  return { registered, reads, existsCalls }
+  return { registered, reads, existsCalls, setSessionId: (next: string) => { sessionId = next } }
 }
