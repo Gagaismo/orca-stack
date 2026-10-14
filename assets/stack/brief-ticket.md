@@ -59,6 +59,7 @@ If you want to change GLOSSARY.md or docs/adr, do not edit them: propose it in t
 - Smallest correct change: no unrelated cleanup, no new dependencies, no speculative abstractions.
 - If the diff will pass 700 lines, stop and say so on the issue before going on.
 - Do not review PRs, do not merge, do not spawn other workers.
+- Fan-out: {{FANOUT_INSTRUCTIONS}}
 - Finish with a summary: what you did, what you found, tests run, remaining risk.
 - The ticket touches a command, lifecycle step or loop that can run again after a crash, retry or rerun: read `~/.claude/skills/principle-make-operations-idempotent/SKILL.md`.
 - Two fixes sharing one premise have failed the same check; apply it before a third: read `~/.claude/skills/principle-attack-the-premise/SKILL.md`.

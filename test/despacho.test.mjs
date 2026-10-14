@@ -360,6 +360,42 @@ describe('despachar: failures along the way', () => {
 })
 
 describe('briefs', () => {
+  const fanoutNote = 'arena, N=3, r\u00FAbrica \u2026, Agent tool only'
+
+  test('Rule 1: a claude ticket brief without an authorization note forbids fan-out', () => {
+    const brief = renderBrief('ticket', { AGENT: 'claude' })
+    assert.match(brief, /No arena or swarm is authorized/i)
+    assert.match(brief, /Do not spawn subagents or use Workflow/i)
+    const policy = readFileSync(new URL('../assets/stack/ORCA-STACK.md', import.meta.url), 'utf8')
+    assert.match(policy, /A Claude worker may run an arena or swarm only when its dispatch or bounce note[\s\S]*authorizes that fan-out for the ticket; read-only swarms require the note too/i)
+  })
+
+  test('Rule 2: an approved claude note carries the exact one-round limit and effort', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'claude', nota: fanoutNote }, env)
+    const brief = env.written[0][1]
+    assert.match(brief, /the approved N, one round, no retry/)
+    assert.match(brief, /Agent tool only/)
+    assert.match(brief, /Candidates run at your effort unless the approved note specifies otherwise/)
+  })
+
+  test('Rule 3: non-claude ticket briefs reject arena and swarm even with a note', () => {
+    for (const agent of ['codex', 'codex-cc', 'agy', 'pi']) {
+      const brief = renderBrief('ticket', { AGENT: agent }, fanoutNote)
+      assert.match(brief, new RegExp(`Arena and swarm are not supported for ${agent}, even when the note includes authorization`))
+    }
+  })
+
+  test('Rule 4: main reports note/result N mismatch without blocking merge', () => {
+    const contract = readFileSync(new URL('../assets/stack/CONTRATO.md', import.meta.url), 'utf8')
+    assert.match(contract, /N=4[\s\S]*nota aprob\u00F3 N=3[\s\S]*resumen de merge reporta el mismatch[\s\S]*el merge sigue/i)
+  })
+
+  test('Rule 6: main only writes a fan-out note after human OK, including autonomous and ultracode', () => {
+    const contract = readFileSync(new URL('../assets/stack/CONTRATO.md', import.meta.url), 'utf8')
+    assert.match(contract, /Escribe esa nota solo con el OK expl\u00EDcito del humano[\s\S]*modo aut\u00F3nomo[\s\S]*ultracode/i)
+  })
+
   test('ticket brief defines RED/PRESERVE slices and evidence rows for rules and touched entries', async () => {
     const env = fakeIo({
       'gh issue view': json({
@@ -460,6 +496,16 @@ describe('briefs', () => {
     await run('ticket', { n: '7', agent: 'agy' }, env)
     const brief = env.written[0][1]
     assert.match(brief, /If no existing public entry is touched, state "none touched"; do not add a placeholder row/i)
+  })
+
+  test('Rule 7: despachar still writes the usual brief and keeps its refusal behavior', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'claude' }, env)
+    const brief = env.written[0][1]
+    assert.match(brief, /Read the issue and its comments first: gh issue view 7 --comments/)
+    assert.match(brief, /No arena or swarm is authorized/)
+    const refused = fakeIo({}, { config: { ...PROJECT, setup: undefined } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, refused), /setup .* pendiente/)
   })
 
   test('dispatching a legacy ticket with only Modos de falla preserves acceptance criteria as TDD slices', async () => {
@@ -872,6 +918,26 @@ describe('rebote', () => {
     stale.io.modifiedAt = () => 99
     await assert.rejects(reboteCommand({}, '12', stale.io), /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
     assert.ok(!stale.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+  })
+
+  test('Rule 5: a bounce fan-out note requires a new human OK', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: claude' }))
+    await reboteCommand({ nota: 'arena, N=3, r\u00FAbrica \u2026, Agent tool only' }, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.match(brief, /new human OK[\s\S]*previous dispatch approval does not carry over/i)
+    assert.match(brief, /arena, N=3, r\u00FAbrica \u2026, Agent tool only/)
+    assert.match(brief, /the approved N, one round, no retry/)
+  })
+
+  test('Rule 7: rebote keeps its ordinary brief and refusal behavior without a new note', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: claude' }))
+    await reboteCommand({}, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.match(brief, /## Review findings/)
+    assert.match(brief, /## Failed checks/)
+    assert.match(brief, /No arena or swarm is authorized/)
+    const refused = bounceEnv(pr({ reviews: [] }))
+    await assert.rejects(reboteCommand({}, '12', refused.io), /no tiene un review bloqueante vigente/)
   })
 
   test('Rule 11: launch failure does not post a Rebote marker', async () => {
