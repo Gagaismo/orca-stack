@@ -162,6 +162,23 @@ test('Rule 12: the gate reads no config keys', async ($, on) => {
   expect(AGENTS).toContain('Marchas')
 })
 
+test("Rule 7: Proactive's posture carries the collaboration sentence and no doorbell clause", async ($, on) => {
+  setup(on)
+  await start($)
+  const out = await $.command.run(RUN('proactive'))
+  const text = out.context?.[0] ?? ''
+  expect(text).toContain('Colabor\u00e1 con los workers de implementaci\u00f3n hasta que abran su PR')
+  expect(text).toContain('vigil\u00e1 sus issues y PRs en busca de preguntas')
+  expect(text).toContain('respond\u00e9 las preguntas de ejecuci\u00f3n donde las hayan hecho')
+  expect(text).toContain('llev\u00e1 las de producto e interpretaci\u00f3n al humano y transmit\u00ed la respuesta del mismo modo')
+  expect(text).toContain('avisales lo que cambiar\u00eda su trabajo y no pueden ver')
+  expect(text).toContain('Nunca los hagas esperar, nunca corrijas su c\u00f3digo, y dej\u00e1 en paz a los revisores')
+  expect(text).not.toContain('timbre')
+  expect(text).not.toContain('doorbell')
+  expect(text).not.toContain('terminal')
+  expect(text).not.toContain('orca-stack avisar')
+})
+
 test('Rule 1: clear starts on Medium and redraws the band after a Proactive shift', async ($, on) => {
   const h = setup(on)
   await start($)

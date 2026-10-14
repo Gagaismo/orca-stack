@@ -1,3 +1,4 @@
+import { consultasCommand } from './consultas.mjs'
 import { briefRevisionCommand, despacharCommand, reboteCommand, revisarCommand } from './despacho.mjs'
 import { doctorCommand } from './doctor.mjs'
 import { globalCommand } from './global.mjs'
@@ -22,9 +23,10 @@ Comandos:
   revisar   Despacha el review de un PR a un agente que no sea su autor.
   brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
+  consultas Filtra y avisa comentarios Consulta: nuevos en issues y PRs en curso.
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision) Muestra cada acci\u00F3n sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas) Muestra cada acci\u00F3n sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
@@ -111,6 +113,11 @@ Para CI roja agrega los checks fallidos al brief y publica \`Rebote CI: <sha>\`;
 
 Solo desde el checkout principal, con setup completo y en modo "un-agente". Crea un worktree detached en el head del PR y escribe en UTF-8 el brief de review compartido con \`revisar\`. El subagente escribe el cuerpo del review en un archivo; main lo publica.
 Con --dry-run muestra las acciones y las rutas, sin crear worktree ni brief.
+`,
+  consultas: `orca-stack consultas <n...> [--dry-run]
+
+Para los issues y PRs en curso indicados, busca comentarios nuevos que comiencen con "Consulta:" hechos por la cuenta de GitHub del stack (leída con \`gh api user\`).
+Emite una sola línea "consulta nueva en #<n>" por cada comentario nuevo y recuerda lo reportado en .git/orca-stack/consultas-reportadas.json para ser idempotente.
 `,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
@@ -216,6 +223,8 @@ export const main = async argv => {
         return await reboteCommand(flags, rest[1])
       case 'brief-revision':
         return await briefRevisionCommand({ ...flags, n: rest[1] })
+      case 'consultas':
+        return await consultasCommand(flags, rest.slice(1))
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 

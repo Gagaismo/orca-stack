@@ -1,6 +1,6 @@
 # Ticket brief: issue #{{ISSUE}} ({{REPO}})
 
-You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask by commenting on the issue (gh issue comment {{ISSUE}} --body-file <file>), then continue with whatever is not blocked.
+You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask by commenting on the issue (gh issue comment {{ISSUE}} --body-file <file>), then continue with whatever is not blocked. Questions start with `Consulta: {{AGENT}}`.
 
 ## Setup
 
@@ -23,6 +23,8 @@ Run these exactly as written, without changing their flags:
 If a command can take more than ten minutes, set a time limit; if it runs out, report the last output on the issue instead of waiting in the background.
 
 ## Pull request
+
+Before opening the PR, re-read the issue comments and handle any `Respuesta de main:` / `Respuesta del humano:`.
 
 When the work is done and verified, push the branch and open the PR with a body file (never through a pipe: the Windows console breaks accents):
 
