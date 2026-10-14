@@ -23,11 +23,15 @@ const stop = (last: string, extra: { background_tasks?: never[] } = {}) => ({
   ...extra,
 })
 
-const setup = (on: Parameters<typeof world>[0]) => {
+const setup = (
+  on: Parameters<typeof world>[0],
+  options: { sessionStartContext?: string[]; stopContext?: string[] } = {},
+) => {
   const w = world(on)
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'base', scope: 'shared' as const }] }))
   on('tool.call', () => ({ result: {} as never }))
-  on('classic.Stop', () => ({}))
+  on('classic.Stop', () => ({ additionalContext: options.stopContext }))
+  on('classic.SessionStart', () => ({ additionalContext: options.sessionStartContext }))
 
   return w
 }
@@ -62,6 +66,43 @@ test('the system prompt gets one session section only while on', async ($, on) =
   expect(last?.text).toContain(DONE_TOKEN)
 })
 
+test('/autonomo delivers the active instructions to the next turn', async ($, on) => {
+  setup(on)
+
+  const out = await $.command.run(run('prueba'))
+
+  expect(out.context?.[0]).toContain('Modo aut\u00f3nomo activo. Meta: prueba.')
+})
+
+test('a compacted session receives the current autonomous instructions', async ($, on) => {
+  setup(on, { sessionStartContext: ['existing context'] })
+  await $.command.run(run('prueba'))
+
+  const out = await $.classic.SessionStart({ source: 'compact' } as never)
+
+  expect(out.additionalContext).toEqual([
+    'existing context',
+    expect.stringContaining('Modo aut\u00f3nomo activo. Meta: prueba.'),
+  ])
+})
+
+test('/autonomo off tells the next turn the mode is off', async ($, on) => {
+  setup(on)
+  await $.command.run(run('prueba'))
+
+  const out = await $.command.run(run('off'))
+
+  expect(out.context?.[0]).toContain('Modo aut\u00f3nomo apagado')
+})
+
+test('/autonomo off while already off adds no context for the model', async ($, on) => {
+  setup(on)
+
+  const out = await $.command.run(run('off'))
+
+  expect(out.context).toBeUndefined()
+})
+
 test('stopping is blocked up to three times, then it lets go and warns', async ($, on) => {
   const w = setup(on)
   await $.command.run(run(''))
@@ -88,11 +129,15 @@ test('a tool call between stops resets the count', async ($, on) => {
 })
 
 test('the done token turns the mode off and toasts', async ($, on) => {
-  const w = setup(on)
+  const w = setup(on, { stopContext: ['existing context'] })
   await $.command.run(run(''))
 
   const out = await $.classic.Stop(stop(`Todo en producción. ${DONE_TOKEN}`))
   expect(out.block).toBeUndefined()
+  expect(out.additionalContext).toEqual([
+    'existing context',
+    expect.stringContaining('Modo aut\u00f3nomo apagado'),
+  ])
   expect(w.toasts).toEqual(['Modo autónomo: meta alcanzada'])
   expect(w.statuses.at(-1)).toBeUndefined()
   expect((await $.prompt.compose(COMPOSE)).sections.map(s => s.id)).toEqual(['intro'])
