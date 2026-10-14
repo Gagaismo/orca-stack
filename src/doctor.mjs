@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
+import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { codexAgentsMd, codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
@@ -463,6 +464,10 @@ export const doctorCommand = async flags => {
     for (const { label, detail } of projectWarnings(root, committed)) {
       add('warn', label, detail)
     }
+    const candidate = candidateWorktreesStatus(root)
+    if (candidate) {
+      add(candidate.level, 'candidate worktrees (.claude/worktrees/)', candidate.detail)
+    }
   }
 
   // codex on Windows reads files through PowerShell 5.1 (#58). Off Windows or without codex, not even the title prints.
@@ -528,3 +533,5 @@ const projectRootOf = cwd => {
 
   return path.basename(dir) === '.git' ? path.dirname(dir) : path.resolve(top)
 }
+
+export { candidateWorktreesStatus } from './candidate-worktrees.mjs'
