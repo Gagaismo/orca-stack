@@ -7,6 +7,7 @@ const nudges = { plugin: 'modo-autonomo', key: 'nudges' } as const
 export const DEFAULT_GOAL = 'producción'
 export const DONE_TOKEN = '[AUTONOMO-LISTO]'
 export const MAX_NUDGES = 3
+const WAITING_GEAR = 'Esperando marcha:'
 const OFF_NOTICE = 'Modo aut\u00f3nomo apagado; las instrucciones aut\u00f3nomas anteriores ya no aplican.'
 
 export const instructions = (target: string): string =>
@@ -16,7 +17,8 @@ export const instructions = (target: string): string =>
     'Mantené un Monitor corriendo para vigilar los PRs, las reviews y los workers despachados.',
     'Cuando un PR cumple la condición de merge del contrato del proyecto, mergeá; desplegá solo si el contrato dice cómo.',
     'No frenes a pedir confirmaciones que el usuario ya autorizó en este modo.',
-    'Pará solo ante decisiones que son genuinamente del usuario: credenciales, gastar plata, mensajes a clientes o acciones destructivas.',
+    'Ante decisiones que son genuinamente del usuario (credenciales, gastar plata, mensajes a clientes o acciones destructivas), no las tomes: registralas y seguí con el resto.',
+    'El resumen de cierre de la corrida autónoma indexa lo que corrió o esperó sin que nadie mirara: cada fan-out que corriste (técnica, artefacto, N, resultado y qué caso fijó N), cada workflow de ultracode y cada propuesta registrada pero no ejecutada. Cada entrada lleva el enlace a donde se publicó (`## Arena`, `## Swarm` o la propuesta en su artefacto). El resumen no lleva conteos de tokens.',
     `Cuando la meta esté cumplida, escribí exactamente ${DONE_TOKEN} en tu mensaje final para apagar el modo.`,
   ].join('\n')
 
@@ -129,8 +131,13 @@ export const register: Register = on => {
         additionalContext: [...(result.additionalContext ?? []), OFF_NOTICE],
       }
     }
-    // Paused on a monitor or a cron that will wake the session: that is not a stop to fight.
-    if ((e.background_tasks?.length ?? 0) > 0 || (e.session_crons?.length ?? 0) > 0) {
+    // Paused on a monitor or a cron that will wake the session, or on items that wait for the
+    // human to change gear: that is not a stop to fight.
+    if (
+      (e.background_tasks?.length ?? 0) > 0 ||
+      (e.session_crons?.length ?? 0) > 0 ||
+      (e.last_assistant_message ?? '').includes(WAITING_GEAR)
+    ) {
       return next(e)
     }
     const { value: used = 0 } = await $.state.get(nudges)
