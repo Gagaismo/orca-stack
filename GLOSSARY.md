@@ -15,7 +15,7 @@ The posture main works in: how deep it explores, how much it delegates and narra
 _Avoid_: profile, perfil, mode, modo, level
 
 **Lazy gear**:
-The gear for well-delimited, known work.
+The gear for work that is already specified: main carries it out (dispatching, watching and merging, or implementing in single-agent mode) without planning or specifying anything new.
 
 **Medium gear**:
 The gear for day-to-day work that balances speed and reasoning.
