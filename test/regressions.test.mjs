@@ -64,7 +64,7 @@ describe('1. global validates before writing and never orphans files', () => {
     if (process.platform === 'win32') {
       assert.ok(state.files[path.join(pathDir, 'orca-stack')], 'the Windows extensionless shim is adopted')
     }
-    assert.equal(state.settings.pluginDirsAdded.length, 7, 'already-present plugin dirs are claimed')
+    assert.equal(state.settings.pluginDirsAdded.length, 8, 'already-present plugin dirs are claimed')
     assert.equal(cli(home, ['remove'], { env }).status, 0)
     // Only the shared files (whose creation this run cannot know) and the personal config stay.
     assert.deepEqual(

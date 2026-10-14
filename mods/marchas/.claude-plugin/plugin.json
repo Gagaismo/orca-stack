@@ -1,0 +1,6 @@
+{
+  "name": "marchas",
+  "version": "0.1.0",
+  "description": "Comando y banda de marcha para la sesion de main.",
+  "types": "./types/index.d.ts"
+}

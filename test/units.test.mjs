@@ -110,8 +110,8 @@ describe('the repository itself', () => {
   const files = []
   const walk = dir => {
     for (const name of readdirSync(dir)) {
-      // .atl is the local skill registry gentle-ai writes (gitignored, holds the user's paths).
-      if (['.git', 'node_modules', '.atl'].includes(name)) continue
+      // .atl and odd are local agent artifacts, gitignored and not published project text.
+      if (['.git', 'node_modules', '.atl', 'odd'].includes(name)) continue
       const full = path.join(dir, name)
       if (statSync(full).isDirectory()) walk(full)
       else files.push(full)
