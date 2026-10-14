@@ -26,6 +26,7 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 
 - Push the fix to the same branch.
 - Comment on PR #{{PR}} with what changed for each finding and check.
+- The PR already bounced and the new failure shares the previous fix's premise: read `~/.claude/skills/principle-attack-the-premise/SKILL.md`.
 
 ## Remote authorization
 

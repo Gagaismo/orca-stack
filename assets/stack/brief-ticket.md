@@ -38,6 +38,7 @@ The body is UTF-8 and has exactly this shape. The headings and the `Implementado
 | Rule, legacy RED item, or touched public entry | Test (exact name) | Result |
 |---|---|---|
 <one row per rule (or, for a legacy ticket, per acceptance criterion and failure mode used as a RED item) and one row per touched public entry: the exact test name and passing line, or how it was verified when there is no test. If no existing public entry is touched, state "none touched"; do not add a placeholder row. Add before/after (screenshot or output) when the change is visible.>
+A row's evidence is a measured number (time, size, throughput, cost): read `~/.claude/skills/principle-explain-the-number/SKILL.md`.
 
 ## Merge Danger
 <one-way or two-way door, and the blast radius>
@@ -57,6 +58,8 @@ If you want to change GLOSSARY.md or docs/adr, do not edit them: propose it in t
 - If the diff will pass 700 lines, stop and say so on the issue before going on.
 - Do not review PRs, do not merge, do not spawn other workers.
 - Finish with a summary: what you did, what you found, tests run, remaining risk.
+- The ticket touches a command, lifecycle step or loop that can run again after a crash, retry or rerun: read `~/.claude/skills/principle-make-operations-idempotent/SKILL.md`.
+- Two fixes sharing one premise have failed the same check; apply it before a third: read `~/.claude/skills/principle-attack-the-premise/SKILL.md`.
 
 ## Remote authorization
 

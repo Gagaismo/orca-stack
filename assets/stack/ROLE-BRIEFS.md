@@ -11,6 +11,7 @@ current repository evidence; write one cited report at the requested path.
 **Rules:** no source edits, no issue/PR changes, no implementation, no user
 questions. If a fact cannot be verified, mark `UNKNOWN / MUST VERIFY`. End with
 sources, findings, open uncertainty, and the report path.
+The answer is a measured number: read `~/.claude/skills/principle-explain-the-number/SKILL.md`.
 
 **Policy:** Ponytail is not active for research output. Caveman follows the
 Orca Agent Stack setting for the summary only; preserve citations and
