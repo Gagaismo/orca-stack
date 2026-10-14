@@ -52,8 +52,6 @@ describe('gear contract', () => {
     assert.match(arena, /`~\/.claude\/skills\/swarm\/SKILL.md` o `~\/.agents\/skills\/swarm\/SKILL.md`/)
     assert.match(arena, /Los resultados se publican bajo `## Arena` o `## Swarm` en el artefacto correspondiente/)
     assert.match(arena, /Toda fan-out que pase por Workflow requiere el OK del humano/)
-    assert.match(arena, /Toda fan-out que pase por Workflow requiere el OK del humano/)
-    assert.match(arena, /Los resultados se publican bajo `## Arena` o `## Swarm` en el artefacto correspondiente/)
   })
 
   test('ticket rule 3: a second arena, changed rubric or exhausted retry requires new approval', () => {
@@ -65,7 +63,6 @@ describe('gear contract', () => {
     assert.match(arena, /Ultracode, que solo activa el humano, autoriza la fan-out propia de `main` durante esa sesi\u00F3n; cada arena se anuncia igual en una l\u00EDnea/)
     assert.match(arena, /Ultracode nunca autoriza la nota de un worker y no sobrevive al handoff/)
     assert.match(arena, /Con ultracode, la arena de `main` no espera OK, pero se anuncia en una l\u00EDnea/)
-    assert.match(arena, /Ultracode nunca autoriza la nota de un worker/)
   })
 
   test('ticket rule 5: autonomous proposals go only on allowed artifacts and execution continues', () => {
@@ -87,8 +84,6 @@ describe('gear contract', () => {
     assert.match(step8, /Despu\u00E9s del segundo rebote de CI, si vuelve a fallar, se lo pas\u00E1s al humano/)
     assert.match(step8, /Si propon\u00E9s un swarm para diagnosticar, atac\u00E1 la premisa primero con la skill de #160/)
     assert.match(step8, /la propuesta viaja con la escalaci\u00F3n al humano, nunca en su lugar ni para demorarla/)
-    assert.match(step8, /nunca en su lugar ni para demorarla/)
-    assert.match(step8, /atac\u00E1 la premisa primero con la skill de #160/)
   })
 
   test('ticket rule 8: candidate cleanup is explicit, listed, one-at-a-time and non-forced', () => {
@@ -102,8 +97,6 @@ describe('gear contract', () => {
     assert.match(permissions, /Borrar es opcional/)
     assert.match(permissions, /`worktree-agent-a1b2` y `worktree-agent-c3d4`/)
     assert.match(permissions, /un `worktree-agent-e5f6` no listado nunca se toca/)
-    assert.match(permissions, /`git worktree remove` sin `--force`/)
-    assert.match(permissions, /nunca por patr\u00F3n/)
   })
 
   test('ticket rule 9: fan-out stops unless git ignores the Claude worktree directory', () => {
