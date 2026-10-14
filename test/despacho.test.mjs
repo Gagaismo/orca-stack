@@ -362,15 +362,28 @@ describe('despachar: failures along the way', () => {
 describe('briefs', () => {
   const fanoutNote = 'arena, N=3, r\u00FAbrica \u2026, Agent tool only'
 
-  test('Rule 1: a claude ticket brief without an authorization note forbids fan-out', () => {
+  test('Rule 1: a claude ticket brief without a note forbids arena/swarm, not its own subagents', () => {
     const brief = renderBrief('ticket', { AGENT: 'claude' })
-    assert.match(brief, /No arena or swarm is authorized/i)
-    assert.match(brief, /Do not spawn subagents or use Workflow/i)
+    assert.doesNotMatch(brief, /Do not spawn subagents/i)
+    assert.match(brief, /session's own subagents.*context.*verification.*code-review.*delegation.*allowed/i)
+    assert.match(brief, /Delegation: the session's own subagents may be used/)
+    assert.match(brief, /code-review/)
     const policy = readFileSync(new URL('../assets/stack/ORCA-STACK.md', import.meta.url), 'utf8')
     assert.match(policy, /A Claude worker may run an arena or swarm only when its dispatch or bounce note[\s\S]*authorizes that fan-out for the ticket; read-only swarms require the note too/i)
   })
 
-  test('Rule 2: an approved claude note carries the exact one-round limit and effort', async () => {
+  test('Rule 2: a claude fan-out line separates authorized own delegation from arena/swarm', () => {
+    const brief = renderBrief('ticket', { AGENT: 'claude' })
+    assert.match(brief, /No arena or swarm is authorized without an approved note/i)
+    assert.match(brief, /session's own subagents for context, verification, and the code-review skill are delegation and remain allowed/i)
+  })
+
+  test('Rule 3: a claude brief still forbids an unrequested arena/swarm fan-out', () => {
+    const brief = renderBrief('ticket', { AGENT: 'claude' })
+    assert.match(brief, /Do not use Workflow or run an unrequested arena or swarm fan-out/i)
+  })
+
+  test('Rule 6: an approved claude note carries the exact one-round limit and effort', async () => {
     const env = fakeIo()
     await run('ticket', { n: '7', agent: 'claude', nota: fanoutNote }, env)
     const brief = env.written[0][1]
@@ -379,10 +392,12 @@ describe('briefs', () => {
     assert.match(brief, /Candidates run at your effort unless the approved note specifies otherwise/)
   })
 
-  test('Rule 3: non-claude ticket briefs reject arena and swarm even with a note', () => {
+  test('Rule 4: non-claude ticket briefs reject arena and swarm even with a note', () => {
     for (const agent of ['codex', 'codex-cc', 'agy', 'pi']) {
       const brief = renderBrief('ticket', { AGENT: agent }, fanoutNote)
       assert.match(brief, new RegExp(`Arena and swarm are not supported for ${agent}, even when the note includes authorization`))
+      assert.doesNotMatch(brief, /Do not spawn subagents/i)
+      assert.match(brief, /session's own subagents.*context.*verification.*code-review.*delegation.*allowed/i)
     }
   })
 
@@ -918,6 +933,28 @@ describe('rebote', () => {
     stale.io.modifiedAt = () => 99
     await assert.rejects(reboteCommand({}, '12', stale.io), /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
     assert.ok(!stale.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+  })
+
+  test('Rule 5: bounce briefs restrict arena/swarm, not the agent\'s own subagents', async () => {
+    for (const agent of ['claude', 'codex', 'codex-cc', 'agy', 'pi']) {
+      const env = bounceEnv(pr({ body: `Implementador: ${agent}` }))
+      if (agent === 'pi') {
+        env.io.gentleSkills = () => 'C:\\pi\\skills'
+        env.io.now = () => 100
+        env.io.modifiedAt = () => 101
+      }
+      await reboteCommand(agent === 'codex-cc' ? { confirmado: true } : {}, '12', env.io)
+      const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+      assert.ok(brief, `${agent} bounce brief was written`)
+      assert.doesNotMatch(brief, /Do not spawn subagents/i)
+      assert.match(brief, /session's own subagents.*context.*verification.*code-review.*delegation.*allowed/i)
+      if (agent === 'claude') {
+        assert.match(brief, /No arena or swarm is authorized without an approved note/i)
+        assert.match(brief, /unrequested.*arena or swarm fan-out/i)
+      } else {
+        assert.match(brief, new RegExp(`Arena and swarm are not supported for ${agent}, even when the note includes authorization`))
+      }
+    }
   })
 
   test('Rule 5: a bounce fan-out note requires a new human OK', async () => {

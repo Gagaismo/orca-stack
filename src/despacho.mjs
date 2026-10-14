@@ -234,8 +234,9 @@ const fanoutInstructions = (agent, nota, bounce = false) => {
   const bounceApproval = bounce
     ? 'A new fan-out note on this bounce requires a new human OK; previous dispatch approval does not carry over. '
     : ''
-  if (agent !== 'claude') return `${bounceApproval}Arena and swarm are not supported for ${agent}, even when the note includes authorization. Do not fan out.`
-  if (!hasFanoutAuthorization(nota)) return `${bounceApproval}No arena or swarm is authorized. Do not spawn subagents or use Workflow.`
+  const sessionDelegation = 'The session\'s own subagents for context, verification, and the code-review skill are delegation and remain allowed.'
+  if (agent !== 'claude') return `${bounceApproval}Arena and swarm are not supported for ${agent}, even when the note includes authorization. ${sessionDelegation} Do not run an arena or swarm fan-out.`
+  if (!hasFanoutAuthorization(nota)) return `${bounceApproval}No arena or swarm is authorized without an approved note. ${sessionDelegation} Do not use Workflow or run an unrequested arena or swarm fan-out.`
   return `${bounceApproval}The approved note authorizes fan-out for this ticket only. Use the Agent tool only, never Workflow. Run only the approved N, one round, no retry. Candidates run at your effort unless the approved note specifies otherwise. If every candidate drops out or you want another round, do not retry; continue the normal path and say so under ## Arena or ## Swarm. Put the results under the matching ## Arena or ## Swarm heading in the PR body.`
 }
 
