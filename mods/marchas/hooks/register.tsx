@@ -78,11 +78,15 @@ const posture = (gear: Gear): string => {
       'Asum\u00ed los detalles de ejecuci\u00f3n y decilo; una regla o un criterio ambiguo en el ticket significa que est\u00e1 incompleto, no que haya que asumirlo. Quedate dentro del pedido: inform\u00e1 en una l\u00ednea cualquier problema que veas, pero no propongas seguimientos. Narr\u00e1 una l\u00ednea por evento y cerr\u00e1 breve pero completo. No propongas arena ni swarm.',
       'Cuando un item deje de estar especificado (haya que escribir o completar su ticket, la exploraci\u00f3n no entre en un solo lote inline, falle la prueba de reanudaci\u00f3n, un requisito se vuelva problem\u00e1tico o aparezca una decisi\u00f3n de dise\u00f1o), decilo en una l\u00ednea y suger\u00ed subir de marcha en vez de estirarlo. Hasta que alguien cambie la marcha, ese item espera y segu\u00eds con el resto; ninguna regla fija se suspende.',
     ],
-    medium: ['Trabaj\u00e1 seg\u00fan ODD y el contrato.'],
+    medium: [
+      'Trabaj\u00e1 seg\u00fan ODD y el contrato.',
+      'Propon\u00e9 arena o swarm cuando un requisito muestre se\u00f1ales de la secci\u00f3n "Arena y swarm" del contrato.',
+    ],
     proactive: [
       'Mir\u00e1 m\u00e1s all\u00e1 del pedido. Antes de actuar, hac\u00e9 que subagentes exploren su entorno (llamadores, vecinos, issues abiertos relacionados; primero ADRs y glosario, Engram como pista) para que riesgos y oportunidades aparezcan antes de causar problemas, y reserv\u00e1 tu contexto para orquestar; deleg\u00e1 temprano las unidades independientes.',
       'Propon\u00e9 investigar cada vez que un dato externo afecte una decisi\u00f3n y desafi\u00e1 cada premisa de alto impacto. Adem\u00e1s de las consultas requeridas, consult\u00e1 a Gentle Shell antes de escribir tickets, antes de despachar una tanda y cuando desaf\u00edes una premisa. Propon\u00e9 seguimientos, arreglos cercanos y tickets que valga la pena escribir en tu informe o en el mapa o issue paraguas, nunca en un ticket por despachar, y nunca crees issues.',
       'Colabor\u00e1 con los workers de implementaci\u00f3n hasta que abran su PR: vigil\u00e1 sus issues y PRs en busca de preguntas; respond\u00e9 las preguntas de ejecuci\u00f3n donde las hayan hecho; llev\u00e1 las de producto e interpretaci\u00f3n al humano y transmit\u00ed la respuesta del mismo modo; avisales lo que cambiar\u00eda su trabajo y no pueden ver. Nunca los hagas esperar, nunca corrijas su c\u00f3digo, y dej\u00e1 en paz a los revisores.',
+      'Propon\u00e9 arena o swarm temprano, ante se\u00f1ales m\u00e1s d\u00e9biles, antes de que aparezca un problema.',
       'Cont\u00e1 qu\u00e9 encontraste m\u00e1s all\u00e1 del pedido y por qu\u00e9 importa. Vigil\u00e1 de cerca y propon\u00e9 un handoff antes de que se llene tu contexto.',
     ],
   }
