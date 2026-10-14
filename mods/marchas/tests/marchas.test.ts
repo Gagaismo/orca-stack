@@ -130,15 +130,27 @@ test('Rule 9: every posture replaces the previous one and Medium posture is deli
   expect((await $.command.run(RUN('medium'))).context?.[0]).toContain('Trabaj\u00e1 seg\u00fan ODD y el contrato.')
 })
 
-test('Rule 10: no posture names excluded tools or future sections', async ($, on) => {
+test('Rule 10: postures avoid excluded tools while Medium and Proactive name arena signals', async ($, on) => {
   setup(on)
   await start($)
+  const postures = new Map<string, string>()
   for (const gear of ['lazy', 'medium', 'proactive']) {
     const text = (await $.command.run(RUN(gear))).context?.join('\n') ?? ''
+    postures.set(gear, text)
     expect(text).not.toContain('orca-stack avisar')
     expect(text).not.toContain('Consulta:')
-    expect(text).not.toContain('Arena y swarm')
   }
+  expect(postures.get('lazy')).not.toContain('Arena y swarm')
+  expect(postures.get('medium')).toContain('Propon\u00e9 arena o swarm cuando un requisito muestre se\u00f1ales de la secci\u00f3n "Arena y swarm" del contrato.')
+  expect(postures.get('proactive')).toContain('Propon\u00e9 arena o swarm temprano, ante se\u00f1ales m\u00e1s d\u00e9biles, antes de que aparezca un problema.')
+})
+
+test('Rule 13: Lazy keeps its prohibition on proposing arena or swarm', async ($, on) => {
+  setup(on)
+  await start($)
+  const text = (await $.command.run(RUN('lazy'))).context?.join('\n') ?? ''
+  expect(text).toContain('No propongas arena ni swarm.')
+  expect(text).not.toContain('Propon\u00e9 arena')
 })
 
 test('Rule 11: the band names each gear and uses its required color', async ($, on) => {
@@ -173,6 +185,8 @@ test("Rule 7: Proactive's posture carries the collaboration sentence and no door
   expect(text).toContain('llev\u00e1 las de producto e interpretaci\u00f3n al humano y transmit\u00ed la respuesta del mismo modo')
   expect(text).toContain('avisales lo que cambiar\u00eda su trabajo y no pueden ver')
   expect(text).toContain('Nunca los hagas esperar, nunca corrijas su c\u00f3digo, y dej\u00e1 en paz a los revisores')
+  expect(text).toContain('Propon\u00e9 arena o swarm temprano, ante se\u00f1ales m\u00e1s d\u00e9biles, antes de que aparezca un problema.')
+  expect(text.indexOf('Colabor\u00e1 con los workers de implementaci\u00f3n')).toBeLessThan(text.indexOf('Propon\u00e9 arena o swarm temprano'))
   expect(text).not.toContain('timbre')
   expect(text).not.toContain('doorbell')
   expect(text).not.toContain('terminal')
@@ -223,7 +237,7 @@ test('Rule 4: a compacted session without classic reinjection asks the human to 
 
   const ui = await band($)
   const text = await ui.find({ type: 'Text' })
-  expect(text?.text).toContain('repetí /marcha proactive')
+  expect(text?.text).toContain('repet\u00ed /marcha proactive')
   await ui.unmount()
 })
 
