@@ -4,9 +4,40 @@ import type { Gear } from '../types'
 
 const GEARS: Gear[] = ['lazy', 'medium', 'proactive']
 const COLORS: Record<Gear, string> = { lazy: 'ide', medium: 'success', proactive: 'warning' }
+const KEY_PREFIX = 'marchas:'
+const RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 const marker = (gear: Gear): string => `Marcha: ${gear}`
 const sessionKey = async ($: EngineInterface): Promise<string> => `marchas:${await $.session.id()}`
 const isGear = (value: unknown): value is Gear => GEARS.includes(value as Gear)
+type GearState = { gear: Gear; shiftedAt: number; needsReminder?: boolean }
+
+const gearState = (value: unknown): GearState | undefined => {
+  if (typeof value !== 'object' || value === null) return undefined
+  const state = value as Partial<GearState>
+
+  return isGear(state.gear) && typeof state.shiftedAt === 'number'
+    ? { gear: state.gear, shiftedAt: state.shiftedAt, needsReminder: state.needsReminder === true }
+    : undefined
+}
+
+const shiftedGear = (value: unknown): Gear | undefined => {
+  const state = gearState(value)
+  if (state !== undefined) return state.gear
+
+  // Older versions wrote Medium at session start, so legacy Medium is ambiguous.
+  return isGear(value) && value !== 'medium' ? value : undefined
+}
+
+const pruneOldKeys = async ($: EngineInterface): Promise<void> => {
+  const now = await $.clock.now()
+  for (const key of await $.store.keys()) {
+    if (!key.startsWith(KEY_PREFIX)) continue
+    const state = gearState(await $.store.get(key))
+    if (state !== undefined && now - state.shiftedAt > RETENTION_MS) {
+      await $.store.delete(key)
+    }
+  }
+}
 
 const posture = (gear: Gear): string => {
   const opening = [
@@ -78,7 +109,7 @@ const enabled = async ($: EngineInterface): Promise<boolean> => {
 const currentGear = async ($: EngineInterface): Promise<Gear> => {
   const stored = await $.store.get(await sessionKey($))
 
-  return isGear(stored) ? stored : 'medium'
+  return shiftedGear(stored) ?? 'medium'
 }
 
 export const register: Register = on => {
@@ -87,10 +118,7 @@ export const register: Register = on => {
       return next(e)
     }
     await $.command.register({ name: 'marcha', description: 'Muestra o cambia la marcha de main', argumentHint: '[lazy|medium|proactive]' })
-    const key = await sessionKey($)
-    if (!isGear(await $.store.get(key))) {
-      await $.store.set(key, 'medium')
-    }
+    await pruneOldKeys($)
 
     return next(e)
   })
@@ -107,9 +135,48 @@ export const register: Register = on => {
       return { text: 'Marchas disponibles: lazy|medium|proactive' }
     }
     const gear = args as Gear
-    await $.store.set(await sessionKey($), gear)
+    await $.store.set(await sessionKey($), { gear, shiftedAt: await $.clock.now(), needsReminder: false } satisfies GearState)
 
     return { text: marker(gear), context: [posture(gear)] }
+  })
+
+  on('session.compact', async ($, e, next) => {
+    const result = await next(e)
+    if (!(await enabled($)) || ('skip' in result && result.skip !== undefined)) {
+      return result
+    }
+    const key = await sessionKey($)
+    const value = await $.store.get(key)
+    const gear = shiftedGear(value)
+    if (gear === undefined) return result
+    const state = gearState(value)
+    await $.store.set(key, {
+      gear,
+      shiftedAt: state?.shiftedAt ?? await $.clock.now(),
+      needsReminder: true,
+    } satisfies GearState)
+
+    return result
+  })
+
+  on('classic.SessionStart', async ($, e, next) => {
+    const result = await next(e)
+    if (!(await enabled($)) || e.source !== 'compact') return result
+    const key = await sessionKey($)
+    const value = await $.store.get(key)
+    const gear = shiftedGear(value)
+    if (gear === undefined) return result
+    const state = gearState(value)
+    await $.store.set(key, {
+      gear,
+      shiftedAt: state?.shiftedAt ?? await $.clock.now(),
+      needsReminder: false,
+    } satisfies GearState)
+
+    return {
+      ...result,
+      additionalContext: [...(result.additionalContext ?? []), posture(gear)],
+    }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -118,7 +185,10 @@ export const register: Register = on => {
     }
     const { Text } = $.ui.resolve(e)
     const gear = await currentGear($)
+    const state = gearState(await $.store.get(await sessionKey($)))
+    const label = gear[0].toUpperCase() + gear.slice(1)
+    const text = state?.needsReminder === true ? `${label} - repet\u00ed /marcha ${gear}` : label
 
-    return <Text color={COLORS[gear]}>{gear[0].toUpperCase() + gear.slice(1)}</Text>
+    return <Text color={COLORS[gear]}>{text}</Text>
   })
 }

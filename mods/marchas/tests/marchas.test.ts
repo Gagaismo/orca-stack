@@ -131,3 +131,77 @@ test('Rule 12: the gate reads no config keys', async ($, on) => {
   expect(h.reads.every(path => path.endsWith('/AGENTS.md'))).toBe(true)
   expect(AGENTS).toContain('Marchas')
 })
+
+test('Rule 1: clear starts on Medium and redraws the band after a Proactive shift', async ($, on) => {
+  const h = setup(on)
+  await start($)
+  await $.command.run(RUN('proactive'))
+  h.setSessionId('session-after-clear')
+
+  await $.classic.SessionStart({ source: 'clear' } as never)
+
+  expect((await $.command.run(RUN(''))).text).toBe('Marcha: medium')
+  const ui = await band($)
+  const text = await ui.find({ type: 'Text' })
+  expect(text?.text).toContain('Medium')
+  await ui.unmount()
+})
+
+test('Rule 2: compaction reinjects a shifted gear posture', async ($, on) => {
+  setup(on)
+  await start($)
+  await $.command.run(RUN('proactive'))
+
+  const out = await $.classic.SessionStart({ source: 'compact' } as never)
+
+  expect(out.additionalContext?.some(text => text.includes('reemplaza cualquier postura de marcha anterior'))).toBe(true)
+  expect(out.additionalContext?.some(text => text.includes('Mir\u00e1 m\u00e1s all\u00e1 del pedido'))).toBe(true)
+})
+
+test('Rule 3: compaction adds no posture before the session has shifted', async ($, on) => {
+  setup(on)
+  await start($)
+
+  const out = await $.classic.SessionStart({ source: 'compact' } as never)
+
+  expect(out.additionalContext?.some(text => text.includes('postura de marcha'))).toBe(false)
+})
+
+test('Rule 4: a compacted session without classic reinjection asks the human to repeat the shift', async ($, on) => {
+  setup(on)
+  await start($)
+  await $.command.run(RUN('proactive'))
+
+  await $.session.compact({ messages: [{ role: 'user', text: 'resumen', toolUses: [] }] } as never)
+
+  const ui = await band($)
+  const text = await ui.find({ type: 'Text' })
+  expect(text?.text).toContain('repetí /marcha proactive')
+  await ui.unmount()
+})
+
+test('Rule 5: session start prunes expired Marchas keys but keeps recent and unrelated keys', async ($, on) => {
+  const h = setup(on, { store: {
+    'marchas:expired': { gear: 'proactive', shiftedAt: 1 },
+    'marchas:recent': { gear: 'lazy', shiftedAt: 9999999999999 },
+    'marchas:legacy': 'proactive',
+    'another-mod:session': { gear: 'proactive', shiftedAt: 1 },
+  } })
+  await start($)
+
+  h.setSessionId('expired')
+  expect((await $.command.run(RUN(''))).text).toBe('Marcha: medium')
+  h.setSessionId('recent')
+  expect((await $.command.run(RUN(''))).text).toBe('Marcha: lazy')
+  h.setSessionId('legacy')
+  expect((await $.command.run(RUN(''))).text).toBe('Marcha: proactive')
+})
+
+test('Rule 6: /marcha keeps its public result after restoring a compacted gear', async ($, on) => {
+  setup(on)
+  await start($)
+  await $.command.run(RUN('proactive'))
+  await $.classic.SessionStart({ source: 'compact' } as never)
+
+  expect((await $.command.run(RUN(''))).text).toBe('Marcha: proactive')
+})
