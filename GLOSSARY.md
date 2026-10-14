@@ -24,7 +24,7 @@ The default gear: main works as the work contract and ODD say, at the baseline e
 The gear that goes beyond the request and collaborates with running workers: it answers their questions and tells them what they cannot see.
 
 **Gear shift**:
-A change from one gear to another during a session.
+A change from one gear to another during a session. Only the human makes one; main only suggests it.
 _Avoid_: swap, profile switch
 
 **Baseline effort**:
