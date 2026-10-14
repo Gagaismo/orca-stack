@@ -15,9 +15,10 @@ const skill = name => readSkill(SKILLS, name, 'SKILL.md')
 
 describe('vendored pstack principles (upstream v0.15.24)', () => {
   test('rule 1: every vendored SKILL.md matches upstream at the pinned commit, changing one byte makes the hash test fail, naming the skill', () => {
+    const unadapted = Object.entries(provenance.skills).filter(([, e]) => !e.adapted)
     const vendored = readdirSync(SKILLS).filter(name => name.startsWith('principle-') && statSync(path.join(SKILLS, name)).isDirectory())
-    assert.deepEqual(vendored.sort(), Object.keys(provenance.skills).sort())
-    for (const [name, entry] of Object.entries(provenance.skills)) {
+    assert.deepEqual(vendored.sort(), unadapted.map(([k]) => k).sort())
+    for (const [name, entry] of unadapted) {
       assert.equal(entry.adapted, false, `${name} must not be adapted`)
       assert.equal(sha256(skill(name)), entry.upstreamSha256, `${name} differs from upstream v0.15.24`)
       // Corrupting one byte must fail naming the skill
@@ -138,3 +139,67 @@ describe('vendored pstack principles (upstream v0.15.24)', () => {
     assert.ok(brief.includes('## Method: gentle-ai ODD'))
   })
 })
+
+describe('#168 adapted arena and swarm skills (upstream v0.15.24)', () => {
+  test('rule 1: the manifest lists arena and swarm with adapted: true, and changing a byte of a shipped copy fails the hash test', () => {
+    for (const name of ['arena', 'swarm']) {
+      const entry = provenance.skills[name]
+      assert.ok(entry, `${name} missing from provenance manifest`)
+      assert.equal(entry.adapted, true, `${name} must be adapted: true`)
+      const hash = entry.shippedSha256 ?? entry.upstreamSha256
+      assert.equal(sha256(skill(name)), hash, `${name} differs from manifest hash`)
+      const corrupted = skill(name) + ' '
+      assert.throws(() => {
+        assert.equal(sha256(corrupted), hash, `${name} differs from manifest hash`)
+      }, new RegExp(name))
+    }
+  })
+
+  test('rule 2: each folder LICENSE reads Copyright (c) 2026 Lauren Tan', () => {
+    for (const name of ['arena', 'swarm']) {
+      const license = readSkill(SKILLS, name, 'LICENSE')
+      assert.match(license, /Copyright \(c\) 2026 Lauren Tan/, `${name} LICENSE must credit Lauren Tan`)
+      assert.doesNotMatch(license, /poteto/i, `${name} LICENSE must use real name, not handle`)
+    }
+  })
+
+  test('rule 3: the arena skill states the same-family judge limitation and the four compensations', () => {
+    const text = skill('arena')
+    assert.match(text, /same model family as the candidates/i, 'arena must state same-family judge limitation')
+    assert.match(text, /weaker than pstack's cross-family judge/i, 'arena must explain limitation vs pstack')
+    assert.match(text, /rubric of 3-6 criteria written before the fan-out and kept from the candidates/i, 'missing compensation 1')
+    assert.match(text, /candidates that differ in approach or model tier/i, 'missing compensation 2')
+    assert.match(text, /judge with a clean context that does not know which candidate the owner prefers/i, 'missing compensation 3')
+    assert.match(text, /executed checks/i, 'missing compensation 4')
+  })
+
+  test('rule 4: negative: no skill text tells the owner to delete branches by pattern or with --force', () => {
+    for (const name of ['arena', 'swarm']) {
+      const text = skill(name)
+      assert.doesNotMatch(text, /(?:delete|remove)\s+(?:branches?|worktrees?)\s+(?:by\s+pattern|with\s+--force)/i)
+      assert.match(text, /never by pattern/i)
+      assert.match(text, /never with `--force`/i)
+    }
+  })
+
+  test('rule 5: the swarm skill limits a swarm to read work, keeps its members from publishing on GitHub, and says the report is not a review', () => {
+    const text = skill('swarm')
+    assert.match(text, /read work only/i, 'swarm must limit to read work')
+    assert.match(text, /members publish nothing on GitHub/i, 'swarm members must publish nothing on GitHub')
+    assert.match(text, /report is not a review/i, 'swarm must say report is not a review')
+  })
+
+  test('rule 6: negative: no skill text routes candidates through despachar or revisar', () => {
+    for (const name of ['arena', 'swarm']) {
+      const text = skill(name)
+      assert.match(text, /Never route (?:candidates|workers) through `despachar` or `revisar`/i)
+    }
+  })
+
+  test('rule 7: the README credit row names arena and swarm', () => {
+    const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
+    assert.ok(row, 'README has no pstack row in "Origen y licencias"')
+    assert.ok(row.includes('`arena`') && row.includes('`swarm`'), 'README row must name arena and swarm')
+  })
+})
+
