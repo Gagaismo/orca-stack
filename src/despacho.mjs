@@ -224,6 +224,21 @@ export const getRemoteOrigin = (root, io) => {
   return { ...parsed, url }
 }
 
+const hasFanoutAuthorization = nota => typeof nota === 'string' &&
+  /\b(?:arena|swarm)\b/i.test(nota) &&
+  /\bN\s*=\s*\d+\b/i.test(nota) &&
+  /\b(?:rubric|r[u\u00FA]brica|question|pregunta)\b/i.test(nota) &&
+  /Agent tool only/i.test(nota)
+
+const fanoutInstructions = (agent, nota, bounce = false) => {
+  const bounceApproval = bounce
+    ? 'A new fan-out note on this bounce requires a new human OK; previous dispatch approval does not carry over. '
+    : ''
+  if (agent !== 'claude') return `${bounceApproval}Arena and swarm are not supported for ${agent}, even when the note includes authorization. Do not fan out.`
+  if (!hasFanoutAuthorization(nota)) return `${bounceApproval}No arena or swarm is authorized. Do not spawn subagents or use Workflow.`
+  return `${bounceApproval}The approved note authorizes fan-out for this ticket only. Use the Agent tool only, never Workflow. Run only the approved N, one round, no retry. Candidates run at your effort unless the approved note specifies otherwise. If every candidate drops out or you want another round, do not retry; continue the normal path and say so under ## Arena or ## Swarm. Put the results under the matching ## Arena or ## Swarm heading in the PR body.`
+}
+
 export const renderBrief = (kind, vars, nota) => {
   const defaultOps = kind === 'ticket'
     ? `read issue #${vars.ISSUE ?? '<n>'} and its comments and the repo; comment on the issue; push only the ticket branch to \`origin\`; open the PR against ${vars.BASE ?? 'main'}.`
@@ -237,6 +252,7 @@ export const renderBrief = (kind, vars, nota) => {
     PUBLISH_INSTRUCTIONS: vars.PUBLISH_INSTRUCTIONS ?? 'Write the review in a UTF-8 file and publish it with a body file, never through a pipe:',
     PUBLISH_COMMAND: vars.PUBLISH_COMMAND ?? `gh pr review ${vars.PR} --comment --body-file <file>`,
     REVIEWER_LINE: vars.REVIEWER_LINE ?? vars.AGENT,
+    FANOUT_INSTRUCTIONS: fanoutInstructions(vars.AGENT, nota),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
   })
 }
@@ -789,6 +805,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     FINDINGS: findings || 'No current blocking review findings; this is a CI-only bounce.',
     FAILED_CHECKS: failedChecksText,
     VERIFICATION: verificationBlock(config),
+    FANOUT_INSTRUCTIONS: fanoutInstructions(agent, nota, true),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
   })
   if (!dryRun) {

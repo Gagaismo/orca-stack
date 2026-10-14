@@ -70,6 +70,17 @@ preamble's Orca `ask` command and state the smallest concrete decision needed.
 Finish with the required Orca `worker_done` receipt, outcome, files, tests, and
 report path when applicable. Do not continue after settlement.
 
+A Claude worker may run an arena or swarm only when its dispatch or bounce note
+authorizes that fan-out for the ticket; read-only swarms require the note too.
+Use the Agent tool only, never Workflow. The note fixes the approved N and
+rubric or question; candidates use the worker's effort unless the note says
+otherwise. Run one round and do not retry: if every candidate drops out or the
+worker wants another round, continue the normal path and report that under
+`## Arena` or `## Swarm`. Publish results under that heading in the PR body.
+Codex, codex-cc, agy, and pi do not run arenas or swarms, even with a note.
+A bounce fan-out note requires a new human OK; a dispatch approval does not
+carry over.
+
 **Handoff by a project script.** A worker launched by a project's own dispatch
 script (a handoff, not a supervised Dispatch) has no Orca preamble, so there is
 no `ask` and no `worker_done`. The project brief owns verification, where to ask
