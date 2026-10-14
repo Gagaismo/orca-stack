@@ -6,8 +6,10 @@ import { ROOT } from './helpers.mjs'
 
 test('marchas docs explain the command, gears, gate and off switch', () => {
   const readme = readFileSync(`${ROOT}/README.md`, 'utf8')
+  const modReadme = readFileSync(`${ROOT}/mods/marchas/README.md`, 'utf8')
   assert.match(readme, /`\/marcha` muestra o cambia la marcha de `main`: Lazy, Medium o Proactive/)
   assert.match(readme, /`\/marcha lazy`, `\/marcha medium` o `\/marcha proactive`/)
   assert.match(readme, /claude plugin disable marchas@inline --scope user/)
   assert.match(readme, /`--scope local`.*`--scope project`/)
+  assert.match(modReadme, /Un `\/effort` manual gana hasta el siguiente cambio de marcha/)
 })
