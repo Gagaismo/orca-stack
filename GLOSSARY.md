@@ -57,4 +57,4 @@ Bringing into the base the parts worth keeping from the candidates that lost. Sp
 _Avoid_: merge, combine
 
 **Swarm**:
-Several parallel subagents doing read work, each on its own slice of a task or racing on the same one, whose results come back as one aggregated report. A race that writes is an arena.
+One question spread over parallel subagents doing read work, each on its own slice or racing on the whole, whose results come back as one published aggregated report. Reading different areas to give main context is delegation, not a swarm. A race that writes is an arena.
