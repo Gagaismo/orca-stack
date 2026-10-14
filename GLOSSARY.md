@@ -11,7 +11,7 @@ The orchestrating session, running in a repo's main checkout; it plans, dispatch
 _Avoid_: coordinator, orchestrator session
 
 **Gear**:
-The posture main works in: how much it reasons, explores and collaborates with workers. Spanish: *marcha*.
+The posture main works in: how deep it explores, how much it delegates and narrates, and how it collaborates with workers. Spanish: *marcha*.
 _Avoid_: profile, perfil, mode, modo, level
 
 **Lazy gear**:
