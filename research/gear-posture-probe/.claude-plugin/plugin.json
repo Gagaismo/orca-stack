@@ -1,0 +1,1 @@
+{ "name": "gear-probe", "version": "0.1.0", "description": "Throwaway probe for map #118 ticket #153; never released.", "types": "./types/index.d.ts" }

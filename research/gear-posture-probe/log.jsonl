@@ -1,0 +1,769 @@
+{"t":1792000755000,"ev":"run","label":"A1","how":"new","mode":"compose","gear":"medium"}
+{"t":1792000758523,"ev":"start","sid":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792000758946,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792000758953,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792000764861,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000768801,"ev":"step","sid":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","index":1,"messageCount":36,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":320,"cache_read_input_tokens":44621,"cache_creation_input_tokens":13238,"model":"claude-opus-5-5"}}
+{"t":1792000768898,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000771151,"ev":"step","sid":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","index":2,"messageCount":43,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":132,"cache_read_input_tokens":57859,"cache_creation_input_tokens":498,"model":"claude-opus-5-5"}}
+{"t":1792000771240,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000771939,"ev":"step","sid":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","index":3,"messageCount":49,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":58357,"cache_creation_input_tokens":673,"model":"claude-opus-5-5"}}
+{"t":1792000774101,"ev":"end","reason":"other","sessionId":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","resume":{"id":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a"}}
+{"t":1792000779000,"ev":"run","label":"A2","how":"resume:019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","mode":"compose","gear":"medium"}
+{"t":1792000782749,"ev":"start","sid":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792000782836,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792000782846,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792000783230,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792000786739,"ev":"end","reason":"other","sessionId":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","resume":{"id":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a"}}
+{"t":1792000787000,"ev":"run","label":"A3","how":"resume:019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","mode":"compose","gear":"proactive"}
+{"t":1792000791286,"ev":"start","sid":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792000791378,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792000791391,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792000791825,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000793209,"ev":"step","sid":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","index":0,"messageCount":53,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":59068,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792000795781,"ev":"end","reason":"other","sessionId":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","resume":{"id":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a"}}
+{"t":1792000797000,"ev":"run","label":"A4","how":"resume:019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","mode":"compose","gear":"proactive"}
+{"t":1792000801500,"ev":"start","sid":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792000801595,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792000801603,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792000805546,"ev":"end","reason":"other","sessionId":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","resume":{"id":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a"}}
+{"t":1792000857000,"ev":"run","label":"A5","how":"resume:019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","mode":"compose","gear":"proactive"}
+{"t":1792000861606,"ev":"start","sid":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792000861714,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792000861721,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792000861725,"ev":"compose.add","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792000862188,"ev":"attach","type":"hook_success","len":152,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"deferred_tools_delta","len":4996,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"mcp_instructions_delta","len":10644,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000862188,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000862189,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000862189,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000862189,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000862189,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000865493,"ev":"step","sid":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","index":0,"messageCount":63,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":189,"cache_read_input_tokens":59144,"cache_creation_input_tokens":89,"model":"claude-opus-5-5"}}
+{"t":1792000867808,"ev":"end","reason":"other","sessionId":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a","resume":{"id":"019af6cd-01e4-4fcf-a4f1-4c2fdda8da5a"}}
+{"t":1792000922000,"ev":"run","label":"H","how":"new","mode":"compose","gear":"medium"}
+{"t":1792000925640,"ev":"start","sid":"c02be1c4-4b03-4bf1-b00d-fc82875b1e3f","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792000925740,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792000925753,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792000925756,"ev":"compose.add","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792000926193,"ev":"attach","type":"hook_success","len":214,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"deferred_tools_delta","len":4996,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"mcp_instructions_delta","len":10644,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792000926193,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792000932222,"ev":"step","sid":"c02be1c4-4b03-4bf1-b00d-fc82875b1e3f","index":0,"messageCount":25,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":584,"cache_read_input_tokens":0,"cache_creation_input_tokens":44654,"model":"claude-opus-5-5"}}
+{"t":1792000933924,"ev":"attach","type":"queued_command","len":296,"ultra":false}
+{"t":1792000933924,"ev":"attach","type":"queued_command","len":378,"ultra":false}
+{"t":1792000933924,"ev":"attach","type":"queued_command","len":476,"ultra":false}
+{"t":1792000933924,"ev":"attach","type":"queued_command","len":296,"ultra":false}
+{"t":1792000933924,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000942524,"ev":"step","sid":"c02be1c4-4b03-4bf1-b00d-fc82875b1e3f","index":1,"messageCount":36,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":670,"cache_read_input_tokens":44654,"cache_creation_input_tokens":13209,"model":"claude-opus-5-5"}}
+{"t":1792000953632,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000955110,"ev":"step","sid":"c02be1c4-4b03-4bf1-b00d-fc82875b1e3f","index":2,"messageCount":42,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":62,"cache_read_input_tokens":57863,"cache_creation_input_tokens":709,"model":"claude-opus-5-5"}}
+{"t":1792000957649,"ev":"end","reason":"other","sessionId":"c02be1c4-4b03-4bf1-b00d-fc82875b1e3f","resume":{"id":"c02be1c4-4b03-4bf1-b00d-fc82875b1e3f"}}
+{"t":1792000976322,"ev":"run","label":"I","how":"new","mode":"compose","gear":"medium"}
+{"t":1792000976335,"ev":"driver.send","text":"Read the file big.md in the current directory with the Read tool, then reply onl"}
+{"t":1792000979256,"ev":"start","sid":"1d0d9f83-850a-4a64-873b-2a6b55753c22","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792000979387,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792000979400,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792000979403,"ev":"compose.add","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792000979752,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792000979755,"ev":"compose.add","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792000979912,"ev":"attach","type":"hook_success","len":276,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"deferred_tools_delta","len":4832,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"mcp_instructions_delta","len":6498,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792000979912,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792000986904,"ev":"step","sid":"1d0d9f83-850a-4a64-873b-2a6b55753c22","index":0,"messageCount":25,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":730,"cache_read_input_tokens":25312,"cache_creation_input_tokens":17675,"model":"claude-opus-5-5"}}
+{"t":1792000987243,"ev":"attach","type":"deferred_tools_delta","len":885,"ultra":false}
+{"t":1792000987243,"ev":"attach","type":"mcp_instructions_delta","len":4267,"ultra":false}
+{"t":1792000987243,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000989836,"ev":"step","sid":"1d0d9f83-850a-4a64-873b-2a6b55753c22","index":1,"messageCount":38,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":197,"cache_read_input_tokens":42987,"cache_creation_input_tokens":15403,"model":"claude-opus-5-5"}}
+{"t":1792000989946,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000991621,"ev":"step","sid":"1d0d9f83-850a-4a64-873b-2a6b55753c22","index":2,"messageCount":45,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":80,"cache_read_input_tokens":58390,"cache_creation_input_tokens":375,"model":"claude-opus-5-5"}}
+{"t":1792000991703,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000992587,"ev":"step","sid":"1d0d9f83-850a-4a64-873b-2a6b55753c22","index":3,"messageCount":50,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":58765,"cache_creation_input_tokens":712,"model":"claude-opus-5-5"}}
+{"t":1792000994338,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792000994415,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792000994426,"ev":"compose.add","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792000994785,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000996216,"ev":"step","sid":"1d0d9f83-850a-4a64-873b-2a6b55753c22","index":0,"messageCount":71,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":59477,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792000997952,"ev":"driver.write","f":"gear.txt","text":"proactive"}
+{"t":1792000997952,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792000998039,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792000998055,"ev":"compose.add","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792000998423,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792000999981,"ev":"step","sid":"1d0d9f83-850a-4a64-873b-2a6b55753c22","index":0,"messageCount":80,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":59515,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001001710,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001001784,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001001794,"ev":"compose.add","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001002135,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001003577,"ev":"step","sid":"1d0d9f83-850a-4a64-873b-2a6b55753c22","index":0,"messageCount":89,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":59553,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001005527,"ev":"driver.send","text":"Quote verbatim the first line of any text in your context that starts with POSTU"}
+{"t":1792001005609,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001005619,"ev":"compose.add","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001005974,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001008496,"ev":"step","sid":"1d0d9f83-850a-4a64-873b-2a6b55753c22","index":0,"messageCount":98,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":118,"cache_read_input_tokens":59591,"cache_creation_input_tokens":90,"model":"claude-opus-5-5"}}
+{"t":1792001011115,"ev":"end","reason":"other","sessionId":"1d0d9f83-850a-4a64-873b-2a6b55753c22","resume":{"id":"1d0d9f83-850a-4a64-873b-2a6b55753c22"}}
+{"t":1792001035438,"ev":"run","label":"J","how":"new","mode":"compose,invalidate","gear":"medium"}
+{"t":1792001035450,"ev":"driver.send","text":"Read the file big.md in the current directory with the Read tool, then reply onl"}
+{"t":1792001038348,"ev":"start","sid":"b42e5435-5867-4e09-973f-ef4319504179","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001038498,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001038508,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001038511,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792001038956,"ev":"attach","type":"hook_success","len":338,"ultra":false}
+{"t":1792001038956,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001038956,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001038956,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001038956,"ev":"attach","type":"deferred_tools_delta","len":4832,"ultra":false}
+{"t":1792001038957,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001038957,"ev":"attach","type":"mcp_instructions_delta","len":6498,"ultra":false}
+{"t":1792001038957,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792001038957,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001038957,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001038957,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792001038957,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001038957,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001038957,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001038957,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001046733,"ev":"step","sid":"b42e5435-5867-4e09-973f-ef4319504179","index":0,"messageCount":25,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":594,"cache_read_input_tokens":25312,"cache_creation_input_tokens":17706,"model":"claude-opus-5-5"}}
+{"t":1792001047033,"ev":"attach","type":"deferred_tools_delta","len":885,"ultra":false}
+{"t":1792001047033,"ev":"attach","type":"mcp_instructions_delta","len":4267,"ultra":false}
+{"t":1792001047033,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001051260,"ev":"step","sid":"b42e5435-5867-4e09-973f-ef4319504179","index":1,"messageCount":38,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":316,"cache_read_input_tokens":43018,"cache_creation_input_tokens":15267,"model":"claude-opus-5-5"}}
+{"t":1792001051349,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001053062,"ev":"step","sid":"b42e5435-5867-4e09-973f-ef4319504179","index":2,"messageCount":45,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":80,"cache_read_input_tokens":58285,"cache_creation_input_tokens":494,"model":"claude-opus-5-5"}}
+{"t":1792001053151,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001054115,"ev":"step","sid":"b42e5435-5867-4e09-973f-ef4319504179","index":3,"messageCount":50,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":58779,"cache_creation_input_tokens":758,"model":"claude-opus-5-5"}}
+{"t":1792001055854,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001055932,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001055942,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792001056286,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001057952,"ev":"step","sid":"b42e5435-5867-4e09-973f-ef4319504179","index":0,"messageCount":71,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":59537,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001059675,"ev":"driver.write","f":"gear.txt","text":"proactive"}
+{"t":1792001059675,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001059765,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001059777,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001059791,"ev":"invalidate","from":"medium","to":"proactive"}
+{"t":1792001060160,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001062208,"ev":"step","sid":"b42e5435-5867-4e09-973f-ef4319504179","index":0,"messageCount":80,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":59575,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001063935,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001064012,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001064022,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001064365,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001066027,"ev":"step","sid":"b42e5435-5867-4e09-973f-ef4319504179","index":0,"messageCount":89,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":59613,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001067760,"ev":"driver.send","text":"Quote verbatim the first line of any text in your context that starts with POSTU"}
+{"t":1792001067851,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001067862,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001068217,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001071300,"ev":"step","sid":"b42e5435-5867-4e09-973f-ef4319504179","index":0,"messageCount":98,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":134,"cache_read_input_tokens":59651,"cache_creation_input_tokens":90,"model":"claude-opus-5-5"}}
+{"t":1792001073494,"ev":"end","reason":"other","sessionId":"b42e5435-5867-4e09-973f-ef4319504179","resume":{"id":"b42e5435-5867-4e09-973f-ef4319504179"}}
+{"t":1792001080031,"ev":"run","label":"K","how":"new","mode":"compose,idpergear","gear":"medium"}
+{"t":1792001080044,"ev":"driver.send","text":"Read the file big.md in the current directory with the Read tool, then reply onl"}
+{"t":1792001082771,"ev":"start","sid":"bcee50dd-7d8d-4f27-b012-4c42359dfcbb","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001082971,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001082983,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001082987,"ev":"compose.add","id":"gear-probe:postura-medium","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792001083447,"ev":"attach","type":"hook_success","len":400,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"deferred_tools_delta","len":4832,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"mcp_instructions_delta","len":6498,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001083447,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001091028,"ev":"step","sid":"bcee50dd-7d8d-4f27-b012-4c42359dfcbb","index":0,"messageCount":25,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":598,"cache_read_input_tokens":25312,"cache_creation_input_tokens":17737,"model":"claude-opus-5-5"}}
+{"t":1792001091632,"ev":"attach","type":"deferred_tools_delta","len":885,"ultra":false}
+{"t":1792001091632,"ev":"attach","type":"mcp_instructions_delta","len":4267,"ultra":false}
+{"t":1792001091632,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001093737,"ev":"step","sid":"bcee50dd-7d8d-4f27-b012-4c42359dfcbb","index":1,"messageCount":34,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":43049,"cache_creation_input_tokens":14755,"model":"claude-opus-5-5"}}
+{"t":1792001095483,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001095559,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001095570,"ev":"compose.add","id":"gear-probe:postura-medium","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792001095915,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001098014,"ev":"step","sid":"bcee50dd-7d8d-4f27-b012-4c42359dfcbb","index":0,"messageCount":45,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":57804,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001099751,"ev":"driver.write","f":"gear.txt","text":"proactive"}
+{"t":1792001099751,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001099829,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001099840,"ev":"compose.add","id":"gear-probe:postura-proactive","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001100184,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001102250,"ev":"step","sid":"bcee50dd-7d8d-4f27-b012-4c42359dfcbb","index":0,"messageCount":54,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":57842,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001103993,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001104074,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001104083,"ev":"compose.add","id":"gear-probe:postura-proactive","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001104455,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001106391,"ev":"step","sid":"bcee50dd-7d8d-4f27-b012-4c42359dfcbb","index":0,"messageCount":63,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":57880,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001108116,"ev":"driver.send","text":"Quote verbatim the first line of any text in your context that starts with POSTU"}
+{"t":1792001108189,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001108199,"ev":"compose.add","id":"gear-probe:postura-proactive","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001108544,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001111814,"ev":"step","sid":"bcee50dd-7d8d-4f27-b012-4c42359dfcbb","index":0,"messageCount":72,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":172,"cache_read_input_tokens":57918,"cache_creation_input_tokens":90,"model":"claude-opus-5-5"}}
+{"t":1792001113995,"ev":"end","reason":"other","sessionId":"bcee50dd-7d8d-4f27-b012-4c42359dfcbb","resume":{"id":"bcee50dd-7d8d-4f27-b012-4c42359dfcbb"}}
+{"t":1792001146461,"ev":"run","label":"L","how":"new","mode":"command","gear":"medium"}
+{"t":1792001146476,"ev":"driver.send","text":"Read the file big.md in the current directory with the Read tool, then reply onl"}
+{"t":1792001149505,"ev":"start","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001149627,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001149641,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001149646,"ev":"compose.skip","modes":["command"]}
+{"t":1792001150004,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001150006,"ev":"compose.skip","modes":["command"]}
+{"t":1792001150153,"ev":"attach","type":"hook_success","len":400,"ultra":false}
+{"t":1792001150153,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001150153,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001150153,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001150153,"ev":"attach","type":"deferred_tools_delta","len":4434,"ultra":false}
+{"t":1792001150153,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001150153,"ev":"attach","type":"mcp_instructions_delta","len":6498,"ultra":false}
+{"t":1792001150153,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792001150153,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001150154,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001150154,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792001150154,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001150154,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001150154,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001150154,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001158707,"ev":"step","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","index":0,"messageCount":25,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":637,"cache_read_input_tokens":12161,"cache_creation_input_tokens":30570,"model":"claude-opus-5-5"}}
+{"t":1792001159322,"ev":"attach","type":"deferred_tools_delta","len":1294,"ultra":false}
+{"t":1792001159322,"ev":"attach","type":"mcp_instructions_delta","len":4267,"ultra":false}
+{"t":1792001159322,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001161359,"ev":"step","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","index":1,"messageCount":34,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":42731,"cache_creation_input_tokens":14988,"model":"claude-opus-5-5"}}
+{"t":1792001163088,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001163168,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001163177,"ev":"compose.skip","modes":["command"]}
+{"t":1792001163537,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001165593,"ev":"step","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","index":0,"messageCount":45,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":57719,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001167329,"ev":"driver.send","text":"/marcha proactive"}
+{"t":1792001167409,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001167418,"ev":"compose.skip","modes":["command"]}
+{"t":1792001167434,"ev":"marcha","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","gear":"proactive","modes":["command"]}
+{"t":1792001168953,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001169029,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001169040,"ev":"compose.skip","modes":["command"]}
+{"t":1792001169415,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001170885,"ev":"step","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","index":0,"messageCount":58,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":57757,"cache_creation_input_tokens":508,"model":"claude-opus-5-5"}}
+{"t":1792001172617,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001172688,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001172697,"ev":"compose.skip","modes":["command"]}
+{"t":1792001173030,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001174386,"ev":"step","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","index":0,"messageCount":67,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":58265,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001176123,"ev":"driver.send","text":"Quote verbatim the first line of any text in your context that starts with POSTU"}
+{"t":1792001176196,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001176205,"ev":"compose.skip","modes":["command"]}
+{"t":1792001176553,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001182076,"ev":"step","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","index":0,"messageCount":76,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":429,"cache_read_input_tokens":58303,"cache_creation_input_tokens":98,"model":"claude-opus-5-5"}}
+{"t":1792001183813,"ev":"driver.send","text":"/compact"}
+{"t":1792001183895,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001183905,"ev":"compose.skip","modes":["command"]}
+{"t":1792001217234,"ev":"driver.send","text":"Quote verbatim the first line of any text in your context that starts with POSTU"}
+{"t":1792001217299,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001217313,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001217316,"ev":"compose.skip","modes":["command"]}
+{"t":1792001217723,"ev":"attach","type":"compact_file_reference","len":294,"ultra":false}
+{"t":1792001217723,"ev":"attach","type":"deferred_tools_delta","len":4996,"ultra":false}
+{"t":1792001217723,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001217723,"ev":"attach","type":"mcp_instructions_delta","len":10644,"ultra":false}
+{"t":1792001217723,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001217723,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001217723,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001217723,"ev":"attach","type":"hook_success","len":1056,"ultra":false}
+{"t":1792001217724,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001217724,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001217724,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001217724,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001217724,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001241170,"ev":"step","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","index":0,"messageCount":33,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":2338,"cache_read_input_tokens":14073,"cache_creation_input_tokens":23271,"model":"claude-opus-5-5"}}
+{"t":1792001242930,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001243003,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001243013,"ev":"compose.skip","modes":["command"]}
+{"t":1792001243386,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001244970,"ev":"step","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","index":0,"messageCount":45,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":37344,"cache_creation_input_tokens":2372,"model":"claude-opus-5-5"}}
+{"t":1792001247218,"ev":"end","reason":"other","sessionId":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","resume":{"id":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a"}}
+{"t":1792001288799,"ev":"run","label":"N","how":"new","mode":"command,reinject","gear":"medium"}
+{"t":1792001288813,"ev":"driver.send","text":"Read the file big.md in the current directory with the Read tool, then reply onl"}
+{"t":1792001291253,"ev":"classic.SessionStart","source":"startup","sid":"37d0acda-2703-40f2-bee6-fecef93e5abd","reinject":true}
+{"t":1792001291521,"ev":"start","sid":"37d0acda-2703-40f2-bee6-fecef93e5abd","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001291653,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001291665,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001291669,"ev":"compose.skip","modes":["command","reinject"]}
+{"t":1792001292052,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001292057,"ev":"compose.skip","modes":["command","reinject"]}
+{"t":1792001292223,"ev":"attach","type":"hook_success","len":400,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"hook_additional_context","len":441,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"deferred_tools_delta","len":4434,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"mcp_instructions_delta","len":6498,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001292223,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001298552,"ev":"step","sid":"37d0acda-2703-40f2-bee6-fecef93e5abd","index":0,"messageCount":26,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":453,"cache_read_input_tokens":25182,"cache_creation_input_tokens":17690,"model":"claude-opus-5-5"}}
+{"t":1792001299248,"ev":"attach","type":"deferred_tools_delta","len":1294,"ultra":false}
+{"t":1792001299249,"ev":"attach","type":"mcp_instructions_delta","len":4267,"ultra":false}
+{"t":1792001299249,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001300208,"ev":"step","sid":"37d0acda-2703-40f2-bee6-fecef93e5abd","index":1,"messageCount":35,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":42872,"cache_creation_input_tokens":14804,"model":"claude-opus-5-5"}}
+{"t":1792001301943,"ev":"driver.send","text":"/marcha proactive"}
+{"t":1792001302018,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001302027,"ev":"compose.skip","modes":["command","reinject"]}
+{"t":1792001302042,"ev":"marcha","sid":"37d0acda-2703-40f2-bee6-fecef93e5abd","gear":"proactive","modes":["command","reinject"]}
+{"t":1792001303551,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001303628,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001303639,"ev":"compose.skip","modes":["command","reinject"]}
+{"t":1792001304011,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001305996,"ev":"step","sid":"37d0acda-2703-40f2-bee6-fecef93e5abd","index":0,"messageCount":50,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":57676,"cache_creation_input_tokens":508,"model":"claude-opus-5-5"}}
+{"t":1792001307738,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001307817,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001307826,"ev":"compose.skip","modes":["command","reinject"]}
+{"t":1792001308171,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001309915,"ev":"step","sid":"37d0acda-2703-40f2-bee6-fecef93e5abd","index":0,"messageCount":59,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":58184,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001311639,"ev":"driver.send","text":"/compact"}
+{"t":1792001311718,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001311727,"ev":"compose.skip","modes":["command","reinject"]}
+{"t":1792001347409,"ev":"classic.SessionStart","source":"compact","sid":"37d0acda-2703-40f2-bee6-fecef93e5abd","reinject":true}
+{"t":1792001349047,"ev":"driver.send","text":"List every place in your context where text starting with POSTURA-PROBE appears:"}
+{"t":1792001349117,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001349128,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001349134,"ev":"compose.skip","modes":["command","reinject"]}
+{"t":1792001349534,"ev":"attach","type":"compact_file_reference","len":294,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"deferred_tools_delta","len":4996,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"mcp_instructions_delta","len":10644,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"hook_success","len":1056,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"hook_additional_context","len":1094,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001349534,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001365171,"ev":"step","sid":"37d0acda-2703-40f2-bee6-fecef93e5abd","index":0,"messageCount":33,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":1266,"cache_read_input_tokens":14073,"cache_creation_input_tokens":23933,"model":"claude-opus-5-5"}}
+{"t":1792001367391,"ev":"end","reason":"other","sessionId":"37d0acda-2703-40f2-bee6-fecef93e5abd","resume":{"id":"37d0acda-2703-40f2-bee6-fecef93e5abd"}}
+{"t":1792001375632,"ev":"run","label":"M","how":"new","mode":"perturn","gear":"proactive"}
+{"t":1792001375645,"ev":"driver.send","text":"Read the file big.md in the current directory with the Read tool, then reply onl"}
+{"t":1792001378006,"ev":"classic.SessionStart","source":"startup","sid":"36bb222f-fe27-4985-b691-d7577012f097","reinject":false}
+{"t":1792001378250,"ev":"start","sid":"36bb222f-fe27-4985-b691-d7577012f097","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001378385,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001378393,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001378398,"ev":"compose.skip","modes":["perturn"]}
+{"t":1792001378749,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001378753,"ev":"compose.skip","modes":["perturn"]}
+{"t":1792001378904,"ev":"attach","type":"hook_success","len":400,"ultra":false}
+{"t":1792001378904,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001378904,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001378904,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001378904,"ev":"attach","type":"deferred_tools_delta","len":2791,"ultra":false}
+{"t":1792001378904,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001378904,"ev":"attach","type":"mcp_instructions_delta","len":4674,"ultra":false}
+{"t":1792001378904,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792001378904,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001378904,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001378904,"ev":"attach","type":"hook_additional_context","len":2211,"ultra":false}
+{"t":1792001378905,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001378905,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001378905,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001378905,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001383396,"ev":"step","sid":"36bb222f-fe27-4985-b691-d7577012f097","index":0,"messageCount":25,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":422,"cache_read_input_tokens":25182,"cache_creation_input_tokens":16489,"model":"claude-opus-5-5"}}
+{"t":1792001383979,"ev":"attach","type":"deferred_tools_delta","len":2943,"ultra":false}
+{"t":1792001383979,"ev":"attach","type":"mcp_instructions_delta","len":6091,"ultra":false}
+{"t":1792001383979,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001384962,"ev":"step","sid":"36bb222f-fe27-4985-b691-d7577012f097","index":1,"messageCount":34,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":41671,"cache_creation_input_tokens":16160,"model":"claude-opus-5-5"}}
+{"t":1792001386695,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001386770,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001386779,"ev":"compose.skip","modes":["perturn"]}
+{"t":1792001387112,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001387112,"ev":"attach","type":"hook_additional_context","len":1098,"ultra":false}
+{"t":1792001388547,"ev":"step","sid":"36bb222f-fe27-4985-b691-d7577012f097","index":0,"messageCount":46,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":57831,"cache_creation_input_tokens":379,"model":"claude-opus-5-5"}}
+{"t":1792001390274,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001390346,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001390354,"ev":"compose.skip","modes":["perturn"]}
+{"t":1792001390701,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001390701,"ev":"attach","type":"hook_additional_context","len":1098,"ultra":false}
+{"t":1792001392092,"ev":"step","sid":"36bb222f-fe27-4985-b691-d7577012f097","index":0,"messageCount":56,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":58210,"cache_creation_input_tokens":379,"model":"claude-opus-5-5"}}
+{"t":1792001393823,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001393898,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001393907,"ev":"compose.skip","modes":["perturn"]}
+{"t":1792001394247,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001394247,"ev":"attach","type":"hook_additional_context","len":1098,"ultra":false}
+{"t":1792001395785,"ev":"step","sid":"36bb222f-fe27-4985-b691-d7577012f097","index":0,"messageCount":66,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":58589,"cache_creation_input_tokens":379,"model":"claude-opus-5-5"}}
+{"t":1792001397527,"ev":"driver.write","f":"gear.txt","text":"lazy"}
+{"t":1792001397528,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001397608,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001397617,"ev":"compose.skip","modes":["perturn"]}
+{"t":1792001397989,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001397989,"ev":"attach","type":"hook_additional_context","len":770,"ultra":false}
+{"t":1792001399402,"ev":"step","sid":"36bb222f-fe27-4985-b691-d7577012f097","index":0,"messageCount":76,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":58968,"cache_creation_input_tokens":289,"model":"claude-opus-5-5"}}
+{"t":1792001401161,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001401236,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001401245,"ev":"compose.skip","modes":["perturn"]}
+{"t":1792001401637,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001401637,"ev":"attach","type":"hook_additional_context","len":770,"ultra":false}
+{"t":1792001403093,"ev":"step","sid":"36bb222f-fe27-4985-b691-d7577012f097","index":0,"messageCount":86,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":59257,"cache_creation_input_tokens":289,"model":"claude-opus-5-5"}}
+{"t":1792001405290,"ev":"end","reason":"other","sessionId":"36bb222f-fe27-4985-b691-d7577012f097","resume":{"id":"36bb222f-fe27-4985-b691-d7577012f097"}}
+{"t":1792001416000,"ev":"run","label":"P1","how":"resume:b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","mode":"","gear":"medium"}
+{"t":1792001419202,"ev":"classic.SessionStart","source":"resume","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","reinject":false}
+{"t":1792001419432,"ev":"start","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001420299,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001420300,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001420310,"ev":"compose.skip","modes":[]}
+{"t":1792001420688,"ev":"attach","type":"compact_file_reference","len":294,"ultra":false}
+{"t":1792001420688,"ev":"attach","type":"deferred_tools_delta","len":4996,"ultra":false}
+{"t":1792001420688,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001420688,"ev":"attach","type":"mcp_instructions_delta","len":10644,"ultra":false}
+{"t":1792001420688,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001420688,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001420688,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"hook_success","len":1056,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"hook_success","len":399,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001420689,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001424682,"ev":"step","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","index":0,"messageCount":49,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":39716,"cache_creation_input_tokens":10080,"model":"claude-opus-5-5"}}
+{"t":1792001426834,"ev":"end","reason":"other","sessionId":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","resume":{"id":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a"}}
+{"t":1792001427000,"ev":"run","label":"P2","how":"continue","mode":"","gear":"medium"}
+{"t":1792001430697,"ev":"classic.SessionStart","source":"resume","sid":"08492bdb-580a-4468-aeb0-fb4711adb558","reinject":false}
+{"t":1792001430923,"ev":"start","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001431025,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001431034,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001431036,"ev":"compose.skip","modes":[]}
+{"t":1792001431431,"ev":"attach","type":"compact_file_reference","len":294,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"deferred_tools_delta","len":4996,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"mcp_instructions_delta","len":10644,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"hook_success","len":1056,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001431431,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001431432,"ev":"attach","type":"hook_success","len":399,"ultra":false}
+{"t":1792001431432,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792001431432,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001431432,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001431432,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001433190,"ev":"step","sid":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","index":0,"messageCount":48,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":49796,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001435375,"ev":"end","reason":"other","sessionId":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a","resume":{"id":"b18c5e8f-b827-42fe-bb05-bd14d5a77d4a"}}
+{"t":1792001446000,"ev":"run","label":"F1","how":"new","mode":"","gear":"medium"}
+{"t":1792001449393,"ev":"classic.SessionStart","source":"startup","sid":"1677f390-9c15-43cf-aa6d-da7920814db9","reinject":false}
+{"t":1792001449623,"ev":"start","sid":"1677f390-9c15-43cf-aa6d-da7920814db9","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001449929,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001449942,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001449945,"ev":"compose.skip","modes":[]}
+{"t":1792001449958,"ev":"ultra.run","res":{"text":"Ultracode on (this session only): dynamic workflows on every task. Effort stays xhigh."}}
+{"t":1792001450050,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001450053,"ev":"compose.skip","modes":[]}
+{"t":1792001450444,"ev":"attach","type":"hook_success","len":400,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"deferred_tools_delta","len":4996,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"mcp_instructions_delta","len":10644,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"ultra_effort_enter","len":308,"ultra":true,"head":"Ultracode is on: optimize for the most exhaustive, correct answer — not the fastest or cheapest. Use the Workflow tool on every substantive task; token cost is "}
+{"t":1792001450444,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001450444,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001456062,"ev":"step","sid":"1677f390-9c15-43cf-aa6d-da7920814db9","index":0,"messageCount":31,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":477,"cache_read_input_tokens":12159,"cache_creation_input_tokens":38863,"model":"claude-opus-5-5"}}
+{"t":1792001458203,"ev":"end","reason":"other","sessionId":"1677f390-9c15-43cf-aa6d-da7920814db9","resume":{"id":"1677f390-9c15-43cf-aa6d-da7920814db9"}}
+{"t":1792001469000,"ev":"run","label":"R1","how":"resume:1677f390-9c15-43cf-aa6d-da7920814db9","mode":"","gear":"medium"}
+{"t":1792001472460,"ev":"classic.SessionStart","source":"resume","sid":"1677f390-9c15-43cf-aa6d-da7920814db9","reinject":false}
+{"t":1792001472676,"ev":"start","sid":"1677f390-9c15-43cf-aa6d-da7920814db9","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001472781,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001472788,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001472792,"ev":"compose.skip","modes":[]}
+{"t":1792001473179,"ev":"attach","type":"hook_success","len":400,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"deferred_tools_delta","len":4996,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"mcp_instructions_delta","len":10644,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"ultra_effort_enter","len":308,"ultra":true,"head":"Ultracode is on: optimize for the most exhaustive, correct answer — not the fastest or cheapest. Use the Workflow tool on every substantive task; token cost is "}
+{"t":1792001473179,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001473179,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001473180,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001473180,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001473180,"ev":"attach","type":"ultra_effort_exit","len":74,"ultra":true,"head":"Ultracode is off — the Workflow tool's standard opt-in rule applies again."}
+{"t":1792001476867,"ev":"step","sid":"1677f390-9c15-43cf-aa6d-da7920814db9","index":0,"messageCount":33,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":292,"cache_read_input_tokens":51022,"cache_creation_input_tokens":563,"model":"claude-opus-5-5"}}
+{"t":1792001479001,"ev":"end","reason":"other","sessionId":"1677f390-9c15-43cf-aa6d-da7920814db9","resume":{"id":"1677f390-9c15-43cf-aa6d-da7920814db9"}}
+{"t":0,"ev":"run","label":"INT1","how":"interactive","mode":"compose","gear":"medium"}
+{"t":1792001496580,"ev":"start","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001496663,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001497369,"ev":"classic.SessionStart","source":"startup","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","reinject":false}
+{"t":1792001506326,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001506330,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792001506444,"ev":"attach","type":"hook_success","len":400,"ultra":false}
+{"t":1792001506444,"ev":"attach","type":"environment","len":1667,"ultra":false}
+{"t":1792001506444,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001506444,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001506444,"ev":"attach","type":"deferred_tools_delta","len":4554,"ultra":false}
+{"t":1792001506444,"ev":"attach","type":"agent_listing_delta","len":4431,"ultra":false}
+{"t":1792001506444,"ev":"attach","type":"mcp_instructions_delta","len":9844,"ultra":false}
+{"t":1792001506444,"ev":"attach","type":"skill_listing","len":28960,"ultra":false}
+{"t":1792001506445,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001506445,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001506445,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792001506445,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001506445,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001506445,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001506445,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001512612,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":0,"messageCount":25,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":563,"cache_read_input_tokens":27078,"cache_creation_input_tokens":35004,"model":"claude-opus-5-5"}}
+{"t":1792001513239,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001514097,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":1,"messageCount":32,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":62082,"cache_creation_input_tokens":12755,"model":"claude-opus-5-5"}}
+{"t":1792001522344,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001522347,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792001522441,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001523795,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":0,"messageCount":44,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":74837,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001526481,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001526486,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792001526577,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001532564,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":0,"messageCount":54,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":609,"cache_read_input_tokens":74879,"cache_creation_input_tokens":44,"model":"claude-opus-5-5"}}
+{"t":1792001534784,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001541920,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":1,"messageCount":60,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":653,"cache_read_input_tokens":74923,"cache_creation_input_tokens":648,"model":"claude-opus-5-5"}}
+{"t":1792001544338,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001544341,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792001544434,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001545768,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":0,"messageCount":73,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":76224,"cache_creation_input_tokens":34,"model":"claude-opus-5-5"}}
+{"t":1792001548426,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001548429,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792001548516,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001549923,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":0,"messageCount":83,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":76262,"cache_creation_input_tokens":34,"model":"claude-opus-5-5"}}
+{"t":1792001552559,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001552562,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE medium. Gear: Medium.\nWork","len":403}
+{"t":1792001552649,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001555783,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":0,"messageCount":93,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":182,"cache_read_input_tokens":76300,"cache_creation_input_tokens":86,"model":"claude-opus-5-5"}}
+{"t":0,"ev":"run","label":"INT1b","how":"interactive","mode":"compose","gear":"medium"}
+{"t":1792001579475,"ev":"marcha","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","gear":"proactive","modes":["compose"]}
+{"t":1792001583917,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001583921,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001584026,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001585642,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":0,"messageCount":106,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":76568,"cache_creation_input_tokens":112,"model":"claude-opus-5-5"}}
+{"t":1792001588255,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001588258,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001588346,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001589884,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":0,"messageCount":116,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":76684,"cache_creation_input_tokens":34,"model":"claude-opus-5-5"}}
+{"t":1792001592388,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001592392,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001592480,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001595768,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":0,"messageCount":126,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":227,"cache_read_input_tokens":76722,"cache_creation_input_tokens":86,"model":"claude-opus-5-5"}}
+{"t":1792001627375,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290","modo-autonomo:instrucciones:session:657"],"ultraIds":[]}
+{"t":1792001627378,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001627465,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001631310,"ev":"step","sid":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","index":0,"messageCount":139,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"proactive","storeGear":"proactive","usage":{"input_tokens":2,"output_tokens":288,"cache_read_input_tokens":77035,"cache_creation_input_tokens":243,"model":"claude-opus-5-5"}}
+{"t":0,"ev":"run","label":"INT2","how":"interactive /clear","mode":"compose","gear":"proactive"}
+{"t":1792001646536,"ev":"end","reason":"clear","sessionId":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6","resume":{"id":"6a64d3d9-717f-45ef-b7c0-182f94e7d1b6"}}
+{"t":1792001648062,"ev":"classic.SessionStart","source":"clear","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","reinject":false}
+{"t":1792001651858,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001651862,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001651864,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001652013,"ev":"attach","type":"hook_success","len":398,"ultra":false}
+{"t":1792001652013,"ev":"attach","type":"environment","len":1667,"ultra":false}
+{"t":1792001652013,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001652013,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001652013,"ev":"attach","type":"deferred_tools_delta","len":4554,"ultra":false}
+{"t":1792001652013,"ev":"attach","type":"agent_listing_delta","len":4431,"ultra":false}
+{"t":1792001652013,"ev":"attach","type":"mcp_instructions_delta","len":9844,"ultra":false}
+{"t":1792001652013,"ev":"attach","type":"skill_listing","len":28960,"ultra":false}
+{"t":1792001652013,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001652013,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001652013,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792001652014,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001652014,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001652014,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001652014,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001661499,"ev":"step","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","index":0,"messageCount":28,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":483,"cache_read_input_tokens":27078,"cache_creation_input_tokens":35354,"model":"claude-opus-5-5"}}
+{"t":0,"ev":"run","label":"INT3","how":"interactive /compact","mode":"compose","gear":"proactive"}
+{"t":1792001675653,"ev":"marcha","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","gear":"lazy","modes":["compose"]}
+{"t":1792001681074,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001681077,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE lazy. Gear: Lazy.\nCarry ou","len":728}
+{"t":1792001681166,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001683398,"ev":"step","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","index":0,"messageCount":42,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"lazy","storeGear":"lazy","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":62432,"cache_creation_input_tokens":595,"model":"claude-opus-5-5"}}
+{"t":1792001685940,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001685944,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE lazy. Gear: Lazy.\nCarry ou","len":728}
+{"t":1792001699057,"ev":"classic.SessionStart","source":"compact","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","reinject":false}
+{"t":1792001701325,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001701325,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001701328,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE lazy. Gear: Lazy.\nCarry ou","len":728}
+{"t":1792001701474,"ev":"attach","type":"deferred_tools_delta","len":3899,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"agent_listing_delta","len":4431,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"mcp_instructions_delta","len":9844,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"environment","len":1667,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"hook_success","len":1056,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001701474,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001712321,"ev":"step","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","index":0,"messageCount":32,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"lazy","storeGear":"lazy","usage":{"input_tokens":2,"output_tokens":831,"cache_read_input_tokens":27078,"cache_creation_input_tokens":25849,"model":"claude-opus-5-5"}}
+{"t":1792001738647,"ev":"start","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","stateGear":"lazy","settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001741880,"ev":"run","label":"Q","how":"new","mode":"context","gear":"medium"}
+{"t":1792001741894,"ev":"driver.send","text":"Read the file big.md in the current directory with the Read tool, then reply onl"}
+{"t":1792001744288,"ev":"classic.SessionStart","source":"startup","sid":"3bf3578c-ee7e-4bc1-82a1-e610321cd20b","reinject":false}
+{"t":1792001744528,"ev":"start","sid":"3bf3578c-ee7e-4bc1-82a1-e610321cd20b","stateGear":null,"settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":1792001744657,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001744660,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001744661,"ev":"compose.skip","modes":["context"]}
+{"t":1792001745051,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001745054,"ev":"compose.skip","modes":["context"]}
+{"t":1792001745219,"ev":"attach","type":"hook_success","len":400,"ultra":false}
+{"t":1792001745219,"ev":"attach","type":"environment","len":910,"ultra":false}
+{"t":1792001745219,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001745219,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001745219,"ev":"attach","type":"deferred_tools_delta","len":2393,"ultra":false}
+{"t":1792001745219,"ev":"attach","type":"agent_listing_delta","len":3358,"ultra":false}
+{"t":1792001745219,"ev":"attach","type":"mcp_instructions_delta","len":4674,"ultra":false}
+{"t":1792001745219,"ev":"attach","type":"skill_listing","len":27273,"ultra":false}
+{"t":1792001745219,"ev":"attach","type":"auto_mode","len":479,"ultra":false}
+{"t":1792001745219,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001745219,"ev":"attach","type":"hook_additional_context","len":1154,"ultra":false}
+{"t":1792001745220,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001745220,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001745220,"ev":"attach","type":"context_sections","len":535,"ultra":false}
+{"t":1792001745220,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001745220,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001749956,"ev":"step","sid":"3bf3578c-ee7e-4bc1-82a1-e610321cd20b","index":0,"messageCount":26,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":425,"cache_read_input_tokens":14073,"cache_creation_input_tokens":27269,"model":"claude-opus-5-5"}}
+{"t":1792001750567,"ev":"attach","type":"deferred_tools_delta","len":3352,"ultra":false}
+{"t":1792001750567,"ev":"attach","type":"mcp_instructions_delta","len":6091,"ultra":false}
+{"t":1792001750567,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001751369,"ev":"step","sid":"3bf3578c-ee7e-4bc1-82a1-e610321cd20b","index":1,"messageCount":35,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":41342,"cache_creation_input_tokens":16357,"model":"claude-opus-5-5"}}
+{"t":1792001753091,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001753163,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001753173,"ev":"compose.skip","modes":["context"]}
+{"t":1792001753536,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001754876,"ev":"step","sid":"3bf3578c-ee7e-4bc1-82a1-e610321cd20b","index":0,"messageCount":46,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":57699,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001756598,"ev":"driver.write","f":"gear.txt","text":"proactive"}
+{"t":1792001756598,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001756670,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001756680,"ev":"compose.skip","modes":["context"]}
+{"t":1792001756694,"ev":"invalidate.context","from":"medium","to":"proactive"}
+{"t":1792001757025,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001758450,"ev":"step","sid":"3bf3578c-ee7e-4bc1-82a1-e610321cd20b","index":0,"messageCount":55,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":57737,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001760198,"ev":"driver.send","text":"Reply only OK."}
+{"t":1792001760258,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001760273,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001760276,"ev":"compose.skip","modes":["context"]}
+{"t":1792001760616,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001761940,"ev":"step","sid":"3bf3578c-ee7e-4bc1-82a1-e610321cd20b","index":0,"messageCount":64,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":57775,"cache_creation_input_tokens":38,"model":"claude-opus-5-5"}}
+{"t":1792001763663,"ev":"driver.send","text":"Quote verbatim the first line of any text in your context that starts with POSTU"}
+{"t":1792001763743,"ev":"compose","traits":["lean","print","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:662","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001763753,"ev":"compose.skip","modes":["context"]}
+{"t":1792001764098,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001767328,"ev":"step","sid":"3bf3578c-ee7e-4bc1-82a1-e610321cd20b","index":0,"messageCount":73,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":null,"storeGear":null,"usage":{"input_tokens":2,"output_tokens":194,"cache_read_input_tokens":57813,"cache_creation_input_tokens":90,"model":"claude-opus-5-5"}}
+{"t":1792001769497,"ev":"end","reason":"other","sessionId":"3bf3578c-ee7e-4bc1-82a1-e610321cd20b","resume":{"id":"3bf3578c-ee7e-4bc1-82a1-e610321cd20b"}}
+{"t":0,"ev":"run","label":"INT4","how":"interactive ultracode","mode":"compose","gear":"lazy"}
+{"t":1792001803013,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001803014,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001803018,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001803121,"ev":"attach","type":"deferred_tools_delta","len":3899,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"agent_listing_delta","len":4431,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"mcp_instructions_delta","len":9844,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"environment","len":1667,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"hook_success","len":1056,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001803121,"ev":"attach","type":"ultra_effort_enter","len":308,"ultra":true,"head":"Ultracode is on: optimize for the most exhaustive, correct answer — not the fastest or cheapest. Use the Workflow tool on every substantive task; token cost is "}
+{"t":1792001805528,"ev":"step","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","index":0,"messageCount":51,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"lazy","storeGear":"lazy","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":52927,"cache_creation_input_tokens":7300,"model":"claude-opus-5-5"}}
+{"t":1792001833154,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001833157,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001833248,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001835375,"ev":"step","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","index":0,"messageCount":64,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"lazy","storeGear":"lazy","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":60231,"cache_creation_input_tokens":207,"model":"claude-opus-5-5"}}
+{"t":1792001894538,"ev":"start","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","stateGear":"lazy","settingsHits":{"enableWorkflows":true,"effortLevel":"high","skipWorkflowUsageWarning":true}}
+{"t":0,"ev":"run","label":"INT5","how":"interactive effort observer","mode":"compose","gear":"lazy"}
+{"t":1792001901324,"ev":"context","names":["claudeMd:29942","userEmail:266","currentDate:27"]}
+{"t":1792001901330,"ev":"compose","traits":["lean","skills"],"ids":["lean_body:shared:1603","communication:session:94","pronouns:session:357","action_caution:session:520","session_guidance:session:921","memory:session:2075","env_info_simple:session:579","context_management:session:280","act_dont_rederive:session:277","endconv_deferred_hint:session:231","total_tokens:session:49","bandeja-mensajes:convencion:session:290"],"ultraIds":[]}
+{"t":1792001901337,"ev":"compose.add","id":"gear-probe:postura","head":"POSTURA-PROBE proactive. Gear: Proactive","len":1056}
+{"t":1792001901426,"ev":"attach","type":"deferred_tools_delta","len":3899,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"agent_listing_delta","len":4431,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"mcp_instructions_delta","len":9844,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"environment","len":1667,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"model","len":124,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"language","len":466,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"hook_success","len":1056,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"instructions","len":29942,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"session_context","len":2917,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"date","len":27,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"remote_session_change","len":543,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"ultra_effort_enter","len":308,"ultra":true,"head":"Ultracode is on: optimize for the most exhaustive, correct answer — not the fastest or cheapest. Use the Workflow tool on every substantive task; token cost is "}
+{"t":1792001901427,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001901427,"ev":"attach","type":"total_tokens_reminder","len":49,"ultra":false}
+{"t":1792001903555,"ev":"step","sid":"b8cc4ce2-7e3c-4ecf-9f76-59c0691327f9","index":0,"messageCount":75,"effort":"xhigh","keys":["turnId","index","model","effort","messageCount"],"stateGear":"lazy","storeGear":"lazy","usage":{"input_tokens":2,"output_tokens":4,"cache_read_input_tokens":60442,"cache_creation_input_tokens":34,"model":"claude-opus-5-5"}}
+{"t":1792001916314,"ev":"effort.cmd","args":"ultracode","text":null}
