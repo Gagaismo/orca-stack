@@ -18,7 +18,7 @@ _Avoid_: profile, perfil, mode, modo, level
 The gear for work that is already specified: main carries it out (dispatching, watching and merging, or implementing in single-agent mode) without planning or specifying anything new.
 
 **Medium gear**:
-The gear for day-to-day work that balances speed and reasoning.
+The default gear: main works as the work contract and ODD say, at the baseline effort.
 
 **Proactive gear**:
 The gear that goes beyond the request and collaborates actively with workers.
@@ -26,6 +26,10 @@ The gear that goes beyond the request and collaborates actively with workers.
 **Gear shift**:
 A change from one gear to another during a session.
 _Avoid_: swap, profile switch
+
+**Baseline effort**:
+The effort main has without a gear: the human's most recent explicit choice, else the model's default. Spanish: *esfuerzo base*.
+_Avoid_: default effort
 
 **Gear knob**:
 A process setting that a gear may turn, such as how deep main explores or how much it narrates. The knobs are a closed list; a gear names only knobs on it. Spanish: *perilla de marcha*.
