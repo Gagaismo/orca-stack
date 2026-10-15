@@ -488,3 +488,16 @@ describe('orca-stack vigilar (#195)', () => {
     assert.equal(upsertBlock(agents, block), agents, 'init would change nothing in AGENTS.md')
   })
 })
+
+describe('orca-stack vigilar (#206)', () => {
+  test('Rule 8: an older finished CANCELLED row and a newer QUEUED row with no startedAt leave the check pending, with no ci-roja', async () => {
+    const rows = [
+      check('windows-latest / Node 20', 'CANCELLED', { startedAt: '2026-10-15T10:00:00Z' }),
+      check('windows-latest / Node 20', '', { status: 'QUEUED', startedAt: null }),
+    ]
+    const h = harness({ prs: [pr(70, { checks: rows })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
+    assert.equal(h.cursor()['7'].ci, undefined)
+  })
+})

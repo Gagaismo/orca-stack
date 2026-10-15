@@ -2,6 +2,7 @@ import { renameSync } from 'node:fs'
 import path from 'node:path'
 
 import { repoWorktrees } from './avisar.mjs'
+import { isStatus, latestChecks } from './checks.mjs'
 import { consultasCommand, getCommonDir } from './consultas.mjs'
 import { defaultIo } from './despacho.mjs'
 
@@ -66,7 +67,6 @@ const writeJson = (file, value, io) => {
 const event = (name, issue, pr, sha, text) =>
   `${name} #${issue}${pr ? ` PR #${pr.number}` : ''}${sha ? ` ${sha.slice(0, 7)}` : ''}${text ? `: ${text.replace(/\s+/g, ' ').trim().slice(0, DETAIL_MAX)}` : ''}`
 
-const isStatus = check => check.__typename === 'StatusContext'
 const checkName = check => (isStatus(check) ? check.context : check.name)
 const outcome = check => (isStatus(check) ? check.state : check.conclusion)
 const verdict = check => {
@@ -74,20 +74,6 @@ const verdict = check => {
   if (check.status !== 'COMPLETED') return undefined
 
   return CHECK_GREEN.includes(check.conclusion) ? 'verde' : CHECK_RED.includes(check.conclusion) ? 'roja' : undefined
-}
-
-// Two runs on one head commit (a re-run, or a body edit that re-runs CI, #197) list the same check twice: only the
-// latest by startedAt counts. `runs` is how many rows the check has on this head commit.
-const latestChecks = rollup => {
-  const latest = new Map()
-  for (const check of rollup ?? []) {
-    const key = isStatus(check) ? `status:${check.context}` : `check:${check.workflowName ?? ''}/${check.name}`
-    const seen = latest.get(key)
-    const runs = (seen?.runs ?? 0) + 1
-    latest.set(key, { check: !seen || String(check.startedAt ?? '') > String(seen.check.startedAt ?? '') ? check : seen.check, runs })
-  }
-
-  return [...latest.values()]
 }
 
 // Red as soon as a finished check failed; green once every check finished green; otherwise pending (no event). A red
