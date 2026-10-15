@@ -77,13 +77,43 @@ function tables(text) {
 }
 
 function backticked(text) {
-  return [...text.matchAll(/`([^`\r\n]*)`/g)].map(match => match[1])
+  const spans = []
+  for (let i = 0; i < text.length;) {
+    if (text[i] !== '`') { i += 1; continue }
+    let openerEnd = i + 1
+    while (text[openerEnd] === '`') openerEnd += 1
+    const delimiterLength = openerEnd - i
+    let closerStart = openerEnd
+    let contentEnd = -1
+    let end = -1
+    while (closerStart < text.length) {
+      const next = text.indexOf('`', closerStart)
+      if (next === -1 || /[\r\n]/.test(text.slice(closerStart, next))) break
+      let closerEnd = next + 1
+      while (text[closerEnd] === '`') closerEnd += 1
+      if (closerEnd - next === delimiterLength) {
+        contentEnd = next
+        end = closerEnd
+        break
+      }
+      closerStart = closerEnd
+    }
+    if (end === -1) { i = openerEnd; continue }
+    let content = text.slice(openerEnd, contentEnd)
+    if (content.length >= 2 && content.startsWith(' ') && content.endsWith(' ') && /[^ ]/.test(content)) {
+      content = content.slice(1, -1)
+    }
+    spans.push(content)
+    i = end
+  }
+  return spans
 }
 
-function isExempt(name) {
+function isExempt(name, titles) {
+  if (titles.some(title => title.exact === name || title.pattern?.test(name))) return false
   const command = name.match(/^([^ ]+) /)
   if (command && COMMANDS.has(command[1])) return true
-  return !/\s/.test(name) && (/[\\/]/.test(name) || /\.[A-Za-z0-9]{1,10}(?:#L\d+)?$/.test(name))
+  return !/\s/.test(name)
 }
 
 function runnerTitles(cell) {
@@ -134,11 +164,14 @@ function declarationsIn(source) {
       } else append(char)
     } else if (char === '"' || char === "'" || char === '`') {
       const start = i
-      i += 1
-      while (i < source.length) {
-        if (source[i] === '\\') { i += 2; continue }
-        if (source[i] === char) break
+      if (char === '`') i = templateLiteralEnd(source, i) - 1
+      else {
         i += 1
+        while (i < source.length) {
+          if (source[i] === '\\') { i += 2; continue }
+          if (source[i] === char) break
+          i += 1
+        }
       }
       const raw = source.slice(start + 1, i)
       if (declarationPrefix.test(codeTail)) titles.push(titlePattern(literalValue(raw, char)))
@@ -146,6 +179,64 @@ function declarationsIn(source) {
     } else append(char)
   }
   return titles
+}
+
+function templateLiteralEnd(source, start) {
+  for (let i = start + 1; i < source.length; i += 1) {
+    if (source[i] === '\\') { i += 1; continue }
+    if (source[i] === '`') return i + 1
+    if (source[i] === '$' && source[i + 1] === '{') {
+      i = templateExpressionEnd(source, i + 2) - 1
+    }
+  }
+  return source.length
+}
+
+function templateExpressionEnd(source, start) {
+  let depth = 1
+  let codeTail = ''
+  const append = text => { codeTail = (codeTail + text).slice(-100) }
+  for (let i = start; i < source.length; i += 1) {
+    const char = source[i]
+    const next = source[i + 1]
+    if (char === '/' && next === '/') {
+      let end = source.indexOf('\n', i + 2)
+      if (end === -1) end = source.length
+      append(' ')
+      i = end - 1
+    } else if (char === '/' && next === '*') {
+      const close = source.indexOf('*/', i + 2)
+      const end = close === -1 ? source.length : close + 2
+      append(' ')
+      i = end - 1
+    } else if (char === '/' && regexCanStart(codeTail)) {
+      const end = regexLiteralEnd(source, i)
+      if (end > i + 1) {
+        append(' ')
+        i = end - 1
+      } else append(char)
+    } else if (char === '"' || char === "'") {
+      let end = i + 1
+      while (end < source.length) {
+        if (source[end] === '\\') { end += 2; continue }
+        if (source[end] === char) { end += 1; break }
+        end += 1
+      }
+      append(' ')
+      i = end - 1
+    } else if (char === '`') {
+      append(' ')
+      i = templateLiteralEnd(source, i) - 1
+    } else if (char === '{') {
+      depth += 1
+      append(char)
+    } else if (char === '}') {
+      depth -= 1
+      if (depth === 0) return i + 1
+      append(char)
+    } else append(char)
+  }
+  return source.length
 }
 
 function regexCanStart(codeTail) {
@@ -216,7 +307,7 @@ export function checkEvidencia(body, root) {
   for (const table of checked) {
     for (const row of table.rows) {
       rowNumber += 1
-      const names = [...backticked(row[1] ?? '').filter(name => !isExempt(name))]
+      const names = [...backticked(row[1] ?? '').filter(name => !isExempt(name, titles))]
       names.push(...runnerTitles(row[2] ?? ''))
       for (const name of names) {
         count += 1
