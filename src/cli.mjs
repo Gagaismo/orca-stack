@@ -1,3 +1,4 @@
+import { avisarCommand } from './avisar.mjs'
 import { consultasCommand } from './consultas.mjs'
 import { briefRevisionCommand, despacharCommand, reboteCommand, revisarCommand } from './despacho.mjs'
 import { doctorCommand } from './doctor.mjs'
@@ -24,9 +25,10 @@ Comandos:
   brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
   consultas Filtra y avisa comentarios Consulta: nuevos en issues y PRs en curso.
+  avisar    Le toca el timbre a un worker con el turno en curso: una línea con la URL de la respuesta de main.
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas) Muestra cada acci\u00F3n sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar) Muestra cada acci\u00F3n sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
@@ -118,6 +120,19 @@ Con --dry-run muestra las acciones y las rutas, sin crear worktree ni brief.
 
 Para los issues y PRs en curso indicados, busca comentarios nuevos que comiencen con "Consulta:" hechos por la cuenta de GitHub del stack (leída con \`gh api user\`).
 Emite una sola línea "consulta nueva en #<n>" por cada comentario nuevo y recuerda lo reportado en .git/orca-stack/consultas-reportadas.json para ser idempotente.
+`,
+  avisar: `orca-stack avisar <issue|pr> <url-del-comentario> [--dry-run]
+
+El timbre de Proactive: cuando main responde la pregunta de un worker, le escribe en su terminal una sola línea fija
+("Message from main: <url>") con la URL del comentario y nada de su texto, para que la lea sin esperar a su PR.
+Encuentra la terminal por el worktree de este repo enlazado a <n> (con un PR, el de su rama), buscado solo entre los de
+\`git worktree list\` porque los selectores de Orca abarcan todos los repos, y, si un rebote dejó dos, elige la del agente vivo. Manda solo mientras el turno del worker está en curso: se niega si ya terminó, si la
+terminal muestra un shell o un diálogo, o si hay más de un agente vivo. Por ahora solo avisa a claude: se niega con pi, que
+corre sin TUI y relee los comentarios antes de su PR, y con codex y agy hasta que pasen su prueba de Enter a mitad de turno.
+Se niega si el comentario no es de la cuenta del stack (\`gh api user\`), no está en <issue|pr> o no empieza con
+\`Respuesta de main:\` o \`Respuesta del humano:\`. Envía con \`--wait-submit\` y nunca reintenta: sin recibo de entrega
+informa la falla y no reenvía.
+Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
 `,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
@@ -225,6 +240,8 @@ export const main = async argv => {
         return await briefRevisionCommand({ ...flags, n: rest[1] })
       case 'consultas':
         return await consultasCommand(flags, rest.slice(1))
+      case 'avisar':
+        return await avisarCommand(flags, rest[1], rest[2])
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 
