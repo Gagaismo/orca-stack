@@ -201,7 +201,9 @@ describe('PR evidence test-name checker', () => {
   test('Issue 205 Rule 2: applies delimiter length and CommonMark space trimming', () => {
     withCheckout({ 'test/a.test.mjs': testFile(['a`b', 'trimmed', '  ']) }, checkout => {
       const body = `## Evidencia\n${header}\n| Rule | \`\`a\`b\`\` | pass |\n| Rule | \`\` trimmed \`\` | pass |\n| Rule | \`\`  \`\` | pass |\n| Rule | \`\`unclosed | pass |\n| Rule | \`\`no exact closer\`\`\` | pass |\n`
-      assert.equal(checkEvidencia(body, checkout).ok, true)
+      const result = checkEvidencia(body, checkout)
+      assert.equal(result.ok, true)
+      assert.equal(result.count, 3)
     })
   })
 
