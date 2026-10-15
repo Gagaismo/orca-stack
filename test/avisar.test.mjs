@@ -17,8 +17,9 @@ const RUNNING = ['⏺ Reading src/app.ts', '✢ Churning… (1m 2s · ↓ 3.1k t
 const SETTLED = ['⏺ Done.', '✻ Baked for 2m 5s', '────', '❯ ', '────', '  ⏵⏵ bypass permissions on']
 const RECEIPT = { ok: true, result: { send: { handle: 'term_new', accepted: true, prompt: { requestId: 'req-1', stages: ['input_accepted'], provider: 'claude', observation: 'supported' } } } }
 
-const terminal = (handle, { identity = 'claude', title = '✳ Brief' } = {}) => ({
-  handle, tabId: `tab-${handle}`, leafId: `leaf-${handle}`, title, agentIdentity: identity, worktreePath: '/wt/orca-stack-42',
+const WT42 = '/wt/orca-stack-42'
+const terminal = (handle, { identity = 'claude', title = '✳ Brief', worktreePath = WT42 } = {}) => ({
+  handle, tabId: `tab-${handle}`, leafId: `leaf-${handle}`, title, agentIdentity: identity, worktreePath,
 })
 const agent = (handle, state, agentType = 'claude') => ({ paneKey: `tab-${handle}:leaf-${handle}`, state, agentType })
 
@@ -32,11 +33,22 @@ const fakeIo = ({
   user = 'stack-bot',
   linkedIssue = '42',
   prHead,
+  foreign = [],
   send = json(RECEIPT),
 } = {}) => {
   const calls = []
   const outputs = []
   let psReads = 0
+  // This repo's worker worktree, plus other repos' worktrees that Orca also manages: Orca's selectors span every repo.
+  const ours = { path: WT42, repo: 'orca-stack', linkedIssue: linkedIssue === 'none' ? null : Number(linkedIssue), branch: `refs/heads/${prHead ?? 'Gagaismo/orca-stack-42'}`, terminals }
+  const rows = () => [{ ...ours, agents: psReads > 1 && agentsAfter ? agentsAfter : agents }, ...foreign]
+  const select = selector => {
+    const [kind, value] = [selector.slice(0, selector.indexOf(':')), selector.slice(selector.indexOf(':') + 1)]
+    const hits = rows().filter(row => (kind === 'issue' ? String(row.linkedIssue) === value : kind === 'branch' ? row.branch === `refs/heads/${value}` : row.path === value))
+    if (hits.length === 1) return json({ ok: true, result: { terminals: hits[0].terminals } })
+    const code = hits.length === 0 ? 'selector_not_found' : 'selector_ambiguous'
+    return { status: 1, stdout: JSON.stringify({ ok: false, error: { code, message: code } }), stderr: '' }
+  }
   const io = {
     cwd: '/repo',
     home: '/home',
@@ -45,17 +57,14 @@ const fakeIo = ({
       calls.push([cmd, ...args])
       if (cmd === 'git' && args.includes('--git-common-dir')) return okRes('/repo/.git\n/repo/.git\n/repo\n')
       if (cmd === 'git' && args[0] === 'remote') return okRes('https://github.com/Gagaismo/orca-stack.git\n')
+      if (cmd === 'git' && args[0] === 'worktree') return okRes(`worktree /repo\nHEAD 1\nbranch refs/heads/main\n\nworktree ${WT42}\nHEAD 2\nbranch ${ours.branch}\n`)
       if (cmd === 'gh' && args[0] === 'api' && args[1] === 'user') return json({ login: user })
       if (cmd === 'gh' && args[0] === 'api') return json(comment)
       if (cmd === 'gh' && args[0] === 'pr') return prHead ? json({ headRefName: prHead }) : { status: 1, stdout: '', stderr: 'Could not resolve to a PullRequest' }
-      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'list') {
-        const selector = args[args.indexOf('--worktree') + 1]
-        if (selector === `issue:${linkedIssue}` || (prHead && selector === `branch:${prHead}`)) return json({ ok: true, result: { terminals } })
-        return { status: 1, stdout: JSON.stringify({ ok: false, error: { code: 'selector_not_found', message: 'selector_not_found' } }), stderr: '' }
-      }
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'list') return select(args[args.indexOf('--worktree') + 1])
       if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'ps') {
         psReads += 1
-        return json({ ok: true, result: { worktrees: [{ path: '/wt/orca-stack-42', repo: 'orca-stack', linkedIssue: 42, agents: psReads > 1 && agentsAfter ? agentsAfter : agents }] } })
+        return json({ ok: true, result: { worktrees: rows().map(({ terminals: _, ...row }) => row) } })
       }
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
         const handle = args[args.indexOf('--terminal') + 1]
@@ -79,11 +88,32 @@ describe('avisar', () => {
     assert.deepEqual(send.slice(3), ['--terminal', 'term_new', '--text', LINE42, '--enter', '--wait-submit', '10', '--json'])
     assert.ok(!LINE42.includes('\n'))
     assert.ok(!send.join(' ').includes('SECRET-ANSWER'))
-    assert.ok(env.calls.some(call => call.join(' ') === 'orca terminal list --worktree issue:42 --json'))
+    assert.ok(env.calls.some(call => call.join(' ') === `orca terminal list --worktree path:${WT42} --json`))
     // "042" names the same issue.
     const padded = fakeIo()
     assert.equal(await avisarCommand({}, '042', URL42, padded.io), 0)
     assert.equal(padded.sends().length, 1)
+  })
+
+  test("Rule 1 (#191): the worker is looked up among this repo's worktrees, never in another repo with the same issue number", async () => {
+    const other = '/wt/agentes-samu-issue-42'
+    const foreignRow = { path: other, repo: 'agentes-samu', linkedIssue: 42, branch: 'refs/heads/issue-42', terminals: [terminal('term_other', { worktreePath: other })], agents: [agent('term_other', 'working')] }
+    const screens = { term_other: RUNNING, term_new: RUNNING }
+
+    // Only another repo has a worktree linked to #42, with a claude turn running: avisar refuses and types nothing there.
+    const onlyForeign = fakeIo({ linkedIssue: 'none', terminals: [], agents: [], foreign: [foreignRow], screens })
+    await assert.rejects(() => avisarCommand({}, '42', URL42, onlyForeign.io), /No encuentro un worktree de este repo para #42/)
+    assert.equal(onlyForeign.sends().length, 0)
+
+    // Both repos have a worktree linked to #42: the line goes to this repo's worker.
+    const both = fakeIo({ foreign: [foreignRow], screens })
+    assert.equal(await avisarCommand({}, '42', URL42, both.io), 0)
+    assert.deepEqual(both.sends().map(send => send[send.indexOf('--terminal') + 1]), ['term_new'])
+
+    // A terminal that does not say which worktree it belongs to is not trusted.
+    const unplaced = fakeIo({ terminals: [terminal('term_new', { worktreePath: null })] })
+    await assert.rejects(() => avisarCommand({}, '42', URL42, unplaced.io), /worktreePath/)
+    assert.equal(unplaced.sends().length, 0)
   })
 
   test('Rule 2: a settled turn is refused with the reason and nothing is sent', async () => {
@@ -149,7 +179,7 @@ describe('avisar', () => {
     })
     const prUrl = 'https://github.com/Gagaismo/orca-stack/pull/57#issuecomment-2002'
     assert.equal(await avisarCommand({}, '57', prUrl, env.io), 0)
-    assert.ok(env.calls.some(call => call.join(' ') === 'orca terminal list --worktree branch:Gagaismo/orca-stack-42 --json'))
+    assert.ok(env.calls.some(call => call.join(' ') === `orca terminal list --worktree path:${WT42} --json`))
     assert.equal(env.sends().length, 1)
     assert.equal(env.sends()[0][env.sends()[0].indexOf('--terminal') + 1], 'term_new')
   })

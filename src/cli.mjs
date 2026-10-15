@@ -125,8 +125,8 @@ Emite una sola línea "consulta nueva en #<n>" por cada comentario nuevo y recue
 
 El timbre de Proactive: cuando main responde la pregunta de un worker, le escribe en su terminal una sola línea fija
 ("Message from main: <url>") con la URL del comentario y nada de su texto, para que la lea sin esperar a su PR.
-Encuentra la terminal por el worktree (\`orca terminal list --worktree issue:<n>\`; con un PR, por su rama) y, si un rebote
-dejó dos, elige la del agente vivo. Manda solo mientras el turno del worker está en curso: se niega si ya terminó, si la
+Encuentra la terminal por el worktree de este repo enlazado a <n> (con un PR, el de su rama), buscado solo entre los de
+\`git worktree list\` porque los selectores de Orca abarcan todos los repos, y, si un rebote dejó dos, elige la del agente vivo. Manda solo mientras el turno del worker está en curso: se niega si ya terminó, si la
 terminal muestra un shell o un diálogo, o si hay más de un agente vivo. Por ahora solo avisa a claude: se niega con pi, que
 corre sin TUI y relee los comentarios antes de su PR, y con codex y agy hasta que pasen su prueba de Enter a mitad de turno.
 Se niega si el comentario no es de la cuenta del stack (\`gh api user\`), no está en <issue|pr> o no empieza con

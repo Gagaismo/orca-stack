@@ -1,5 +1,6 @@
 import { getCommonDir, getStackAccount } from './consultas.mjs'
 import { AGENTS, defaultIo, getRemoteOrigin, shellPrompt } from './despacho.mjs'
+import { samePath } from './util.mjs'
 
 // Agents whose TUI takes a line typed during a running turn. codex and agy join once their mid-turn Enter test passes
 // (#166, UNKNOWN / MUST VERIFY); Pi runs headless (`pi -p`) and has no TUI to ring.
@@ -28,26 +29,46 @@ const parse = res => {
 const detail = res => (res.stderr || res.stdout || String(res.error ?? '')).trim().split(/\r?\n/)[0]
 const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
 
-const agentRecords = io => {
+const worktreeRows = io => {
   const res = io.sh('orca', ['worktree', 'ps', '--json'])
   const rows = res.status === 0 ? parse(res)?.result?.worktrees : undefined
   if (!Array.isArray(rows)) throw new Error(`Orca no contesta (orca worktree ps): ${detail(res)}`)
 
-  return new Map(rows.flatMap(row => row.agents ?? []).map(agent => [agent.paneKey, agent]))
+  return rows
+}
+const rowAt = (rows, worktree) => rows.find(row => row.path && samePath(row.path, worktree))
+const paneAgents = row => new Map((row?.agents ?? []).map(agent => [agent.paneKey, agent]))
+
+// Orca's `issue:<n>` and `branch:<head>` selectors span every repo Orca manages, so the worker's worktree is picked among
+// this repo's own worktrees (`git worktree list`), as despachar and guardia-despacho do (#191). The worktree is linked to
+// its issue; a rebote author is reached through the PR's branch.
+const workerWorktree = (n, root, io) => {
+  const listed = io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root })
+  if (listed.status !== 0) throw new Error(`git worktree list falló: ${detail(listed)}`)
+  const mine = listed.stdout.split(/\r?\n\s*\r?\n/).map(entry => ({ path: /^worktree (.+)$/m.exec(entry)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(entry)?.[1] })).filter(entry => entry.path)
+  const ours = worktreeRows(io).flatMap(row => {
+    const git = row.path ? mine.find(entry => samePath(entry.path, row.path)) : undefined
+    return git ? [{ row, branch: git.branch }] : []
+  })
+  let hits = ours.filter(({ row }) => String(row.linkedIssue) === n)
+  if (hits.length === 0) {
+    const pr = io.sh('gh', ['pr', 'view', n, '--json', 'headRefName'], { cwd: root })
+    const head = pr.status === 0 ? parse(pr)?.headRefName : undefined
+    hits = head ? ours.filter(({ branch }) => branch === head) : []
+  }
+  if (hits.length === 0) throw new Error(`No encuentro un worktree de este repo para #${n}, ni enlazado al issue ni en la rama de un PR: no aviso.`)
+  if (hits.length > 1) throw new Error(`Hay ${hits.length} worktrees de este repo para #${n} (${hits.map(({ row }) => row.path).join(', ')}): no adivino cuál.`)
+
+  return hits[0].row
 }
 
-// The worker's worktree is linked to its issue; a rebote author is reached through the PR's branch.
-const workerTerminals = (n, root, io) => {
-  const list = selector => io.sh('orca', ['terminal', 'list', '--worktree', selector, '--json'])
-  let res = list(`issue:${n}`)
-  if (res.status !== 0 && /selector_not_found/.test(`${res.stdout}${res.stderr}`)) {
-    const pr = io.sh('gh', ['pr', 'view', String(n), '--json', 'headRefName'], { cwd: root })
-    const head = pr.status === 0 ? parse(pr)?.headRefName : undefined
-    if (!head) throw new Error(`Orca no tiene un worktree para #${n}, ni como issue ni como rama de un PR.`)
-    res = list(`branch:${head}`)
-  }
+const workerTerminals = (worktree, n, io) => {
+  const res = io.sh('orca', ['terminal', 'list', '--worktree', `path:${worktree}`, '--json'])
   const terminals = res.status === 0 ? parse(res)?.result?.terminals : undefined
   if (!Array.isArray(terminals)) throw new Error(`orca terminal list falló para #${n}: ${detail(res)}`)
+  // Fail closed: a terminal that does not name its worktree, or names another one, is never a target.
+  const stray = terminals.find(terminal => !terminal.worktreePath || !samePath(terminal.worktreePath, worktree))
+  if (stray) throw new Error(`Orca devolvió la terminal ${stray.handle} con worktreePath ${stray.worktreePath ?? '(ninguno)'}, no ${worktree}: no aviso.`)
 
   return terminals
 }
@@ -92,8 +113,9 @@ export const avisarCommand = async (flags = {}, item, url, io = defaultIo()) => 
     throw new Error(`El comentario ${match[3]} está en ${comment.html_url ?? '(sin URL)'}: la URL no apunta a donde dice.`)
   }
 
-  const records = agentRecords(io)
-  const workers = workerTerminals(n, root, io).map(terminal => {
+  const worktree = workerWorktree(n, root, io)
+  const records = paneAgents(worktree)
+  const workers = workerTerminals(worktree.path, n, io).map(terminal => {
     const record = records.get(paneKey(terminal))
     return { terminal, record, identity: identityOf(terminal, record) }
   })
@@ -123,14 +145,14 @@ export const avisarCommand = async (flags = {}, item, url, io = defaultIo()) => 
   if (DIALOG.test(screen.slice(-DIALOG_LINES).join('\n'))) throw new Error(`La terminal ${handle} de #${n} muestra un diálogo: no aviso encima.`)
   if (!TURN_RUNNING.test(screen.slice(-SPINNER_LINES).join('\n'))) throw new Error(`No veo el turno en curso en la pantalla de ${handle} (#${n}): pudo haber terminado. No aviso.`)
   // Read the state again right before sending: it shrinks the window in which the turn settles or a dialog opens.
-  const now = agentRecords(io).get(paneKey(target.terminal))?.state
+  const now = paneAgents(rowAt(worktreeRows(io), worktree.path)).get(paneKey(target.terminal))?.state
   if (now !== 'working') throw new Error(`El agente de ${handle} cambió a ${now ?? 'sin estado'} mientras lo revisaba: no aviso.`)
 
   const line = doorbellLine(url)
   const argv = ['terminal', 'send', '--terminal', handle, '--text', line, '--enter', '--wait-submit', '10', '--json']
   if (flags.dryRun) {
     say(`[simulación] orca ${argv.map(arg => (/[\s"]/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
-    say(`Terminal: ${handle} (${target.terminal.title ?? 'sin título'}), worker de #${n}`)
+    say(`Terminal: ${handle} (${target.terminal.title ?? 'sin título'}), worker de #${n} en ${worktree.path}`)
     say(`Línea: ${line}`)
 
     return 0
