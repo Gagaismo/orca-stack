@@ -126,6 +126,12 @@ function declarationsIn(source) {
       const end = close === -1 ? source.length : close + 2
       append(blank(source.slice(i, end)).join(''))
       i = end - 1
+    } else if (char === '/' && regexCanStart(codeTail)) {
+      const end = regexLiteralEnd(source, i)
+      if (end > i + 1) {
+        append(blank(source.slice(i, end)).join(''))
+        i = end - 1
+      } else append(char)
     } else if (char === '"' || char === "'" || char === '`') {
       const start = i
       i += 1
@@ -140,6 +146,30 @@ function declarationsIn(source) {
     } else append(char)
   }
   return titles
+}
+
+function regexCanStart(codeTail) {
+  const previous = codeTail.trimEnd()
+  const last = previous.at(-1)
+  return !previous || '([{=,:;!?&|+-*%^~<>'.includes(last)
+    || /(?:return|throw|case|delete|void|typeof|instanceof|in|of|yield|await)$/.test(previous)
+}
+
+function regexLiteralEnd(source, start) {
+  let inClass = false
+  for (let i = start + 1; i < source.length; i += 1) {
+    const char = source[i]
+    if (char === '\n' || char === '\r') return start + 1
+    if (char === '\\') { i += 1; continue }
+    if (char === '[') inClass = true
+    else if (char === ']') inClass = false
+    else if (char === '/' && !inClass) {
+      i += 1
+      while (/[A-Za-z]/.test(source[i] ?? '')) i += 1
+      return i
+    }
+  }
+  return start + 1
 }
 
 function literalValue(raw, quote) {

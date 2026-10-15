@@ -178,6 +178,9 @@ describe('PR evidence test-name checker', () => {
       withCheckout({ 'test/a.test.mjs': 'const example = "test(\'Not an actual test\', () => {})"\n' }, sourceString => {
         assert.equal(checkEvidencia(bodyFor(row('Not an actual test')), sourceString).ok, false)
       })
+      withCheckout({ 'test/a.test.mjs': '/no tiene la l\u00ednea "Implementador/\ntest(\'Rule 1: x\', () => {})\n' }, sourceRegex => {
+        assert.equal(checkEvidencia(bodyFor(row('Rule 1: x')), sourceRegex).ok, true)
+      })
     })
   })
 })
