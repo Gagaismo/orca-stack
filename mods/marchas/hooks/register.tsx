@@ -55,6 +55,8 @@ type GearState = {
   effortModel?: string
   effortOverride?: boolean
   modelChanged?: boolean
+  // `/effort` opened its menu (or ran `auto`) since the last shift: its result never reaches the mod (#194).
+  effortPicker?: boolean
 }
 
 const gearState = (value: unknown): GearState | undefined => {
@@ -70,6 +72,7 @@ const gearState = (value: unknown): GearState | undefined => {
         ...(typeof state.effortModel === 'string' ? { effortModel: state.effortModel } : {}),
         effortOverride: state.effortOverride === true,
         modelChanged: state.modelChanged === true,
+        effortPicker: state.effortPicker === true,
       }
     : undefined
 }
@@ -195,9 +198,10 @@ export const register: Register = on => {
     const changedModel = state?.modelChanged === true || (state?.effortModel !== undefined && state.effortModel !== e.model)
     const changedEffort = state?.effortBaseline !== undefined && state.effortBaseline !== e.effort
     const baseline = changedModel || changedEffort ? e.effort : state?.effortBaseline ?? e.effort
+    // A changed effort is manual only if `/effort` opened its menu since the last shift; one main step consumes the mark.
     const effortOverride = changedModel
       ? state?.effortOverride ?? false
-      : state?.effortOverride === true || changedEffort
+      : state?.effortOverride === true || (changedEffort && state?.effortPicker === true)
     await $.store.set(key, {
       gear,
       shiftedAt: state?.shiftedAt ?? await $.clock.now(),
@@ -206,6 +210,7 @@ export const register: Register = on => {
       effortModel: e.model,
       effortOverride,
       modelChanged: false,
+      effortPicker: false,
     } satisfies GearState)
     if (gear === 'medium' || effortOverride) return yield* next(e)
 
@@ -250,6 +255,7 @@ export const register: Register = on => {
       needsReminder: false,
       effortOverride: false,
       modelChanged: previous?.modelChanged ?? false,
+      effortPicker: false,
     } satisfies GearState)
     if (gear === 'proactive' && before !== 'proactive' && await autonomous($)) {
       await warn($, costWarning(gear, (await $.state.get(ULTRACODE)).value))
@@ -269,6 +275,8 @@ export const register: Register = on => {
         effortOverride: true,
         modelChanged: false,
       })
+    } else if (active && e.origin.kind === 'composer' && effort !== 'ultracode') {
+      await saveEffortState($, await $.store.get(await sessionKey($)), { effortPicker: true })
     }
     const result = await next(e)
     if (active && effort === 'ultracode') {
