@@ -319,6 +319,38 @@ Ejemplo: bloquear a un agente sin cuota hasta una fecha, en `.orca-stack.local.j
 
 La fecha `hasta` es local, a las 00:00. Mientras no llegue, `despachar`, `revisar` y `rebote` rechazan ese agente con el `motivo`.
 
+#### Reviews de codex con ChatGPT Web, sin cuota de Codex
+
+[codex-chatgpt-web](https://github.com/miuuyy/codex-chatgpt-web) suma los modelos de ChatGPT Web al selector de Codex, con slugs `chatgpt-web/<modelo>`, y los cobra contra los límites de ChatGPT en vez de la cuota de Codex. orca-stack no necesita nada especial: `agentes.modelos` ya separa el modelo con el que codex implementa del modelo con el que revisa. En `~/.orca-stack/config.json`:
+
+```json
+{
+  "agentes": {
+    "modelos": {
+      "codex": {
+        "implementar": { "modelo": "gpt-6-luna", "esfuerzo": "high" },
+        "revisar": { "modelo": "chatgpt-web/gpt-6-sol", "esfuerzo": "high" }
+      }
+    }
+  }
+}
+```
+
+Con eso, `orca-stack revisar <pr> codex` lanza `--model chatgpt-web/gpt-6-sol -c model_reasoning_effort="high"`, y `despachar` sigue usando `gpt-6-luna`.
+
+Antes, una vez y a mano:
+
+1. Instalá el launcher.
+2. Iniciá sesión en ChatGPT.
+3. Instalá los modelos y reiniciá Codex.
+4. Completá el **Full harness** (MCP) del launcher. El revisor lee archivos y corre la suite; sin el harness, el modelo responde sin herramientas locales.
+
+Bordes:
+
+- La familia sale del último tramo del slug: `chatgpt-web/gpt-6-sol` es `gpt`. Codex sigue sin poder revisar un PR de codex, ni uno de codex-cc si codex-cc corre un GPT.
+- Según su arquitectura, el launcher enruta por su daemon local (`openai_base_url`) todas las llamadas de Codex, también las de los modelos nativos. Si el daemon no corre, fallan también los workers de codex.
+- Es automatización no oficial de la web de ChatGPT. Si la web cambia, falla de forma explícita; nunca cambia de modelo por su cuenta. Un pedido de aprobación inesperado del lado de ChatGPT falla cerrado, y un revisor desatendido no puede contestarlo.
+
 ### 4.6 Marchas
 
 La marcha fija cuánto explora, delega, consulta y narra `main`. Solo toca la lista cerrada de perillas K1 a K11 de `ORCA-STACK.md`; está por debajo de las instrucciones del proyecto, los ADRs, la spec y el ticket.
