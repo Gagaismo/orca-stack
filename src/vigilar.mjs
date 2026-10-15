@@ -181,9 +181,16 @@ const recordMainMerge = (pr, flags, io, warn) => {
   if (!/^\d+$/.test(String(pr))) throw new Error(`Uso: orca-stack vigilar --merge-de-main <pr>, con el número del PR que main está por mergear: ${pr || '(vacío)'}`)
   const n = String(Number(pr))
   const { commonDir, root } = getCommonDir(io)
-  const res = io.sh('gh', ['pr', 'view', n, '--json', 'headRefOid'], { cwd: root })
-  const head = res.status === 0 ? parse(res)?.headRefOid : undefined
+  const res = io.sh('gh', ['pr', 'view', n, '--json', 'headRefOid,state'], { cwd: root })
+  const read = res.status === 0 ? parse(res) : undefined
+  const head = read?.headRefOid
   if (!head) throw new Error(`No pude leer el head del PR #${n} con gh pr view: ${detail(res)}. No registré nada.`)
+  // A PR that already ended has no merge of main's ahead of it: main learns it here instead of recording one.
+  if (read.state === 'MERGED' || read.state === 'CLOSED') {
+    warn(read.state === 'MERGED' ? `El PR #${n} ya está mergeado: no registré nada.` : `El PR #${n} está cerrado: no registré nada.`)
+
+    return 1
+  }
   const file = path.join(commonDir, ...MERGES_REL)
   const now = (io.now ?? Date.now)()
   const kept = Object.entries(readJson(file, io, warn)).filter(([key, record]) => key !== n && now - Date.parse(record?.at) <= MERGE_WINDOW_MS)

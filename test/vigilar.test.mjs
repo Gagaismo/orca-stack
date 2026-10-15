@@ -519,6 +519,19 @@ describe('orca-stack vigilar (#206)', () => {
     assert.deepEqual(h.out, ['pr-mergeado #7 PR #70 abc1234'])
   })
 
+  test('Rule 4: --merge-de-main on a MERGED or a CLOSED PR exits 1, leaves vigilar-merges.json untouched and says why on stderr', async () => {
+    const before = JSON.stringify({ 60: { head: DEF, at: new Date(T0).toISOString() } })
+    for (const [state, message] of [['MERGED', 'El PR #70 ya está mergeado: no registré nada.'], ['CLOSED', 'El PR #70 está cerrado: no registré nada.']]) {
+      const h = harness({ prs: [pr(70, { state })] })
+      h.files[MERGES] = before
+      assert.equal(await mergeDeMain(h, '70'), 1, state)
+      assert.equal(h.files[MERGES], before, state)
+      assert.deepEqual(h.renames, [], state)
+      assert.deepEqual(h.err, [message])
+      assert.deepEqual(h.out, [])
+    }
+  })
+
   test('Rule 8: an older finished CANCELLED row and a newer QUEUED row with no startedAt leave the check pending, with no ci-roja', async () => {
     const rows = [
       check('windows-latest / Node 20', 'CANCELLED', { startedAt: '2026-10-15T10:00:00Z' }),
