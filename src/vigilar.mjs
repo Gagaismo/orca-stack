@@ -250,9 +250,12 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     // Printed before the cursor is written: a crash re-emits at most one poll's lines rather than losing them.
     for (const line of lines) io.out(line)
     if (!flags.dryRun && JSON.stringify(next) !== JSON.stringify(cursor)) {
-      // A failed write never stops the watcher: this run keeps the cursor in memory and prints nothing twice.
+      // A failed write never stops the watcher: this run keeps the cursor in memory and prints nothing twice. The file is
+      // read again right before the write and only this watcher's items are replaced, so another watcher on the same
+      // file keeps what it wrote since this one started.
       try {
-        writeJson(cursorPath, next, io)
+        const mine = Object.fromEntries(targets.map(issue => [issue, next[issue]]))
+        writeJson(cursorPath, { ...readJson(cursorPath, io, warn), ...mine }, io)
       } catch (error) {
         warn(`vigilar: no pude escribir ${cursorPath}: ${error.message}`)
       }

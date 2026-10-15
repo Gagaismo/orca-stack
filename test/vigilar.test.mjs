@@ -532,6 +532,40 @@ describe('orca-stack vigilar (#206)', () => {
     }
   })
 
+  test('Rule 6: watcher A on 1 and 2 and watcher B on 3 share vigilar.json; after both poll it holds A\'s latest entries for 1 and 2 and B\'s for 3', async () => {
+    const item = (n, options = {}) => pr(n * 10, { branch: `Gagaismo/orca-stack-${n}`, closes: [n], ...options })
+    const h = harness({ prs: [item(1), item(2), item(3)] })
+    h.world.script = [
+      // B polls while A sleeps, then #1 turns green for A's next poll.
+      world => {
+        once(h, ['3'])
+        world.prs = [item(1, { checks: GREEN }), item(2), item(3)]
+      },
+      world => {
+        world.prs = [item(1, { state: 'MERGED', checks: GREEN }), item(2, { state: 'MERGED' }), item(3)]
+      },
+    ]
+    assert.equal(await vigilarCommand({}, ['1', '2'], h.io), 0)
+    assert.deepEqual(drain(h), [
+      'pr-abierto #1 PR #10 abc1234',
+      'pr-abierto #2 PR #20 abc1234',
+      'pr-abierto #3 PR #30 abc1234',
+      'ci-verde #1 PR #10 abc1234',
+      'pr-mergeado #1 PR #10 abc1234',
+      'pr-mergeado #2 PR #20 abc1234',
+      'tanda-cerrada #1 #2',
+    ])
+    assert.deepEqual(h.cursor(), {
+      1: { pr: 10, head: ABC, ci: 'verde', fin: 'mergeado' },
+      2: { pr: 20, head: ABC, fin: 'mergeado' },
+      3: { pr: 30, head: ABC },
+    })
+
+    // B re-armed on 3 resumes from its own entry and prints nothing again.
+    await once(h, ['3'])
+    assert.deepEqual(h.out, [])
+  })
+
   test('Rule 8: an older finished CANCELLED row and a newer QUEUED row with no startedAt leave the check pending, with no ci-roja', async () => {
     const rows = [
       check('windows-latest / Node 20', 'CANCELLED', { startedAt: '2026-10-15T10:00:00Z' }),
