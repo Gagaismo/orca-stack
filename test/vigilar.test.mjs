@@ -28,8 +28,9 @@ const check = (name, conclusion, { status = 'COMPLETED', startedAt = '2026-10-15
 const GREEN = [check('ubuntu-latest / Node 20', 'SUCCESS'), check('ci-ok', 'SUCCESS')]
 const PENDING = [check('ubuntu-latest / Node 20', '', { status: 'IN_PROGRESS' })]
 
-const pr = (number, { state = 'OPEN', head = ABC, branch = 'Gagaismo/orca-stack-7', closes = [7], body = '', checks = [] } = {}) =>
-  ({ number, state, headRefName: branch, headRefOid: head, body, closingIssuesReferences: closes.map(n => ({ number: n })), statusCheckRollup: checks })
+// A merged PR is merged a minute after T0 unless a test says when.
+const pr = (number, { state = 'OPEN', head = ABC, branch = 'Gagaismo/orca-stack-7', closes = [7], body = '', checks = [], mergedAt = state === 'MERGED' ? new Date(T0 + MINUTE).toISOString() : null } = {}) =>
+  ({ number, state, headRefName: branch, headRefOid: head, mergedAt, body, closingIssuesReferences: closes.map(n => ({ number: n })), statusCheckRollup: checks })
 
 // A fake GitHub, git and Orca. Tests change `world` between runs; inside one run, each io.sleep applies the next
 // scripted change, so a looping watcher sees the world move and ends on its own with tanda-cerrada.
@@ -283,8 +284,7 @@ describe('orca-stack vigilar (#195)', () => {
 
     const stale = harness({ prs: [pr(70)] })
     await mergeDeMain(stale, '70')
-    stale.world.prs = [pr(70, { state: 'MERGED' })]
-    stale.world.now = T0 + 31 * MINUTE
+    stale.world.prs = [pr(70, { state: 'MERGED', mergedAt: new Date(T0 + 31 * MINUTE).toISOString() })]
     await once(stale, ['7', '8'])
     assert.deepEqual(stale.out, ['pr-mergeado #7 PR #70 abc1234'])
   })
@@ -486,5 +486,104 @@ describe('orca-stack vigilar (#195)', () => {
     const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
     const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
     assert.equal(upsertBlock(agents, block), agents, 'init would change nothing in AGENTS.md')
+  })
+})
+
+describe('orca-stack vigilar (#206)', () => {
+  const at = clock => Date.parse(`2026-10-15T${clock}:00Z`)
+
+  test('Rule 1: a record at 10:00, a merge of that head at 10:05 and a poll at 11:00 end the item silently as main\'s merge', async () => {
+    const h = harness({ prs: [pr(70)], now: at('10:00') })
+    assert.equal(await mergeDeMain(h, '70'), 0)
+    h.world.prs = [pr(70, { state: 'MERGED', mergedAt: '2026-10-15T10:05:00Z' })]
+    h.world.now = at('11:00')
+    await once(h, ['7', '8'])
+    assert.deepEqual(h.out, [])
+    assert.deepEqual(h.cursor()['7'], { pr: 70, head: ABC, fin: 'main' })
+  })
+
+  test('Rule 2: the human merged that head at 09:58 and main recorded it at 10:00: pr-mergeado', async () => {
+    const h = harness({ prs: [pr(70, { state: 'MERGED', mergedAt: '2026-10-15T09:58:00Z' })], now: at('10:01') })
+    h.files[MERGES] = JSON.stringify({ 70: { head: ABC, at: '2026-10-15T10:00:00.000Z' } })
+    await once(h, ['7', '8'])
+    assert.deepEqual(h.out, ['pr-mergeado #7 PR #70 abc1234'])
+    assert.equal(h.cursor()['7'].fin, 'mergeado')
+  })
+
+  test('Rule 3: a record at 10:00 and a merge of that head at 10:31: pr-mergeado', async () => {
+    const h = harness({ prs: [pr(70)], now: at('10:00') })
+    await mergeDeMain(h, '70')
+    h.world.prs = [pr(70, { state: 'MERGED', mergedAt: '2026-10-15T10:31:00Z' })]
+    h.world.now = at('10:31')
+    await once(h, ['7', '8'])
+    assert.deepEqual(h.out, ['pr-mergeado #7 PR #70 abc1234'])
+  })
+
+  test('Rule 4: --merge-de-main on a MERGED or a CLOSED PR exits 1, leaves vigilar-merges.json untouched and says why on stderr', async () => {
+    const before = JSON.stringify({ 60: { head: DEF, at: new Date(T0).toISOString() } })
+    for (const [state, message] of [['MERGED', 'El PR #70 ya está mergeado: no registré nada.'], ['CLOSED', 'El PR #70 está cerrado: no registré nada.']]) {
+      const h = harness({ prs: [pr(70, { state })] })
+      h.files[MERGES] = before
+      assert.equal(await mergeDeMain(h, '70'), 1, state)
+      assert.equal(h.files[MERGES], before, state)
+      assert.deepEqual(h.renames, [], state)
+      assert.deepEqual(h.err, [message])
+      assert.deepEqual(h.out, [])
+    }
+  })
+
+  test('Rule 5: CONTRATO step 7 says main still tries gh pr merge when --merge-de-main fails; the AGENTS.md block equals the asset', () => {
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
+    const step7 = contract.split(/\r?\n/).find(line => line.startsWith('7. '))
+    assert.ok(step7.includes('Si `orca-stack vigilar --merge-de-main <n>` falla, igual intentás `gh pr merge <n>`, y si sale, el `pr-mergeado` de ese PR es tu propio merge: el registro solo evita ese ruido.'))
+
+    const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
+    const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
+    assert.equal(upsertBlock(agents, block), agents, 'init would change nothing in AGENTS.md')
+  })
+
+  test('Rule 6: watcher A on 1 and 2 and watcher B on 3 share vigilar.json; after both poll it holds A\'s latest entries for 1 and 2 and B\'s for 3', async () => {
+    const item = (n, options = {}) => pr(n * 10, { branch: `Gagaismo/orca-stack-${n}`, closes: [n], ...options })
+    const h = harness({ prs: [item(1), item(2), item(3)] })
+    h.world.script = [
+      // B polls while A sleeps, then #1 turns green for A's next poll.
+      world => {
+        once(h, ['3'])
+        world.prs = [item(1, { checks: GREEN }), item(2), item(3)]
+      },
+      world => {
+        world.prs = [item(1, { state: 'MERGED', checks: GREEN }), item(2, { state: 'MERGED' }), item(3)]
+      },
+    ]
+    assert.equal(await vigilarCommand({}, ['1', '2'], h.io), 0)
+    assert.deepEqual(drain(h), [
+      'pr-abierto #1 PR #10 abc1234',
+      'pr-abierto #2 PR #20 abc1234',
+      'pr-abierto #3 PR #30 abc1234',
+      'ci-verde #1 PR #10 abc1234',
+      'pr-mergeado #1 PR #10 abc1234',
+      'pr-mergeado #2 PR #20 abc1234',
+      'tanda-cerrada #1 #2',
+    ])
+    assert.deepEqual(h.cursor(), {
+      1: { pr: 10, head: ABC, ci: 'verde', fin: 'mergeado' },
+      2: { pr: 20, head: ABC, fin: 'mergeado' },
+      3: { pr: 30, head: ABC },
+    })
+
+    // B re-armed on 3 resumes from its own entry and prints nothing again.
+    await once(h, ['3'])
+    assert.deepEqual(h.out, [])
+  })
+
+  test('Rule 8: an older finished CANCELLED row and a newer QUEUED row with no startedAt leave the check pending, with no ci-roja', async () => {
+    const rows = [
+      check('windows-latest / Node 20', 'CANCELLED', { startedAt: '2026-10-15T10:00:00Z' }),
+      check('windows-latest / Node 20', '', { status: 'QUEUED', startedAt: null }),
+    ]
+    const h = harness({ prs: [pr(70, { checks: rows })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
+    assert.equal(h.cursor()['7'].ci, undefined)
   })
 })

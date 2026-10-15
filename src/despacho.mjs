@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { ensureCandidateWorktreesExclude } from './candidate-worktrees.mjs'
+import { isPending, latestChecks } from './checks.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
@@ -745,7 +746,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
   const markers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
-  const checks = Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : []
+  // Only each check's latest row counts: a CANCELLED row that a later run replaced no longer refuses.
+  const checks = latestChecks(Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : []).map(({ check }) => check)
   const checkName = check => check.name ?? check.context ?? 'Unnamed check'
   const checkUrl = check => check.detailsUrl ?? check.targetUrl ?? ''
   const cancelledChecks = checks.filter(check => check.__typename === 'CheckRun' && check.conclusion === 'CANCELLED')
@@ -756,10 +758,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     })
     throw new Error(`El PR #${n} tiene checks CANCELLED en ${sha}; no lo rebotes hasta volver a ejecutar CI:\n${reruns.join('\n')}`)
   }
-  const pendingChecks = checks.filter(check =>
-    (check.__typename === 'CheckRun' && ['QUEUED', 'IN_PROGRESS', 'WAITING', 'REQUESTED', 'PENDING'].includes(check.status)) ||
-    (check.__typename === 'StatusContext' && ['EXPECTED', 'PENDING'].includes(check.state)),
-  )
+  const pendingChecks = checks.filter(isPending)
   if (pendingChecks.length > 0) {
     throw new Error(`El PR #${n} todavía tiene checks pendientes en ${sha}: ${pendingChecks.map(checkName).join(', ')}. Esperá a que termine la CI antes de rebotar.`)
   }
