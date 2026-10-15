@@ -5,6 +5,7 @@ import { describe, test } from 'node:test'
 
 import { avisarCommand } from '../src/avisar.mjs'
 import { main } from '../src/cli.mjs'
+import { renderBrief } from '../src/despacho.mjs'
 import { PACKAGE_ROOT } from '../src/util.mjs'
 
 const json = value => ({ status: 0, stdout: JSON.stringify(value), stderr: '' })
@@ -198,6 +199,19 @@ describe('avisar', () => {
     }
     const readme = readFileSync(path.join(PACKAGE_ROOT, 'README.md'), 'utf8')
     assert.match(readme, /orca-stack avisar <issue\|pr> <url-del-comentario>/)
+  })
+
+  test('Acceptance: both briefs and the contract carry the doorbell text', () => {
+    const doorbell = 'A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait.'
+    for (const agent of ['claude', 'codex', 'agy', 'pi']) {
+      const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '42', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(brief.includes(doorbell), `${agent} implementation brief must carry the doorbell line`)
+    }
+    const stack = file => readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', file), 'utf8')
+    assert.ok(stack('brief-rebote.md').includes(doorbell), 'bounce brief must carry the doorbell line')
+    const collaboration = stack('CONTRATO.md').split(/\r?\n/).find(line => line.includes('Reglas de colaboración:'))
+    assert.match(collaboration, /`orca-stack avisar <issue\|pr> <url-del-comentario>`/)
+    assert.match(collaboration, /nunca lo arma con llamadas sueltas a `orca`/)
   })
 
   test('Preserve: the CLI still routes the other commands and rejects an unknown one', async () => {

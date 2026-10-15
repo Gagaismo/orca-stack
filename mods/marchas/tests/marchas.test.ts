@@ -174,7 +174,7 @@ test('Rule 12: the gate reads no config keys', async ($, on) => {
   expect(AGENTS).toContain('Marchas')
 })
 
-test("Rule 7: Proactive's posture carries the collaboration sentence and no doorbell clause", async ($, on) => {
+test("Rule 7: Proactive's posture carries the collaboration sentence", async ($, on) => {
   setup(on)
   await start($)
   const out = await $.command.run(RUN('proactive'))
@@ -187,10 +187,15 @@ test("Rule 7: Proactive's posture carries the collaboration sentence and no door
   expect(text).toContain('Nunca los hagas esperar, nunca corrijas su c\u00f3digo, y dej\u00e1 en paz a los revisores')
   expect(text).toContain('Propon\u00e9 arena o swarm temprano, ante se\u00f1ales m\u00e1s d\u00e9biles, antes de que aparezca un problema.')
   expect(text.indexOf('Colabor\u00e1 con los workers de implementaci\u00f3n')).toBeLessThan(text.indexOf('Propon\u00e9 arena o swarm temprano'))
-  expect(text).not.toContain('timbre')
-  expect(text).not.toContain('doorbell')
-  expect(text).not.toContain('terminal')
   expect(text).not.toContain('orca-stack avisar')
+})
+
+test("#166 Rule 10: Proactive's posture now carries the doorbell clause", async ($, on) => {
+  setup(on)
+  await start($)
+  const clause = 'respond\u00e9 las preguntas de ejecuci\u00f3n donde las hayan hecho y tocales el timbre en su terminal, solo mientras su turno est\u00e9 en curso, con una l\u00ednea que apunte a la respuesta'
+  expect((await $.command.run(RUN('proactive'))).context?.[0]).toContain(clause)
+  for (const gear of ['lazy', 'medium']) expect((await $.command.run(RUN(gear))).context?.[0]).not.toContain('timbre')
 })
 
 test('Rule 1: clear starts on Medium and redraws the band after a Proactive shift', async ($, on) => {

@@ -1,6 +1,6 @@
 # Ticket brief: issue #{{ISSUE}} ({{REPO}})
 
-You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask by commenting on the issue (gh issue comment {{ISSUE}} --body-file <file>), then continue with whatever is not blocked. Questions start with `Consulta: {{AGENT}}`.
+You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask by commenting on the issue (gh issue comment {{ISSUE}} --body-file <file>), then continue with whatever is not blocked. Questions start with `Consulta: {{AGENT}}`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait.
 
 ## Setup
 
