@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# A new run on a PR (a push or a body edit) cancels the one in progress. No job skips on a title-only edit: a skipped
+# required check counts as passing, so a title edit after a red run would allow the merge.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: ${{ matrix.os }} / Node ${{ matrix.node }}

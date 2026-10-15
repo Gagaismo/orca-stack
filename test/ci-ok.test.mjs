@@ -92,4 +92,10 @@ describe('ci-ok aggregate check', () => {
     assert.match(block, /^      - hygiene$/m)
     assert.match(hygiene, /if: github\.event_name == 'pull_request'/)
   })
+
+  test('Rule 11 (#206): a per-PR concurrency group cancels the run in progress, the triggers stay and no job skips on a title-only edit', () => {
+    assert.match(workflow, /^concurrency:\r?\n  group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.sha \}\}\r?\n  cancel-in-progress: true\r?$/m)
+    assert.match(workflow, /^  pull_request:\r?\n    types: \[opened, synchronize, reopened, edited\]\r?$/m)
+    assert.doesNotMatch(workflow, /github\.event\.(action|changes)\b/)
+  })
 })

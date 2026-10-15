@@ -1284,6 +1284,22 @@ describe('rebote', () => {
     assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
   })
 
+  test('Rule 10 (#206): a CANCELLED ci-ok row that a later run replaced does not refuse; a latest CANCELLED row still does', async () => {
+    const okRow = (conclusion, startedAt, run) => ({
+      __typename: 'CheckRun', name: 'ci-ok', workflowName: 'CI', status: 'COMPLETED', conclusion, startedAt,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/1`,
+    })
+    const replaced = bounceEnv(pr({ statusCheckRollup: [okRow('CANCELLED', '2026-10-15T10:00:00Z', 987), okRow('SUCCESS', '2026-10-15T10:30:00Z', 988)] }))
+    await reboteCommand({}, '12', replaced.io)
+    assert.equal(replaced.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
+
+    const latest = bounceEnv(pr({ statusCheckRollup: [okRow('SUCCESS', '2026-10-15T10:00:00Z', 987), okRow('CANCELLED', '2026-10-15T10:30:00Z', 988)] }))
+    await assert.rejects(reboteCommand({}, '12', latest.io), {
+      message: 'El PR #12 tiene checks CANCELLED en abc123; no lo rebotes hasta volver a ejecutar CI:\nci-ok: gh run rerun 988 --failed',
+    })
+    assert.equal(latest.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+  })
+
   test('Rule 10: existing worktree guards still apply to a CI bounce', async () => {
     const env = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }] }), { 'git status': okRes(' M src/app.mjs\n') })
     await assert.rejects(reboteCommand({}, '12', env.io), /worktree .* est[aá] sucio/)
