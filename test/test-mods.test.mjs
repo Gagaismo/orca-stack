@@ -119,7 +119,7 @@ test('mod CI is either required with a bounded pinned runner or documented as a 
   const job = workflow.slice(jobStart, jobsEnd)
   const ciOk = workflow.slice(workflow.indexOf('\n  ci-ok:'))
   assert.equal(fallback, false)
-  assert.match(job, /runs-on: (?:ubuntu|windows)-latest/)
+  assert.match(job, /runs-on: windows-latest/)
   assert.match(job, /timeout-minutes: 10/)
   assert.match(job, /@anthropic-ai\/claude-code@2\.1\.300/)
   assert.doesNotMatch(job, /^    if:/m)
