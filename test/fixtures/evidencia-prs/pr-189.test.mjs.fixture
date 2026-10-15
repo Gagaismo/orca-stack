@@ -1,0 +1,11 @@
+import { test } from 'node:test'
+test("Rule 1: /autonomo in Lazy warns once that unspecified items will wait", () => {})
+test("Rule 2: /autonomo in Proactive warns about its cost, ending with /marcha medium", () => {})
+test("Rule 3: /autonomo in Medium with ultracode on warns naming ultracode", () => {})
+test("Rule 4: /marcha proactive during autonomous mode warns about its cost", () => {})
+test("Rule 5: /effort ultracode during autonomous mode warns about its cost", () => {})
+test("Rule 6: /autonomo in Medium without ultracode shows no warning", () => {})
+test("Rule 7: after /clear empties the state, the Proactive warning says it cannot see ultracode", () => {})
+test("Rule 8: a resumed session starts with ultracode off for the mod", () => {})
+test("Preserve /marcha proactive output and posture outside autonomous mode, with no warning", () => {})
+test("Preserve /effort reaching the engine and returning its output outside autonomous mode", () => {})

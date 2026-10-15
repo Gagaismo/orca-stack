@@ -1,0 +1,12 @@
+import { test } from 'node:test'
+test("a stop that leaves items waiting on a gear change goes through without a nudge", () => {})
+test("stopping is blocked up to three times, then it lets go and warns", () => {})
+test("/autonomo tells main to record user decisions and keep going", () => {})
+test("/autonomo asks for a closing record of unwatched work, linked and without token counts", () => {})
+test("the done token turns the mode off and toasts", () => {})
+test("/autonomo turns the mode on with a goal and /autonomo off clears it", () => {})
+test("a tool call between stops resets the count", () => {})
+test("no nudge while off or while a background task will wake the session", () => {})
+test("/autonomo delivers the active instructions to the next turn", () => {})
+test("the system prompt gets one session section only while on", () => {})
+test("a compacted session receives the current autonomous instructions", () => {})

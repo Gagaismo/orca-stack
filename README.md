@@ -263,6 +263,8 @@ Un plugin de Claude Code solo puede importar archivos de su propia carpeta, y el
 
 Los mods se cargan por `CLAUDE_CODE_PLUGIN_DIRS` (carpetas absolutas separadas por el separador de rutas del sistema, tomadas del entorno o del bloque `env` de `~/.claude/settings.json`). La documenta la guía de authoring de plugins de Claude Code (skill `plugin-authoring`); no la encontré en la referencia pública de ajustes.
 
+El job `evidencia` de CI valida que los nombres de test de `## Evidencia` existan antes de que `ci-ok` pase.
+
 ## Licencia
 
 MIT, ver [`LICENSE`](./LICENSE).

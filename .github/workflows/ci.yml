@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, edited]
 
 permissions:
   contents: read
@@ -61,11 +62,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  evidencia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch current PR body
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh api repos/$GITHUB_REPOSITORY/pulls/$PR --jq .body > "$RUNNER_TEMP/pr-body.md"
+      - name: Check test names in PR evidence
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-evidencia.mjs "$RUNNER_TEMP/pr-body.md"
+
   ci-ok:
     name: ci-ok
     needs:
       - test
       - hygiene
+      - evidencia
     if: always()
     runs-on: ubuntu-latest
     steps:
