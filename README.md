@@ -251,6 +251,7 @@ Al terminar, `global` imprime la lista con tus rutas exactas. Resumen:
 ```bash
 npm test                  # CLI, round-trips en un HOME temporal, chequeo de rutas personales
 npm run test:mods         # tests de cada mod con `claude plugin test` (necesita Claude Code)
+npm run verify            # suite completa configurada para el repo
 npm run sync-shared       # copia shared/orca-config.ts a los mods que lo usan
 ```
 

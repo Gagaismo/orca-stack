@@ -135,6 +135,33 @@ describe('brief-revision', () => {
     assert.ok(env.out.some(line => line.includes('git worktree add --detach')))
   })
 
+  test('issue 196 Rule 9: reads root CODING_STANDARDS from the fetched PR head', async () => {
+    const env = setup()
+    const sh = env.io.sh
+    let checkedPath
+    env.io.sh = (cmd, args, options) => cmd === 'git' && args[0] === 'cat-file'
+      ? (checkedPath = args[2], { status: 0, stdout: '', stderr: '' })
+      : sh(cmd, args, options)
+    await briefRevisionCommand({ n: '7', modelo: 'gpt-6' }, env.io)
+    assert.ok(readFileSync(env.briefPath, 'utf8').includes('CODING_STANDARDS.md and AGENTS.md'))
+    assert.equal(checkedPath, 'abc123:CODING_STANDARDS.md')
+
+    const absent = setup()
+    const absentSh = absent.io.sh
+    absent.io.sh = (cmd, args, options) => cmd === 'git' && args[0] === 'cat-file'
+      ? { status: 1, stdout: '', stderr: 'path not found' }
+      : absentSh(cmd, args, options)
+    await briefRevisionCommand({ n: '7', modelo: 'gpt-6' }, absent.io)
+    assert.ok(!readFileSync(absent.briefPath, 'utf8').includes('CODING_STANDARDS'))
+  })
+
+  test('issue 196 Rule 10: dry-run skips PR tree inspection and treats CODING_STANDARDS as absent', async () => {
+    const env = setup()
+    await briefRevisionCommand({ n: '7', modelo: 'gpt-6', dryRun: true }, env.io)
+    assert.ok(!env.out.join('\n').includes('CODING_STANDARDS'))
+    assert.equal(env.calls.some(call => call.cmd === 'git' && call.args[0] === 'cat-file'), false)
+  })
+
   test('Acceptance: generated brief tells the reviewer to stay in its worktree, write a file, and identifies model and commit', async () => {
     const env = setup()
     await briefRevisionCommand({ n: '7', modelo: 'gpt-6' }, env.io)
