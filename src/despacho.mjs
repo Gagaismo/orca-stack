@@ -303,6 +303,25 @@ const ok = (res, what) => {
 
 export const shellPrompt = text => /(?:^|\n)\s*PS\s+[A-Za-z]:\\[^\n>]*>\s*$/im.test(text)
 
+export const quotaLine = lines => {
+  if (!Array.isArray(lines)) return undefined
+  return lines.slice(-15).find(line => /quota (reached|exceeded)|usage limit|rate[- ]limit|Resets? in \d/i.test(String(line)))
+}
+
+const checkPostLaunchScreen = async (io, handle, agent) => {
+  for (let i = 0; i < 3; i += 1) {
+    if (i > 0) await io.sleep(5000)
+    const res = ok(io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json']), 'orca terminal read')
+    const tail = parseJson(res, 'orca terminal read').result?.terminal?.tail
+    const lines = Array.isArray(tail) ? tail : typeof tail === 'string' ? tail.split(/\r?\n/) : []
+    const quota = quotaLine(lines)
+    if (quota) throw new Error(`La terminal de ${agent} (${handle}) muestra un l\u00edmite de cuota; el turno no est\u00e1 ejecut\u00e1ndose: ${quota}`)
+    // shellPrompt intentionally recognizes PowerShell only; bash and cmd.exe prompts remain out of scope.
+    const last = lines.map(line => String(line)).reverse().find(line => line.trim() !== '')
+    if (last && shellPrompt(last)) throw new Error(`La terminal de ${agent} (${handle}) volvi\u00f3 al shell prompt; el turno no est\u00e1 ejecut\u00e1ndose: ${last}`)
+  }
+}
+
 const waitForTui = async (io, handle, agent, root, tries = 45) => {
   let last = null
   let stable = 0
@@ -449,6 +468,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
       if (screen && !shellPrompt(screen) && !/trust this folder\?/i.test(screen)) started = true
     }
     if (!started) throw new Error(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
+    await checkPostLaunchScreen(io, handle, agent)
   } else {
     const tools = await waitForPiSession(io, home, worktree, piSessionAfter)
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
@@ -653,6 +673,8 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       if (!worktree) throw new Error('orca worktree create no devolvió la ruta del worktree.')
       left.worktree = worktree
     }
+
+    if (!review) say(`${dryRun ? '[simulaci\u00f3n] ' : ''}Rama: ${dryRun ? `la define Orca al crear el worktree (se pidi\u00f3 --name ${name})` : branch}`)
 
     if (profile) {
       say(`${dryRun ? '[simulación] ' : ''}perfil de Pi "${profile.name}": pin en ${path.join(worktree, ...PIN_REL.split('/'))} (si git no lo ignora, se agrega /${PIN_REL} a ${path.join(commonDir, 'info', 'exclude')}); orquestador ${profile.model}${profile.thinking ? ` (${profile.thinking})` : ''}`)

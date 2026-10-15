@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, reboteCommand, renderBrief } from '../src/despacho.mjs'
+import { briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
 import { layout } from '../src/util.mjs'
 import { cleanup, read, tempDir, write } from './helpers.mjs'
 
@@ -85,6 +85,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
   const calls = []
   const out = []
   const written = []
+  const sleeps = []
   const sessionRoot = path.join(home, '.pi', 'agent', 'sessions')
   const sessionDir = path.join(sessionRoot, 'project')
   const sessionFile = path.join(sessionDir, '2026-10-09T00-00-00-000Z_session.jsonl')
@@ -94,7 +95,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
     cwd: root,
     win: true,
     out: line => out.push(line),
-    sleep: async () => {},
+    sleep: async ms => { sleeps.push(ms) },
     exists: existsSync,
     readFile: file => files.get(file) ?? readFileSync(file, 'utf8'),
     listFiles: dir => dir === sessionRoot ? [sessionDir] : dir === sessionDir ? [...files.keys()].filter(file => path.dirname(file) === sessionDir) : [],
@@ -136,7 +137,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
   const writes = () =>
     calls.filter(c => (c[0] === 'gh' && c[2] === 'edit') || (c[0] === 'orca' && (c[2] === 'create' || c[2] === 'send')) || (c[0] === 'git' && c[1] === 'fetch'))
 
-  return { io, calls, out, written, writes }
+  return { io, calls, out, written, writes, sleeps }
 }
 
 const run = (kind, args, env) => dispatch(kind, args, env.io)
@@ -209,6 +210,87 @@ describe('despachar: refusals', () => {
     await assert.rejects(run('review', { n: '9', agent: 'codex' }, fakeIo(pr)), /No despacho a codex/)
     write(layout(home).config, JSON.stringify({ guardia: { bloquear: [{ agente: 'codex', hasta: '29/10' }] } }))
     await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, fakeIo()), /fecha "hasta" que no es AAAA-MM-DD/)
+  })
+})
+
+describe('issue #198: branch output and post-launch terminal checks', () => {
+  test('Rule 1: despachar prints the branch returned by Orca before the brief', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    const create = env.out.findIndex(line => line.includes('orca worktree create'))
+    const branch = env.out.indexOf('Rama: proj-7')
+    const brief = env.out.findIndex(line => line.includes('brief ->'))
+    assert.ok(create < branch && branch < brief)
+  })
+
+  test('Rule 2: dry-run says Orca will define the branch and preserves the previewed brief', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'agy', dryRun: true }, env)
+    assert.ok(env.out.includes('[simulaci\u00f3n] Rama: la define Orca al crear el worktree (se pidi\u00f3 --name proj-7)'))
+    assert.ok(!env.out.includes('Rama: proj-7'))
+    assert.ok(env.out.some(line => line.includes('gh pr create --base main --head proj-7')))
+  })
+
+  test('Rule 3: revisar never prints Rama in real or dry-run dispatches', async () => {
+    for (const dryRun of [false, true]) {
+      const env = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }) })
+      await run('review', { n: '9', agent: 'codex', dryRun }, env)
+      assert.ok(!env.out.some(line => line.startsWith('Rama:')))
+    }
+    const briefRevision = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy' }) }, { config: { ...PROJECT, modo: 'un-agente' } })
+    await briefRevisionCommand({ n: '9', modelo: 'gpt-6-luna', dryRun: true }, briefRevision.io)
+    assert.ok(!briefRevision.out.some(line => line.startsWith('Rama:')))
+  })
+
+  test('Rule 4: quota on the first post-launch read fails with recovery details and no success', async () => {
+    let reads = 0
+    const quota = '\u26A0 Individual quota reached\u2026 Resets in 10h45m19s'
+    const env = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: ++reads <= 3 ? ['ready'] : [quota] } } }) })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), error =>
+      error.message.includes('agy') && error.message.includes('term_1') && error.message.includes(quota))
+    assert.ok(env.out.some(line => line.includes('El despacho qued\u00f3 a medias')))
+    assert.ok(!env.out.some(line => line.includes('\u2714 agy despachado')))
+  })
+
+  test('Rule 5: PowerShell prompt on the second post-launch read fails but bash prompt does not', async () => {
+    let reads = 0
+    const env = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: ++reads <= 4 ? ['ready'] : ['PS C:\\work>'] } } }) })
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), /codex[\s\S]*term_1[\s\S]*PS C:\\work>/)
+
+    let bashReads = 0
+    const bash = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: ++bashReads <= 3 ? ['ready'] : ['$ '] } } }) })
+    await run('ticket', { n: '7', agent: 'codex' }, bash)
+  })
+
+  test('Rule 6: healthy screens make three extra reads and two five-second pauses; pi is not read', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'codex' }, env)
+    assert.equal(env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'read').length, 6)
+    assert.deepEqual(env.sleeps.filter(ms => ms === 5000), [5000, 5000])
+    assert.ok(!env.writes().some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'read'))
+    const pi = fakeIo()
+    await run('ticket', { n: '7', agent: 'pi' }, pi)
+    assert.equal(pi.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'read').length, 0)
+  })
+
+  test('Rule 7: quota words outside the bottom fifteen lines do not fail launch', async () => {
+    const env = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: ['rate limit', ...Array(15).fill('ready')] } } }) })
+    await run('ticket', { n: '7', agent: 'codex' }, env)
+    assert.ok(env.out.some(line => line.includes('\u2714 codex despachado')))
+  })
+
+  test('Rule 9: quotaLine matches only the bottom fifteen lines', () => {
+    const quota = '\u26A0 Individual quota reached\u2026 Resets in 10h45m19s'
+    assert.equal(quotaLine(['ready', quota]), quota)
+    assert.equal(quotaLine(['working\u2026']), undefined)
+    assert.equal(quotaLine(['rate limit', ...Array(15).fill('ready')]), undefined)
+  })
+
+  test('Rule 11: README and despachar help document branch output and the PowerShell-only screen look', () => {
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
+    const cli = readFileSync(new URL('../src/cli.mjs', import.meta.url), 'utf8')
+    assert.match(readme, /`despachar`[\s\S]*?`Rama: <rama>`[\s\S]*?PowerShell/)
+    assert.match(cli, /despachar:[\s\S]*?Rama: <rama>[\s\S]*?prompt de PowerShell/)
   })
 })
 
@@ -961,6 +1043,23 @@ describe('rebote', () => {
     }
     return env
   }
+
+  test('Rule 3: rebote does not print a branch line', async () => {
+    const env = bounceEnv(pr(), {}, PROJECT)
+    await reboteCommand({ dryRun: true }, '12', env.io)
+    assert.ok(!env.out.some(line => line.startsWith('Rama:')))
+  })
+
+  test('Rule 8: rebote does not post its marker when the relaunched author shows quota', async () => {
+    let reads = 0
+    const quota = '\u26A0 Individual quota reached\u2026 Resets in 10h45m19s'
+    const env = bounceEnv(pr(), {
+      'orca terminal read': () => json({ result: { terminal: { tail: ++reads <= 3 ? ['ready'] : [quota] } } }),
+    })
+    await assert.rejects(reboteCommand({}, '12', env.io), error =>
+      error.message.includes('agy') && error.message.includes('term_1') && error.message.includes(quota))
+    assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+  })
 
   test('Rule 1: relaunches author with current blockers and posts Rebote only after launch', async () => {
     const env = bounceEnv(pr({ comments: [{ body: 'Commit: abc123\n## BLOQUEA\n2. otra cosa', url: 'https://example.test/comment/2' }] }))
