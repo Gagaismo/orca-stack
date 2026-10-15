@@ -259,13 +259,13 @@ Resumen del "Ciclo de `main`" del contrato, con el comando de cada paso:
 
 ### 4.3 Los mods de Claude Code
 
-Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `CLAUDE_CODE_PLUGIN_DIRS`. Se cargan **al iniciar la sesión**: después de actualizar, abrí una sesión nueva. Se les puede apagar uno por uno con `claude plugin disable <mod>@inline --scope user|local|project` (el README lo documenta para `marchas`; el mismo patrón vale para los otros). UNKNOWN: confirmá con `claude plugin list` el nombre exacto de cada plugin en tu instalación antes de apagar uno que no sea `marchas`.
+Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `CLAUDE_CODE_PLUGIN_DIRS`. Se cargan **al iniciar la sesión**: después de actualizar, abrí una sesión nueva. Se los puede apagar de a uno con `claude plugin disable <mod>@inline --scope user|local|project`. El nombre de cada plugin es el de su carpeta (`name` en `mods/<mod>/.claude-plugin/plugin.json`), y el README documenta el patrón para `marchas`. Si dudás, `claude plugin list` muestra los nombres de tu instalación.
 
 | Mod | Comando | Cuándo actúa | Cómo se apaga |
 | --- | --- | --- | --- |
 | `tablero-despacho` | `/tablero` | Abre un tablero de PRs, checks, reviews y worktrees (usa `gh`). Los atajos de despacho aparecen solo si hay `despacho` en la config | Deshabilitar el plugin |
 | `guardia-despacho` | — | En cada llamada a Bash: corrige o rechaza scripts de despacho/revisión según reglas; rechaza `orca worktree rm` y `git worktree remove` si la rama del worktree tiene commits que no están en ningún remoto; pregunta el perfil de pi (diálogo "Perfil Pi") cuando falta `--perfil-pi` | Las reglas de `despacho` están apagadas salvo que haya `despacho`; las de protección de worktrees y perfil de pi, siempre activas |
-| `puente-gentle` | `/pi`, `/gentle`, herramienta `consultar_gentle_shell` | En un repo con `.orca-stack.json`: consulta a Gentle Shell como par. Frena el merge de un PR de más de 400 líneas sin consulta (tema `pr-<n>`) y el de uno que toca `riesgo` sin sus reviews limpios sobre el último commit | Deshabilitar el plugin |
+| `puente-gentle` | `/pi`, `/gentle`, herramienta `consultar_gentle_shell` | En un repo con `.orca-stack.json` o `.orca-stack.local.json`: consulta a Gentle Shell como par. Frena el merge de un PR de más de 400 líneas sin consulta (tema `pr-<n>`) y el de uno que toca `riesgo` sin sus reviews limpios sobre el último commit | Deshabilitar el plugin |
 | `bandeja-mensajes` | `/mensajes` | Captura los bloques ` ```mensaje <destinatario> ` que redacta Claude y deja copiarlos o guardarlos | `mensajes.destinatarios` limita los nombres; deshabilitar el plugin |
 | `grilling-ok` | — | Responde con un clic (o con `ok`) las preguntas Q1…Qn de un grilling | Deshabilitar el plugin |
 | `modo-autonomo` | `/autonomo [meta \| off]` | Instrucción permanente de trabajar hasta la meta (por defecto `producción`) con recordatorio anti-parada acotado (máximo 3). Se apaga solo cuando el agente escribe `[AUTONOMO-LISTO]` | `/autonomo off` |
@@ -338,17 +338,20 @@ La fecha `hasta` es local, a las 00:00. Mientras no llegue, `despachar`, `revisa
 
 Con eso, `orca-stack revisar <pr> codex` lanza `--model chatgpt-web/gpt-6-sol -c model_reasoning_effort="high"`, y `despachar` sigue usando `gpt-6-luna`.
 
-Antes, una vez y a mano:
+Todavía no se probó de punta a punta con orca-stack. El primer `orca-stack revisar <pr> codex` real que publique un review con `Revisor:` y `Commit:` es la prueba; hasta entonces, tomá esta sección como configuración esperada, no como algo verificado.
+
+Antes, una vez y a mano, siguiendo el [Get started del launcher](https://github.com/miuuyy/codex-chatgpt-web#get-started):
 
 1. Instalá el launcher.
 2. Iniciá sesión en ChatGPT.
 3. Instalá los modelos y reiniciá Codex.
-4. Completá el **Full harness** (MCP) del launcher. El revisor lee archivos y corre la suite; sin el harness, el modelo responde sin herramientas locales.
+4. Completá el [Full harness](https://github.com/miuuyy/codex-chatgpt-web#full-harness) (MCP) del launcher. El revisor lee archivos y corre la suite; sin el harness, el modelo responde sin herramientas locales.
 
 Bordes:
 
 - La familia sale del último tramo del slug: `chatgpt-web/gpt-6-sol` es `gpt`. Codex sigue sin poder revisar un PR de codex, ni uno de codex-cc si codex-cc corre un GPT.
-- Según su arquitectura, el launcher enruta por su daemon local (`openai_base_url`) todas las llamadas de Codex, también las de los modelos nativos. Si el daemon no corre, fallan también los workers de codex.
+- Según su arquitectura, el launcher enruta por su daemon local (`openai_base_url`) todas las llamadas de Codex, también las de los modelos nativos. Si el daemon no corre, fallan también los workers de codex. `codex-cc` fija su propio proveedor (`-c model_provider=cc`), así que probablemente siga andando (inferido, sin probar).
+- El daemon guarda tu sesión de ChatGPT y le manda el código del repo a ChatGPT Web. Automatizar la web de ChatGPT probablemente va contra los términos de uso de OpenAI (inferido). Pensalo dos veces antes de usarlo con código de un cliente.
 - Es automatización no oficial de la web de ChatGPT. Si la web cambia, falla de forma explícita; nunca cambia de modelo por su cuenta. Un pedido de aprobación inesperado del lado de ChatGPT falla cerrado, y un revisor desatendido no puede contestarlo.
 
 ### 4.6 Marchas
@@ -409,7 +412,7 @@ En un PR que toca `riesgo`, los reviews son siempre sobre el `headRefOid`, y un 
 
 > **Regla de este repo** (`AGENTS.md` del propio orca-stack): hoy no se despachan reviews; `main` mergea con la CI verde y el `## Evidencia` en el cuerpo del PR. Un PR de más de 400 líneas igual requiere consulta a Gentle Shell. Esto es una excepción del repo, no del stack.
 
-**Rebote.** Un PR rebota una vez por review. Para CI roja, `rebote` espera si hay checks pendientes y se niega ante un check `CANCELLED` hasta que `main` corra `gh run rerun <run> --failed`. Si la falla es de infraestructura, `main` re-ejecuta el job y no rebota al autor. Después del segundo rebote de CI, si vuelve a fallar, se lo pasa al humano.
+**Rebote.** Un PR rebota una vez por review. Para CI roja, `rebote` se niega mientras haya checks pendientes (corrélo de nuevo cuando termine la CI) y también ante un check `CANCELLED`, hasta que `main` corra `gh run rerun <run> --failed`. Si la falla es de infraestructura, `main` re-ejecuta el job y no rebota al autor. Después del segundo rebote de CI, si vuelve a fallar, se lo pasa al humano.
 
 **Cuerpo del PR.** Sigue la skill `pr`: `## Summary`, `## Evidencia` y `## Merge Danger`. Un PR de ticket lleva `Closes #<n>`, `Implementador: <agente>` y una fila de `## Evidencia` por cada regla y por cada entrada pública tocada, con el nombre exacto del test y la línea de la corrida en verde. Un PR de orquestación no lleva `Closes #`.
 
@@ -489,7 +492,7 @@ orca-stack sesiones                  # para /retro
 
 ### Cómo leer `doctor`
 
-`✖` es una falla (código 1), `⚠` un aviso (código 0) con el comando que lo arregla. Revisa: autodiagnóstico de cada wrapper (`--orca-stack-self-test`), versiones de Pi (`1.2.0` o más nueva) y paquetes (gentle-pi `4.2.0`, pi-claude-bridge `0.9.2`), login de Pi (se omite con `--offline`), mods en `CLAUDE_CODE_PLUGIN_DIRS`, plugins `ponytail` y `caveman` de Claude Code activos, scripts de `despacho` que no existen, deriva (plugin de Matt por debajo de 1.3.1, skills duplicadas, bloque viejo de `CLAUDE.md`, bloque de gentle-ai reescrito), `engram` anterior a 3.4.0, y en Windows con `codex` en uso, la lectura de acentos. También avisa si falta `"setup": "completo"`. **Corrélo desde la raíz del proyecto**: algunas comprobaciones dependen de la config de ese repo.
+`✖` es una falla (código 1), `⚠` un aviso (código 0) con el comando que lo arregla. Revisa: autodiagnóstico de cada wrapper (`--orca-stack-self-test`), versiones de Pi (`1.2.0` o más nueva) y paquetes (gentle-pi `4.2.0`, pi-claude-bridge `0.9.2`), login de Pi (se omite con `--offline`), mods en `CLAUDE_CODE_PLUGIN_DIRS`; avisa si están activos los plugins `ponytail` o `caveman` de Claude Code (sus hooks duplican el control de Orca); scripts de `despacho` que no existen, deriva (plugin de Matt por debajo de 1.3.1, skills duplicadas, bloque viejo de `CLAUDE.md`, bloque de gentle-ai reescrito), `engram` anterior a 3.4.0, y en Windows con `codex` en uso, la lectura de acentos. También avisa si falta `"setup": "completo"`. **Corrélo desde la raíz del proyecto**: algunas comprobaciones dependen de la config de ese repo.
 
 ### Dónde vive el estado
 
