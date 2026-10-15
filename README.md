@@ -31,7 +31,7 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 | Política del stack: `ORCA-STACK.md` y `ROLE-BRIEFS.md` | `~/orca/stack/` |
 | Wrappers `claude-orca-stack`, `codex-orca-stack`, `agy-orca-stack` (`.cmd` en Windows, `.sh` en el resto), cada uno con `--orca-stack-self-test` | `~/orca/stack/scripts/` |
 | Skills propias: `orca-stack-policy`, `orca-setup`, `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | `~/.claude/skills/` y `~/.agents/skills/` |
-| Siete mods de Claude Code (ver abajo) y sus rutas en `env.CLAUDE_CODE_PLUGIN_DIRS` | `~/.claude/mods/` y `~/.claude/settings.json` |
+| Ocho mods de Claude Code (ver abajo) y sus rutas en `env.CLAUDE_CODE_PLUGIN_DIRS` | `~/.claude/mods/` y `~/.claude/settings.json` |
 | Nada de metodología en `~/.claude/CLAUDE.md`: si un `global` anterior dejó ahí el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->`, lo saca (con respaldo). También achica el bloque que gentle-ai escribe ahí (ver abajo) | `~/.claude/CLAUDE.md` |
 | Pi: `gentle-pi@4.2.0` y `pi-claude-bridge@0.9.2` con `pi install` (`pi install npm:gentle-pi@4.2.0`), más `npm i -g gentle-pi@4.2.0` (comando `gentle-shell`). Necesita Pi `1.2.0` o más nuevo: con un Pi anterior no instala gentle-pi y falla | `~/.pi/agent/` y npm global |
 | Comando `orca-stack`, para usar desde cualquier repo sin npx ni red | Windows: prefijo global de npm si esta en `PATH`, con shims `.cmd` y sin extension para PowerShell y Git Bash. Otros sistemas: primer directorio escribible del `PATH`. La copia queda en `~/.orca-stack/cli/`; si falta el destino compartido, se usa `~/.orca-stack/bin/` y `global` imprime como agregarlo al `PATH` |
