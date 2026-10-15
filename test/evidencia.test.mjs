@@ -183,6 +183,70 @@ describe('PR evidence test-name checker', () => {
       })
     })
   })
+
+  test('Issue 205 Rule 1: accepts all five repository test titles in double-backtick spans', () => {
+    const titles = [
+      'ticket rule 4: ultracode exempts only main own arena and still announces it',
+      'rule 4: ponytail-debt finds `shortcut:` and older `ponytail:` markers, not prose',
+      'rule 4 negative: no text in assets/ asks for new `ponytail:` comments',
+      'an indented fence (inside a list item) hides its `# comment` lines too',
+      'a balanced fence inside the removed text may hold `# comment` lines',
+    ]
+    const body = `## Evidencia\n${header}\n${titles.map(title => `| Rule | \`\`${title}\`\` | pass |`).join('\n')}\n`
+    const result = checkEvidencia(body, root)
+    assert.equal(result.ok, true, result.stderr)
+    assert.equal(result.count, 5)
+  })
+
+  test('Issue 210 regression: finds test titles after escaped backticks in a nested template', () => {
+    const source = [
+      'const a = `${[1].map(t => `x \\`${t}\\``).join("")}`',
+      'test("zz plain after", () => {})',
+      '',
+    ].join('\n')
+    withCheckout({ 'test/a.test.mjs': source }, checkout => {
+      assert.equal(checkEvidencia(bodyFor(row('zz plain after')), checkout).ok, true)
+    })
+  })
+
+  test('Issue 205 Rule 2: applies delimiter length and CommonMark space trimming', () => {
+    withCheckout({ 'test/a.test.mjs': testFile(['a`b', 'trimmed', '  ']) }, checkout => {
+      const body = `## Evidencia\n${header}\n| Rule | \`\`a\`b\`\` | pass |\n| Rule | \`\` trimmed \`\` | pass |\n| Rule | \`\`  \`\` | pass |\n| Rule | \`\`unclosed | pass |\n| Rule | \`\`no exact closer\`\`\` | pass |\n`
+      const result = checkEvidencia(body, checkout)
+      assert.equal(result.ok, true)
+      assert.equal(result.count, 3)
+    })
+  })
+
+  test('Issue 205 Rule 3: keeps existing single-backtick title matching', () => {
+    withCheckout({ 'test/a.test.mjs': testFile(['Rule 1: x']) }, checkout => {
+      assert.equal(checkEvidencia(bodyFor(row('Rule 1: x')), checkout).ok, true)
+    })
+  })
+
+  test('Issue 205 Rule 4 and Rule 6: exempts space-free non-titles but reports non-title phrases', () => {
+    const body = `## Evidencia\n${header}\n| Rule 5 | sin test: lo verifiqu\u00E9 con \`--dry-run\` sobre \`ci-ok\` | \u2714 |\n| Rule 6 | \`ci ok\` | \u2714 |\n`
+    const result = checkEvidencia(body, '')
+    assert.equal(result.ok, false)
+    assert.equal(result.stderr, 'Evidencia fila 2: no encuentro el test `ci ok` en test/ ni mods/*/tests/\n')
+  })
+
+  test('Issue 205 Rule 5 and Rule 8: keeps the exact CLI error, message, and exit code', () => {
+    withCheckout({ 'test/a.test.mjs': testFile([]) }, checkout => {
+      const bodyFile = path.join(checkout, 'body.md')
+      writeFileSync(bodyFile, bodyFor('|| `Rule 99: no existe` | pass |'))
+      const result = spawnSync(process.execPath, [checker, bodyFile], { cwd: checkout, encoding: 'utf8' })
+      assert.equal(result.status, 1)
+      assert.equal(result.stderr, 'Evidencia fila 1: no encuentro el test `Rule 99: no existe` en test/ ni mods/*/tests/\n')
+    })
+  })
+
+  test('Issue 205 Rule 7: still rejects abbreviated runner test names', () => {
+    withCheckout({ 'test/a.test.mjs': testFile(['Rule 1: real']) }, checkout => {
+      const body = bodyFor(row('Rule 1: real', '`\u2714 \u2026 (0.4685ms)`'))
+      assert.equal(checkEvidencia(body, checkout).ok, false)
+    })
+  })
 })
 
 function readFile(relative) {
