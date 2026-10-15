@@ -77,13 +77,43 @@ function tables(text) {
 }
 
 function backticked(text) {
-  return [...text.matchAll(/`([^`\r\n]*)`/g)].map(match => match[1])
+  const spans = []
+  for (let i = 0; i < text.length;) {
+    if (text[i] !== '`') { i += 1; continue }
+    let openerEnd = i + 1
+    while (text[openerEnd] === '`') openerEnd += 1
+    const delimiterLength = openerEnd - i
+    let closerStart = openerEnd
+    let contentEnd = -1
+    let end = -1
+    while (closerStart < text.length) {
+      const next = text.indexOf('`', closerStart)
+      if (next === -1 || /[\r\n]/.test(text.slice(closerStart, next))) break
+      let closerEnd = next + 1
+      while (text[closerEnd] === '`') closerEnd += 1
+      if (closerEnd - next === delimiterLength) {
+        contentEnd = next
+        end = closerEnd
+        break
+      }
+      closerStart = closerEnd
+    }
+    if (end === -1) { i = openerEnd; continue }
+    let content = text.slice(openerEnd, contentEnd)
+    if (content.length >= 2 && content.startsWith(' ') && content.endsWith(' ') && /[^ ]/.test(content)) {
+      content = content.slice(1, -1)
+    }
+    spans.push(content)
+    i = end
+  }
+  return spans
 }
 
-function isExempt(name) {
+function isExempt(name, titles) {
+  if (titles.some(title => title.exact === name || title.pattern?.test(name))) return false
   const command = name.match(/^([^ ]+) /)
   if (command && COMMANDS.has(command[1])) return true
-  return !/\s/.test(name) && (/[\\/]/.test(name) || /\.[A-Za-z0-9]{1,10}(?:#L\d+)?$/.test(name))
+  return !/\s/.test(name)
 }
 
 function runnerTitles(cell) {
@@ -216,7 +246,7 @@ export function checkEvidencia(body, root) {
   for (const table of checked) {
     for (const row of table.rows) {
       rowNumber += 1
-      const names = [...backticked(row[1] ?? '').filter(name => !isExempt(name))]
+      const names = [...backticked(row[1] ?? '').filter(name => !isExempt(name, titles))]
       names.push(...runnerTitles(row[2] ?? ''))
       for (const name of names) {
         count += 1
