@@ -532,6 +532,16 @@ describe('orca-stack vigilar (#206)', () => {
     }
   })
 
+  test('Rule 5: CONTRATO step 7 says main still tries gh pr merge when --merge-de-main fails; the AGENTS.md block equals the asset', () => {
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
+    const step7 = contract.split(/\r?\n/).find(line => line.startsWith('7. '))
+    assert.ok(step7.includes('Si `orca-stack vigilar --merge-de-main <n>` falla, igual intentás `gh pr merge <n>`, y si sale, el `pr-mergeado` de ese PR es tu propio merge: el registro solo evita ese ruido.'))
+
+    const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
+    const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
+    assert.equal(upsertBlock(agents, block), agents, 'init would change nothing in AGENTS.md')
+  })
+
   test('Rule 6: watcher A on 1 and 2 and watcher B on 3 share vigilar.json; after both poll it holds A\'s latest entries for 1 and 2 and B\'s for 3', async () => {
     const item = (n, options = {}) => pr(n * 10, { branch: `Gagaismo/orca-stack-${n}`, closes: [n], ...options })
     const h = harness({ prs: [item(1), item(2), item(3)] })
