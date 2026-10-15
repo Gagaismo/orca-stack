@@ -15,7 +15,7 @@
     ]
   },
   "verificacion": {
-    "suite": "npm test && npm run test:mods",
+    "suite": "npm run verify",
     "typecheck": "ninguno"
   },
   "riesgo": [],

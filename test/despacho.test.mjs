@@ -212,6 +212,110 @@ describe('despachar: refusals', () => {
   })
 })
 
+describe('issue 196 brief hygiene', () => {
+  test('Rule 1: verify script composes the configured suite without shell chaining in config', () => {
+    const packageJson = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8'))
+    const config = JSON.parse(readFileSync(path.join(PACKAGE_ROOT, '.orca-stack.json'), 'utf8'))
+    assert.equal(packageJson.scripts.verify, 'npm test && npm run test:mods')
+    assert.equal(config.verificacion.suite, 'npm run verify')
+    for (const value of Object.values(config.verificacion)) assert.doesNotMatch(value, /&&|\|\||;/)
+  })
+
+  test('Rule 2: verification block treats trimmed case-insensitive ninguno as empty', async () => {
+    const env = fakeIo({}, { config: { ...PROJECT, verificacion: { suite: 'npm test', typecheck: ' Ninguno ' } } })
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    const brief = env.written[0][1]
+    assert.match(brief, /```\n(?:npm test)\n```/)
+    assert.doesNotMatch(brief, /Ninguno/)
+  })
+
+  test('Rule 3: verification block keeps other command names and the typecheck command', async () => {
+    const typed = fakeIo({}, { config: { ...PROJECT, verificacion: { suite: 'npm test', typecheck: 'npm run typecheck' } } })
+    await run('ticket', { n: '7', agent: 'agy' }, typed)
+    assert.ok(typed.written[0][1].includes('npm test\nnpm run typecheck'))
+    for (const value of ['npm run ninguno', 'ninguno-lint']) {
+      const nonEmpty = fakeIo({}, { config: { ...PROJECT, verificacion: { suite: value, typecheck: '' } } })
+      await run('ticket', { n: '7', agent: 'agy' }, nonEmpty)
+      assert.ok(nonEmpty.written[0][1].includes(value))
+    }
+  })
+
+  test('Rule 4: two empty or ninguno values render the no-checks fallback', async () => {
+    const empty = fakeIo({}, { config: { ...PROJECT, verificacion: { suite: ' Ninguno ', typecheck: '' } } })
+    await run('ticket', { n: '7', agent: 'agy' }, empty)
+    assert.ok(empty.written[0][1].includes("(none configured: run the project's own checks)"))
+    const blank = fakeIo({}, { config: { ...PROJECT, verificacion: { suite: '', typecheck: '' } } })
+    await run('ticket', { n: '7', agent: 'agy' }, blank)
+    assert.ok(blank.written[0][1].includes("(none configured: run the project's own checks)"))
+  })
+
+  test('Rule 5: ticket, bounce, and review briefs share the ninguno filter', async () => {
+    const config = { ...PROJECT, verificacion: { suite: 'npm test', typecheck: 'ninguno' } }
+    const verificationContent = brief => /```([\s\S]*?)```/.exec(brief)?.[1].trim()
+    const ticket = fakeIo({}, { config })
+    await run('ticket', { n: '7', agent: 'agy' }, ticket)
+    assert.equal(verificationContent(ticket.written[0][1]), 'npm test')
+
+    const review = fakeIo({ 'gh pr': json({ headRefName: 'feat/x', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) }, { config })
+    await run('review', { n: '9', agent: 'agy' }, review)
+    assert.equal(verificationContent(review.written[0][1]), 'npm test')
+
+    const source = readFileSync(path.join(PACKAGE_ROOT, 'src/despacho.mjs'), 'utf8')
+    assert.equal((source.match(/VERIFICATION: verificationBlock\(config\)/g) ?? []).length, 3)
+  })
+
+  test('Rule 8: ticket brief mentions root CODING_STANDARDS only when listed in the base tree', async () => {
+    const absent = fakeIo({ 'git ls-tree -r': okRes('src/app.ts\ndocs/CODING_STANDARDS.md\n') })
+    await run('ticket', { n: '7', agent: 'agy' }, absent)
+    assert.doesNotMatch(absent.written[0][1], /CODING_STANDARDS/)
+
+    const present = fakeIo({ 'git ls-tree -r': okRes('src/app.ts\nCODING_STANDARDS.md\n') })
+    await run('ticket', { n: '7', agent: 'agy' }, present)
+    assert.equal((present.written[0][1].match(/CODING_STANDARDS\.md/g) ?? []).length, 1)
+    assert.match(present.written[0][1], /Read CODING_STANDARDS\.md and check the change against it before every commit\./)
+  })
+
+  test('Rules 9-10: review brief standards reflect the listed tree and missing listing is safe', async () => {
+    const present = fakeIo({
+      'git ls-tree -r': okRes('src/app.ts\nCODING_STANDARDS.md\n'),
+      'gh pr': json({ headRefName: 'feat/x', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }),
+    })
+    await run('review', { n: '9', agent: 'agy' }, present)
+    assert.ok(present.written[0][1].includes('CODING_STANDARDS.md and AGENTS.md'))
+
+    const unlisted = fakeIo({
+      'git ls-tree -r': okRes('src/app.ts\n'),
+      'gh pr': json({ headRefName: 'feat/x', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }),
+    })
+    await run('review', { n: '9', agent: 'agy' }, unlisted)
+    assert.ok(!unlisted.written[0][1].includes('CODING_STANDARDS'))
+    assert.doesNotMatch(renderBrief('review', { PR: '1', REPO: 'repo', AGENT: 'agy', BASE: 'main', SHA: 'abc123', IMPLEMENTER: 'codex', VERIFICATION: 'npm test' }), /\{\{/)
+  })
+
+  test('Rule 6: ticket brief reads issue title, body, and comments as JSON', () => {
+    const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/brief-ticket.md'), 'utf8')
+    assert.match(ticket, /gh issue view \{\{ISSUE\}\} --json title,body,comments/)
+    assert.doesNotMatch(ticket, /gh issue view \{\{ISSUE\}\} --comments/)
+  })
+
+  test('Rule 7: contract reads issue and PR bodies plus comments and review records', () => {
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/CONTRATO.md'), 'utf8')
+    const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
+    assert.match(agents, /gh issue view <n> --json title,body,comments/)
+    assert.match(agents, /gh pr view <n> --json title,body,comments,reviews/)
+    assert.match(contract, /gh issue view <n> --json title,body,comments/)
+    assert.match(contract, /gh pr view <n> --json title,body,comments,reviews/)
+    assert.match(contract, /gh pr view <n> --json headRefOid/)
+    assert.match(contract, /gh pr checks <n>/)
+  })
+
+  test('Rule 11: review brief reads PR title, body, comments, and reviews as JSON', () => {
+    const review = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/brief-revision.md'), 'utf8')
+    assert.match(review, /gh pr view \{\{PR\}\} --json title,body,comments,reviews, gh pr diff \{\{PR\}\}/)
+    assert.doesNotMatch(review, /gh pr view \{\{PR\}\} --comments/)
+  })
+})
+
 describe('revisar: one worktree per reviewer', () => {
   const pr = over => fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }), ...over })
 
@@ -517,7 +621,7 @@ describe('briefs', () => {
     const env = fakeIo()
     await run('ticket', { n: '7', agent: 'claude' }, env)
     const brief = env.written[0][1]
-    assert.match(brief, /Read the issue and its comments first: gh issue view 7 --comments/)
+    assert.match(brief, /Read the issue and its comments first: gh issue view 7 --json title,body,comments/)
     assert.match(brief, /No arena or swarm is authorized/)
     const refused = fakeIo({}, { config: { ...PROJECT, setup: undefined } })
     await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, refused), /setup .* pendiente/)
@@ -543,7 +647,7 @@ describe('briefs', () => {
     assert.equal(file, path.join(home, 'orca', 'briefs', 'proj-7.md'))
     for (const marker of ['## Summary', '## Evidencia', '## Merge Danger', '## Desvíos del ticket', 'Implementador: agy', 'Closes #7']) assert.ok(brief.includes(marker), marker)
     assert.ok(brief.includes('npm test -- --run\nnpm run typecheck'))
-    assert.ok(brief.includes('gh issue view 7 --comments') && brief.includes('--base main') && brief.includes('proj-7'))
+    assert.ok(brief.includes('gh issue view 7 --json title,body,comments') && brief.includes('--base main') && brief.includes('proj-7'))
     assert.ok(brief.includes('Mirá `src/app.ts` antes de empezar.'))
     assert.ok(!brief.includes('{{'))
     assert.notEqual(read(file).charCodeAt(0), 0xfeff)
