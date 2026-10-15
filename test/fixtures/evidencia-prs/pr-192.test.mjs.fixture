@@ -1,0 +1,5 @@
+import { test } from 'node:test'
+test("main", () => {})
+test("puente-gentle", () => {})
+test("reloj", () => {})
+test("tablero-despacho", () => {})

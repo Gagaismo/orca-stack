@@ -1,0 +1,9 @@
+import { test } from 'node:test'
+test("Rule 1: a claude ticket brief without a note forbids arena/swarm, not its own subagents", () => {})
+test("Rule 2: a claude fan-out line separates authorized own delegation from arena/swarm", () => {})
+test("Rule 3: a claude brief still forbids an unrequested arena/swarm fan-out", () => {})
+test("Rule 4: non-claude ticket briefs reject arena and swarm even with a note", () => {})
+test("Rule 5: bounce briefs restrict arena/swarm, not the agent's own subagents", () => {})
+test("Rule 6: an approved claude note carries the exact one-round limit and effort", () => {})
+test("Rule 7: despachar still writes the usual brief and keeps its refusal behavior", () => {})
+test("Rule 7: rebote keeps its ordinary brief and refusal behavior without a new note", () => {})

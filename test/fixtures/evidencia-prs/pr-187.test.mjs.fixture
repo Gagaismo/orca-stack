@@ -1,0 +1,9 @@
+import { test } from 'node:test'
+test("Rule 1: a claude ticket brief without an authorization note forbids fan-out", () => {})
+test("Rule 2: an approved claude note carries the exact one-round limit and effort", () => {})
+test("Rule 3: non-claude ticket briefs reject arena and swarm even with a note", () => {})
+test("Rule 4: main reports note/result N mismatch without blocking merge", () => {})
+test("Rule 5: a bounce fan-out note requires a new human OK", () => {})
+test("Rule 6: main only writes a fan-out note after human OK, including autonomous and ultracode", () => {})
+test("Rule 7: despachar still writes the usual brief and keeps its refusal behavior", () => {})
+test("Rule 7: rebote keeps its ordinary brief and refusal behavior without a new note", () => {})
