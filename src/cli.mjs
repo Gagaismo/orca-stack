@@ -164,7 +164,8 @@ chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor en Pr
 
 --merge-de-main <pr> registra el head del PR en <git-common-dir>/orca-stack/vigilar-merges.json y sale sin imprimir
 nada en stdout. main lo corre justo antes de cada intento de \`gh pr merge <pr>\`, también después de
-\`gh pr update-branch\`: un merge de ese head visto dentro de los 30 minutos no emite pr-mergeado.
+\`gh pr update-branch\`: un merge de ese head hecho dentro de los 30 minutos siguientes al registro no emite
+pr-mergeado, aunque el watcher lo vea más tarde.
 `,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 

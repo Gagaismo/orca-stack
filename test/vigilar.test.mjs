@@ -28,8 +28,9 @@ const check = (name, conclusion, { status = 'COMPLETED', startedAt = '2026-10-15
 const GREEN = [check('ubuntu-latest / Node 20', 'SUCCESS'), check('ci-ok', 'SUCCESS')]
 const PENDING = [check('ubuntu-latest / Node 20', '', { status: 'IN_PROGRESS' })]
 
-const pr = (number, { state = 'OPEN', head = ABC, branch = 'Gagaismo/orca-stack-7', closes = [7], body = '', checks = [] } = {}) =>
-  ({ number, state, headRefName: branch, headRefOid: head, body, closingIssuesReferences: closes.map(n => ({ number: n })), statusCheckRollup: checks })
+// A merged PR is merged a minute after T0 unless a test says when.
+const pr = (number, { state = 'OPEN', head = ABC, branch = 'Gagaismo/orca-stack-7', closes = [7], body = '', checks = [], mergedAt = state === 'MERGED' ? new Date(T0 + MINUTE).toISOString() : null } = {}) =>
+  ({ number, state, headRefName: branch, headRefOid: head, mergedAt, body, closingIssuesReferences: closes.map(n => ({ number: n })), statusCheckRollup: checks })
 
 // A fake GitHub, git and Orca. Tests change `world` between runs; inside one run, each io.sleep applies the next
 // scripted change, so a looping watcher sees the world move and ends on its own with tanda-cerrada.
@@ -283,8 +284,7 @@ describe('orca-stack vigilar (#195)', () => {
 
     const stale = harness({ prs: [pr(70)] })
     await mergeDeMain(stale, '70')
-    stale.world.prs = [pr(70, { state: 'MERGED' })]
-    stale.world.now = T0 + 31 * MINUTE
+    stale.world.prs = [pr(70, { state: 'MERGED', mergedAt: new Date(T0 + 31 * MINUTE).toISOString() })]
     await once(stale, ['7', '8'])
     assert.deepEqual(stale.out, ['pr-mergeado #7 PR #70 abc1234'])
   })
@@ -490,6 +490,35 @@ describe('orca-stack vigilar (#195)', () => {
 })
 
 describe('orca-stack vigilar (#206)', () => {
+  const at = clock => Date.parse(`2026-10-15T${clock}:00Z`)
+
+  test('Rule 1: a record at 10:00, a merge of that head at 10:05 and a poll at 11:00 end the item silently as main\'s merge', async () => {
+    const h = harness({ prs: [pr(70)], now: at('10:00') })
+    assert.equal(await mergeDeMain(h, '70'), 0)
+    h.world.prs = [pr(70, { state: 'MERGED', mergedAt: '2026-10-15T10:05:00Z' })]
+    h.world.now = at('11:00')
+    await once(h, ['7', '8'])
+    assert.deepEqual(h.out, [])
+    assert.deepEqual(h.cursor()['7'], { pr: 70, head: ABC, fin: 'main' })
+  })
+
+  test('Rule 2: the human merged that head at 09:58 and main recorded it at 10:00: pr-mergeado', async () => {
+    const h = harness({ prs: [pr(70, { state: 'MERGED', mergedAt: '2026-10-15T09:58:00Z' })], now: at('10:01') })
+    h.files[MERGES] = JSON.stringify({ 70: { head: ABC, at: '2026-10-15T10:00:00.000Z' } })
+    await once(h, ['7', '8'])
+    assert.deepEqual(h.out, ['pr-mergeado #7 PR #70 abc1234'])
+    assert.equal(h.cursor()['7'].fin, 'mergeado')
+  })
+
+  test('Rule 3: a record at 10:00 and a merge of that head at 10:31: pr-mergeado', async () => {
+    const h = harness({ prs: [pr(70)], now: at('10:00') })
+    await mergeDeMain(h, '70')
+    h.world.prs = [pr(70, { state: 'MERGED', mergedAt: '2026-10-15T10:31:00Z' })]
+    h.world.now = at('10:31')
+    await once(h, ['7', '8'])
+    assert.deepEqual(h.out, ['pr-mergeado #7 PR #70 abc1234'])
+  })
+
   test('Rule 8: an older finished CANCELLED row and a newer QUEUED row with no startedAt leave the check pending, with no ci-roja', async () => {
     const rows = [
       check('windows-latest / Node 20', 'CANCELLED', { startedAt: '2026-10-15T10:00:00Z' }),

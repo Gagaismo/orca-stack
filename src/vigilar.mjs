@@ -10,8 +10,8 @@ export const CURSOR_REL = ['orca-stack', 'vigilar.json']
 export const MERGES_REL = ['orca-stack', 'vigilar-merges.json']
 
 const USAGE = 'Uso: orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas], o orca-stack vigilar --merge-de-main <pr>.'
-const PR_FIELDS = 'number,state,headRefName,headRefOid,body,closingIssuesReferences,statusCheckRollup'
-// A record by --merge-de-main covers a merge of its head commit seen within this window.
+const PR_FIELDS = 'number,state,headRefName,headRefOid,mergedAt,body,closingIssuesReferences,statusCheckRollup'
+// A record by --merge-de-main covers a merge of its head commit made within this window after the record.
 const MERGE_WINDOW_MS = 30 * 60 * 1000
 // Polls in a row that failed to read GitHub before the watcher says it is blind (once per outage).
 const BLIND_AFTER = 3
@@ -132,7 +132,7 @@ const readWorld = (targets, cursor, root, io, warn) => {
 
 // One item's events and its next cursor entry: the PR, its last head commit, the last CI result emitted for that head
 // commit (with the run of the last red one), and how the item ended.
-const advance = (issue, seen, before, merges, now) => {
+const advance = (issue, seen, before, merges) => {
   if (!seen.pr) return { lines: [], entry: seen.issueState === 'CLOSED' ? { fin: 'issue-cerrado' } : {} }
   const { pr } = seen
   const fresh = before?.pr !== pr.number
@@ -156,10 +156,12 @@ const advance = (issue, seen, before, merges, now) => {
     }
   } else if (!entry.fin) {
     entry.head = pr.headRefOid
-    // A merge main recorded for this head commit gives no event; the cursor marks the item ended by main, so the record
-    // is never used again. Anything else, a merge by the human included, is pr-mergeado.
+    // A merge of the head commit main recorded, made after the record and within the window, gives no event, however
+    // late the watcher sees it; the cursor marks the item ended by main, so the record is never used again. Anything
+    // else, a merge by the human included, is pr-mergeado.
     const record = merges[pr.number]
-    if (pr.state === 'MERGED' && record?.head === pr.headRefOid && now - Date.parse(record.at) <= MERGE_WINDOW_MS) {
+    const sinceRecord = Date.parse(pr.mergedAt) - Date.parse(record?.at)
+    if (pr.state === 'MERGED' && record?.head === pr.headRefOid && sinceRecord >= 0 && sinceRecord <= MERGE_WINDOW_MS) {
       entry.fin = 'main'
     } else if (pr.state === 'MERGED') {
       lines.push(event('pr-mergeado', issue, pr, pr.headRefOid))
@@ -227,12 +229,11 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     }
     failures = 0
     const merges = readJson(mergesPath, io, warn)
-    const now = (io.now ?? Date.now)()
     const next = { ...cursor }
     const lines = []
     let endedNow = false
     for (const issue of targets) {
-      const step = advance(issue, world[issue], cursor[issue], merges, now)
+      const step = advance(issue, world[issue], cursor[issue], merges)
       lines.push(...step.lines)
       if (step.entry.fin && !cursor[issue]?.fin) endedNow = true
       next[issue] = step.entry
