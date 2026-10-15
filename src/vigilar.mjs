@@ -105,7 +105,8 @@ const linked = (pr, issue, branches) =>
   branches.includes(pr.headRefName) ||
   new RegExp(`^\\s*Closes\\s+#${issue}\\b`, 'im').test(pr.body ?? '')
 
-// Everything GitHub says about the items, read before anything is printed: a failed read fails the whole poll.
+// Everything GitHub says about the items, read before anything is printed: a failed PR read fails the whole poll. An
+// issue gh cannot read (a mistyped number) only stays open, so it never blinds the rest of the batch.
 const readWorld = (targets, cursor, root, io, warn) => {
   const prs = new Map(ghJson(io, root, ['pr', 'list', '--state', 'all', '--limit', '100', '--json', PR_FIELDS]).map(pr => [pr.number, pr]))
   // A PR the cursor follows is followed until it ends, even past the list's --limit.
@@ -126,7 +127,11 @@ const readWorld = (targets, cursor, root, io, warn) => {
     const pr = mine.sort((a, b) => b.number - a.number)[0]
     if (pr) return [issue, { pr }]
 
-    return [issue, { issueState: ghJson(io, root, ['issue', 'view', issue, '--json', 'state']).state }]
+    const res = io.sh('gh', ['issue', 'view', issue, '--json', 'state'], { cwd: root })
+    const issueState = res.status === 0 ? parse(res)?.state : undefined
+    if (!issueState) warn(`vigilar: no pude leer el estado de #${issue} (${detail(res)}); lo sigo vigilando.`)
+
+    return [issue, { issueState }]
   }))
 }
 
@@ -205,11 +210,11 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
   const { commonDir, root } = getCommonDir(io)
   const cursorPath = path.join(commonDir, ...CURSOR_REL)
   const mergesPath = path.join(commonDir, ...MERGES_REL)
+  let cursor = readJson(cursorPath, io, warn)
   let failures = 0
 
   // Returns true when every item has ended.
   const poll = () => {
-    const cursor = readJson(cursorPath, io, warn)
     let world
     try {
       world = readWorld(targets, cursor, root, io, warn)
@@ -237,7 +242,15 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     if (allEnded && endedNow) lines.push(`tanda-cerrada ${targets.map(issue => `#${issue}`).join(' ')}`)
     // Printed before the cursor is written: a crash re-emits at most one poll's lines rather than losing them.
     for (const line of lines) io.out(line)
-    if (!flags.dryRun && JSON.stringify(next) !== JSON.stringify(cursor)) writeJson(cursorPath, next, io)
+    if (!flags.dryRun && JSON.stringify(next) !== JSON.stringify(cursor)) {
+      // A failed write never stops the watcher: this run keeps the cursor in memory and prints nothing twice.
+      try {
+        writeJson(cursorPath, next, io)
+      } catch (error) {
+        warn(`vigilar: no pude escribir ${cursorPath}: ${error.message}`)
+      }
+    }
+    cursor = next
     if (allEnded && !endedNow) warn(`vigilar: ${targets.map(issue => `#${issue}`).join(' ')} ya habían terminado; no queda nada que vigilar.`)
 
     return allEnded

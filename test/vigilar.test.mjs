@@ -93,6 +93,7 @@ const harness = (world = {}) => {
       if (cmd === 'gh' && args[0] === 'issue' && args[1] === 'view') {
         if (world.ghDown) return fail(world.ghDown)
         if (args.includes('comments')) return json({ comments: (world.comments ?? {})[args[2]] ?? [] })
+        if ((world.issueDown ?? {})[args[2]]) return fail(world.issueDown[args[2]])
         return json({ state: (world.issues ?? {})[args[2]] ?? 'OPEN' })
       }
       if (cmd === 'gh' && args[0] === 'api' && args[1] === 'user') return world.userDown ? fail(world.userDown) : json({ login: 'stack-bot' })
@@ -123,6 +124,18 @@ describe('orca-stack vigilar (#195)', () => {
     assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234', 'pr-mergeado #7 PR #70 abc1234', 'tanda-cerrada #7'])
     assert.deepEqual(h.sleeps, [1000, 1000])
     assert.ok(h.err.some(line => /orca: runtime not running/.test(line)), 'the Orca diagnostic goes to stderr')
+
+    // A cursor that cannot be written is a diagnostic too, and the watcher still prints each line once.
+    const locked = harness({ prs: [pr(70)] })
+    locked.io.rename = () => {
+      throw new Error('EPERM: operation not permitted, rename')
+    }
+    locked.world.script = [() => {}, world => {
+      world.prs = [pr(70, { state: 'CLOSED' })]
+    }]
+    assert.equal(await vigilarCommand({}, ['7'], locked.io), 0)
+    assert.deepEqual(locked.out, ['pr-abierto #7 PR #70 abc1234', 'pr-cerrado #7 PR #70', 'tanda-cerrada #7'])
+    assert.ok(locked.err.some(line => /EPERM/.test(line)))
   })
 
   test('Rule 2: an open PR on Gagaismo/orca-stack-166 that closes #166 is the PR of the watched issue 166', async () => {
@@ -274,6 +287,12 @@ describe('orca-stack vigilar (#195)', () => {
     assert.equal(await vigilarCommand({}, ['7'], h.io), 0)
     assert.deepEqual(h.out, ['vigilar-ciego: gh pr list falló (HTTP 502: Bad Gateway (https://api.github.com/graphql))', 'pr-mergeado #7 PR #70 abc1234', 'tanda-cerrada #7'])
     assert.equal(h.err.filter(line => /HTTP 502/.test(line)).length, 4)
+
+    // One issue gh cannot read (a mistyped number) is not GitHub being unreachable: the other items are still watched.
+    const typo = harness({ prs: [pr(70)], issueDown: { 9999: 'GraphQL: Could not resolve to an issue or pull request with the number of 9999.' } })
+    await once(typo, ['7', '9999'])
+    assert.deepEqual(typo.out, ['pr-abierto #7 PR #70 abc1234'])
+    assert.ok(typo.err.some(line => line.includes('#9999') && line.includes('Could not resolve')))
   })
 
   test('Rule 13: --dry-run prints the first poll\'s events and writes no cursor', async () => {
