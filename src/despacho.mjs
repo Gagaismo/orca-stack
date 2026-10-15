@@ -298,7 +298,7 @@ const ok = (res, what) => {
   return res
 }
 
-const shellPrompt = text => /(?:^|\n)\s*PS\s+[A-Za-z]:\\[^\n>]*>\s*$/im.test(text)
+export const shellPrompt = text => /(?:^|\n)\s*PS\s+[A-Za-z]:\\[^\n>]*>\s*$/im.test(text)
 
 const waitForTui = async (io, handle, agent, root, tries = 45) => {
   let last = null

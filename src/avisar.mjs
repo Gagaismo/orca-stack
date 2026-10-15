@@ -1,0 +1,147 @@
+import { getCommonDir, getStackAccount } from './consultas.mjs'
+import { AGENTS, defaultIo, getRemoteOrigin, shellPrompt } from './despacho.mjs'
+
+// Agents whose TUI takes a line typed during a running turn. codex and agy join once their mid-turn Enter test passes
+// (#166, UNKNOWN / MUST VERIFY); Pi runs headless (`pi -p`) and has no TUI to ring.
+export const AVISAR_AGENTS = ['claude']
+
+export const doorbellLine = url => `Message from main: ${url}`
+
+const COMMENT_URL = /^https:\/\/([^/\s]+)\/([^/\s]+\/[^/\s]+)\/(?:issues|pull)\/(\d+)#issuecomment-(\d+)$/
+// Orca's agent states: working, or blocked/waiting (a permission or question dialog), or done.
+const LIVE = ['working', 'blocked', 'waiting']
+// Claude's spinner while a turn runs ("✢ Churning… (1m 2s · ↓ 3k tokens)"); a settled turn reads "✻ Baked for 2m 5s".
+// A positive signal: if a Claude release changes it, avisar refuses instead of typing into an unknown screen.
+const TURN_RUNNING = /^\s*[·✢✳✶✻✽*]\s+\S[^\n]*…\s*\(/mu
+const DIALOG = /trust this folder\?|Do you want to proceed\?|Esc to cancel/i
+// Dialogs render at the bottom; the transcript above them may quote the same words.
+const BOTTOM_LINES = 15
+
+const parse = res => {
+  try {
+    return JSON.parse(res.stdout)
+  } catch {
+    return undefined
+  }
+}
+const detail = res => (res.stderr || res.stdout || String(res.error ?? '')).trim().split(/\r?\n/)[0]
+const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
+
+const agentRecords = io => {
+  const res = io.sh('orca', ['worktree', 'ps', '--json'])
+  const rows = res.status === 0 ? parse(res)?.result?.worktrees : undefined
+  if (!Array.isArray(rows)) throw new Error(`Orca no contesta (orca worktree ps): ${detail(res)}`)
+
+  return new Map(rows.flatMap(row => row.agents ?? []).map(agent => [agent.paneKey, agent]))
+}
+
+// The worker's worktree is linked to its issue; a rebote author is reached through the PR's branch.
+const workerTerminals = (n, root, io) => {
+  const list = selector => io.sh('orca', ['terminal', 'list', '--worktree', selector, '--json'])
+  let res = list(`issue:${n}`)
+  if (res.status !== 0 && /selector_not_found/.test(`${res.stdout}${res.stderr}`)) {
+    const pr = io.sh('gh', ['pr', 'view', String(n), '--json', 'headRefName'], { cwd: root })
+    const head = pr.status === 0 ? parse(pr)?.headRefName : undefined
+    if (!head) throw new Error(`Orca no tiene un worktree para #${n}, ni como issue ni como rama de un PR.`)
+    res = list(`branch:${head}`)
+  }
+  const terminals = res.status === 0 ? parse(res)?.result?.terminals : undefined
+  if (!Array.isArray(terminals)) throw new Error(`orca terminal list falló para #${n}: ${detail(res)}`)
+
+  return terminals
+}
+
+// The title fallback (despachar names the terminal after its agent) only picks a target together with a live Orca
+// agent record: a dead terminal keeps that title.
+const identityOf = (terminal, record) => terminal.agentIdentity ?? record?.agentType ?? (AGENTS.includes(terminal.title) ? terminal.title : undefined)
+
+const readScreen = (io, handle) => {
+  const res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])
+  const tail = res.status === 0 ? parse(res)?.result?.terminal?.tail : undefined
+  if (tail === undefined) throw new Error(`No pude leer la pantalla de ${handle}: ${detail(res)}`)
+
+  return (Array.isArray(tail) ? tail.join('\n') : String(tail)).split(/\r?\n/)
+}
+
+export const avisarCommand = async (flags = {}, n, url, io = defaultIo()) => {
+  const say = io.out
+  if (!/^\d+$/.test(String(n ?? '')) || !url) throw new Error('Uso: orca-stack avisar <issue|pr> <url-del-comentario>.')
+  const { root } = getCommonDir(io)
+  const remote = getRemoteOrigin(root, io)
+  const match = COMMENT_URL.exec(url)
+  if (!match || match[1] !== remote.host || match[2].toLowerCase() !== remote.ownerRepo.toLowerCase()) {
+    throw new Error(`La URL tiene que ser la de un comentario de ${remote.host}/${remote.ownerRepo} (…/issues/<n>#issuecomment-<id> o …/pull/<n>#issuecomment-<id>): ${url}`)
+  }
+  if (match[3] !== String(n)) throw new Error(`La URL apunta a #${match[3]}, no a #${n}: el aviso apunta a la respuesta donde preguntó el worker.`)
+
+  // Every session shares one gh account, so a comment by any other account is not main's (#128, decision 7).
+  const res = io.sh('gh', ['api', `repos/${remote.ownerRepo}/issues/comments/${match[4]}`], { cwd: root })
+  const comment = res.status === 0 ? parse(res) : undefined
+  if (!comment) throw new Error(`No pude leer el comentario ${url}: ${detail(res)}`)
+  const author = String(comment.user?.login ?? '').trim().toLowerCase()
+  const stack = getStackAccount(io)
+  if (author !== stack) throw new Error(`El comentario es de ${author || '(cuenta desconocida)'}, no de la cuenta del stack (${stack}): no aviso.`)
+  const home = /\/issues\/(\d+)$/.exec(comment.issue_url ?? '')?.[1]
+  if (home !== String(n)) throw new Error(`El comentario ${match[4]} está en #${home ?? '?'}, no en #${n}: la URL no apunta a donde dice.`)
+
+  const records = agentRecords(io)
+  const workers = workerTerminals(n, root, io).map(terminal => {
+    const record = records.get(paneKey(terminal))
+    return { terminal, record, identity: identityOf(terminal, record) }
+  })
+  if (workers.some(worker => worker.identity === 'pi')) {
+    throw new Error(`El worker de #${n} es Pi, que corre sin TUI (pi -p): no hay terminal donde avisar. Pi relee los comentarios antes de abrir su PR.`)
+  }
+  const live = workers.filter(worker => LIVE.includes(worker.record?.state))
+  if (live.length > 1) throw new Error(`Hay ${live.length} terminales con un agente vivo en #${n} (${live.map(worker => worker.terminal.handle).join(', ')}): no adivino a cuál avisar.`)
+  const target = live[0]
+  const unsupported = target ? (AVISAR_AGENTS.includes(target.identity) ? undefined : target.identity ?? '(agente desconocido)') : workers.find(worker => worker.identity && !AVISAR_AGENTS.includes(worker.identity))?.identity
+  if (unsupported) {
+    throw new Error(`avisar todavía no toca la terminal de ${unsupported}: falta su prueba de Enter a mitad de turno. Por ahora solo avisa a ${AVISAR_AGENTS.join(', ')}.`)
+  }
+  if (!target) {
+    if (workers.some(worker => worker.record?.state === 'done')) {
+      throw new Error(`El turno del worker de #${n} ya terminó: no aviso, para no arrancarle un turno nuevo. El worker relee los comentarios antes de abrir su PR.`)
+    }
+    throw new Error(`No hay un agente vivo en las terminales de #${n} (un shell, o el worker ya salió): no aviso.`)
+  }
+
+  const { handle } = target.terminal
+  if (target.record.state !== 'working') throw new Error(`La terminal ${handle} de #${n} muestra un diálogo (${target.record.state}): no aviso encima.`)
+  const screen = readScreen(io, handle)
+  const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
+  if (shellPrompt(lastLine)) throw new Error(`La terminal ${handle} de #${n} muestra un shell prompt: el worker ya no está en su TUI. No aviso.`)
+  if (DIALOG.test(screen.slice(-BOTTOM_LINES).join('\n'))) throw new Error(`La terminal ${handle} de #${n} muestra un diálogo: no aviso encima.`)
+  if (!TURN_RUNNING.test(screen.join('\n'))) throw new Error(`No veo el turno en curso en la pantalla de ${handle} (#${n}): pudo haber terminado. No aviso.`)
+  // Read the state again right before sending: it shrinks the window in which the turn settles or a dialog opens.
+  const now = agentRecords(io).get(paneKey(target.terminal))?.state
+  if (now !== 'working') throw new Error(`El agente de ${handle} cambió a ${now ?? 'sin estado'} mientras lo revisaba: no aviso.`)
+
+  const line = doorbellLine(url)
+  const argv = ['terminal', 'send', '--terminal', handle, '--text', line, '--enter', '--wait-submit', '10', '--json']
+  if (flags.dryRun) {
+    say(`[simulación] orca ${argv.map(arg => (/[\s"]/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
+    say(`Terminal: ${handle} (${target.terminal.title ?? 'sin título'}), worker de #${n}`)
+    say(`Línea: ${line}`)
+
+    return 0
+  }
+
+  // One send, never repeated: a second one could type the line twice or press Enter on a dialog.
+  const sent = io.sh('orca', argv)
+  const receipt = parse(sent)?.result?.send
+  const prompt = receipt?.prompt
+  const stages = Array.isArray(prompt?.stages) ? prompt.stages : []
+  if (sent.status === 0 && receipt?.accepted === true && prompt?.requestId && stages.includes('input_accepted') && prompt.observation === 'supported') {
+    say(`✔ Aviso enviado a ${handle} (#${n}): ${line}`)
+    if (stages.includes('turn_started')) say(`⚠ Orca vio un turno nuevo: si el turno del worker ya había terminado, la línea arrancó uno.`)
+
+    return 0
+  }
+  if (receipt?.accepted === false || /No input was sent/i.test(`${sent.stdout}${sent.stderr}`)) {
+    throw new Error(`orca terminal send no envió nada a ${handle}: ${receipt?.refusedReason ?? detail(sent)}. No reintento.`)
+  }
+  const observed = prompt?.observation ? ` (observation: ${prompt.observation})` : ''
+  const dialog = prompt?.observation === 'permission' ? ' El Enter pudo haber confirmado un diálogo.' : ''
+  throw new Error(`No hay recibo de entrega de orca terminal send en ${handle}${observed}: la línea pudo haber llegado. No la reenvío; revisá la terminal antes de volver a avisar.${dialog}`)
+}
