@@ -2,6 +2,8 @@
 
 Instala de una vez el stack de agentes que uso para trabajar con [Orca](https://github.com/stablyai/orca): la política del stack, las skills propias, los wrappers de proveedores, Pi con Gentle Shell y los mods de Claude Code. Todo en un comando, con respaldo de lo que toca y con vuelta atrás.
 
+**¿Cómo se usa día a día?** Leé el [manual de uso](docs/manual.md): comandos, mods, marchas, cuándo conviene usarlo y cuándo no, casos borde y manejo. Marca lo que está solo en `main` y todavía no salió en un release.
+
 ```bash
 npx github:Gagaismo/orca-stack#v0.11.0 global     # instalación a nivel usuario
 npx github:Gagaismo/orca-stack#v0.11.0 init       # cablea el proyecto actual
