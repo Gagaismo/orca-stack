@@ -150,7 +150,8 @@ Vigila los PRs de los issues <n...> de una tanda, hecho para correr bajo el Moni
 por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 60) lee \`gh pr list --state all\` y emite:
   pr-abierto #<n> PR #<pr> <sha>     un PR del issue, visto por primera vez
   ci-verde #<n> PR #<pr> <sha>       todos los checks del head terminaron en verde
-  ci-roja #<n> PR #<pr> <sha>: ...   un check terminado falló, venció o se canceló (los lista)
+  ci-roja #<n> PR #<pr> <sha>: ...   un check terminado falló, venció o se canceló (los lista); uno por corrida,
+                                     también si un gh run rerun --failed vuelve a fallar en el mismo head
   pr-mergeado #<n> PR #<pr> <sha>    el PR se mergeó y main no registró ese merge
   pr-cerrado #<n> PR #<pr>           el PR se cerró sin mergear
   vigilar-ciego: <error>             tres vueltas seguidas sin poder leer GitHub (una vez por corte)

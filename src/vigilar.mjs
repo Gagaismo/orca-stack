@@ -77,23 +77,32 @@ const verdict = check => {
 }
 
 // Two runs on one head commit (a re-run, or a body edit that re-runs CI, #197) list the same check twice: only the
-// latest by startedAt counts.
+// latest by startedAt counts. `runs` is how many rows the check has on this head commit.
 const latestChecks = rollup => {
   const latest = new Map()
   for (const check of rollup ?? []) {
     const key = isStatus(check) ? `status:${check.context}` : `check:${check.workflowName ?? ''}/${check.name}`
     const seen = latest.get(key)
-    if (!seen || String(check.startedAt ?? '') > String(seen.startedAt ?? '')) latest.set(key, check)
+    const runs = (seen?.runs ?? 0) + 1
+    latest.set(key, { check: !seen || String(check.startedAt ?? '') > String(seen.check.startedAt ?? '') ? check : seen.check, runs })
   }
 
   return [...latest.values()]
 }
 
-// Red as soon as a finished check failed; green once every check finished green; otherwise pending (no event).
+// Red as soon as a finished check failed; green once every check finished green; otherwise pending (no event). A red
+// result carries its run: the most rows any failing check has. A re-run adds a row to each check it runs, so a red re-run
+// has a higher run; ci-ok (needs: the matrix) gets its row later in the same run, so startedAt alone would count one run
+// twice.
 const ciResult = rollup => {
-  const checks = latestChecks(rollup)
-  const red = checks.filter(check => verdict(check) === 'roja')
-  if (red.length > 0) return { result: 'roja', text: red.map(check => `${checkName(check)}=${outcome(check)}`).join(', ') }
+  const latest = latestChecks(rollup)
+  const checks = latest.map(({ check }) => check)
+  const red = latest.filter(({ check }) => verdict(check) === 'roja')
+  if (red.length > 0) {
+    const text = red.map(({ check }) => `${checkName(check)}=${outcome(check)}`).join(', ')
+
+    return { result: 'roja', text, run: Math.max(...red.map(({ runs }) => runs)) }
+  }
 
   return checks.length > 0 && checks.every(check => verdict(check) === 'verde') ? { result: 'verde' } : undefined
 }
@@ -136,7 +145,7 @@ const readWorld = (targets, cursor, root, io, warn) => {
 }
 
 // One item's events and its next cursor entry: the PR, its last head commit, the last CI result emitted for that head
-// commit, and how the item ended.
+// commit (with the run of the last red one), and how the item ended.
 const advance = (issue, seen, before, merges, now) => {
   if (!seen.pr) return { lines: [], entry: seen.issueState === 'CLOSED' ? { fin: 'issue-cerrado' } : {} }
   const { pr } = seen
@@ -149,11 +158,15 @@ const advance = (issue, seen, before, merges, now) => {
     if (entry.head !== pr.headRefOid) {
       entry.head = pr.headRefOid
       delete entry.ci
+      delete entry.corrida
     }
+    // Every run that ends red is an event (step 8 counts the CI bounces); the same run polled again is not.
     const ci = ciResult(pr.statusCheckRollup)
-    if (ci && ci.result !== entry.ci) {
+    if (ci && (ci.result !== entry.ci || (ci.result === 'roja' && ci.run > (entry.corrida ?? 0)))) {
       lines.push(event(`ci-${ci.result}`, issue, pr, pr.headRefOid, ci.text))
       entry.ci = ci.result
+      if (ci.run) entry.corrida = ci.run
+      else delete entry.corrida
     }
   } else if (!entry.fin) {
     entry.head = pr.headRefOid

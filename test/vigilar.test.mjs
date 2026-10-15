@@ -217,6 +217,42 @@ describe('orca-stack vigilar (#195)', () => {
     assert.deepEqual(fresh.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
   })
 
+  test('Rule 7: red, a gh run rerun --failed, then red again on one head commit gives two ci-roja; polling a finished run again prints nothing', async () => {
+    // GitHub keeps the rows of every run on the head commit, and ci-ok (needs: the matrix) gets its row only once the
+    // matrix finished, after the matrix's failure was already visible.
+    const win1 = check('windows-latest / Node 20', 'FAILURE', { startedAt: '2026-10-15T17:00:00Z' })
+    const ok1 = check('ci-ok', 'FAILURE', { startedAt: '2026-10-15T17:05:00Z' })
+    const win2 = check('windows-latest / Node 20', 'FAILURE', { startedAt: '2026-10-15T17:10:00Z' })
+    const ok2 = check('ci-ok', 'FAILURE', { startedAt: '2026-10-15T17:15:00Z' })
+    const runs = [
+      [win1],
+      [win1, ok1],
+      [win1, ok1],
+      // The re-run is in progress: the old ci-ok row is still the latest ci-ok.
+      [win1, ok1, { ...win2, status: 'IN_PROGRESS', conclusion: '' }],
+      [win1, ok1, win2],
+      [win1, ok1, win2, ok2],
+      [win1, ok1, win2, ok2],
+    ]
+    const h = harness({ prs: [pr(70, { checks: runs[0] })] })
+    for (const checks of runs) {
+      h.world.prs = [pr(70, { checks })]
+      await once(h, ['7'])
+    }
+    assert.deepEqual(drain(h), [
+      'pr-abierto #7 PR #70 abc1234',
+      'ci-roja #7 PR #70 abc1234: windows-latest / Node 20=FAILURE',
+      'ci-roja #7 PR #70 abc1234: windows-latest / Node 20=FAILURE, ci-ok=FAILURE',
+    ])
+
+    // A third run that started and failed while nothing watched is still one ci-roja on the next run.
+    const win3 = check('windows-latest / Node 20', 'TIMED_OUT', { startedAt: '2026-10-15T17:20:00Z' })
+    h.world.prs = [pr(70, { checks: [win1, ok1, win2, ok2, win3, check('ci-ok', 'FAILURE', { startedAt: '2026-10-15T17:25:00Z' })] })]
+    await once(h, ['7'])
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['ci-roja #7 PR #70 abc1234: windows-latest / Node 20=TIMED_OUT, ci-ok=FAILURE'])
+  })
+
   test('Rule 8: a merge main registered with --merge-de-main gives no event, ends the item, and its record is not used again', async () => {
     const h = harness({ prs: [pr(70)] })
     await once(h, ['7', '8'])
