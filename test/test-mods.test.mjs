@@ -22,7 +22,7 @@ const makeClaudeStub = dir => {
   const file = path.join(dir, name)
   const script = process.platform === 'win32'
     ? '@echo off\r\nif "%1"=="--version" exit /b 0\r\necho %~nx3>>"%CLAUDE_LOG%"\r\nif /I "%~nx3"=="%FAIL_MOD%" exit /b 1\r\nexit /b 0\r\n'
-    : '#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\necho "$(basename "$3")" >> "$CLAUDE_LOG"\n[ "$(basename "$3")" != "$FAIL_MOD" ]\n'
+    : '#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\nmod=${3##*/}\nprintf "%s\\n" "$mod" >> "$CLAUDE_LOG"\n[ "$mod" != "$FAIL_MOD" ]\n'
   writeFileSync(file, script)
   if (process.platform !== 'win32') chmodSync(file, 0o755)
   return { log, file }
