@@ -36,7 +36,7 @@ describe('PR evidence test-name checker', () => {
       assert.deepEqual(checkEvidencia(body, checkout), { ok: true, count: 2, stdout: 'Evidencia OK: 2 nombres de test verificados\n', stderr: '' })
       const bodyFile = path.join(checkout, 'body.md')
       writeFileSync(bodyFile, body)
-      const result = spawnSync(process.execPath, [checker, bodyFile], { cwd: root, encoding: 'utf8' })
+      const result = spawnSync(process.execPath, [checker, bodyFile], { cwd: checkout, encoding: 'utf8' })
       assert.equal(result.status, 0)
       assert.equal(result.stdout, 'Evidencia OK: 2 nombres de test verificados\n')
     })
