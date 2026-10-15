@@ -145,7 +145,7 @@ describe('avisar', () => {
       terminals: [terminal('term_old'), terminal('term_new')],
       agents: [agent('term_old', 'done'), agent('term_new', 'working')],
       screens: { term_old: SETTLED, term_new: RUNNING },
-      comment: { user: { login: 'stack-bot' }, html_url: 'https://github.com/Gagaismo/orca-stack/pull/57#issuecomment-2002' },
+      comment: { user: { login: 'stack-bot' }, html_url: 'https://github.com/Gagaismo/orca-stack/pull/57#issuecomment-2002', body: 'Respuesta de main: use X.' },
     })
     const prUrl = 'https://github.com/Gagaismo/orca-stack/pull/57#issuecomment-2002'
     assert.equal(await avisarCommand({}, '57', prUrl, env.io), 0)
@@ -175,12 +175,23 @@ describe('avisar', () => {
     assert.ok(!other.calls.some(call => call[0] === 'orca'))
 
     // The comment id really lives on #9, or the URL names another host: the worker would open the wrong page.
-    const elsewhere = fakeIo({ comment: { user: { login: 'stack-bot' }, html_url: 'https://github.com/Gagaismo/orca-stack/issues/9#issuecomment-1001' } })
+    const elsewhere = fakeIo({ comment: { user: { login: 'stack-bot' }, html_url: 'https://github.com/Gagaismo/orca-stack/issues/9#issuecomment-1001', body: 'Respuesta de main: use X.' } })
     await assert.rejects(() => avisarCommand({}, '42', URL42, elsewhere.io), /no apunta a donde dice/)
     assert.equal(elsewhere.sends().length, 0)
     const foreign = fakeIo()
     await assert.rejects(() => avisarCommand({}, '42', 'https://evil.example/Gagaismo/orca-stack/issues/42#issuecomment-1001', foreign.io), /no apunta a donde dice/)
     assert.equal(foreign.sends().length, 0)
+  })
+
+  test('Rule 8 (Respuesta del humano): a stack-account comment that does not start with Respuesta de main: or Respuesta del humano: is refused', async () => {
+    for (const body of ['Consulta: claude — ¿uso X o Y?', 'Rebote: abc123', 'Thanks, see Respuesta de main: below']) {
+      const env = fakeIo({ comment: { user: { login: 'stack-bot' }, html_url: URL42, body } })
+      await assert.rejects(() => avisarCommand({}, '42', URL42, env.io), /Respuesta de main:.*Respuesta del humano:/)
+      assert.equal(env.sends().length, 0)
+    }
+    const relayed = fakeIo({ comment: { user: { login: 'stack-bot' }, html_url: URL42, body: 'Respuesta del humano:\n\nLautaro chose: X.' } })
+    assert.equal(await avisarCommand({}, '42', URL42, relayed.io), 0)
+    assert.equal(relayed.sends().length, 1)
   })
 
   test('Rule 9: --dry-run prints the line and the target terminal and sends nothing', async () => {

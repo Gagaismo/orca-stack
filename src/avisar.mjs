@@ -83,6 +83,10 @@ export const avisarCommand = async (flags = {}, item, url, io = defaultIo()) => 
   const author = String(comment.user?.login ?? '').trim().toLowerCase()
   const stack = getStackAccount(io)
   if (author !== stack) throw new Error(`El comentario es de ${author || '(cuenta desconocida)'}, no de la cuenta del stack (${stack}): no aviso.`)
+  // The same account also posts the workers' `Consulta:` and the `Rebote:` markers: only an answer carries a marker.
+  if (!/^(?:Respuesta de main:|Respuesta del humano:)/.test(String(comment.body ?? '').trimStart())) {
+    throw new Error('El comentario no empieza con `Respuesta de main:` ni `Respuesta del humano:`: no es una respuesta para el worker. No aviso.')
+  }
   // The worker opens the URL itself: it must be the comment's real address (host, item and id), not one that only parses.
   if (String(comment.html_url ?? '').toLowerCase() !== url.toLowerCase()) {
     throw new Error(`El comentario ${match[3]} está en ${comment.html_url ?? '(sin URL)'}: la URL no apunta a donde dice.`)

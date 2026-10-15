@@ -129,8 +129,9 @@ Encuentra la terminal por el worktree (\`orca terminal list --worktree issue:<n>
 dejó dos, elige la del agente vivo. Manda solo mientras el turno del worker está en curso: se niega si ya terminó, si la
 terminal muestra un shell o un diálogo, o si hay más de un agente vivo. Por ahora solo avisa a claude: se niega con pi, que
 corre sin TUI y relee los comentarios antes de su PR, y con codex y agy hasta que pasen su prueba de Enter a mitad de turno.
-Se niega si el comentario no es de la cuenta del stack (\`gh api user\`) o no está en <issue|pr>. Envía con \`--wait-submit\`
-y nunca reintenta: sin recibo de entrega informa la falla y no reenvía.
+Se niega si el comentario no es de la cuenta del stack (\`gh api user\`), no está en <issue|pr> o no empieza con
+\`Respuesta de main:\` o \`Respuesta del humano:\`. Envía con \`--wait-submit\` y nunca reintenta: sin recibo de entrega
+informa la falla y no reenvía.
 Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
 `,
   remove: `orca-stack remove [--dry-run] [--with-pi]
