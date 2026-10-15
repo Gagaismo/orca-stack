@@ -7,6 +7,8 @@ import { vigilarCommand } from '../src/vigilar.mjs'
 
 const COMMON = '/repo/.git'
 const CURSOR = path.join(COMMON, 'orca-stack', 'vigilar.json')
+const MERGES = path.join(COMMON, 'orca-stack', 'vigilar-merges.json')
+const MINUTE = 60 * 1000
 const T0 = Date.parse('2026-10-15T18:00:00Z')
 const ABC = 'abc1234aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const DEF = 'def5678bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
@@ -31,6 +33,7 @@ const harness = (world = {}) => {
   const err = []
   const calls = []
   const sleeps = []
+  const renames = []
   const io = {
     cwd: '/repo',
     home: '/home',
@@ -45,6 +48,7 @@ const harness = (world = {}) => {
       files[file] = text
     },
     rename: (from, to) => {
+      renames.push(to)
       files[to] = files[from]
       delete files[from]
     },
@@ -69,6 +73,7 @@ const harness = (world = {}) => {
       }
       if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list') {
         if (world.ghDown) return fail(world.ghDown)
+        world.onList?.()
         // Plain `gh pr list` lists open PRs only: without --state all, merged and closed PRs never show up.
         const all = args.includes('--state') && args[args.indexOf('--state') + 1] === 'all'
         return json((world.prs ?? []).filter(p => !(world.hidden ?? []).includes(p.number) && (all || p.state === 'OPEN')))
@@ -90,11 +95,12 @@ const harness = (world = {}) => {
   }
   const cursor = () => JSON.parse(files[CURSOR])
 
-  return { io, world, files, out, err, calls, sleeps, cursor }
+  return { io, world, files, out, err, calls, sleeps, renames, cursor }
 }
 
 const once = (h, items, flags = {}) => vigilarCommand({ unaVez: true, ...flags }, items, h.io)
 const drain = h => h.out.splice(0)
+const mergeDeMain = (h, n) => vigilarCommand({ mergeDeMain: n }, [], h.io)
 
 describe('orca-stack vigilar (#195)', () => {
   test('Rule 1: stdout carries only event lines, a poll with nothing new prints nothing, diagnostics go to stderr', async () => {
@@ -192,6 +198,42 @@ describe('orca-stack vigilar (#195)', () => {
     assert.deepEqual(fresh.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
   })
 
+  test('Rule 8: a merge main registered with --merge-de-main gives no event, ends the item, and its record is not used again', async () => {
+    const h = harness({ prs: [pr(70)] })
+    await once(h, ['7', '8'])
+    drain(h)
+    assert.equal(await mergeDeMain(h, '70'), 0)
+    h.world.prs = [pr(70, { state: 'MERGED' })]
+    h.world.now = T0 + 5 * MINUTE
+    await once(h, ['7', '8'])
+    assert.deepEqual(drain(h), [])
+    assert.deepEqual(h.cursor()['7'], { pr: 70, head: ABC, fin: 'main' })
+
+    // The record has expired by now: the item stays ended by main and no late pr-mergeado appears.
+    h.world.now = T0 + 45 * MINUTE
+    await once(h, ['7', '8'])
+    assert.deepEqual(h.out, [])
+  })
+
+  test('Rule 9: a merged PR with no record, a record for another head commit, or a record older than 30 minutes gives pr-mergeado', async () => {
+    const none = harness({ prs: [pr(70, { state: 'MERGED' })] })
+    await once(none, ['7', '8'])
+    assert.deepEqual(none.out, ['pr-mergeado #7 PR #70 abc1234'])
+
+    const otherHead = harness({ prs: [pr(70, { head: DEF })] })
+    await mergeDeMain(otherHead, '70')
+    otherHead.world.prs = [pr(70, { state: 'MERGED' })]
+    await once(otherHead, ['7', '8'])
+    assert.deepEqual(otherHead.out, ['pr-mergeado #7 PR #70 abc1234'])
+
+    const stale = harness({ prs: [pr(70)] })
+    await mergeDeMain(stale, '70')
+    stale.world.prs = [pr(70, { state: 'MERGED' })]
+    stale.world.now = T0 + 31 * MINUTE
+    await once(stale, ['7', '8'])
+    assert.deepEqual(stale.out, ['pr-mergeado #7 PR #70 abc1234'])
+  })
+
   test('Rule 10: a PR closed unmerged gives pr-cerrado and ends its item', async () => {
     const h = harness({ prs: [pr(70, { state: 'CLOSED' })] })
     assert.equal(await vigilarCommand({}, ['7'], h.io), 0)
@@ -236,6 +278,30 @@ describe('orca-stack vigilar (#195)', () => {
     assert.deepEqual(h.sleeps, [])
   })
 
+  test('Rule 14: --merge-de-main writes the record, prints nothing on stdout and exits 0; a bad argument or an unknown PR writes nothing', async () => {
+    const h = harness({ prs: [pr(70)] })
+    h.files[MERGES] = JSON.stringify({ 60: { head: DEF, at: new Date(T0 - 40 * MINUTE).toISOString() } })
+    assert.equal(await mergeDeMain(h, '70'), 0)
+    assert.deepEqual(h.out, [])
+    // A record older than 30 minutes is dropped when the file is rewritten.
+    assert.deepEqual(JSON.parse(h.files[MERGES]), { 70: { head: ABC, at: '2026-10-15T18:00:00.000Z' } })
+
+    const unknown = harness({ prs: [] })
+    await assert.rejects(() => mergeDeMain(unknown, '99'), /PR #99/)
+    assert.deepEqual(Object.keys(unknown.files), [])
+
+    const oldError = console.error
+    let output = ''
+    console.error = value => { output += `${value}
+` }
+    try {
+      assert.equal(await main(['vigilar', '--merge-de-main', 'abc']), 1)
+    } finally {
+      console.error = oldError
+    }
+    assert.match(output, /--merge-de-main <pr>/)
+  })
+
   test('Rule 15: vigilar with no issue numbers and no --merge-de-main is a usage error', async () => {
     const oldError = console.error
     let output = ''
@@ -246,6 +312,21 @@ describe('orca-stack vigilar (#195)', () => {
       console.error = oldError
     }
     assert.match(output, /Uso: orca-stack vigilar <n\.\.\.>/)
+  })
+
+  test('Rule 16: a record written while a watcher is mid-poll survives the cursor write of the watcher', async () => {
+    const h = harness({ prs: [pr(70)] })
+    // main records its merge from inside the watcher's first poll, between reading GitHub and writing the cursor.
+    h.world.onList = () => {
+      h.world.onList = undefined
+      mergeDeMain(h, '70')
+    }
+    h.world.script = [world => {
+      world.prs = [pr(70, { state: 'MERGED' })]
+    }]
+    assert.equal(await vigilarCommand({}, ['7'], h.io), 0)
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'tanda-cerrada #7'])
+    assert.deepEqual(h.renames.filter(file => file === MERGES).length, 1, 'only --merge-de-main writes vigilar-merges.json')
   })
 
   test('Rule 17: merged PRs are seen through gh pr list --state all, and a cursor PR missing from the list is read with gh pr view', async () => {
@@ -262,6 +343,22 @@ describe('orca-stack vigilar (#195)', () => {
     await once(past, ['7'])
     assert.deepEqual(past.out, ['pr-mergeado #7 PR #70 abc1234', 'tanda-cerrada #7'])
     assert.ok(past.calls.some(call => call.startsWith('gh pr view 70 --json')))
+  })
+
+  test('Rule 18: after update-branch the record of the old head commit does not cover the merge; a second --merge-de-main does', async () => {
+    const h = harness({ prs: [pr(70)] })
+    await mergeDeMain(h, '70')
+    h.world.prs = [pr(70, { state: 'MERGED', head: DEF })]
+    await once(h, ['7', '8'])
+    assert.deepEqual(h.out, ['pr-mergeado #7 PR #70 def5678'])
+
+    const again = harness({ prs: [pr(70)] })
+    await mergeDeMain(again, '70')
+    again.world.prs = [pr(70, { head: DEF })]
+    await mergeDeMain(again, '70')
+    again.world.prs = [pr(70, { state: 'MERGED', head: DEF })]
+    await once(again, ['7', '8'])
+    assert.deepEqual(again.out, [])
   })
 
   test('Rule 20: an issue closed with no PR counts as ended', async () => {

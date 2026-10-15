@@ -6,9 +6,12 @@ import { getCommonDir } from './consultas.mjs'
 import { defaultIo } from './despacho.mjs'
 
 export const CURSOR_REL = ['orca-stack', 'vigilar.json']
+export const MERGES_REL = ['orca-stack', 'vigilar-merges.json']
 
-const USAGE = 'Uso: orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas].'
+const USAGE = 'Uso: orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas], o orca-stack vigilar --merge-de-main <pr>.'
 const PR_FIELDS = 'number,state,headRefName,headRefOid,body,closingIssuesReferences,statusCheckRollup'
+// A record by --merge-de-main covers a merge of its head commit seen within this window.
+const MERGE_WINDOW_MS = 30 * 60 * 1000
 // Polls in a row that failed to read GitHub before the watcher says it is blind (once per outage).
 const BLIND_AFTER = 3
 const DETAIL_MAX = 200
@@ -19,6 +22,13 @@ const STATUS_RED = ['FAILURE', 'ERROR']
 // stdout carries events only (it runs under the Monitor tool); every diagnostic goes to stderr.
 const vigilarIo = () => ({ ...defaultIo(), err: message => console.error(message), rename: renameSync, now: Date.now })
 
+const parse = res => {
+  try {
+    return JSON.parse(res.stdout)
+  } catch {
+    return undefined
+  }
+}
 const detail = res => (res.stderr || res.stdout || String(res.error ?? '')).trim().split(/\r?\n/)[0]
 
 class Blind extends Error {}
@@ -122,10 +132,10 @@ const readWorld = (targets, cursor, root, io, warn) => {
 
 // One item's events and its next cursor entry: the PR, its last head commit, the last CI result emitted for that head
 // commit, and how the item ended.
-const advance = (issue, seen, before = {}) => {
+const advance = (issue, seen, before, merges, now) => {
   if (!seen.pr) return { lines: [], entry: seen.issueState === 'CLOSED' ? { fin: 'issue-cerrado' } : {} }
   const { pr } = seen
-  const fresh = before.pr !== pr.number
+  const fresh = before?.pr !== pr.number
   const entry = fresh ? { pr: pr.number } : { ...before }
   const lines = []
   if (pr.state === 'OPEN') {
@@ -142,7 +152,12 @@ const advance = (issue, seen, before = {}) => {
     }
   } else if (!entry.fin) {
     entry.head = pr.headRefOid
-    if (pr.state === 'MERGED') {
+    // A merge main recorded for this head commit gives no event; the cursor marks the item ended by main, so the record
+    // is never used again. Anything else, a merge by the human included, is pr-mergeado.
+    const record = merges[pr.number]
+    if (pr.state === 'MERGED' && record?.head === pr.headRefOid && now - Date.parse(record.at) <= MERGE_WINDOW_MS) {
+      entry.fin = 'main'
+    } else if (pr.state === 'MERGED') {
       lines.push(event('pr-mergeado', issue, pr, pr.headRefOid))
       entry.fin = 'mergeado'
     } else {
@@ -154,8 +169,33 @@ const advance = (issue, seen, before = {}) => {
   return { lines, entry }
 }
 
+// All sessions share one gh account, so a merge by main looks like the human's on GitHub: main records its own merge right
+// before each `gh pr merge` attempt. Only this writes vigilar-merges.json; the watcher only reads it.
+const recordMainMerge = (pr, flags, io, warn) => {
+  if (!/^\d+$/.test(String(pr))) throw new Error(`Uso: orca-stack vigilar --merge-de-main <pr>, con el número del PR que main está por mergear: ${pr || '(vacío)'}`)
+  const n = String(Number(pr))
+  const { commonDir, root } = getCommonDir(io)
+  const res = io.sh('gh', ['pr', 'view', n, '--json', 'headRefOid'], { cwd: root })
+  const head = res.status === 0 ? parse(res)?.headRefOid : undefined
+  if (!head) throw new Error(`No pude leer el head del PR #${n} con gh pr view: ${detail(res)}. No registré nada.`)
+  const file = path.join(commonDir, ...MERGES_REL)
+  const now = (io.now ?? Date.now)()
+  const kept = Object.entries(readJson(file, io, warn)).filter(([key, record]) => key !== n && now - Date.parse(record?.at) <= MERGE_WINDOW_MS)
+  const records = { ...Object.fromEntries(kept), [n]: { head, at: new Date(now).toISOString() } }
+  if (flags.dryRun) {
+    warn(`[simulación] registraría el merge de main del PR #${n} en ${head.slice(0, 7)} (${file}).`)
+
+    return 0
+  }
+  writeJson(file, records, io)
+  warn(`Merge de main registrado: PR #${n} en ${head.slice(0, 7)}.`)
+
+  return 0
+}
+
 export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) => {
   const warn = io.err ?? (message => console.error(message))
+  if (flags.mergeDeMain !== undefined) return recordMainMerge(flags.mergeDeMain, flags, io, warn)
   const raw = (items ?? []).map(item => String(item).trim().replace(/^#/, ''))
   if (raw.length === 0 || raw.some(item => !/^\d+$/.test(item))) throw new Error(USAGE)
   const targets = [...new Set(raw.map(item => String(Number(item))))]
@@ -164,6 +204,7 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
 
   const { commonDir, root } = getCommonDir(io)
   const cursorPath = path.join(commonDir, ...CURSOR_REL)
+  const mergesPath = path.join(commonDir, ...MERGES_REL)
   let failures = 0
 
   // Returns true when every item has ended.
@@ -181,11 +222,13 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
       return false
     }
     failures = 0
+    const merges = readJson(mergesPath, io, warn)
+    const now = (io.now ?? Date.now)()
     const next = { ...cursor }
     const lines = []
     let endedNow = false
     for (const issue of targets) {
-      const step = advance(issue, world[issue], cursor[issue])
+      const step = advance(issue, world[issue], cursor[issue], merges, now)
       lines.push(...step.lines)
       if (step.entry.fin && !cursor[issue]?.fin) endedNow = true
       next[issue] = step.entry
