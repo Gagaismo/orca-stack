@@ -27,9 +27,10 @@ Comandos:
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
   consultas Filtra y avisa comentarios Consulta: nuevos en issues y PRs en curso.
   avisar    Le toca el timbre a un worker con el turno en curso: una línea con la URL de la respuesta de main.
+  vigilar   Vigila los PRs de una tanda para el Monitor: solo emite eventos, retoma donde quedó e ignora los merges de main.
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar) Muestra cada acci\u00F3n sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, vigilar) Muestra cada acci\u00F3n sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
@@ -42,6 +43,10 @@ Opciones:
   --humano <nombre> (global) Nombre que usan los mods para hablarte (por defecto: git config user.name).
   --with-pi        (remove) También desinstala los paquetes de Pi y gentle-pi global que instaló \`global\`.
   --limpiar-sdd    (global) Respaldar y mover solo los restos SDD conocidos a ~/.orca-stack/backups.
+  --cada <segundos> (vigilar) Cada cuánto consulta GitHub (por defecto: 60).
+  --una-vez        (vigilar) Consulta una sola vez y sale.
+  --consultas      (vigilar) En cada vuelta corre también el chequeo de \`consultas\` para los mismos items.
+  --merge-de-main <pr> (vigilar) Registra que main está por mergear <pr> y sale, sin imprimir nada.
   -v, --version    Muestra la versión.
   -h, --help       Muestra esta ayuda (también \`orca-stack <comando> --help\`).
 
@@ -134,6 +139,28 @@ Se niega si el comentario no es de la cuenta del stack (\`gh api user\`), no est
 \`Respuesta de main:\` o \`Respuesta del humano:\`. Envía con \`--wait-submit\` y nunca reintenta: sin recibo de entrega
 informa la falla y no reenvía.
 Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
+`,
+  vigilar: `orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]
+orca-stack vigilar --merge-de-main <pr>
+
+Vigila los PRs de los issues <n...> de una tanda, hecho para correr bajo el Monitor: stdout lleva solo eventos, uno
+por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 60) lee \`gh pr list --state all\` y emite:
+  pr-abierto #<n> PR #<pr> <sha>     un PR del issue, visto por primera vez
+  ci-verde #<n> PR #<pr> <sha>       todos los checks del head terminaron en verde
+  ci-roja #<n> PR #<pr> <sha>: ...   un check terminado falló, venció o se canceló (los lista)
+  pr-mergeado #<n> PR #<pr> <sha>    el PR se mergeó y main no registró ese merge
+  pr-cerrado #<n> PR #<pr>           el PR se cerró sin mergear
+  vigilar-ciego: <error>             tres vueltas seguidas sin poder leer GitHub (una vez por corte)
+  tanda-cerrada #<n> #<m>...         terminaron todos los items; sale con 0
+Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue o por una línea
+\`Closes #<n>\` en su cuerpo; nunca por adivinar el nombre de la rama. Un issue cerrado sin PR cuenta como terminado.
+Guarda lo emitido en <git-common-dir>/orca-stack/vigilar.json: rearmado con los mismos argumentos, retoma sin repetir.
+--una-vez consulta una vez y sale; --dry-run consulta una vez y no escribe nada; --consultas corre en cada vuelta el
+chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor en Proactive).
+
+--merge-de-main <pr> registra el head del PR en <git-common-dir>/orca-stack/vigilar-merges.json y sale sin imprimir
+nada en stdout. main lo corre justo antes de cada intento de \`gh pr merge <pr>\`, también después de
+\`gh pr update-branch\`: un merge de ese head visto dentro de los 30 minutos no emite pr-mergeado.
 `,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 

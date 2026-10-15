@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
 import { main } from '../src/cli.mjs'
+import { upsertBlock } from '../src/marker.mjs'
+import { policyBlock } from '../src/templates.mjs'
+import { PACKAGE_ROOT } from '../src/util.mjs'
 import { vigilarCommand } from '../src/vigilar.mjs'
 
 const COMMON = '/repo/.git'
@@ -394,5 +398,38 @@ describe('orca-stack vigilar (#195)', () => {
     const h = harness({ prs: [pr(70, { state: 'MERGED' })], issues: { 8: 'CLOSED' } })
     assert.equal(await vigilarCommand({}, ['7', '8'], h.io), 0)
     assert.deepEqual(h.out, ['pr-mergeado #7 PR #70 abc1234', 'tanda-cerrada #7 #8'])
+  })
+
+  test('Rule 22: --help lists vigilar and its flags; CONTRATO steps 5 and 7 name it; the AGENTS.md block equals the asset', async () => {
+    const oldLog = console.log
+    let output = ''
+    console.log = value => { output += `${value}\n` }
+    try {
+      assert.equal(await main(['--help']), 0)
+      assert.match(output, /\n  vigilar\s+\S/)
+      for (const flag of ['--cada <segundos>', '--una-vez', '--consultas', '--merge-de-main <pr>']) {
+        assert.ok(output.split('\n').some(line => line.trimStart().startsWith(flag) && line.includes('(vigilar)')), flag)
+      }
+      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, vigilar)'))
+      output = ''
+      assert.equal(await main(['vigilar', '--help']), 0)
+      assert.ok(output.includes('orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]'))
+      assert.ok(output.includes('orca-stack vigilar --merge-de-main <pr>'))
+    } finally {
+      console.log = oldLog
+    }
+
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
+    const step = n => contract.split(/\r?\n/).find(line => line.startsWith(`${n}. `))
+    assert.ok(step(5).includes('un solo Monitor de fondo armado con `orca-stack vigilar <n...>`'))
+    assert.ok(step(5).includes('En marcha Proactive, armalo con `--consultas`'))
+    assert.ok(step(5).includes('Antes de rearmarlo, matá el anterior'))
+    assert.ok(!step(5).includes('gh pr list --json'))
+    assert.ok(step(7).includes('justo antes de cada intento de `gh pr merge <n>`, corré `orca-stack vigilar --merge-de-main <n>`'))
+    assert.ok(step(7).includes('también después de `gh pr update-branch <n>`'))
+
+    const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
+    const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
+    assert.equal(upsertBlock(agents, block), agents, 'init would change nothing in AGENTS.md')
   })
 })
