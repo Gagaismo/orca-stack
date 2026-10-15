@@ -214,7 +214,7 @@ describe('PR evidence test-name checker', () => {
   })
 
   test('Issue 205 Rule 4 and Rule 6: exempts space-free non-titles but reports non-title phrases', () => {
-    const body = `## Evidencia\n${header}\n| Rule 5 | sin test: lo verifiqué con \`--dry-run\` sobre \`ci-ok\` | \u2714 |\n| Rule 6 | \`ci ok\` | \u2714 |\n`
+    const body = `## Evidencia\n${header}\n| Rule 5 | sin test: lo verifiqu\u00E9 con \`--dry-run\` sobre \`ci-ok\` | \u2714 |\n| Rule 6 | \`ci ok\` | \u2714 |\n`
     const result = checkEvidencia(body, '')
     assert.equal(result.ok, false)
     assert.equal(result.stderr, 'Evidencia fila 2: no encuentro el test `ci ok` en test/ ni mods/*/tests/\n')
