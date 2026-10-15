@@ -20,7 +20,7 @@ Versión de referencia: `orca-stack v0.11.0` (octubre de 2026). Si sale una vers
 | --- | --- | --- |
 | Orca | Corre los Runs, las Tasks, los worktrees y los workers en paralelo | Instalador oficial (github.com/stablyai/orca) |
 | Skills de Matt Pocock | Son el método: grill, spec, tickets, implement con TDD y review | Claude Code: `claude plugin marketplace add mattpocock/skills` y `claude plugin install mattpocock-skills@mattpocock` (versión 1.3.1 o más nueva). Codex y Antigravity: ver la nota debajo |
-| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, Ponytail y los 7 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.11.0 global` |
+| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, Ponytail y los 8 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.11.0 global` |
 | Gentle Shell (Pi) | Un segundo orquestador al que Claude consulta en las decisiones | Pi con su instalador oficial; los paquetes los instala `global` |
 | Engram | Memoria entre sesiones (no planifica ni decide) | Instalador propio de Engram |
 | gentle-ai | Context7, permisos de Claude Code y skills extra | Instalador propio de gentle-ai |
@@ -144,7 +144,7 @@ Pasa si el stack se armó a mano antes de que existiera el instalador. El `--dry
 3. **Revisá `~/.claude/CLAUDE.md`.** `global` ya no escribe ahí: la metodología llega por el proyecto, con `init`. Si la instalación vieja dejó una sección "Orca stack integration" sin marcadores, sacala a mano (respaldá el archivo antes); `global` solo saca el bloque que tenga marcadores `orca-stack:begin` / `orca-stack:end`.
 4. Corré `global --dry-run --force` y leé la lista completa. Que corra `pi install` o `npm i -g gentle-pi` es esperable si tus versiones no coinciden con las fijadas.
 5. Corré `global --force`. Todo lo que reemplaza queda respaldado.
-6. **Revisá `CLAUDE_CODE_PLUGIN_DIRS`** en `~/.claude/settings.json`. `global` conserva las entradas que ya había: si un mod viejo vivía en otra carpeta, queda cargado junto al nuevo. Dejá solo los 7 mods de `~/.claude/mods/`.
+6. **Revisá `CLAUDE_CODE_PLUGIN_DIRS`** en `~/.claude/settings.json`. `global` conserva las entradas que ya había: si un mod viejo vivía en otra carpeta, queda cargado junto al nuevo. Dejá solo los 8 mods de `~/.claude/mods/`.
 7. **Revisá si las skills de Matt están duplicadas** (como plugin y sueltas) y dejá una sola vía. `doctor` lo avisa, con el comando `npx skills remove <nombres> -g -a claude-code -y`.
 8. **Borrá los instaladores viejos** (por ejemplo, un script que copiaba los mods a mano): si alguien los corre, vuelven a copiar los mods anteriores encima de los nuevos.
 9. Corré `doctor`.
