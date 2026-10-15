@@ -6,6 +6,7 @@ import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
 import { removeCommand } from './remove.mjs'
 import { sesionesCommand } from './sesiones.mjs'
+import { vigilarCommand } from './vigilar.mjs'
 import { packageVersion } from './util.mjs'
 
 const USAGE = `orca-stack ${packageVersion()}: instala el stack de agentes (política de Orca, skills, wrappers, Pi + Gentle Shell y mods de Claude Code).
@@ -164,6 +165,13 @@ export const parseArgs = argv => {
     else if (arg === '--skip-pi') flags.skipPi = true
     else if (arg === '--offline') flags.offline = true
     else if (arg === '--with-pi') flags.withPi = true
+    else if (arg === '--una-vez') flags.unaVez = true
+    else if (arg === '--consultas') flags.consultas = true
+    else if (arg === '--cada' || arg === '--merge-de-main') {
+      flags[arg === '--cada' ? 'cada' : 'mergeDeMain'] = argv[i + 1] ?? ''
+      i += 1
+    } else if (arg.startsWith('--cada=')) flags.cada = arg.slice('--cada='.length)
+    else if (arg.startsWith('--merge-de-main=')) flags.mergeDeMain = arg.slice('--merge-de-main='.length)
     else if (arg === '--limpiar-sdd') flags.limpiarSdd = true
     else if (arg === '-h' || arg === '--help') flags.help = true
     else if (arg === '-v' || arg === '--version') flags.version = true
@@ -242,6 +250,8 @@ export const main = async argv => {
         return await consultasCommand(flags, rest.slice(1))
       case 'avisar':
         return await avisarCommand(flags, rest[1], rest[2])
+      case 'vigilar':
+        return await vigilarCommand(flags, rest.slice(1))
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 

@@ -39,17 +39,23 @@ const worktreeRows = io => {
 const rowAt = (rows, worktree) => rows.find(row => row.path && samePath(row.path, worktree))
 const paneAgents = row => new Map((row?.agents ?? []).map(agent => [agent.paneKey, agent]))
 
-// Orca's `issue:<n>` and `branch:<head>` selectors span every repo Orca manages, so the worker's worktree is picked among
-// this repo's own worktrees (`git worktree list`), as despachar and guardia-despacho do (#191). The worktree is linked to
-// its issue; a rebote author is reached through the PR's branch.
-const workerWorktree = (n, root, io) => {
+// Orca's `issue:<n>` and `branch:<head>` selectors span every repo Orca manages, so a worker's worktree is picked among
+// this repo's own worktrees (`git worktree list`), as despachar and guardia-despacho do (#191): Orca's rows, each with
+// its git branch.
+export const repoWorktrees = (root, io) => {
   const listed = io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root })
   if (listed.status !== 0) throw new Error(`git worktree list falló: ${detail(listed)}`)
   const mine = listed.stdout.split(/\r?\n\s*\r?\n/).map(entry => ({ path: /^worktree (.+)$/m.exec(entry)?.[1], branch: /^branch refs\/heads\/(.+)$/m.exec(entry)?.[1] })).filter(entry => entry.path)
-  const ours = worktreeRows(io).flatMap(row => {
+
+  return worktreeRows(io).flatMap(row => {
     const git = row.path ? mine.find(entry => samePath(entry.path, row.path)) : undefined
     return git ? [{ row, branch: git.branch }] : []
   })
+}
+
+// The worktree is linked to its issue; a rebote author is reached through the PR's branch.
+const workerWorktree = (n, root, io) => {
+  const ours = repoWorktrees(root, io)
   let hits = ours.filter(({ row }) => String(row.linkedIssue) === n)
   if (hits.length === 0) {
     const pr = io.sh('gh', ['pr', 'view', n, '--json', 'headRefName'], { cwd: root })
