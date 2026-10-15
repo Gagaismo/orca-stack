@@ -28,7 +28,7 @@ const fakeIo = ({
   agents = [agent('term_new', 'working')],
   agentsAfter,
   screens = { term_new: RUNNING },
-  comment = { user: { login: 'Stack-Bot' }, issue_url: 'https://api.github.com/repos/Gagaismo/orca-stack/issues/42', body: 'Respuesta de main: use the SECRET-ANSWER helper' },
+  comment = { user: { login: 'Stack-Bot' }, html_url: URL42, body: 'Respuesta de main: use the SECRET-ANSWER helper' },
   user = 'stack-bot',
   linkedIssue = '42',
   prHead,
@@ -80,6 +80,10 @@ describe('avisar', () => {
     assert.ok(!LINE42.includes('\n'))
     assert.ok(!send.join(' ').includes('SECRET-ANSWER'))
     assert.ok(env.calls.some(call => call.join(' ') === 'orca terminal list --worktree issue:42 --json'))
+    // "042" names the same issue.
+    const padded = fakeIo()
+    assert.equal(await avisarCommand({}, '042', URL42, padded.io), 0)
+    assert.equal(padded.sends().length, 1)
   })
 
   test('Rule 2: a settled turn is refused with the reason and nothing is sent', async () => {
@@ -141,7 +145,7 @@ describe('avisar', () => {
       terminals: [terminal('term_old'), terminal('term_new')],
       agents: [agent('term_old', 'done'), agent('term_new', 'working')],
       screens: { term_old: SETTLED, term_new: RUNNING },
-      comment: { user: { login: 'stack-bot' }, issue_url: 'https://api.github.com/repos/Gagaismo/orca-stack/issues/57' },
+      comment: { user: { login: 'stack-bot' }, html_url: 'https://github.com/Gagaismo/orca-stack/pull/57#issuecomment-2002' },
     })
     const prUrl = 'https://github.com/Gagaismo/orca-stack/pull/57#issuecomment-2002'
     assert.equal(await avisarCommand({}, '57', prUrl, env.io), 0)
@@ -165,14 +169,18 @@ describe('avisar', () => {
   })
 
   test('Rule 8: a comment by another account is refused, and so is a URL that misstates where its comment is', async () => {
-    const other = fakeIo({ comment: { user: { login: 'someone-else' }, issue_url: 'https://api.github.com/repos/Gagaismo/orca-stack/issues/42' } })
+    const other = fakeIo({ comment: { user: { login: 'someone-else' }, html_url: URL42 } })
     await assert.rejects(() => avisarCommand({}, '42', URL42, other.io), /someone-else.*cuenta del stack/)
     assert.equal(other.sends().length, 0)
     assert.ok(!other.calls.some(call => call[0] === 'orca'))
 
-    const elsewhere = fakeIo({ comment: { user: { login: 'stack-bot' }, issue_url: 'https://api.github.com/repos/Gagaismo/orca-stack/issues/9' } })
-    await assert.rejects(() => avisarCommand({}, '42', URL42, elsewhere.io), /#9/)
+    // The comment id really lives on #9, or the URL names another host: the worker would open the wrong page.
+    const elsewhere = fakeIo({ comment: { user: { login: 'stack-bot' }, html_url: 'https://github.com/Gagaismo/orca-stack/issues/9#issuecomment-1001' } })
+    await assert.rejects(() => avisarCommand({}, '42', URL42, elsewhere.io), /no apunta a donde dice/)
     assert.equal(elsewhere.sends().length, 0)
+    const foreign = fakeIo()
+    await assert.rejects(() => avisarCommand({}, '42', 'https://evil.example/Gagaismo/orca-stack/issues/42#issuecomment-1001', foreign.io), /no apunta a donde dice/)
+    assert.equal(foreign.sends().length, 0)
   })
 
   test('Rule 9: --dry-run prints the line and the target terminal and sends nothing', async () => {

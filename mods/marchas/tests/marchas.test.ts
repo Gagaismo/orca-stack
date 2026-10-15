@@ -194,7 +194,10 @@ test("#166 Rule 10: Proactive's posture now carries the doorbell clause", async 
   setup(on)
   await start($)
   const clause = 'respond\u00e9 las preguntas de ejecuci\u00f3n donde las hayan hecho y tocales el timbre en su terminal, solo mientras su turno est\u00e9 en curso, con una l\u00ednea que apunte a la respuesta'
-  expect((await $.command.run(RUN('proactive'))).context?.[0]).toContain(clause)
+  const proactive = (await $.command.run(RUN('proactive'))).context?.[0] ?? ''
+  expect(proactive).toContain(clause)
+  // The doorbell clause is the posture's only mention of a worker's terminal.
+  expect(proactive.split('terminal').length - 1).toBe(1)
   for (const gear of ['lazy', 'medium']) expect((await $.command.run(RUN(gear))).context?.[0]).not.toContain('timbre')
 })
 
