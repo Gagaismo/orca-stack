@@ -198,6 +198,17 @@ describe('PR evidence test-name checker', () => {
     assert.equal(result.count, 5)
   })
 
+  test('Issue 210 regression: finds test titles after escaped backticks in a nested template', () => {
+    const source = [
+      'const a = `${[1].map(t => `x \\`${t}\\``).join("")}`',
+      'test("zz plain after", () => {})',
+      '',
+    ].join('\n')
+    withCheckout({ 'test/a.test.mjs': source }, checkout => {
+      assert.equal(checkEvidencia(bodyFor(row('zz plain after')), checkout).ok, true)
+    })
+  })
+
   test('Issue 205 Rule 2: applies delimiter length and CommonMark space trimming', () => {
     withCheckout({ 'test/a.test.mjs': testFile(['a`b', 'trimmed', '  ']) }, checkout => {
       const body = `## Evidencia\n${header}\n| Rule | \`\`a\`b\`\` | pass |\n| Rule | \`\` trimmed \`\` | pass |\n| Rule | \`\`  \`\` | pass |\n| Rule | \`\`unclosed | pass |\n| Rule | \`\`no exact closer\`\`\` | pass |\n`
