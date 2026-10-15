@@ -2,7 +2,7 @@ import { renameSync } from 'node:fs'
 import path from 'node:path'
 
 import { repoWorktrees } from './avisar.mjs'
-import { getCommonDir } from './consultas.mjs'
+import { consultasCommand, getCommonDir } from './consultas.mjs'
 import { defaultIo } from './despacho.mjs'
 
 export const CURSOR_REL = ['orca-stack', 'vigilar.json']
@@ -245,6 +245,14 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
 
   for (;;) {
     const done = poll()
+    // One Monitor in Proactive: the consultas check runs on every poll, unchanged, and its failure never stops the poll.
+    if (flags.consultas) {
+      try {
+        await consultasCommand({ dryRun: flags.dryRun }, targets, io)
+      } catch (error) {
+        warn(`vigilar: el chequeo de consultas falló: ${error.message}`)
+      }
+    }
     if (done || flags.unaVez || flags.dryRun) return 0
     await io.sleep(every * 1000)
   }
