@@ -174,7 +174,8 @@ export const citedPaths = text => {
 export const missingPaths = (brief, has) => citedPaths(brief).filter(p => !has(p.replace(/\/+$/, '')))
 
 const verificationBlock = config => {
-  const lines = [config.verificacion?.suite, config.verificacion?.typecheck].filter(c => typeof c === 'string' && c.trim() !== '')
+  const lines = [config.verificacion?.suite, config.verificacion?.typecheck]
+    .filter(c => typeof c === 'string' && c.trim() !== '' && c.trim().toLowerCase() !== 'ninguno')
 
   return lines.length === 0 ? "(none configured: run the project's own checks)" : lines.join('\n')
 }
@@ -253,6 +254,8 @@ export const renderBrief = (kind, vars, nota) => {
     PUBLISH_INSTRUCTIONS: vars.PUBLISH_INSTRUCTIONS ?? 'Write the review in a UTF-8 file and publish it with a body file, never through a pipe:',
     PUBLISH_COMMAND: vars.PUBLISH_COMMAND ?? `gh pr review ${vars.PR} --comment --body-file <file>`,
     REVIEWER_LINE: vars.REVIEWER_LINE ?? vars.AGENT,
+    CODING_STANDARDS_INSTRUCTION: vars.HAS_CODING_STANDARDS ? 'Read CODING_STANDARDS.md and check the change against it before every commit.' : '',
+    REVIEW_STANDARDS: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md and AGENTS.md' : 'AGENTS.md',
     FANOUT_INSTRUCTIONS: fanoutInstructions(vars.AGENT, nota),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
   })
@@ -299,6 +302,25 @@ const ok = (res, what) => {
 }
 
 export const shellPrompt = text => /(?:^|\n)\s*PS\s+[A-Za-z]:\\[^\n>]*>\s*$/im.test(text)
+
+export const quotaLine = lines => {
+  if (!Array.isArray(lines)) return undefined
+  return lines.slice(-15).find(line => /quota (reached|exceeded)|usage limit|rate[- ]limit|Resets? in \d/i.test(String(line)))
+}
+
+const checkPostLaunchScreen = async (io, handle, agent) => {
+  for (let i = 0; i < 3; i += 1) {
+    if (i > 0) await io.sleep(5000)
+    const res = ok(io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json']), 'orca terminal read')
+    const tail = parseJson(res, 'orca terminal read').result?.terminal?.tail
+    const lines = Array.isArray(tail) ? tail : typeof tail === 'string' ? tail.split(/\r?\n/) : []
+    const quota = quotaLine(lines)
+    if (quota) throw new Error(`La terminal de ${agent} (${handle}) muestra un l\u00edmite de cuota; el turno no est\u00e1 ejecut\u00e1ndose: ${quota}`)
+    // shellPrompt intentionally recognizes PowerShell only; bash and cmd.exe prompts remain out of scope.
+    const last = lines.map(line => String(line)).reverse().find(line => line.trim() !== '')
+    if (last && shellPrompt(last)) throw new Error(`La terminal de ${agent} (${handle}) volvi\u00f3 al shell prompt; el turno no est\u00e1 ejecut\u00e1ndose: ${last}`)
+  }
+}
 
 const waitForTui = async (io, handle, agent, root, tries = 45) => {
   let last = null
@@ -446,6 +468,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
       if (screen && !shellPrompt(screen) && !/trust this folder\?/i.test(screen)) started = true
     }
     if (!started) throw new Error(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
+    await checkPostLaunchScreen(io, handle, agent)
   } else {
     const tools = await waitForPiSession(io, home, worktree, piSessionAfter)
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
@@ -607,6 +630,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
     if (fetched.status !== 0) throw new Error(`git fetch origin falló, no asigné ni creé nada: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
   }
+  let hasCodingStandards = false
   const briefFor = branch => renderBrief(kind, {
     REPO: repo,
     REMOTE_HOST: remote.host,
@@ -615,12 +639,14 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     BASE: base,
     BRANCH: branch,
     VERIFICATION: verificationBlock(config),
+    HAS_CODING_STANDARDS: hasCodingStandards,
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
   }, nota)
   // Validate the cited paths against the tree the worktree will be created from, before any side effect.
   const tree = io.sh('git', ['ls-tree', '-r', '--name-only', startRef], { cwd: root })
   if (tree.status === 0) {
     const files = new Set(tree.stdout.split(/\r?\n/).filter(Boolean))
+    hasCodingStandards = files.has('CODING_STANDARDS.md')
     const missing = missingPaths(briefFor(name), p => files.has(p) || [...files].some(f => f.startsWith(`${p}/`)))
     if (missing.length > 0) {
       throw new Error(`El brief cita rutas que no existen en ${startRef}; no asigné ni creé nada:\n${missing.map(p => `  - ${p}`).join('\n')}\nUna ruta ignorada por git no llega a un worktree: citá algo que esté versionado.`)
@@ -647,6 +673,8 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       if (!worktree) throw new Error('orca worktree create no devolvió la ruta del worktree.')
       left.worktree = worktree
     }
+
+    if (!review) say(`${dryRun ? '[simulaci\u00f3n] ' : ''}Rama: ${dryRun ? `la define Orca al crear el worktree (se pidi\u00f3 --name ${name})` : branch}`)
 
     if (profile) {
       say(`${dryRun ? '[simulación] ' : ''}perfil de Pi "${profile.name}": pin en ${path.join(worktree, ...PIN_REL.split('/'))} (si git no lo ignora, se agrega /${PIN_REL} a ${path.join(commonDir, 'info', 'exclude')}); orquestador ${profile.model}${profile.thinking ? ` (${profile.thinking})` : ''}`)
@@ -859,6 +887,16 @@ export const briefRevisionCommand = async ({ n, modelo, dryRun = false }, io = d
     throw new Error(`Ya hay un worktree para el PR #${n}: ${worktree}.`)
   }
 
+  const act = (cmd, args, cwd = root) => {
+    say(`${dryRun ? '[simulación] ' : ''}${cmd} ${args.join(' ')}`)
+    return dryRun ? { status: 0, stdout: '', stderr: '' } : ok(io.sh(cmd, args, { cwd }), `${cmd} ${args[0]}`)
+  }
+  act('git', ['fetch', 'origin', `refs/pull/${n}/head`])
+  if (!dryRun) {
+    const fetched = ok(io.sh('git', ['rev-parse', 'FETCH_HEAD'], { cwd: root }), 'git rev-parse FETCH_HEAD').stdout.trim()
+    if (fetched !== sha) throw new Error(`El head del PR #${n} cambió durante la preparación: esperaba ${sha}, recibí ${fetched}.`)
+  }
+  const hasCodingStandards = !dryRun && io.sh('git', ['cat-file', '-e', `${sha}:CODING_STANDARDS.md`], { cwd: root }).status === 0
   const brief = renderBrief('review', {
     REPO: repo,
     REMOTE_HOST: remote.host,
@@ -869,22 +907,13 @@ export const briefRevisionCommand = async ({ n, modelo, dryRun = false }, io = d
     SHA: sha,
     BASE: config.ramaBase ?? 'main',
     VERIFICATION: verificationBlock(config),
+    HAS_CODING_STANDARDS: hasCodingStandards,
     AGENT: `subagente (${modelo.trim()})`,
     REVIEWER_LINE: `subagente (${modelo.trim()})`,
     WORKTREE_INSTRUCTIONS: `Repo: ${repo}. This review is isolated in ${worktree}; work only inside that worktree. It is checked out detached at PR #${n}'s head commit ${sha}. Do not checkout or modify the main checkout. PR #${n} is written by ${implementer}.`,
     PUBLISH_INSTRUCTIONS: `Write the review body to the UTF-8 file ${reviewPath}. Do not publish the review; main will publish your file with gh pr review --comment --body-file.`,
     PUBLISH_COMMAND: `Do not publish; report the path to ${reviewPath} to main.`,
   })
-
-  const act = (cmd, args, cwd = root) => {
-    say(`${dryRun ? '[simulación] ' : ''}${cmd} ${args.join(' ')}`)
-    return dryRun ? { status: 0, stdout: '', stderr: '' } : ok(io.sh(cmd, args, { cwd }), `${cmd} ${args[0]}`)
-  }
-  act('git', ['fetch', 'origin', `refs/pull/${n}/head`])
-  if (!dryRun) {
-    const fetched = ok(io.sh('git', ['rev-parse', 'FETCH_HEAD'], { cwd: root }), 'git rev-parse FETCH_HEAD').stdout.trim()
-    if (fetched !== sha) throw new Error(`El head del PR #${n} cambió durante la preparación: esperaba ${sha}, recibí ${fetched}.`)
-  }
   act('git', ['worktree', 'add', '--detach', worktree, sha])
   say(`${dryRun ? '[simulaci\u00F3n] ' : ''}brief -> ${briefPath}`)
   if (!dryRun) {

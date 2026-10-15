@@ -6,8 +6,8 @@ You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this 
 
 - Repo: {{REPO}}. Your branch is {{BRANCH}} and it is already checked out in this worktree. Do not create another worktree and do not switch branches.
 - Pull requests target {{BASE}}.
-- Read the issue and its comments first: gh issue view {{ISSUE}} --comments
-- Read the project instructions (AGENTS.md, and GLOSSARY.md or CONTEXT.md and docs/adr when they exist) and CODING_STANDARDS.md when the repo has one. Check your change against CODING_STANDARDS.md before every commit.
+- Read the issue and its comments first: gh issue view {{ISSUE}} --json title,body,comments
+- Read the project instructions (AGENTS.md, and GLOSSARY.md or CONTEXT.md and docs/adr when they exist). {{CODING_STANDARDS_INSTRUCTION}}
 - **RED:** Write one test per rule in `## Reglas`, covering the examples, edges and errors each rule names. If the ticket has no `## Reglas`, use its acceptance criteria and failure modes as the RED list. Each item ends with a test that proves it.
 - **PRESERVE:** Write one test per existing public entry the change touches, even when the ticket did not ask for it. A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job.
 - **Nothing else:** do not add extra cases for their own sake. When a rule cites an artifact (such as a path in `## Reglas`), test against that artifact, not a paraphrase of it.
