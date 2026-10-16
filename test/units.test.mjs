@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
@@ -114,29 +115,60 @@ const author = ['laut', 'aro'].join('')
 const personal = new RegExp('(c:/+users|/home)/+' + author, 'i') // tested on text with backslashes turned into slashes
 const projectNames = new RegExp(['Sam' + 'uel', 'Jo' + 'aco', 'agentes-' + 'samu', 'Gluco' + 'Meal', author].join('|'), 'i')
 
-describe('the repository itself', () => {
+const listFiles = root => {
   const files = []
   const walk = dir => {
     for (const name of readdirSync(dir)) {
-      // .atl and odd are local agent artifacts, gitignored and not published project text.
-      if (['.git', 'node_modules', '.atl', 'odd'].includes(name)) continue
+      // .atl and odd are local agent artifacts and npm-test.log is the local test log that npm test writes:
+      // all three are gitignored and not published project text.
+      if (['.git', 'node_modules', '.atl', 'odd', 'npm-test.log'].includes(name)) continue
       const full = path.join(dir, name)
       if (statSync(full).isDirectory()) walk(full)
       else files.push(full)
     }
   }
-  walk(ROOT)
+  walk(root)
+  return files
+}
+
+const personalOffenders = root => {
+  const offenders = []
+  for (const file of listFiles(root)) {
+    if (file.endsWith('.png') || file.endsWith('.ico')) continue
+    const text = readFileSync(file, 'utf8')
+    if (personal.test(text.split(String.fromCharCode(92)).join('/'))) {
+      offenders.push(path.relative(root, file))
+    }
+  }
+  return offenders
+}
+
+describe('the repository itself', () => {
+  const files = listFiles(ROOT)
 
   test('no personal paths or hardcoded users anywhere', () => {
-    const offenders = []
-    for (const file of files) {
-      if (file.endsWith('.png') || file.endsWith('.ico')) continue
-      const text = readFileSync(file, 'utf8')
-      if (personal.test(text.split(String.fromCharCode(92)).join('/'))) {
-        offenders.push(path.relative(ROOT, file))
-      }
+    assert.deepEqual(personalOffenders(ROOT), [])
+  })
+
+  const withRepo = (contents, check) => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'orca-stack-walk-'))
+    try {
+      for (const [name, text] of Object.entries(contents)) writeFileSync(path.join(dir, name), text)
+      check(dir)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
-    assert.deepEqual(offenders, [])
+  }
+  const logLine = ['    at file:///C:', 'Users', author, 'orca-stack', 'test', 'units.test.mjs:139:12'].join(String.fromCharCode(92))
+
+  test('Rule 1: a local npm-test.log at the repo root holding a personal path is not an offender', () => {
+    withRepo({ 'npm-test.log': `${logLine}\n` }, dir => assert.deepEqual(personalOffenders(dir), []))
+  })
+
+  test('Rule 2: a tracked file with a personal path is still an offender next to npm-test.log', () => {
+    withRepo({ 'npm-test.log': `${logLine}\n`, 'README.md': `${logLine}\n` }, dir =>
+      assert.deepEqual(personalOffenders(dir), ['README.md']),
+    )
   })
 
   test('the mods, the docs and the README carry no project-specific names', () => {
