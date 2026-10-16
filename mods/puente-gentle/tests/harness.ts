@@ -4,7 +4,7 @@ export const ENTRY = 'C:\\Users\\tester\\.pi\\agent\\bin\\pi-launcher.js'
 
 export const SKILLS = 'C:\\Users\\tester\\.pi\\agent\\npm\\node_modules\\gentle-pi\\skills'
 
-export type Run = { exitCode: number; stdout: string; stderr: string }
+export type Run = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated?: boolean }
 export type Init = { cwd?: string; env?: Record<string, string>; stdin?: string; timeoutMs?: number }
 
 export const line = (event: unknown): string => `${JSON.stringify(event)}\n`
@@ -29,7 +29,9 @@ export const world = (on: On, opts: { run?: (argv: readonly string[]) => Run; ex
   const submitted: string[] = []
   const registered: string[] = []
   const tools: string[] = []
+  const specs: { name: string; inputSchema?: any }[] = []
   const copied: string[] = []
+  const written = new Map<string, string>() // fs.write: path -> last text, in the order first written
 
   on('state.get', (_$, e) => ({
     value: state.get(`${e.plugin}/${e.key}`) ?? { value: undefined, version: 0 },
@@ -58,11 +60,18 @@ export const world = (on: On, opts: { run?: (argv: readonly string[]) => Run; ex
   })
   on('tool.register', (_$, e) => {
     tools.push(e.name)
+    specs.push(e as never)
 
     return { value: { tool: `mcp__puente-gentle__${e.name}` } as never }
   })
   on('fs.exists', (_$, e) => ({ value: (opts.exists ?? [ENTRY, SKILLS]).includes(e.path) || e.path in (opts.files ?? {}) }))
   on('fs.read', (_$, e) => ({ value: opts.files?.[e.path] ?? '' }))
+  on('fs.write', (_$, e) => {
+    // The engine resolves the path for the host OS (backslashes on Windows): kept with forward slashes.
+    written.set(e.path.split('\\').join('/'), e.text)
+
+    return { value: undefined }
+  })
   on('prompt.submit', (_$, e) => {
     submitted.push(e.text)
 
@@ -77,8 +86,8 @@ export const world = (on: On, opts: { run?: (argv: readonly string[]) => Run; ex
     }
     const run = opts.run?.(e.argv) ?? { exitCode: 0, stdout: '', stderr: '' }
 
-    return { value: { ...run, isStdoutTruncated: false, isStderrTruncated: false } }
+    return { value: { isStdoutTruncated: false, isStderrTruncated: false, ...run } }
   })
 
-  return { state, toasts, calls, gits, submitted, registered, tools, copied }
+  return { state, toasts, calls, gits, submitted, registered, tools, specs, copied, written }
 }
