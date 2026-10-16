@@ -142,7 +142,7 @@ El despacho es un handoff: el worker trabaja solo y no se lo supervisa con `orca
 - El cuerpo sigue la skill `pr`: `## Summary` con la vista más chica que deje claro el cambio, `## Evidencia` y `## Merge Danger` (puerta de una o dos vías y blast radius).
 - Un PR de ticket lleva `Closes #<n>`, la línea `Implementador: <agente>` y `## Evidencia` con una fila por cada regla (o, en tickets legacy, por cada criterio de aceptación y modo de falla usado como RED) y por cada entrada pública tocada (la definición está en el brief del ticket que arma `orca-stack despachar`). Cada fila incluye el nombre exacto del test y la línea de la corrida en verde, o cómo se verificó si no hay test. Si no se toca ninguna entrada pública existente, se indica `none touched` sin una fila de relleno. Agregá antes y después cuando el cambio se ve (captura o salida), y `## Desvíos del ticket` (`ninguno`, o qué se hizo distinto y por qué).
 - Un PR de orquestación (este contrato, scripts, ADRs) no lleva `Closes #`: su cuerpo dice qué se pidió y qué criterios cumple.
-- El cuerpo de un PR o de un review se manda con `--body-file`, nunca por tubería: la consola de Windows rompe los acentos.
+- El cuerpo de un PR o de un review se manda con `--body-file`, nunca con `--body` ni por tubería: desde la consola de Windows se rompen los acentos y los saltos de línea.
 - Si existe `CODING_STANDARDS.md`, leelo antes de commitear y verificá tu cambio contra él.
 - Los implementadores no editan `GLOSSARY.md` ni `docs/adr/`: lo proponen en el cuerpo del PR bajo `## Propuesta para GLOSSARY.md` o `## Propuesta de ADR`, y lo integra `main`.
 - Si el diff proyecta más de 700 líneas, pará y avisá en el issue antes de seguir.
@@ -214,7 +214,7 @@ Si faltan, corré `npx github:Gagaismo/orca-stack global`.
 
 ## Project rules
 
-- **No reviews in this repo for now (speed first).** This overrides step 7 (a), (b) and (d) of "Ciclo de `main`" and step 6 (no review dispatch): `main` merges a PR as soon as CI is green and the PR body has its `## Evidencia`. Do not run `orca-stack revisar` unless the human asks. `riesgo` is empty on purpose. A PR over 400 lines still gets a Gentle Shell consult before merging (`puente-gentle` enforces it).
+- **No reviews in this repo for now (speed first).** This overrides step 7 (a), (b) and (d) of "Ciclo de `main`" and step 6 (no review dispatch): `main` merges a PR as soon as CI is green and the PR body has its `## Evidencia`. Do not run `orca-stack revisar` unless the human asks. `riesgo` is empty on purpose. A PR over 400 lines still gets a Gentle Shell consult before merging (`puente-gentle` enforces it); if Gentle Shell has no quota, the human merges the PR or it waits.
 - **`main` is protected** (turned on once #65 merges): branches must be up to date, the `ci-ok` check is required, and admins are included, so every change reaches `main` through a PR.
 - **Emergency only:** if CI itself is broken (a runner or `gitleaks-action` down) and a merge cannot wait, ask the human before lifting admin enforcement with `gh api -X DELETE repos/Gagaismo/orca-stack/branches/main/protection/enforce_admins`, and restore it with `-X POST` on the same path right after the merge.
 - **Mods load at session start.** After a release that changes `mods/`, this session keeps running the old hooks: propose a handoff to a new session before any work that depends on the new ones.
