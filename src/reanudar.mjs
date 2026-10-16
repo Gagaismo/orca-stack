@@ -128,21 +128,23 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (done.length > 1) throw new Error(`Hay ${done.length} agentes done en el worktree de #${n}: no adivino a cu\u{e1}l reanudar.`)
   const records = paneAgents(row)
   const workers = terminals.map(terminal => ({ terminal, record: records.get(`${terminal.tabId}:${terminal.leafId}`), identity: identityOf(terminal, records.get(`${terminal.tabId}:${terminal.leafId}`)) }))
-  if (agentRecords.length === 0 && workers.length > 0) {
-    const terminal = workers[0].terminal
-    const screen = readScreen(io, terminal.handle)
-    const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
-    if (!shellPrompt(lastLine)) {
-      throw new Error(`La terminal ${terminal.handle} de #${n} no muestra un shell prompt y Orca no lista su agente: puede haber un worker corriendo sin registro (como Pi headless). No relanzo.`)
+  const identifiedWorkers = workers.filter(worker => worker.identity)
+  if (agentRecords.length === 0) {
+    for (const { terminal } of workers) {
+      const screen = readScreen(io, terminal.handle)
+      const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
+      if (!shellPrompt(lastLine)) {
+        throw new Error(`La terminal ${terminal.handle} de #${n} no muestra un shell prompt y Orca no lista su agente: puede haber un worker corriendo sin registro (como Pi headless). No relanzo.`)
+      }
     }
   }
   const target = done.length === 1
     ? workers.find(worker => worker.record?.paneKey === done[0].paneKey) ?? { record: done[0], identity: done[0].agentType }
-    : workers.length === 1 ? workers[0] : undefined
+    : identifiedWorkers.length === 1 ? identifiedWorkers[0] : undefined
   let agent = target?.identity ?? target?.record?.agentType
   const originalPath = path.join(io.home, 'orca', 'briefs', `${repo}-${n}.md`)
   let originalBrief
-  if (!agent && agentRecords.length === 0 && workers.length === 0) {
+  if (!agent && agentRecords.length === 0 && identifiedWorkers.length === 0) {
     if (io.exists(originalPath)) {
       originalBrief = io.readFile(originalPath)
       const match = /^You are the implementer \((\S+)\) of issue #(\d+)\./m.exec(originalBrief)
