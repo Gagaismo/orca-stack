@@ -145,7 +145,7 @@ export const NOT_JSON = 'la respuesta no es JSON válido'
 type Note = { author?: { login?: unknown }; createdAt?: unknown; submittedAt?: unknown; state?: unknown; body?: unknown }
 type Entry = { heading: string; at: string; body: string }
 
-const str = (value: unknown): string => (typeof value === 'string' ? value : '')
+export const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 const parseObject = (stdout: string): Record<string, unknown> | undefined => {
   try {
     const data: unknown = JSON.parse(stdout)

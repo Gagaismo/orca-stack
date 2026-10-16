@@ -38,6 +38,7 @@ import {
   skillsInGlobal,
   skillsInPi,
   slug,
+  str,
   truncate,
   vista,
 } from './puente'
@@ -251,8 +252,6 @@ const consult = async (
 
 // A plugin tool's result is a string, a content array, or nothing: a plain string is the simplest valid shape.
 const textResult = (text: string) => ({ result: text })
-
-const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 
 // Big PRs need a consult before they merge, only where the consult tool exists (a project with orca-stack config);
 // PRs touching a `riesgo` path need clean reviews of their head commit (riskDeny).
