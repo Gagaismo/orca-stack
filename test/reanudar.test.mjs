@@ -293,6 +293,15 @@ describe('orca-stack reanudar (#214)', () => {
     }
   })
 
+  test('issue 236 Rules 1 and 5: an exited codex worker relaunches with only the Fast mode flag added', async () => {
+    const brief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
+      .replaceAll('{{ISSUE}}', ISSUE).replaceAll('{{REPO}}', 'orca-stack').replaceAll('{{AGENT}}', 'codex')
+      .replaceAll('{{BRANCH}}', 'Gagaismo/orca-stack-212').replaceAll('{{BASE}}', 'main')
+    const exited = harness({ agents: [], terminals: [], brief, dryRun: true })
+    assert.equal(await reanudarCommand({ dryRun: true }, ISSUE, URL, exited.io), 0)
+    assert.ok(exited.outputs.includes('Lanzador (codex): "/home/orca/stack/scripts/codex-orca-stack.sh" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"'))
+  })
+
   test('Rule 7: terminal or Orca identity wins without consulting the original brief', async () => {
     const identified = harness({ state: 'done', agent: 'codex', brief: undefined })
     assert.equal(await reanudarCommand({}, ISSUE, URL, identified.io), 0)
