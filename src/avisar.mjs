@@ -94,9 +94,12 @@ export const readScreen = (io, handle) => {
 export const isDialog = screen => DIALOG.test(screen.slice(-DIALOG_LINES).join('\n'))
 
 export const validateAnswerComment = (item, url, root, remote, io) => {
+  // Every session shares one gh account, so a comment by any other account is not main's (#128, decision 7).
+  // The same account also posts the workers' `Consulta:` and the `Rebote:` markers: only an answer carries a marker.
+  // The worker opens the URL itself: it must be the comment's real address (host, item and id), not one that only parses.
   const match = COMMENT_URL.exec(url)
   if (!match || match[1].toLowerCase() !== remote.ownerRepo.toLowerCase()) {
-    throw new Error(`La URL tiene que ser la de un comentario de ${remote.ownerRepo}: ${url}`)
+    throw new Error(`La URL tiene que ser la de un comentario de ${remote.ownerRepo} (\u2026/issues/<n>#issuecomment-<id> o \u2026/pull/<n>#issuecomment-<id>): ${url}`)
   }
   if (match[2] !== item) throw new Error(`La URL apunta a #${match[2]}, no a #${item}: el aviso apunta a la respuesta donde preguntó el worker.`)
 

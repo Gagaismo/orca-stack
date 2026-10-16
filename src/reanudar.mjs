@@ -86,7 +86,10 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
       throw new Error(`No pude leer el registro ${attemptsPath}; no reanudo para evitar duplicar una entrega.`)
     }
   }
-  if (attempts[link[3]]) throw new Error(`Ya intent\u{e9} reanudar con el comentario ${link[3]}; no reenv\u{ed}o ni relanzo.`)
+  if (attempts[link[3]]) {
+    const at = attempts[link[3]].at ?? 'hora desconocida'
+    throw new Error(`Ya intent\u{e9} reanudar con el comentario ${link[3]} (${at}); no reenv\u{ed}o ni relanzo. Si ese intento no lleg\u{f3} (mir\u{e1} el estado del agente y su terminal), public\u{e1} una nueva Respuesta de main: en #${n} y corr\u{e9} orca-stack reanudar ${n} <url-del-comentario-nuevo>.`)
+  }
   const markAttempt = () => {
     const next = { ...attempts, [link[3]]: { issue: n, at: new Date((io.now ?? Date.now)()).toISOString() } }
     const temp = `${attemptsPath}.${process.pid}.tmp`
@@ -108,7 +111,11 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (pr) throw new Error(`El issue #${n} ya tiene un PR abierto (#${pr.number}); us\u{e1} \`orca-stack rebote ${pr.number}\`.`)
 
   const terminals = workerTerminals(row.path, n, io)
-  const live = (row.agents ?? []).filter(agent => LIVE.includes(String(agent.state ?? agent.status ?? '').toLowerCase()))
+  const agentRecords = row.agents ?? []
+  const stateOf = agent => String(agent.state ?? agent.status ?? '').toLowerCase()
+  const unknown = agentRecords.find(agent => !LIVE.includes(stateOf(agent)) && stateOf(agent) !== 'done')
+  if (unknown) throw new Error(`El agente de #${n} est\u{e1} en un estado que no conozco (${stateOf(unknown) || 'sin estado'}): no reanudo ni relanzo.`)
+  const live = agentRecords.filter(agent => LIVE.includes(stateOf(agent)))
   if (live.length > 1) throw new Error(`Hay ${live.length} agentes vivos en el worktree de #${n}: no adivino a cu\u{e1}l reanudar.`)
   if (live.length === 1) {
     const state = String(live[0].state ?? live[0].status ?? '').toLowerCase()
@@ -116,14 +123,30 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     throw new Error(`El agente de #${n} est\u{e1} working: us\u{e1} \`orca-stack avisar ${n} <url-del-comentario>\`.`)
   }
 
-  const done = (row.agents ?? []).filter(agent => String(agent.state ?? agent.status ?? '').toLowerCase() === 'done')
+  const done = agentRecords.filter(agent => stateOf(agent) === 'done')
   if (done.length > 1) throw new Error(`Hay ${done.length} agentes done en el worktree de #${n}: no adivino a cu\u{e1}l reanudar.`)
   const records = paneAgents(row)
   const workers = terminals.map(terminal => ({ terminal, record: records.get(`${terminal.tabId}:${terminal.leafId}`), identity: identityOf(terminal, records.get(`${terminal.tabId}:${terminal.leafId}`)) }))
+  if (agentRecords.length === 0 && workers.length > 0) {
+    const terminal = workers[0].terminal
+    const screen = readScreen(io, terminal.handle)
+    const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
+    if (!shellPrompt(lastLine)) {
+      throw new Error(`La terminal ${terminal.handle} de #${n} no muestra un shell prompt y Orca no lista su agente: puede haber un worker corriendo sin registro (como Pi headless). No relanzo.`)
+    }
+  }
   const target = done.length === 1
     ? workers.find(worker => worker.record?.paneKey === done[0].paneKey) ?? { record: done[0], identity: done[0].agentType }
     : workers.length === 1 ? workers[0] : undefined
-  const agent = target?.identity ?? target?.record?.agentType
+  let agent = target?.identity ?? target?.record?.agentType
+  if (!agent && agentRecords.length === 0 && workers.length === 0) {
+    const originalPath = path.join(io.home, 'orca', 'briefs', `${repo}-${n}.md`)
+    if (io.exists(originalPath)) {
+      const originalBrief = io.readFile(originalPath)
+      const match = /^You are the implementer \((\S+)\) of issue #(\d+)\./m.exec(originalBrief)
+      if (match?.[2] === n) agent = match[1]
+    }
+  }
   if (!agent || !AGENTS.includes(agent)) throw new Error(`No puedo identificar un agente conocido para #${n}; no reanudo ni relanzo.`)
   if (!config.agentes?.usa?.includes(agent)) throw new Error(`${agent} no est\u{e1} en agentes.usa de este repo (${(config.agentes?.usa ?? []).join(', ') || 'vac\u{ed}o'}).`)
   const blocked = blockOf(config, agent, (io.now ?? Date.now)())

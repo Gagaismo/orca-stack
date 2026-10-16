@@ -86,6 +86,16 @@ describe('avisar', () => {
     assert.equal(env.sends().length, 0)
   })
 
+  test('Rule 1: a comment URL from another repository is refused with the original repository guidance', async () => {
+    const env = fakeIo()
+    const url = 'https://github.com/otro/repo/issues/212#issuecomment-1'
+    await assert.rejects(() => avisarCommand({}, '212', url, env.io), error => {
+      assert.equal(error.message, `La URL tiene que ser la de un comentario de Gagaismo/orca-stack (\u2026/issues/<n>#issuecomment-<id> o \u2026/pull/<n>#issuecomment-<id>): ${url}`)
+      return true
+    })
+    assert.equal(env.sends().length, 0)
+  })
+
   test('Rule 1: a claude worker with a turn running on #42 gets exactly one line with the URL and no comment text', async () => {
     const env = fakeIo()
     assert.equal(await avisarCommand({}, '42', URL42, env.io), 0)

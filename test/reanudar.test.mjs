@@ -21,14 +21,15 @@ const json = value => ({ status: 0, stdout: JSON.stringify(value), stderr: '' })
 const ok = stdout => ({ status: 0, stdout, stderr: '' })
 const fail = stderr => ({ status: 1, stdout: '', stderr })
 
-const harness = ({ root = ROOT, home = '/home', state = 'done', agent = 'codex', screen = ['\u{273b} Baked for 2m 5s'], dirty = '', pr = false, comment = {}, send = sendReceipt, psDown = false, dryRun = false } = {}) => {
+const harness = ({ root = ROOT, home = '/home', state = 'done', agent = 'codex', screen = ['\u{273b} Baked for 2m 5s'], dirty = '', pr = false, comment = {}, send = sendReceipt, psDown = false, dryRun = false, agents, terminals, brief, now = () => 1760616000000 } = {}) => {
   const outputs = []
   const calls = []
   const files = {
-    [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')]: 'Original ticket brief\nKeep this unchanged.\n',
+    [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')]: brief ?? 'Original ticket brief\nKeep this unchanged.\n',
   }
+  if (brief === false) delete files[path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')]
   const io = {
-    cwd: root, home, win: false, exists: file => file in files,
+    cwd: root, home, win: false, now, exists: file => file in files,
     readFile: file => { if (!(file in files)) throw new Error(`ENOENT ${file}`); return files[file] },
     writeFile: (file, content) => { files[file] = content }, rename: (from, to) => { files[to] = files[from]; delete files[from] },
     mkdirp: () => {}, sleep: async () => {}, out: line => outputs.push(line),
@@ -41,8 +42,8 @@ const harness = ({ root = ROOT, home = '/home', state = 'done', agent = 'codex',
       if (cmd === 'gh' && args[0] === 'api' && args[1] === 'user') return json({ login: 'stack-bot' })
       if (cmd === 'gh' && args[0] === 'api') return json({ user: { login: 'stack-bot' }, body: 'Respuesta de main: siga.', html_url: URL })
       if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list') return json(pr ? [{ number: 81, headRefName: 'Gagaismo/orca-stack-212', body: 'Closes #212', closingIssuesReferences: [{ number: 212 }] }] : [])
-      if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'ps') return psDown ? fail('runtime down') : json({ result: { worktrees: [{ path: WT, repo: 'orca-stack', linkedIssue: 212, agents: state ? [{ paneKey: 'tab-1:leaf-1', state, agentType: agent }] : [] }] } })
-      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: [{ handle: 'term-1', tabId: 'tab-1', leafId: 'leaf-1', title: agent, agentIdentity: agent, worktreePath: WT }] } })
+      if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'ps') return psDown ? fail('runtime down') : json({ result: { worktrees: [{ path: WT, repo: 'orca-stack', linkedIssue: 212, agents: agents ?? (state ? [{ paneKey: 'tab-1:leaf-1', state, agentType: agent }] : []) }] } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: terminals ?? [{ handle: 'term-1', tabId: 'tab-1', leafId: 'leaf-1', title: agent, agentIdentity: agent, worktreePath: WT }] } })
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
         const handle = args[args.indexOf('--terminal') + 1]
         return json({ result: { terminal: { tail: handle === 'term-new' ? ['\u{2722} Churning... (1m 2s)'] : screen } } })
@@ -66,7 +67,12 @@ describe('orca-stack reanudar (#214)', () => {
     assert.equal(h.sends().length, 1)
     assert.deepEqual(h.sends()[0].args.slice(2), ['--terminal', 'term-1', '--text', LINE, '--enter', '--wait-submit', '10', '--json'])
     assert.ok(h.outputs.some(line => line.includes(LINE)))
-    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /Ya intent\u00E9 reanudar/)
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error => {
+      assert.match(error.message, /Ya intent\u00E9 reanudar con el comentario 6205678817 \(2025-10-16T12:00:00.000Z\)/)
+      assert.match(error.message, /mir\u00E1 el estado del agente y su terminal/)
+      assert.match(error.message, /public\u00E1 una nueva Respuesta de main: en #212 y corr\u00E9 orca-stack reanudar 212 <url-del-comentario-nuevo>/)
+      return true
+    })
     assert.equal(h.sends().length, 1)
   })
 
@@ -149,6 +155,51 @@ describe('orca-stack reanudar (#214)', () => {
     assert.ok(launch.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create' && call.args.includes(`path:${WT}`)))
     const relaunchedBrief = launch.files[path.join('/home', 'orca', 'briefs', 'orca-stack-212-reanudar.md')]
     assert.equal(relaunchedBrief, `Message from main: ${URL}\n\nOriginal ticket brief\nKeep this unchanged.\n`)
+  })
+
+  test('Rules 4 and 5: unknown Orca states refuse without mutations; Done is normalized case-insensitively', async () => {
+    const unknown = harness({ agents: [{ state: 'idle', agentType: 'codex' }, { state: 'done', agentType: 'codex' }] })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, unknown.io), /estado que no conozco \(idle\)/)
+    assert.equal(unknown.sends().length, 0)
+    assert.deepEqual(Object.keys(unknown.files), [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')])
+    const noState = harness({ agents: [{ agentType: 'codex' }], terminals: [] })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, noState.io), /estado que no conozco \(sin estado\)/)
+    assert.equal(noState.sends().length, 0)
+    const normalized = harness({ agents: [{ paneKey: 'tab-1:leaf-1', state: 'Done', agentType: 'codex' }] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, normalized.io), 0)
+    assert.equal(normalized.sends().length, 1)
+  })
+
+  test('Rules 6 and 8: exited worker falls back to the real ticket brief and rejects invalid brief identities', async () => {
+    const template = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
+      .replaceAll('{{ISSUE}}', ISSUE).replaceAll('{{REPO}}', 'orca-stack').replaceAll('{{AGENT}}', 'codex')
+      .replaceAll('{{BRANCH}}', 'Gagaismo/orca-stack-212').replaceAll('{{BASE}}', 'main')
+    const exited = harness({ agents: [], terminals: [], brief: template, dryRun: true })
+    assert.equal(await reanudarCommand({ dryRun: true }, ISSUE, URL, exited.io), 0)
+    assert.ok(exited.outputs.some(line => line.includes('--worktree path:') && line.includes('codex')))
+    for (const brief of [false, '', 'No implementer line', template.replace('issue #212.', 'issue #213.'), template.replace('(codex)', '(unknown)')]) {
+      const invalid = harness({ agents: [], terminals: [], brief, dryRun: true })
+      await assert.rejects(() => reanudarCommand({ dryRun: true }, ISSUE, URL, invalid.io), /agente conocido/)
+      assert.equal(invalid.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create').length, 0)
+      assert.equal(Object.keys(invalid.files).some(file => file.endsWith('-reanudar.md')), false)
+    }
+  })
+
+  test('Rule 7: terminal or Orca identity wins without consulting the original brief', async () => {
+    const identified = harness({ state: 'done', agent: 'codex', brief: undefined })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, identified.io), 0)
+    assert.equal(identified.sends().length, 1)
+    assert.equal(identified.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create'), false)
+  })
+
+  test('Rule 9: an unlisted worker terminal without a shell prompt is not relaunched', async () => {
+    const active = harness({ agents: [], screen: ['pi -p --no-skills'], dryRun: true })
+    await assert.rejects(() => reanudarCommand({ dryRun: true }, ISSUE, URL, active.io), /no muestra un shell prompt y Orca no lista su agente/)
+    assert.equal(active.sends().length, 0)
+    assert.equal(active.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create').length, 0)
+    assert.deepEqual(Object.keys(active.files), [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')])
+    const idle = harness({ agents: [], screen: ['PS C:\\wt\\orca-stack-212>'], dryRun: true })
+    assert.equal(await reanudarCommand({ dryRun: true }, ISSUE, URL, idle.io), 0)
   })
 
   test('Rule 7: refuses relaunch while guardia-despacho blocks the agent', async () => {
