@@ -23,7 +23,7 @@ import { ENTRY, SKILLS, answerStream, line, world } from './harness'
 import type { Run } from './harness'
 
 const TOOL = 'mcp__puente-gentle__consultar_gentle_shell'
-// Where the engine resolves the config of the fake repo at /p.
+// The fake repo is rooted at C:/p so config lookup is drive-independent.
 const PROJECT_CONFIG = 'C:\\p\\.orca-stack.json'
 const AT = new Date(2026, 9, 3, 10, 0).getTime()
 
@@ -60,7 +60,7 @@ const setup = (
 
   // project: a repo at /p with its own .orca-stack.json (the mod injects text only there).
   const inProject = (argv: readonly string[]): Run =>
-    argv[0] === 'git' ? { exitCode: 0, stdout: '/p/.git\n/p\n', stderr: '' } : run(argv)
+    argv[0] === 'git' ? { exitCode: 0, stdout: 'C:/p/.git\nC:/p\n', stderr: '' } : run(argv)
   const files = project ? { [PROJECT_CONFIG]: '{}', ...rest.files } : rest.files
 
   return { ...world(on, { ...rest, run: project ? inProject : run, files }), clock }
@@ -230,7 +230,7 @@ test('outside an orca-stack project a big PR merges: there is no consult tool to
 test('a repo with only .orca-stack.local.json has the tool, the criterio section and the big-PR gate', async ($, on) => {
   const local = { [PROJECT_CONFIG.replace('.orca-stack.json', '.orca-stack.local.json')]: '{}' }
   const inRepo = (argv: readonly string[]): Run =>
-    argv[0] === 'git' ? { exitCode: 0, stdout: '/p/.git\n/p\n', stderr: '' } : gh(300, 150)(argv)
+    argv[0] === 'git' ? { exitCode: 0, stdout: 'C:/p/.git\nC:/p\n', stderr: '' } : gh(300, 150)(argv)
   const w = setup(on, inRepo, {}, { files: local })
   await boot($)
   expect(w.tools).toEqual(['consultar_gentle_shell'])
