@@ -5,6 +5,7 @@ import { doctorCommand } from './doctor.mjs'
 import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
 import { removeCommand } from './remove.mjs'
+import { reanudarCommand } from './reanudar.mjs'
 import { sesionesCommand } from './sesiones.mjs'
 import { vigilarCommand } from './vigilar.mjs'
 import { packageVersion } from './util.mjs'
@@ -27,15 +28,16 @@ Comandos:
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
   consultas Filtra y avisa comentarios Consulta: nuevos en issues y PRs en curso.
   avisar    Le toca el timbre a un worker con el turno en curso: una línea con la URL de la respuesta de main.
+  reanudar  Reanuda un worker detenido con una respuesta de main o relanza su trabajo en el mismo worktree.
   vigilar   Vigila los PRs de una tanda para el Monitor: solo emite eventos, retoma donde quedó e ignora los merges de main.
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, vigilar) Muestra cada acci\u00F3n sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar) Muestra cada acci\u00F3n sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
   --nota <texto>   (despachar, revisar, rebote) Texto que se agrega al brief.
-  --confirmado     (despachar, revisar, rebote) El humano dijo que s\u00ED a un agente de agentes.preguntarAntes.
+  --confirmado     (despachar, revisar, rebote, reanudar) El humano dijo que s\u00ED a un agente de agentes.preguntarAntes.
   --perfil-pi <nombre> (despachar, revisar, rebote) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver --help del comando).
   --modelo <modelo>  (brief-revision) Modelo del subagente revisor.
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
@@ -142,6 +144,14 @@ Se niega si el comentario no es de la cuenta del stack (\`gh api user\`), no est
 \`Respuesta de main:\` o \`Respuesta del humano:\`. Envía con \`--wait-submit\` y nunca reintenta: sin recibo de entrega
 informa la falla y no reenvía.
 Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
+`,
+  reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--dry-run]
+
+Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una línea con la URL de la respuesta; si ya salió,
+lo relanza en su worktree existente con el brief original y la URL al principio. Exige que la respuesta sea un comentario real
+de la cuenta del stack o del humano, y se niega si el worker sigue trabajando, si ya hay un PR abierto, o si el worktree está sucio.
+Usa --confirmado solo después de que el humano haya confirmado relanzar un agente de agentes.preguntarAntes.
+Con --dry-run muestra qué enviaría o lanzaría sin escribir el brief ni tocar la terminal.
 `,
   vigilar: `orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]
 orca-stack vigilar --merge-de-main <pr>
@@ -282,6 +292,8 @@ export const main = async argv => {
         return await consultasCommand(flags, rest.slice(1))
       case 'avisar':
         return await avisarCommand(flags, rest[1], rest[2])
+      case 'reanudar':
+        return await reanudarCommand(flags, rest[1], rest[2])
       case 'vigilar':
         return await vigilarCommand(flags, rest.slice(1))
       default:

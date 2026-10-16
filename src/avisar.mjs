@@ -29,15 +29,15 @@ const parse = res => {
 const detail = res => (res.stderr || res.stdout || String(res.error ?? '')).trim().split(/\r?\n/)[0]
 const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
 
-const worktreeRows = io => {
+export const worktreeRows = io => {
   const res = io.sh('orca', ['worktree', 'ps', '--json'])
   const rows = res.status === 0 ? parse(res)?.result?.worktrees : undefined
   if (!Array.isArray(rows)) throw new Error(`Orca no contesta (orca worktree ps): ${detail(res)}`)
 
   return rows
 }
-const rowAt = (rows, worktree) => rows.find(row => row.path && samePath(row.path, worktree))
-const paneAgents = row => new Map((row?.agents ?? []).map(agent => [agent.paneKey, agent]))
+export const rowAt = (rows, worktree) => rows.find(row => row.path && samePath(row.path, worktree))
+export const paneAgents = row => new Map((row?.agents ?? []).map(agent => [agent.paneKey, agent]))
 
 // Orca's `issue:<n>` and `branch:<head>` selectors span every repo Orca manages, so a worker's worktree is picked among
 // this repo's own worktrees (`git worktree list`), as despachar and guardia-despacho do (#191): Orca's rows, each with
@@ -54,7 +54,7 @@ export const repoWorktrees = (root, io) => {
 }
 
 // The worktree is linked to its issue; a rebote author is reached through the PR's branch.
-const workerWorktree = (n, root, io) => {
+export const workerWorktree = (n, root, io) => {
   const ours = repoWorktrees(root, io)
   let hits = ours.filter(({ row }) => String(row.linkedIssue) === n)
   if (hits.length === 0) {
@@ -68,7 +68,7 @@ const workerWorktree = (n, root, io) => {
   return hits[0].row
 }
 
-const workerTerminals = (worktree, n, io) => {
+export const workerTerminals = (worktree, n, io) => {
   const res = io.sh('orca', ['terminal', 'list', '--worktree', `path:${worktree}`, '--json'])
   const terminals = res.status === 0 ? parse(res)?.result?.terminals : undefined
   if (!Array.isArray(terminals)) throw new Error(`orca terminal list falló para #${n}: ${detail(res)}`)
@@ -81,14 +81,39 @@ const workerTerminals = (worktree, n, io) => {
 
 // The title fallback (despachar names the terminal after its agent) only picks a target together with a live Orca
 // agent record: a dead terminal keeps that title.
-const identityOf = (terminal, record) => terminal.agentIdentity ?? record?.agentType ?? (AGENTS.includes(terminal.title) ? terminal.title : undefined)
+export const identityOf = (terminal, record) => terminal.agentIdentity ?? record?.agentType ?? (AGENTS.includes(terminal.title) ? terminal.title : undefined)
 
-const readScreen = (io, handle) => {
+export const readScreen = (io, handle) => {
   const res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])
   const tail = res.status === 0 ? parse(res)?.result?.terminal?.tail : undefined
   if (tail === undefined) throw new Error(`No pude leer la pantalla de ${handle}: ${detail(res)}`)
 
   return (Array.isArray(tail) ? tail.join('\n') : String(tail)).split(/\r?\n/)
+}
+
+export const isDialog = screen => DIALOG.test(screen.slice(-DIALOG_LINES).join('\n'))
+
+export const validateAnswerComment = (item, url, root, remote, io) => {
+  const match = COMMENT_URL.exec(url)
+  if (!match || match[1].toLowerCase() !== remote.ownerRepo.toLowerCase()) {
+    throw new Error(`La URL tiene que ser la de un comentario de ${remote.ownerRepo}: ${url}`)
+  }
+  if (match[2] !== item) throw new Error(`La URL apunta a #${match[2]}, no a #${item}: el aviso apunta a la respuesta donde preguntó el worker.`)
+
+  const res = io.sh('gh', ['api', `repos/${remote.ownerRepo}/issues/comments/${match[3]}`], { cwd: root })
+  const comment = res.status === 0 ? parse(res) : undefined
+  if (!comment) throw new Error(`No pude leer el comentario ${url}: ${detail(res)}`)
+  const author = String(comment.user?.login ?? '').trim().toLowerCase()
+  const stack = getStackAccount(io)
+  if (author !== stack) throw new Error(`El comentario es de ${author || '(cuenta desconocida)'}, no de la cuenta del stack (${stack}): no aviso.`)
+  if (!/^(?:Respuesta de main:|Respuesta del humano:)/.test(String(comment.body ?? '').trimStart())) {
+    throw new Error('El comentario no empieza con `Respuesta de main:` ni `Respuesta del humano:`: no es una respuesta para el worker. No aviso.')
+  }
+  if (String(comment.html_url ?? '').toLowerCase() !== url.toLowerCase()) {
+    throw new Error(`El comentario ${match[3]} está en ${comment.html_url ?? '(sin URL)'}: la URL no apunta a donde dice.`)
+  }
+
+  return match
 }
 
 export const avisarCommand = async (flags = {}, item, url, io = defaultIo()) => {
@@ -97,27 +122,7 @@ export const avisarCommand = async (flags = {}, item, url, io = defaultIo()) => 
   const n = String(Number(item))
   const { root } = getCommonDir(io)
   const remote = getRemoteOrigin(root, io)
-  const match = COMMENT_URL.exec(url)
-  if (!match || match[1].toLowerCase() !== remote.ownerRepo.toLowerCase()) {
-    throw new Error(`La URL tiene que ser la de un comentario de ${remote.ownerRepo} (…/issues/<n>#issuecomment-<id> o …/pull/<n>#issuecomment-<id>): ${url}`)
-  }
-  if (match[2] !== n) throw new Error(`La URL apunta a #${match[2]}, no a #${n}: el aviso apunta a la respuesta donde preguntó el worker.`)
-
-  // Every session shares one gh account, so a comment by any other account is not main's (#128, decision 7).
-  const res = io.sh('gh', ['api', `repos/${remote.ownerRepo}/issues/comments/${match[3]}`], { cwd: root })
-  const comment = res.status === 0 ? parse(res) : undefined
-  if (!comment) throw new Error(`No pude leer el comentario ${url}: ${detail(res)}`)
-  const author = String(comment.user?.login ?? '').trim().toLowerCase()
-  const stack = getStackAccount(io)
-  if (author !== stack) throw new Error(`El comentario es de ${author || '(cuenta desconocida)'}, no de la cuenta del stack (${stack}): no aviso.`)
-  // The same account also posts the workers' `Consulta:` and the `Rebote:` markers: only an answer carries a marker.
-  if (!/^(?:Respuesta de main:|Respuesta del humano:)/.test(String(comment.body ?? '').trimStart())) {
-    throw new Error('El comentario no empieza con `Respuesta de main:` ni `Respuesta del humano:`: no es una respuesta para el worker. No aviso.')
-  }
-  // The worker opens the URL itself: it must be the comment's real address (host, item and id), not one that only parses.
-  if (String(comment.html_url ?? '').toLowerCase() !== url.toLowerCase()) {
-    throw new Error(`El comentario ${match[3]} está en ${comment.html_url ?? '(sin URL)'}: la URL no apunta a donde dice.`)
-  }
+  const match = validateAnswerComment(n, url, root, remote, io)
 
   const worktree = workerWorktree(n, root, io)
   const records = paneAgents(worktree)
@@ -148,7 +153,7 @@ export const avisarCommand = async (flags = {}, item, url, io = defaultIo()) => 
   const screen = readScreen(io, handle)
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
   if (shellPrompt(lastLine)) throw new Error(`La terminal ${handle} de #${n} muestra un shell prompt: el worker ya no está en su TUI. No aviso.`)
-  if (DIALOG.test(screen.slice(-DIALOG_LINES).join('\n'))) throw new Error(`La terminal ${handle} de #${n} muestra un diálogo: no aviso encima.`)
+  if (isDialog(screen)) throw new Error(`La terminal ${handle} de #${n} muestra un diálogo: no aviso encima.`)
   if (!TURN_RUNNING.test(screen.slice(-SPINNER_LINES).join('\n'))) throw new Error(`No veo el turno en curso en la pantalla de ${handle} (#${n}): pudo haber terminado. No aviso.`)
   // Read the state again right before sending: it shrinks the window in which the turn settles or a dialog opens.
   const now = paneAgents(rowAt(worktreeRows(io), worktree.path)).get(paneKey(target.terminal))?.state

@@ -80,6 +80,12 @@ const fakeIo = ({
 }
 
 describe('avisar', () => {
+  test('issue #214 preserves avisar refusal for a settled worker', async () => {
+    const env = fakeIo({ agents: [agent('term_new', 'done')], screens: { term_new: SETTLED } })
+    await assert.rejects(() => avisarCommand({}, '42', URL42, env.io), /turno del worker de #42 ya terminó/)
+    assert.equal(env.sends().length, 0)
+  })
+
   test('Rule 1: a claude worker with a turn running on #42 gets exactly one line with the URL and no comment text', async () => {
     const env = fakeIo()
     assert.equal(await avisarCommand({}, '42', URL42, env.io), 0)

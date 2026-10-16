@@ -100,11 +100,13 @@ orca-stack despachar <issue> <agente> [--nota "<texto>"] [--confirmado] [--perfi
 orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 orca-stack consultas <n...>
 orca-stack avisar <issue|pr> <url-del-comentario> [--dry-run]
+orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--dry-run]
 orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]
 orca-stack vigilar --merge-de-main <pr>
 ```
 
 - `--dry-run` cuenta cada acción sin escribir nada.
+- `reanudar` retoma una TUI detenida o relanza al worker en el mismo worktree con su brief original y la URL de respuesta.
 - `--force` reemplaza archivos que ya existían y no son de orca-stack (por ejemplo, una skill tuya llamada igual). Sin `--force` se saltean con un aviso ⚠ y quedan como estaban; con `--force` se respaldan antes.
 - `global --limpiar-sdd` respalda en `~/.orca-stack/backups/sdd-<fecha>/` y mueve solo restos conocidos; `doctor` lista los que encuentra y muestra el comando exacto. Los nombres desconocidos nunca se mueven y `global` sin esta opción no limpia nada. Si algún movimiento falla, informa qué quedó pendiente; podés volver a ejecutar el mismo comando.
 - `init` escribe en el `AGENTS.md` del proyecto el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` con el contrato de trabajo completo (`assets/stack/CONTRATO.md`, igual en todos los proyectos) y las líneas de la política; a `CLAUDE.md` le pone un bloque corto con `@AGENTS.md`. Además crea `.orca-stack.json` y `.orca-stack.local.json` si faltan y agrega este último a `.gitignore`. Es idempotente y respalda lo que modifica. Los valores propios de cada proyecto no van en el bloque: viven en `.orca-stack.json`.

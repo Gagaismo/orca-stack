@@ -110,9 +110,11 @@ const readWorld = (targets, cursor, root, io, warn) => {
     if (known && !prs.has(known)) prs.set(known, ghJson(io, root, ['pr', 'view', String(known), '--json', PR_FIELDS]))
   }
   let ours = []
+  let workersReadable = true
   try {
     ours = repoWorktrees(root, io)
   } catch (error) {
+    workersReadable = false
     warn(`vigilar: esta vuelta no enlaza PRs por worktree: ${error.message}`)
   }
 
@@ -120,23 +122,41 @@ const readWorld = (targets, cursor, root, io, warn) => {
     const branches = ours.filter(({ row }) => String(row.linkedIssue) === issue).map(({ branch }) => branch).filter(Boolean)
     const mine = [...prs.values()].filter(pr => pr.number === cursor[issue]?.pr || linked(pr, issue, branches))
     const pr = mine.sort((a, b) => b.number - a.number)[0]
-    if (pr) return [issue, { pr }]
+    if (pr) return [issue, { pr, workersReadable }]
 
     const res = io.sh('gh', ['issue', 'view', issue, '--json', 'state'], { cwd: root })
     const issueState = res.status === 0 ? parse(res)?.state : undefined
     if (!issueState) warn(`vigilar: no pude leer el estado de #${issue} (${detail(res)}); lo sigo vigilando.`)
 
-    return [issue, { issueState }]
+    const worktrees = ours.filter(({ row }) => String(row.linkedIssue) === issue)
+    const agents = worktrees.length === 1 ? worktrees[0].row.agents ?? [] : []
+    const agent = agents.length === 1 ? agents[0] : undefined
+    const identity = String(agent?.agentType ?? '').trim().toLowerCase()
+    const workerState = identity && identity !== 'pi' ? String(agent?.state ?? '').trim().toLowerCase() : ''
+
+    return [issue, { issueState, workersReadable, worker: workerState ? { state: workerState, agent: identity } : null }]
   }))
 }
 
 // One item's events and its next cursor entry: the PR, its last head commit, the last CI result emitted for that head
 // commit (with the run of the last red one), and how the item ended.
 const advance = (issue, seen, before, merges) => {
-  if (!seen.pr) return { lines: [], entry: seen.issueState === 'CLOSED' ? { fin: 'issue-cerrado' } : {} }
+  if (!seen.pr) {
+    const entry = seen.issueState === 'CLOSED' ? { fin: 'issue-cerrado' } : {}
+    if (seen.workersReadable === false) {
+      if (before?.worker) entry.worker = before.worker
+    } else if (seen.issueState !== 'CLOSED' && seen.worker?.state === 'done') {
+      entry.worker = seen.worker
+      if (before?.worker?.state !== 'done') return { lines: [`worker-en-pausa #${issue} ${seen.worker.agent}`], entry }
+    } else if (seen.worker) {
+      entry.worker = seen.worker
+    }
+
+    return { lines: [], entry }
+  }
   const { pr } = seen
   const fresh = before?.pr !== pr.number
-  const entry = fresh ? { pr: pr.number } : { ...before }
+  const entry = fresh ? { ...(before?.worker ? { worker: before.worker } : {}), pr: pr.number } : { ...before }
   const lines = []
   if (pr.state === 'OPEN') {
     delete entry.fin
