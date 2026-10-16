@@ -4,7 +4,9 @@ import type { On } from 'claude-code'
 import {
   AUTH_MESSAGE,
   MARCO,
+  READ_ONLY_TOOLS,
   buildArgs,
+  buildMessage,
   globToRegExp,
   implementerOf,
   merges,
@@ -73,7 +75,7 @@ const noAuth: Run = {
   stderr: 'No API key found for github-copilot.\n\nUse /login to log into a provider via OAuth or API key.',
 }
 
-const consult = ($: any, input: Record<string, string>) =>
+const consult = ($: any, input: Record<string, unknown>) =>
   $.tool.call({ tool: TOOL, tool_use_id: 'u', ...input })
 
 const textOf = (out: any): string => out.result
@@ -620,4 +622,227 @@ test('without that key the consult does not set CLAUDE_CONFIG_DIR', async ($, on
   await boot($)
   await consult($, { tema: 'a', planteo: 'p', pregunta: 'q' })
   expect(w.calls[0]!.init.env).not.toHaveProperty('CLAUDE_CONFIG_DIR')
+})
+
+// ---- #226: the mod preloads an issue or a PR into files Pi reads ------------------------------------------
+
+// setup(..., { project: true }) answers every git call with C:/p/.git as the common dir.
+const GENTLE = 'C:/p/.git/orca-stack/gentle'
+const json = (value: unknown): Run => ({ exitCode: 0, stdout: JSON.stringify(value), stderr: '' })
+const failed = (stderr: string): Run => ({ exitCode: 1, stdout: '', stderr })
+const ISSUE = {
+  number: 214,
+  title: 'Guard reanudar',
+  url: 'https://github.com/Gagaismo/orca-stack/issues/214',
+  body: 'El cuerpo del issue.',
+  // Out of order on purpose: the file lists them oldest first.
+  comments: [
+    { author: { login: 'beto' }, createdAt: '2026-10-15T10:00:00Z', body: 'Segundo comentario' },
+    { author: { login: 'ana' }, createdAt: '2026-10-14T09:00:00Z', body: 'Primer comentario' },
+  ],
+}
+const PR = {
+  number: 218,
+  title: 'fix: guard reanudar',
+  url: 'https://github.com/Gagaismo/orca-stack/pull/218',
+  baseRefName: 'main',
+  headRefOid: OID,
+  body: 'Implementador: codex',
+  comments: [{ author: { login: 'gagaismo' }, createdAt: '2026-10-15T12:00:00Z', body: 'Rebote: abc1234' }],
+  reviews: [{ author: { login: 'agy-bot' }, submittedAt: '2026-10-15T11:00:00Z', state: 'COMMENTED', body: 'Revisor: agy\n\n## BLOQUEA\nnada' }],
+}
+const DIFF = 'diff --git a/x.ts b/x.ts\n+hola\n'
+const FILES = { files: [{ path: 'src/a.ts', additions: 10, deletions: 2 }, { path: 'b.md', additions: 1, deletions: 0 }] }
+
+// A fake gh: issue view, pr view (all fields, or only files) and pr diff; anything else is Pi.
+const github =
+  (over: { issue?: Run; pr?: Run; diff?: Run; files?: Run } = {}) =>
+  (argv: readonly string[]): Run => {
+    if (argv[0] !== 'gh') return ok()
+    if (argv[1] === 'issue') return over.issue ?? json(ISSUE)
+    if (argv[2] === 'diff') return over.diff ?? { exitCode: 0, stdout: DIFF, stderr: '' }
+    if (argv.at(-1) === 'files') return over.files ?? json(FILES)
+
+    return over.pr ?? json(PR)
+  }
+const ghCalls = (w: { calls: { argv: string[] }[] }) => w.calls.filter(call => call.argv[0] === 'gh').map(call => call.argv)
+const piCall = (w: { calls: { argv: string[] }[] }) => w.calls.find(call => call.argv[0] === 'node')
+const PATHS = [`${GENTLE}/issue-214.md`, `${GENTLE}/pr-218-abc1234.md`, `${GENTLE}/pr-218-abc1234.diff`]
+
+test('Rule 1: the schema adds optional integer pr and issue; tema, planteo and pregunta stay required and unchanged', async ($, on) => {
+  const w = setup(on, () => ok(), {}, { project: true })
+  await boot($)
+  const schema = w.specs[0]!.inputSchema
+  expect(schema.required).toEqual(['tema', 'planteo', 'pregunta'])
+  expect(Object.keys(schema.properties)).toEqual(['tema', 'planteo', 'pregunta', 'pr', 'issue'])
+  expect(schema.properties.tema).toEqual({ type: 'string', description: 'Slug corto del tema, por ejemplo pr-612 o auditoria. Misma conversaci\u00f3n por tema.' })
+  expect(schema.properties.planteo).toEqual({ type: 'string', description: 'Contexto neutral: el problema, las restricciones, nuestra propuesta actual y las rutas relevantes.' })
+  expect(schema.properties.pregunta).toEqual({ type: 'string', description: 'Lo que querés que opine.' })
+  for (const key of ['pr', 'issue']) {
+    expect(schema.properties[key].type).toBe('integer')
+    expect(schema.properties[key].minimum).toBe(1)
+    expect(schema.properties[key].description).toContain('gh')
+  }
+})
+
+test('Rule 2: pr and issue go to files under the common git dir, the message only adds ## Precarga, and nothing is cut', async ($, on) => {
+  const long = 'y'.repeat(20000)
+  let issue = json({ ...ISSUE, body: long })
+  let diff: Run = { exitCode: 0, stdout: DIFF, stderr: '' }
+  const w = setup(on, argv => github({ issue, diff })(argv), {}, { project: true })
+  await boot($)
+  const out = await consult($, { tema: 'pr-218', planteo: 'contexto', pregunta: 'q', pr: 218, issue: 214 })
+  expect(JSON.parse(textOf(out))).toEqual({ tema: 'pr-218', respuesta: 'Coincido salvo en X.' })
+  expect([...w.written.keys()]).toEqual(PATHS)
+  expect(w.written.get(PATHS[0]!)).toContain(long)
+  const message = piCall(w)!.argv.at(-1)!
+  expect(message.startsWith(`${buildMessage('contexto', 'q')}\n\n## Precarga\n`)).toBe(true)
+  expect(message.split('## Precarga')).toHaveLength(2)
+  for (const path of PATHS) expect(message).toContain(`- ${path}\n`)
+  expect(message).toContain(`PR #218: ${OID}`)
+  expect(message).not.toContain(long)
+  expect(message).not.toContain('+hola')
+
+  // Overwritten on every consult.
+  issue = json({ ...ISSUE, body: 'Cuerpo nuevo.' })
+  await consult($, { tema: 'pr-218', planteo: 'contexto', pregunta: 'q', pr: 218, issue: 214 })
+  expect(w.written.get(PATHS[0]!)).toContain('Cuerpo nuevo.')
+  expect(w.written.get(PATHS[0]!)).not.toContain(long)
+
+  // A diff gh cut at its 4 MiB output limit is not preloaded as if it were whole.
+  diff = { exitCode: 0, stdout: DIFF, stderr: '', isStdoutTruncated: true }
+  await consult($, { tema: 'pr-218', planteo: 'contexto', pregunta: 'q', pr: 218 })
+  expect(w.written.get(PATHS[2]!)!.startsWith('diff no disponible: ')).toBe(true)
+  expect(w.written.get(PATHS[2]!)).not.toContain('+hola')
+})
+
+test('Rule 3: issue runs gh issue view in the session repo and writes title, URL, body and every comment, oldest first', async ($, on) => {
+  const w = setup(on, github(), {}, { project: true })
+  await boot($)
+  await consult($, { tema: 'issue-214', planteo: 'p', pregunta: 'q', issue: 214 })
+  expect(ghCalls(w)).toEqual([['gh', 'issue', 'view', '214', '--json', 'number,title,url,body,comments']])
+  // UNKNOWN 2: like the merge gate, gh runs without a cwd, so in the session's own repo.
+  expect(w.calls.find(call => call.argv[0] === 'gh')!.init.cwd).toBeUndefined()
+  expect(w.written.get(`${GENTLE}/issue-214.md`)).toBe(
+    '# Issue #214: Guard reanudar\n\n' +
+      'URL: https://github.com/Gagaismo/orca-stack/issues/214\n\n' +
+      '## Cuerpo\n\nEl cuerpo del issue.\n\n' +
+      '## Comentarios (2), del más viejo al más nuevo\n\n' +
+      '### ana · 2026-10-14T09:00:00Z\n\nPrimer comentario\n\n' +
+      '### beto · 2026-10-15T10:00:00Z\n\nSegundo comentario\n',
+  )
+})
+
+test('Rule 4: pr runs gh pr view and gh pr diff and writes the PR with its comments and reviews, and its diff', async ($, on) => {
+  const w = setup(on, github(), {}, { project: true })
+  await boot($)
+  await consult($, { tema: 'pr-218', planteo: 'p', pregunta: 'q', pr: 218 })
+  expect(ghCalls(w)).toEqual([
+    ['gh', 'pr', 'view', '218', '--json', 'number,title,url,baseRefName,headRefOid,body,comments,reviews'],
+    ['gh', 'pr', 'diff', '218'],
+  ])
+  expect([...w.written.keys()]).toEqual(PATHS.slice(1))
+  expect(w.written.get(PATHS[1]!)).toBe(
+    '# PR #218: fix: guard reanudar\n\n' +
+      'URL: https://github.com/Gagaismo/orca-stack/pull/218\n' +
+      'Rama base: main\n' +
+      `Commit de cabeza: ${OID}\n\n` +
+      '## Cuerpo\n\nImplementador: codex\n\n' +
+      '## Comentarios y reviews (2), del más viejo al más nuevo\n\n' +
+      '### Review de agy-bot · 2026-10-15T11:00:00Z · COMMENTED\n\nRevisor: agy\n\n## BLOQUEA\nnada\n\n' +
+      '### Comentario de gagaismo · 2026-10-15T12:00:00Z\n\nRebote: abc1234\n',
+  )
+  expect(w.written.get(PATHS[2]!)).toBe(DIFF)
+})
+
+test('Rule 5: a failed or unparsable gh view returns { tema, error }, launches no Pi and stores nothing', async ($, on) => {
+  let over: { issue?: Run; pr?: Run } = { pr: failed('GraphQL: Could not resolve to a PullRequest with the number of 999. (repository.pullRequest)\nmore') }
+  const w = setup(on, argv => github(over)(argv), {}, { project: true })
+  await boot($)
+  const ask = async (input: Record<string, unknown>) => JSON.parse(textOf(await consult($, { tema: 'pr-999', planteo: 'p', pregunta: 'q', ...input })))
+  expect(await ask({ pr: 999, issue: 214 })).toEqual({
+    tema: 'pr-999',
+    error: 'No pude leer el PR #999 con gh pr view: GraphQL: Could not resolve to a PullRequest with the number of 999. (repository.pullRequest). No consulté a Gentle Shell.',
+  })
+  over = { pr: { exitCode: 0, stdout: 'no es json', stderr: '' } }
+  expect(await ask({ pr: 999 })).toEqual({
+    tema: 'pr-999',
+    error: 'No pude leer el PR #999 con gh pr view: la respuesta no es JSON válido. No consulté a Gentle Shell.',
+  })
+  over = { issue: failed('GraphQL: Could not resolve to an issue or pull request with the number of 214.') }
+  expect(await ask({ issue: 214 })).toEqual({
+    tema: 'pr-999',
+    error: 'No pude leer el issue #214 con gh issue view: GraphQL: Could not resolve to an issue or pull request with the number of 214.. No consulté a Gentle Shell.',
+  })
+  expect(piCall(w)).toBeUndefined()
+  expect(w.written.size).toBe(0)
+  expect(w.state.get('puente-gentle/temas')?.value).toEqual([])
+})
+
+test('Rule 6: when only gh pr diff fails, the .diff file says why and lists the files, and the consult runs', async ($, on) => {
+  const w = setup(on, github({ diff: failed('HTTP 406: Sorry, the diff exceeded the maximum number of lines (20000)\nmore') }), {}, { project: true })
+  await boot($)
+  const out = await consult($, { tema: 'pr-218', planteo: 'p', pregunta: 'q', pr: 218 })
+  expect(JSON.parse(textOf(out))).toEqual({ tema: 'pr-218', respuesta: 'Coincido salvo en X.' })
+  expect(ghCalls(w).at(-1)).toEqual(['gh', 'pr', 'view', '218', '--json', 'files'])
+  expect(w.written.get(PATHS[2]!)).toBe(
+    'diff no disponible: HTTP 406: Sorry, the diff exceeded the maximum number of lines (20000)\n\n' +
+      'Archivos del PR (gh pr view 218 --json files):\n' +
+      '- src/a.ts (+10 -2)\n' +
+      '- b.md (+1 -0)\n',
+  )
+  expect(piCall(w)!.argv.at(-1)).toContain(PATHS[2]!)
+})
+
+test('Rule 7: a pr or issue that is not a positive integer is refused before any gh, and no Pi', async ($, on) => {
+  const w = setup(on, github(), {}, { project: true })
+  await boot($)
+  const probes = w.gits.length
+  for (const field of ['pr', 'issue']) {
+    for (const bad of [0, -3, '218', 2.5]) {
+      const out = JSON.parse(textOf(await consult($, { tema: 't', planteo: 'p', pregunta: 'q', [field]: bad })))
+      expect(out).toEqual({ tema: 't', error: `El campo ${field} tiene que ser un entero positivo; recibí ${JSON.stringify(bad)}. No consulté a Gentle Shell.` })
+    }
+  }
+  expect(w.calls).toEqual([])
+  expect(w.gits.length).toBe(probes)
+  expect(w.written.size).toBe(0)
+})
+
+test('Rule 8: with pr and issue Pi keeps its read-only tools; the mod runs gh, Pi never does', async ($, on) => {
+  const w = setup(on, github(), {}, { project: true })
+  await boot($)
+  await consult($, { tema: 'pr-218', planteo: 'p', pregunta: 'q', pr: 218, issue: 214 })
+  const args = piCall(w)!.argv
+  expect(args.filter(arg => arg === '--tools')).toHaveLength(1)
+  expect(args[args.indexOf('--tools') + 1]).toBe('read,grep,find,ls,codemode')
+  expect(READ_ONLY_TOOLS).toBe('read,grep,find,ls,codemode')
+  expect(ghCalls(w).length).toBeGreaterThan(0)
+})
+
+test('Rule 9: the panel stores the planteo main wrote, without the ## Precarga section', async ($, on) => {
+  const w = setup(on, github(), {}, { project: true })
+  await boot($)
+  await consult($, { tema: 'pr-218', planteo: 'contexto', pregunta: 'q', pr: 218, issue: 214 })
+  const list = w.state.get('puente-gentle/temas')?.value as { tema: string; items: { planteo: string }[] }[]
+  expect(list[0]!.items[0]!.planteo).toBe('contexto')
+})
+
+test('Rule 10: the criterio section tells main to pass pr or issue instead of pasting them', async ($, on) => {
+  setup(on, () => ok(), {}, { project: true })
+  await boot($)
+  const text = (await compose($)).sections.at(-1)!.text
+  expect(text).toContain('pasá `pr` o `issue` en vez de pegar el cuerpo, los comentarios o el diff en el planteo')
+})
+
+test('Rule 11: without pr and issue the consult sends the same message, writes no file and keeps its shape', async ($, on) => {
+  const w = setup(on, github(), {}, { project: true })
+  await boot($)
+  const probes = w.gits.length
+  const out = await consult($, { tema: 't', planteo: 'contexto', pregunta: '¿riesgos?' })
+  expect(JSON.parse(textOf(out))).toEqual({ tema: 't', respuesta: 'Coincido salvo en X.' })
+  expect(piCall(w)!.argv.at(-1)).toBe(buildMessage('contexto', '¿riesgos?'))
+  expect(ghCalls(w)).toEqual([])
+  expect(w.gits.length).toBe(probes)
+  expect(w.written.size).toBe(0)
 })
