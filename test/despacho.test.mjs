@@ -1311,6 +1311,11 @@ describe('rebote', () => {
     assert.ok(!replaced.out.some(line => line.includes('gh run rerun')))
     assert.equal(replaced.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
 
+    const unreplaced = bounceEnv(pr({ statusCheckRollup: [cancelled] }), { 'gh run': json([]) })
+    await assert.rejects(reboteCommand({}, '12', unreplaced.io), {
+      message: 'El PR #12 tiene checks CANCELLED en abc123; no lo rebotes hasta volver a ejecutar CI:\nci-ok: gh run rerun 38843085964 --failed',
+    })
+
     const missing = bounceEnv(pr({ statusCheckRollup: [
       { __typename: 'CheckRun', name: 'matrix', workflowName: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'https://github.com/org/repo/actions/runs/10/job/1' },
       { __typename: 'CheckRun', name: 'ci-ok', workflowName: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'https://github.com/org/repo/actions/runs/11/job/1' },
@@ -1321,6 +1326,23 @@ describe('rebote', () => {
     await assert.rejects(reboteCommand({}, '12', failed.io), /gh run list.*temporary failure/)
     assert.equal(failed.written.length, 0)
     assert.equal(failed.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+  })
+
+  test('Issue 225 PRESERVE: reboteCommand retains existing arguments, refusals and Rebote CI counters', async () => {
+    const closed = bounceEnv(pr({ state: 'CLOSED' }))
+    await assert.rejects(reboteCommand({}, '12', closed.io), /no se puede rebotar/)
+
+    const nonExistentReview = bounceEnv(pr({ reviews: [] }))
+    await assert.rejects(reboteCommand({}, '12', nonExistentReview.io), /no tiene un review bloqueante vigente/)
+
+    const twoCiBounces = bounceEnv(pr({
+      statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }],
+      reviews: [
+        { body: 'Rebote CI: oldsha1' },
+        { body: 'Rebote CI: oldsha2' },
+      ],
+    }))
+    await assert.rejects(reboteCommand({}, '12', twoCiBounces.io), /dos rebotes de CI distintos.*humano/i)
   })
 
   test('Rule 10: existing worktree guards still apply to a CI bounce', async () => {
