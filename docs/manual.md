@@ -180,7 +180,7 @@ orca-stack rebote 15 --dry-run
 orca-stack rebote 15 --nota "El segundo hallazgo es de interpretación: no lo toques, lo decide el humano."
 ```
 
-Relanza al autor (línea `Implementador:`) en el worktree existente de la rama del PR. Exige un review bloqueante vigente o checks fallidos sobre el head, un worktree limpio y detenido en ese commit. En un repo sin reviews, el comentario bloqueante puede venir de una consulta confirmada. Publica `Rebote: <sha>` (review) y/o `Rebote CI: <sha>` (CI roja); cada contador cuenta SHAs distintos. Detalle de los rechazos en [Casos borde](#5-casos-borde).
+Relanza al autor (línea `Implementador:`) en el worktree existente de la rama del PR. Exige un review bloqueante vigente o checks fallidos sobre el head, un worktree limpio y detenido en ese commit. En un repo sin reviews, el comentario bloqueante puede venir de una consulta confirmada. Si el worktree está limpio y solo está atrás del head (por ejemplo, después de `gh pr update-branch`), lo adelanta con `git merge --ff-only <sha>` y lo dice en una línea; si tiene commits que no están en el head, se niega. Con `--dry-run` igual trae la rama (`git fetch`, que solo toca las referencias remotas) para comprobarlo, pero no adelanta nada. Publica `Rebote: <sha>` (review) y/o `Rebote CI: <sha>` (CI roja); cada contador cuenta SHAs distintos. Detalle de los rechazos en [Casos borde](#5-casos-borde).
 
 #### `brief-revision`
 
@@ -463,7 +463,7 @@ Tomados del código, los tests y el contrato. Cada fila dice qué pasa y qué ha
 | La terminal del worker volvió al prompt de PowerShell o muestra cuota | `despachar`/`revisar`/`rebote` fallan tras tres lecturas de pantalla (no detectan prompts de bash ni `cmd.exe`) | Revisá la terminal a mano; el mensaje trae la pantalla |
 | Codex pide confiar en la carpeta | Falla con una pista de cómo confiar y sin haber mandado el brief | Seguí la pista (`orca-stack doctor` también la avisa) |
 | Un worker que se detuvo sin abrir PR | No hay PR que `vigilar` detecte; el issue queda con assignee y worktree | Mirá el worktree en Orca; no despaches de nuevo (el cerrojo lo rechaza). Releé el brief y decidí con el humano |
-| Autor ya salió y hay bloqueos de review | `rebote <pr>` relanza en su worktree y publica `Rebote: <sha>` | Si el worktree no está limpio y detenido en ese commit, `rebote` se niega |
+| Autor ya salió y hay bloqueos de review | `rebote <pr>` relanza en su worktree y publica `Rebote: <sha>` | Si el worktree no está limpio, o tiene commits que no están en el head del PR, `rebote` se niega; si solo está atrás del head, lo adelanta |
 | Hallazgo de `interpretación` | Solo bloquea el rebote por review: va al humano | Pasale las dos lecturas con sus razones; no uses `Decidido por main` |
 | CI con un check `CANCELLED` | Si ya hay una corrida más nueva, `rebote` se niega como pendiente; si no, lista los reruns | Esperá a la nueva corrida o, si no existe, corré `gh run rerun <run> --failed` |
 | CI con checks pendientes | `rebote` se niega | Esperá a que termine |
