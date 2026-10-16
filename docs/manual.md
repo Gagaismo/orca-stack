@@ -212,7 +212,7 @@ El timbre de Proactive: le escribe al worker una sola línea fija, `Message from
 orca-stack reanudar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecomment-123 --dry-run
 ```
 
-Si Orca todavía muestra el turno en `done`, reanuda el TUI con una sola línea que apunta a la respuesta. Si el agente salió, relanza el mismo agente en el worktree existente con el brief original y la URL al principio. Rechaza un PR abierto, un worktree sucio, más de un agente vivo o una respuesta que no sea un comentario real de la cuenta del stack o del humano. `--confirmado` habilita relanzar agentes de `preguntarAntes` solo después del OK humano; `--dry-run` no escribe ni envía nada.
+Si Orca todavía muestra el turno en `done`, reanuda el TUI con una sola línea que apunta a la respuesta. Si el agente salió y Orca ya no lo lista ni hay terminal de worker, identifica el mismo agente desde la línea de implementador del brief original y lo relanza en el worktree existente con el brief y la URL al principio. Se niega si Orca informa un estado de agente desconocido o si queda una terminal de worker que no muestra un shell prompt mientras Orca no lista su agente (por ejemplo, Pi headless). Rechaza un PR abierto, un worktree sucio, más de un agente vivo o una respuesta que no sea un comentario real de la cuenta del stack o del humano. Si ya intentó usar el mismo comentario, informa la hora registrada y no reenvía ni relanza: comprobá primero el agente y su terminal; si el intento no llegó, publicá una nueva `Respuesta de main:` y usá su URL. `--confirmado` habilita relanzar agentes de `preguntarAntes` solo después del OK humano; `--dry-run` no escribe ni envía nada.
 
 #### `vigilar` `[solo en main]`
 
