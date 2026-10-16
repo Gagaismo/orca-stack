@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { ensureCandidateWorktreesExclude } from './candidate-worktrees.mjs'
-import { isHigherRunId, isPending, latestChecks } from './checks.mjs'
+import { analyzeChecks, isHigherRunId, isPending, latestChecks } from './checks.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
@@ -771,6 +771,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
   // Only checks from the latest run of each workflow count; a cancelled run with an unlisted replacement is pending.
   const latest = latestChecks(Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : [])
+  const analysis = analyzeChecks(latest)
   const checks = latest.map(({ check }) => check)
   const checkName = check => check.name ?? check.context ?? 'Unnamed check'
   const checkUrl = check => check.detailsUrl ?? check.targetUrl ?? ''
@@ -798,8 +799,9 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     throw new Error(`El PR #${n} tiene una corrida nueva de CI en curso (${successors.join(', ')}) que reemplaza a la cancelada; esperá a que termine antes de rebotar.`)
   }
   // A legacy row without a run id keeps the existing refusal and rerun guidance.
-  if (cancelledChecks.length > 0) {
-    const reruns = cancelledChecks.map(({ check }) => {
+  const unexplainedCancelled = analysis.unexplainedCancellations.flatMap(c => c.checks)
+  if (unexplainedCancelled.length > 0) {
+    const reruns = unexplainedCancelled.map(check => {
       const runId = /\/actions\/runs\/(\d+)(?:\/|$)/i.exec(checkUrl(check))?.[1]
       return `${checkName(check)}${runId ? `: gh run rerun ${runId} --failed` : `: ${checkUrl(check) || 'run URL unavailable'} (rerun the failed jobs)`}`
     })
@@ -809,10 +811,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (pendingChecks.length > 0) {
     throw new Error(`El PR #${n} todavía tiene checks pendientes en ${sha}: ${pendingChecks.map(checkName).join(', ')}. Esperá a que termine la CI antes de rebotar.`)
   }
-  const failedChecks = checks.filter(check =>
-    (check.__typename === 'CheckRun' && ['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE', 'ACTION_REQUIRED'].includes(check.conclusion)) ||
-    (check.__typename === 'StatusContext' && ['FAILURE', 'ERROR'].includes(check.state)),
-  )
+  const failedChecks = analysis.realFailures.map(({ check }) => check)
   if (failedChecks.length > 0) {
     const previousCiShas = new Set(ciMarkers.filter(marker => marker !== sha))
     if (previousCiShas.size >= 2) {
@@ -838,7 +837,11 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     ? failedChecks.map(check => {
       const url = checkUrl(check)
       const jobId = /\/actions\/runs\/\d+\/job\/(\d+)(?:[/?#]|$)/i.exec(url)?.[1]
-      return `- **${checkName(check)}**\n  Link: ${url || '(no link available)'}${jobId ? `\n  Inspect: \`gh run view --job ${jobId} --log-failed\`` : ''}`
+      const siblings = analysis.cancelledSiblingsByFailure.get(check) ?? []
+      const siblingText = siblings.length > 0
+        ? `\n  Cancelled siblings (following from this failure): ${siblings.map(checkName).join(', ')}`
+        : ''
+      return `- **${checkName(check)}**\n  Link: ${url || '(no link available)'}${jobId ? `\n  Inspect: \`gh run view --job ${jobId} --log-failed\`` : ''}${siblingText}`
     }).join('\n')
     : 'None.'
 

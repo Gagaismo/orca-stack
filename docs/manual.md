@@ -180,7 +180,11 @@ orca-stack rebote 15 --dry-run
 orca-stack rebote 15 --nota "El segundo hallazgo es de interpretación: no lo toques, lo decide el humano."
 ```
 
+<<<<<<< HEAD
 Relanza al autor (línea `Implementador:`) en el worktree existente de la rama del PR. Exige un review bloqueante vigente o checks fallidos sobre el head, un worktree limpio y detenido en ese commit. Si el worktree está limpio y solo está atrás del head (por ejemplo, después de `gh pr update-branch`), lo adelanta con `git merge --ff-only <sha>` y lo dice en una línea; si tiene commits que no están en el head, se niega. Con `--dry-run` igual trae la rama (`git fetch`, que solo toca las referencias remotas) para comprobarlo, pero no adelanta nada. Publica `Rebote: <sha>` (review) y/o `Rebote CI: <sha>` (CI roja); cada contador cuenta SHAs distintos. Detalle de los rechazos en [Casos borde](#5-casos-borde).
+=======
+Relanza al autor (línea `Implementador:`) en el worktree existente de la rama del PR. Exige un review bloqueante vigente o checks fallidos sobre el head, un worktree limpio y detenido en ese commit. En un repo sin reviews, el comentario bloqueante puede venir de una consulta confirmada. Publica `Rebote: <sha>` (review) y/o `Rebote CI: <sha>` (CI roja); cada contador cuenta SHAs distintos. Detalle de los rechazos en [Casos borde](#5-casos-borde).
+>>>>>>> origin/main
 
 #### `brief-revision`
 
@@ -232,7 +236,7 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 | `ci-verde #<n> PR #<pr> <sha>` | Todos los checks del head terminaron en verde |
 | `ci-verde-retenido #<n> PR #<pr> <sha>: <agente> <estado>` | CI está verde, pero el worker sigue vivo; esperá a que termine antes de mergear |
 | `ci-roja #<n> PR #<pr> <sha>: ...` | Un check terminado falló o venció; uno por corrida, también si un `gh run rerun --failed` vuelve a fallar en el mismo head |
-| `ci-cancelada #<n> PR #<pr> <sha>: <check>=CANCELLED, ...` | No hay una corrida más nueva que reemplace a la cancelada; revisá la causa y re-ejecutá con `gh run rerun <run> --failed` |
+| `ci-cancelada #<n> PR #<pr> <sha>: <check>=CANCELLED, ...` | No hay una corrida más nueva que reemplace a la cancelada y ninguna falla real previa en la corrida la explica; revisá la causa y re-ejecutá con `gh run rerun <run> --failed` |
 | `pr-mergeado #<n> PR #<pr> <sha>` | Se mergeó y `main` no registró ese merge |
 | `pr-cerrado #<n> PR #<pr>` | Se cerró sin mergear |
 | `vigilar-ciego: <error>` | Tres vueltas seguidas sin poder leer GitHub (una vez por corte; nunca dice "no hay PRs") |

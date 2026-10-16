@@ -2,7 +2,7 @@ import { renameSync } from 'node:fs'
 import path from 'node:path'
 
 import { repoWorktrees } from './avisar.mjs'
-import { checkRunId, isHigherRunId, isStatus, latestChecks } from './checks.mjs'
+import { analyzeChecks, checkRunId, isHigherRunId, isStatus, latestChecks } from './checks.mjs'
 import { consultasCommand, getCommonDir } from './consultas.mjs'
 import { defaultIo } from './despacho.mjs'
 
@@ -84,21 +84,19 @@ const verdict = check => {
 const ciResult = (rollup, replacedWorkflows = []) => {
   const latest = latestChecks(rollup)
   const replaced = new Set(replacedWorkflows)
-  const cancelledRows = latest.filter(({ check, runId }) => !isStatus(check) && runId && check.workflowName && check.conclusion === 'CANCELLED' && !replaced.has(check.workflowName))
-  const cancellationsByRun = new Map()
-  for (const { check, runId } of cancelledRows) {
-    const key = `${check.workflowName ?? ''}/${runId}`
-    cancellationsByRun.set(key, { runId, checks: [...(cancellationsByRun.get(key)?.checks ?? []), check] })
-  }
-  const cancellations = [...cancellationsByRun.values()]
-  const canceledRuns = new Set(cancellationsByRun.keys())
+  const { realFailures, unexplainedCancellations, standaloneCancelled } = analyzeChecks(latest)
+
+  const activeCancellations = unexplainedCancellations.filter(c => c.workflow && c.runId && !replaced.has(c.workflow))
+  const canceledRuns = new Set(activeCancellations.map(c => `${c.workflow}/${c.runId}`))
+  const cancellations = activeCancellations.map(c => ({ runId: c.runId, checks: c.checks }))
+
   const checks = latest.map(({ check, runId }) => {
     if (replaced.has(check.workflowName ?? '')) return { ...check, status: 'IN_PROGRESS', conclusion: '' }
     if (runId && canceledRuns.has(`${check.workflowName ?? ''}/${runId}`) && !isStatus(check)) return { ...check, status: 'IN_PROGRESS', conclusion: '' }
     return check
   })
-  const red = latest.filter(({ check, runId }) =>
-    verdict(check) === 'roja' &&
+  const candidates = [...realFailures, ...standaloneCancelled]
+  const red = candidates.filter(({ check, runId }) =>
     !replaced.has(check.workflowName ?? '') &&
     !(runId && canceledRuns.has(`${check.workflowName ?? ''}/${runId}`)),
   )
@@ -107,7 +105,7 @@ const ciResult = (rollup, replacedWorkflows = []) => {
     const redRunIds = red.map(({ runId }) => runId).filter(Boolean)
     const runId = redRunIds.reduce((highest, current) => (!highest || isHigherRunId(current, highest) ? current : highest), undefined)
 
-    return { result: 'roja', text, run: Math.max(...red.map(({ runs }) => runs)), runId, cancellations }
+    return { result: 'roja', text, run: Math.max(...red.map(({ runs }) => runs ?? 1)), runId, cancellations }
   }
 
   return { result: cancellations.length === 0 && checks.length > 0 && checks.every(check => verdict(check) === 'verde') ? 'verde' : undefined, cancellations }

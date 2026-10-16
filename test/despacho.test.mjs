@@ -1466,6 +1466,53 @@ describe('rebote', () => {
     assert.equal(failed.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
   })
 
+  test('Issue 240 Rule 4: rebote bounces a real failure and lists cancelled siblings as following from it', async () => {
+    const checks = [
+      {
+        __typename: 'CheckRun', name: 'ubuntu-latest / Node 20', workflowName: 'CI', status: 'COMPLETED', conclusion: 'FAILURE',
+        startedAt: '2026-10-15T10:00:05Z', completedAt: '2026-10-15T10:00:40Z',
+        detailsUrl: 'https://github.com/org/repo/actions/runs/999/job/1',
+      },
+      {
+        __typename: 'CheckRun', name: 'ubuntu-latest / Node 22', workflowName: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED',
+        startedAt: '2026-10-15T10:00:05Z', completedAt: '2026-10-15T10:00:41Z',
+        detailsUrl: 'https://github.com/org/repo/actions/runs/999/job/2',
+      },
+      {
+        __typename: 'CheckRun', name: 'windows-latest / Node 20', workflowName: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED',
+        startedAt: '2026-10-15T10:00:05Z', completedAt: '2026-10-15T10:00:41Z',
+        detailsUrl: 'https://github.com/org/repo/actions/runs/999/job/3',
+      },
+    ]
+    const env = bounceEnv(pr({ reviews: [], statusCheckRollup: checks }), { 'gh run': json([]) })
+    await reboteCommand({}, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.match(brief, /ubuntu-latest \/ Node 20/)
+    assert.match(brief, /https:\/\/github\.com\/org\/repo\/actions\/runs\/999\/job\/1/)
+    assert.match(brief, /gh run view --job 1 --log-failed/)
+    assert.match(brief, /Cancelled siblings.*ubuntu-latest \/ Node 22, windows-latest \/ Node 20/)
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: abc123\n')
+  })
+
+  test('Issue 240 PRESERVE: reboteCommand retains rerun refusal when cancellation has no real failure', async () => {
+    const checks = [
+      {
+        __typename: 'CheckRun', name: 'matrix-job', workflowName: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED',
+        startedAt: '2026-10-15T02:57:40Z', completedAt: '2026-10-15T02:58:16Z',
+        detailsUrl: 'https://github.com/org/repo/actions/runs/38843085964/job/1',
+      },
+      {
+        __typename: 'CheckRun', name: 'ci-ok', workflowName: 'CI', status: 'COMPLETED', conclusion: 'FAILURE',
+        startedAt: '2026-10-15T02:59:09Z', completedAt: '2026-10-15T02:59:15Z',
+        detailsUrl: 'https://github.com/org/repo/actions/runs/38843085964/job/2',
+      },
+    ]
+    const env = bounceEnv(pr({ statusCheckRollup: checks }), { 'gh run': json([]) })
+    await assert.rejects(reboteCommand({}, '12', env.io), {
+      message: 'El PR #12 tiene checks CANCELLED en abc123; no lo rebotes hasta volver a ejecutar CI:\nmatrix-job: gh run rerun 38843085964 --failed',
+    })
+  })
+
   test('Issue 225 PRESERVE: reboteCommand retains existing arguments, refusals and Rebote CI counters', async () => {
     const closed = bounceEnv(pr({ state: 'CLOSED' }))
     await assert.rejects(reboteCommand({}, '12', closed.io), /no se puede rebotar/)
