@@ -85,6 +85,7 @@ export const section = (humano: string): string =>
   'Gentle Shell (Pi) es otro orquestador, par con otra metodología; consultalo con `consultar_gentle_shell` en los puntos de decisión: ' +
   'elegir entre enfoques, después de una propuesta o diseño, antes de mergear PRs grandes, y cuando la causa de un bug sigue sin estar clara después de un intento.\n' +
   'El planteo va neutral: el problema, las restricciones, nuestra propuesta y los archivos. ' +
+  'Si la consulta es sobre un PR o un issue, pasá `pr` o `issue` en vez de pegar el cuerpo, los comentarios o el diff en el planteo: el mod los lee con gh y se los pasa en archivos. ' +
   'No le mandes reglas del stack de Orca ni de nuestra metodología; AGENTS.md lo lee él solo.\n' +
   `Si discrepa en algo material, mostrale ${humano.trim() === '' ? 'al usuario' : `a ${humano.trim()}`} las dos posturas con sus razones; no descartes su opinión por tu cuenta.`
 
@@ -121,6 +122,99 @@ export const buildArgs = (tema: string, modelo: string, message: string, skills?
   MARCO,
   message,
 ]
+
+// ---- preload: an issue or a PR, read with gh by the mod (Pi has no gh) and written to files Pi reads --------------
+// The message is a command-line argument, capped near 32767 characters on Windows: preloaded texts never go in it.
+
+export const ISSUE_FIELDS = 'number,title,url,body,comments'
+export const PR_FIELDS_PRELOAD = 'number,title,url,baseRefName,headRefOid,body,comments,reviews'
+
+// Absent, or a positive integer: anything else is refused before running gh.
+export const preloadInputError = (field: 'pr' | 'issue', value: unknown): string | undefined =>
+  value === undefined || (typeof value === 'number' && Number.isInteger(value) && value > 0)
+    ? undefined
+    : `El campo ${field} tiene que ser un entero positivo; recibí ${JSON.stringify(value)}. No consulté a Gentle Shell.`
+
+export const firstLine = (text: string): string => text.trim().split(/\r?\n/)[0] ?? ''
+
+export const readError = (what: 'el PR' | 'el issue', n: number, call: string, detail: string): string =>
+  `No pude leer ${what} #${n} con ${call}: ${detail}. No consulté a Gentle Shell.`
+
+export const NOT_JSON = 'la respuesta no es JSON válido'
+
+type Note = { author?: { login?: unknown }; createdAt?: unknown; submittedAt?: unknown; state?: unknown; body?: unknown }
+type Entry = { heading: string; at: string; body: string }
+
+const str = (value: unknown): string => (typeof value === 'string' ? value : '')
+const parseObject = (stdout: string): Record<string, unknown> | undefined => {
+  try {
+    const data: unknown = JSON.parse(stdout)
+
+    return data !== null && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
+const notes = (value: unknown): Note[] => (Array.isArray(value) ? (value as Note[]) : [])
+const entry = (heading: string, at: string, body: unknown, state = ''): Entry => ({
+  heading: [heading, at, state].filter(part => part !== '').join(' · '),
+  at,
+  body: str(body).trim(),
+})
+const entries = (title: string, list: Entry[]): string =>
+  `## ${title} (${list.length}), del más viejo al más nuevo\n` +
+  [...list]
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+    .map(one => `\n### ${one.heading}\n\n${one.body === '' ? '(sin texto)' : one.body}\n`)
+    .join('')
+
+// `gh issue view --json number,title,url,body,comments`, as a file; undefined when it is not a JSON object.
+export const issueFile = (stdout: string): string | undefined => {
+  const data = parseObject(stdout)
+  if (data === undefined) {
+    return undefined
+  }
+  const comments = notes(data['comments']).map(one => entry(str(one.author?.login), str(one.createdAt), one.body))
+
+  return `# Issue #${String(data['number'])}: ${str(data['title'])}\n\nURL: ${str(data['url'])}\n\n## Cuerpo\n\n${str(data['body']).trim()}\n\n${entries('Comentarios', comments)}`
+}
+
+// `gh pr view --json number,title,url,baseRefName,headRefOid,body,comments,reviews`, as a file with its head commit;
+// undefined when it is not a JSON object with a head commit.
+export const prFile = (stdout: string): { text: string; headRefOid: string } | undefined => {
+  const data = parseObject(stdout)
+  const headRefOid = str(data?.['headRefOid'])
+  if (data === undefined || headRefOid === '') {
+    return undefined
+  }
+  const list = [
+    ...notes(data['comments']).map(one => entry(`Comentario de ${str(one.author?.login)}`, str(one.createdAt), one.body)),
+    ...notes(data['reviews']).map(one => entry(`Review de ${str(one.author?.login)}`, str(one.submittedAt), one.body, str(one.state))),
+  ]
+  const text =
+    `# PR #${String(data['number'])}: ${str(data['title'])}\n\n` +
+    `URL: ${str(data['url'])}\nRama base: ${str(data['baseRefName'])}\nCommit de cabeza: ${headRefOid}\n\n` +
+    `## Cuerpo\n\n${str(data['body']).trim()}\n\n${entries('Comentarios y reviews', list)}`
+
+  return { text, headRefOid }
+}
+
+// The .diff file when `gh pr diff` gave nothing usable: why, and the files of `gh pr view <n> --json files` if it answered.
+export const diffUnavailable = (n: number, detail: string, filesStdout: string | undefined): string => {
+  const files = filesStdout === undefined ? [] : notes(parseObject(filesStdout)?.['files'])
+  const list = (files as { path?: unknown; additions?: unknown; deletions?: unknown }[])
+    .map(one => `- ${str(one.path)} (+${String(one.additions ?? 0)} -${String(one.deletions ?? 0)})\n`)
+    .join('')
+
+  return `diff no disponible: ${detail}\n${list === '' ? '' : `\nArchivos del PR (gh pr view ${n} --json files):\n${list}`}`
+}
+
+// The one section the message gains: where the files are and, for a PR, its full head commit.
+export const precargaSection = (paths: string[], head?: { pr: number; headRefOid: string }): string =>
+  '## Precarga\n' +
+  'Lo que sigue lo leyó el mod de GitHub con gh antes de lanzarte (vos no tenés gh); leé estos archivos con read:\n' +
+  paths.map(path => `- ${path}\n`).join('') +
+  (head === undefined ? '' : `Commit de cabeza del PR #${head.pr}: ${head.headRefOid}\n`)
 
 type Block = { type?: string; text?: string }
 type Message = {
