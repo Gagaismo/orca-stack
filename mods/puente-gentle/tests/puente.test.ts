@@ -11,6 +11,8 @@ import {
   implementerOf,
   merges,
   piClaudeConfigDir,
+  preloadInputError,
+  prFile,
   riskyFile,
   parsePiArgs,
   parseStream,
@@ -846,3 +848,96 @@ test('Rule 11: without pr and issue the consult sends the same message, writes n
   expect(w.gits.length).toBe(probes)
   expect(w.written.size).toBe(0)
 })
+
+// ---- #233: harden consult preload (null inputs, git common dir, head commit) -----------------
+
+test('Rule 1: pr: null or issue: null counts as not given: consult runs as if absent without error or precarga', async ($, on) => {
+  const w = setup(on, github(), {}, { project: true })
+  await boot($)
+  const probes = w.gits.length
+  // pr: null
+  let out = JSON.parse(textOf(await consult($, { tema: 't1', planteo: 'contexto', pregunta: 'q', pr: null })))
+  expect(out).toEqual({ tema: 't1', respuesta: 'Coincido salvo en X.' })
+  expect(piCall(w)!.argv.at(-1)).toBe(buildMessage('contexto', 'q'))
+  expect(ghCalls(w)).toEqual([])
+  expect(w.gits.length).toBe(probes)
+  expect(w.written.size).toBe(0)
+
+  // issue: null
+  out = JSON.parse(textOf(await consult($, { tema: 't2', planteo: 'contexto', pregunta: 'q', issue: null })))
+  expect(out).toEqual({ tema: 't2', respuesta: 'Coincido salvo en X.' })
+  expect(piCall(w)!.argv.at(-1)).toBe(buildMessage('contexto', 'q'))
+  expect(ghCalls(w)).toEqual([])
+  expect(w.written.size).toBe(0)
+
+  // both null
+  out = JSON.parse(textOf(await consult($, { tema: 't3', planteo: 'contexto', pregunta: 'q', pr: null, issue: null })))
+  expect(out).toEqual({ tema: 't3', respuesta: 'Coincido salvo en X.' })
+  expect(piCall(w)!.argv.at(-1)).toBe(buildMessage('contexto', 'q'))
+  expect(ghCalls(w)).toEqual([])
+  expect(w.written.size).toBe(0)
+
+  // pure validator helper
+  expect(preloadInputError('pr', null)).toBeUndefined()
+  expect(preloadInputError('issue', null)).toBeUndefined()
+})
+
+test('Rule 2: when git common dir is not an absolute path it returns error naming it, writes no file and launches no Pi', async ($, on) => {
+  const inRepo = (argv: readonly string[]): Run => {
+    if (argv[0] === 'git') {
+      return argv.includes('--show-toplevel')
+        ? { exitCode: 0, stdout: 'C:/p/.git\nC:/p\n', stderr: '' }
+        : { exitCode: 0, stdout: '--path-format=absolute\n', stderr: '' }
+    }
+
+    return github()(argv)
+  }
+  const w = setup(on, inRepo, {}, { files: { [PROJECT_CONFIG]: '{}' } })
+  await boot($)
+  const out = JSON.parse(textOf(await consult($, { tema: 't', planteo: 'p', pregunta: 'q', pr: 218 })))
+  expect(out.tema).toBe('t')
+  expect(out.error).toContain('--path-format=absolute')
+  expect(out.error).toContain('No consulté a Gentle Shell.')
+  expect(w.written.size).toBe(0)
+  expect(piCall(w)).toBeUndefined()
+  expect(w.state.get('puente-gentle/temas')?.value).toEqual([])
+})
+
+test('Rule 3: a headRefOid that is not 40 hex characters is treated like a failed gh pr view: no file, no Pi', async ($, on) => {
+  const badPr = { ...PR, headRefOid: '/../../' }
+  const w = setup(on, github({ pr: json(badPr) }), {}, { project: true })
+  await boot($)
+  const out = JSON.parse(textOf(await consult($, { tema: 't', planteo: 'p', pregunta: 'q', pr: 218 })))
+  expect(out).toEqual({
+    tema: 't',
+    error: 'No pude leer el PR #218 con gh pr view: la respuesta no es JSON válido. No consulté a Gentle Shell.',
+  })
+  expect(w.written.size).toBe(0)
+  expect(piCall(w)).toBeUndefined()
+  expect(w.state.get('puente-gentle/temas')?.value).toEqual([])
+
+  expect(prFile(JSON.stringify(badPr))).toBeUndefined()
+  expect(prFile(JSON.stringify({ ...PR, headRefOid: '123' }))).toBeUndefined()
+  expect(prFile(JSON.stringify({ ...PR, headRefOid: 'z'.repeat(40) }))).toBeUndefined()
+})
+
+test('Rule 4 (touched public entries): consultar_gentle_shell with valid pr and issue, and without them, behaves as after PR #231', async ($, on) => {
+  const w = setup(on, github(), {}, { project: true })
+  await boot($)
+  // without pr and issue
+  const outWithout = JSON.parse(textOf(await consult($, { tema: 't-sin', planteo: 'contexto', pregunta: '¿riesgos?' })))
+  expect(outWithout).toEqual({ tema: 't-sin', respuesta: 'Coincido salvo en X.' })
+  expect(piCall(w)!.argv.at(-1)).toBe(buildMessage('contexto', '¿riesgos?'))
+  expect(ghCalls(w)).toEqual([])
+  expect(w.written.size).toBe(0)
+
+  // with valid pr and issue
+  const outWith = JSON.parse(textOf(await consult($, { tema: 't-con', planteo: 'contexto', pregunta: 'q', pr: 218, issue: 214 })))
+  expect(outWith).toEqual({ tema: 't-con', respuesta: 'Coincido salvo en X.' })
+  expect([...w.written.keys()]).toEqual(PATHS)
+  const message = w.calls.filter(call => call.argv[0] === 'node').at(-1)!.argv.at(-1)!
+  expect(message).toContain('## Precarga')
+  for (const path of PATHS) expect(message).toContain(`- ${path}\n`)
+  expect(message).toContain(`PR #218: ${OID}`)
+})
+

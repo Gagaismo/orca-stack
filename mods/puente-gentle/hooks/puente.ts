@@ -56,6 +56,9 @@ export const joinPath = (base: string, ...parts: string[]): string => {
   return [root, ...parts].join(sep)
 }
 
+export const isPathAbsolute = (path: string): boolean =>
+  path.startsWith('/') || path.startsWith('\\') || /^[a-zA-Z]:[/\\]/.test(path)
+
 export const engramDir = (home: string): string => joinPath(home, '.gentle-shell', 'engram')
 export const launcherPath = (home: string): string => joinPath(home, '.pi', 'agent', 'bin', 'pi-launcher.js')
 
@@ -129,9 +132,9 @@ export const buildArgs = (tema: string, modelo: string, message: string, skills?
 export const ISSUE_FIELDS = 'number,title,url,body,comments'
 export const PR_FIELDS_PRELOAD = 'number,title,url,baseRefName,headRefOid,body,comments,reviews'
 
-// Absent, or a positive integer: anything else is refused before running gh.
+// Absent (undefined or null), or a positive integer: anything else is refused before running gh.
 export const preloadInputError = (field: 'pr' | 'issue', value: unknown): string | undefined =>
-  value === undefined || (typeof value === 'number' && Number.isInteger(value) && value > 0)
+  value === undefined || value === null || (typeof value === 'number' && Number.isInteger(value) && value > 0)
     ? undefined
     : `El campo ${field} tiene que ser un entero positivo; recibí ${JSON.stringify(value)}. No consulté a Gentle Shell.`
 
@@ -180,11 +183,11 @@ export const issueFile = (stdout: string): string | undefined => {
 }
 
 // `gh pr view --json number,title,url,baseRefName,headRefOid,body,comments,reviews`, as a file with its head commit;
-// undefined when it is not a JSON object with a head commit.
+// undefined when it is not a JSON object with a head commit of 40 hex characters.
 export const prFile = (stdout: string): { text: string; headRefOid: string } | undefined => {
   const data = parseObject(stdout)
   const headRefOid = str(data?.['headRefOid'])
-  if (data === undefined || headRefOid === '') {
+  if (data === undefined || !/^[0-9a-f]{40}$/.test(headRefOid)) {
     return undefined
   }
   const list = [
