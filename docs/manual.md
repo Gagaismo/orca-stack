@@ -232,7 +232,7 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 | `ci-verde #<n> PR #<pr> <sha>` | Todos los checks del head terminaron en verde |
 | `ci-verde-retenido #<n> PR #<pr> <sha>: <agente> <estado>` | CI está verde, pero el worker sigue vivo; esperá a que termine antes de mergear |
 | `ci-roja #<n> PR #<pr> <sha>: ...` | Un check terminado falló o venció; uno por corrida, también si un `gh run rerun --failed` vuelve a fallar en el mismo head |
-| `ci-cancelada #<n> PR #<pr> <sha>: <check>=CANCELLED, ...` | No hay una corrida más nueva que reemplace a la cancelada; revisá la causa y re-ejecutá con `gh run rerun <run> --failed` |
+| `ci-cancelada #<n> PR #<pr> <sha>: <check>=CANCELLED, ...` | No hay una corrida más nueva que reemplace a la cancelada y ninguna falla real previa en la corrida la explica; revisá la causa y re-ejecutá con `gh run rerun <run> --failed` |
 | `pr-mergeado #<n> PR #<pr> <sha>` | Se mergeó y `main` no registró ese merge |
 | `pr-cerrado #<n> PR #<pr>` | Se cerró sin mergear |
 | `vigilar-ciego: <error>` | Tres vueltas seguidas sin poder leer GitHub (una vez por corte; nunca dice "no hay PRs") |
