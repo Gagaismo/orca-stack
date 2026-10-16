@@ -853,13 +853,23 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${worktree}: ${(status.stderr || status.stdout).trim()}`)
   if (status.stdout.trim() !== '') throw new Error(`El worktree ${worktree} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de relanzar.`)
   const head = ok(io.sh('git', ['rev-parse', 'HEAD'], { cwd: worktree }), 'git rev-parse HEAD').stdout.trim()
-  if (head !== sha) throw new Error(`El worktree ${worktree} est\u00E1 en ${head}, no en el head del PR ${sha}.`)
+  // A clean worktree that is only behind the PR head (e.g. after `gh pr update-branch`) is fast-forwarded, not refused.
+  if (head !== sha) {
+    if (!dryRun) ok(io.sh('git', ['fetch', 'origin', pr.headRefName], { cwd: worktree }), 'git fetch')
+    const ancestor = io.sh('git', ['merge-base', '--is-ancestor', 'HEAD', sha], { cwd: worktree })
+    if (ancestor.status === 1) throw new Error(`El worktree ${worktree} est\u00E1 en ${head}, no en el head del PR ${sha}.`)
+    if (ancestor.status !== 0) throw new Error(`No pude comprobar si el worktree ${worktree} (${head}) est\u00E1 atr\u00E1s del head del PR ${sha}: ${(ancestor.stderr || ancestor.stdout || '').trim()}`)
+  }
   const ps = io.sh('orca', ['worktree', 'ps', '--json'])
   if (ps.status !== 0) throw new Error(`Orca no contesta (orca worktree ps): ${(ps.stderr || ps.stdout).trim()}`)
   const rows = parseJson(ps, 'orca worktree ps').result?.worktrees ?? []
   const row = rows.find(item => samePath(item.path ?? '', worktree))
   if ((row?.agents ?? []).some(item => /^(working|running|active)$/i.test(item.state ?? item.status ?? ''))) {
     throw new Error(`Hay un agente vivo en ${worktree}; cerralo antes de rebotar.`)
+  }
+  if (head !== sha) {
+    if (!dryRun) ok(io.sh('git', ['merge', '--ff-only', sha], { cwd: worktree }), 'git merge --ff-only')
+    say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Adelant\u00E9 el worktree de ${head.slice(0, 7)} a ${sha.slice(0, 7)} (el head del PR).`)
   }
 
   const name = `${repo}-pr-${n}-rebote`

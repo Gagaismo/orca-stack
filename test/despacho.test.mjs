@@ -1165,10 +1165,70 @@ describe('rebote', () => {
   test('Rule 6: requires the matching clean worktree at the PR head', async () => {
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(), { 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n`) }).io), /No hay un worktree/)
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(), { 'git status': okRes(' M src/app.mjs\n') }).io), /worktree .* est\u00E1 sucio/)
-    const wrong = bounceEnv()
+    const wrong = bounceEnv(pr(), { 'git merge-base': { status: 1, stdout: '', stderr: '' } })
     const base = wrong.io.sh
     wrong.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('oldsha\n') : base(cmd, args, opts)
     await assert.rejects(reboteCommand({}, '12', wrong.io), /no en el head del PR/)
+  })
+
+  describe('issue 241: a worktree behind the PR head', () => {
+    const behindPr = () => pr({ headRefOid: 'd25b997c0ffee', reviews: [{ body: 'Commit: d25b997c0ffee\n## BLOQUEA\n1. fix it', url: 'https://example.test/review/1' }] })
+    const behindEnv = (ancestor, extra = {}) => {
+      const env = bounceEnv(behindPr(), { 'git merge-base': { status: ancestor, stdout: '', stderr: '' }, ...extra })
+      const base = env.io.sh
+      env.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('46f2431beef00\n') : base(cmd, args, opts)
+      return env
+    }
+    const gitCalls = (env, sub) => env.calls.filter(call => call[0] === 'git' && call[1] === sub)
+
+    test('Rule 1: fast-forwards a clean worktree whose HEAD is an ancestor of the PR head and bounces', async () => {
+      const env = behindEnv(0)
+      await reboteCommand({}, '12', env.io)
+      assert.deepEqual(gitCalls(env, 'fetch'), [['git', 'fetch', 'origin', 'feat/fix']])
+      assert.deepEqual(gitCalls(env, 'merge-base'), [['git', 'merge-base', '--is-ancestor', 'HEAD', 'd25b997c0ffee']])
+      assert.deepEqual(gitCalls(env, 'merge'), [['git', 'merge', '--ff-only', 'd25b997c0ffee']])
+      assert.ok(env.out.includes('Adelanté el worktree de 46f2431 a d25b997 (el head del PR).'))
+      const merge = env.calls.findIndex(call => call[0] === 'git' && call[1] === 'merge')
+      const launch = env.calls.findIndex(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+      assert.ok(merge >= 0 && merge < launch)
+      assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: d25b997c0ffee\n')
+    })
+
+    test('Rule 2: a worktree with local commits not in the PR head keeps the refusal word for word and is not touched', async () => {
+      const env = behindEnv(1)
+      await assert.rejects(reboteCommand({}, '12', env.io), error => {
+        assert.equal(error.message, `El worktree ${worktree} está en 46f2431beef00, no en el head del PR d25b997c0ffee.`)
+        return true
+      })
+      assert.equal(gitCalls(env, 'merge').length, 0)
+      assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+    })
+
+    test('Rule 3: a dirty worktree keeps the refusal and is not fast-forwarded even when it is behind', async () => {
+      const env = behindEnv(0, { 'git status': okRes('?? notes.txt\n') })
+      await assert.rejects(reboteCommand({}, '12', env.io), error => {
+        assert.equal(error.message, `El worktree ${worktree} está sucio; guardá o descartá sus cambios antes de relanzar.`)
+        return true
+      })
+      for (const sub of ['fetch', 'merge-base', 'merge']) assert.equal(gitCalls(env, sub).length, 0, sub)
+    })
+
+    test('Rule 4: --dry-run prints the fast-forward it would do and changes nothing', async () => {
+      const env = behindEnv(0)
+      await reboteCommand({ dryRun: true }, '12', env.io)
+      assert.ok(env.out.includes('[simulación] Adelanté el worktree de 46f2431 a d25b997 (el head del PR).'))
+      assert.equal(gitCalls(env, 'fetch').length, 0)
+      assert.equal(gitCalls(env, 'merge').length, 0)
+      assert.equal(env.written.length, 0)
+    })
+
+    test('Rule 5: a worktree already at the PR head bounces without fetching or fast-forwarding', async () => {
+      const env = bounceEnv()
+      await reboteCommand({}, '12', env.io)
+      for (const sub of ['fetch', 'merge-base', 'merge']) assert.equal(gitCalls(env, sub).length, 0, sub)
+      assert.ok(!env.out.some(line => line.includes('Adelanté')))
+      assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
+    })
   })
 
   test('Rule 7: refuses a live agent in the existing worktree', async () => {
