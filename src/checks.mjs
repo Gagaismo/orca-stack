@@ -11,13 +11,47 @@ export const isPending = check => (isStatus(check) ? PENDING_STATUS.includes(che
 const newer = (row, seen) =>
   isPending(row) !== isPending(seen) ? isPending(row) : String(row.startedAt ?? '') > String(seen.startedAt ?? '')
 
-// One entry per check: its latest row, and `runs`, how many rows the check has on this head commit.
+export const checkRunId = check => /\/actions\/runs\/(\d+)(?:\/|[?#]|$)/i.exec(check.detailsUrl ?? '')?.[1]
+export const isHigherRunId = (candidate, seen) => /^\d+$/.test(String(candidate ?? '')) && /^\d+$/.test(String(seen ?? '')) && BigInt(candidate) > BigInt(seen)
+
+// One entry per check: its latest row, `runs` for failed re-run counting, and the workflow run when available.
 export const latestChecks = rollup => {
+  const rows = rollup ?? []
+  const latestRunByWorkflow = new Map()
+  const olderChecks = new Map()
+  for (const check of rows) {
+    if (isStatus(check)) continue
+    const runId = checkRunId(check)
+    if (!runId) continue
+    const workflow = check.workflowName ?? ''
+    const seen = latestRunByWorkflow.get(workflow)
+    if (!seen || isHigherRunId(runId, seen)) latestRunByWorkflow.set(workflow, runId)
+    const key = `check:${workflow}/${check.name}`
+    if (!olderChecks.has(key)) olderChecks.set(key, check)
+  }
+
   const latest = new Map()
-  for (const check of rollup ?? []) {
-    const key = isStatus(check) ? `status:${check.context}` : `check:${check.workflowName ?? ''}/${check.name}`
+  for (const check of rows) {
+    const runId = isStatus(check) ? undefined : checkRunId(check)
+    const workflow = check.workflowName ?? ''
+    if (runId && runId !== latestRunByWorkflow.get(workflow)) continue
+    const key = isStatus(check) ? `status:${check.context}` : `check:${workflow}/${check.name}`
     const seen = latest.get(key)
-    latest.set(key, { check: !seen || newer(check, seen.check) ? check : seen.check, runs: (seen?.runs ?? 0) + 1 })
+    const sameRun = !runId || !seen?.runId || runId === seen.runId
+    latest.set(key, {
+      check: !seen || newer(check, seen.check) ? check : seen.check,
+      runs: (sameRun ? seen?.runs ?? 0 : 0) + 1,
+      ...(runId ? { runId } : seen?.runId ? { runId: seen.runId } : {}),
+    })
+  }
+
+  for (const [key, check] of olderChecks) {
+    if (latest.has(key)) continue
+    const workflow = check.workflowName ?? ''
+    const runId = latestRunByWorkflow.get(workflow)
+    if (runId && checkRunId(check) !== runId) {
+      latest.set(key, { check: { ...check, status: 'IN_PROGRESS', conclusion: '' }, runs: 0, runId })
+    }
   }
 
   return [...latest.values()]

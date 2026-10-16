@@ -2,7 +2,7 @@ import { renameSync } from 'node:fs'
 import path from 'node:path'
 
 import { repoWorktrees } from './avisar.mjs'
-import { isStatus, latestChecks } from './checks.mjs'
+import { checkRunId, isHigherRunId, isStatus, latestChecks } from './checks.mjs'
 import { consultasCommand, getCommonDir } from './consultas.mjs'
 import { defaultIo } from './despacho.mjs'
 
@@ -19,6 +19,7 @@ const DETAIL_MAX = 200
 const CHECK_GREEN = ['SUCCESS', 'SKIPPED', 'NEUTRAL']
 const CHECK_RED = ['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE', 'ACTION_REQUIRED', 'CANCELLED']
 const STATUS_RED = ['FAILURE', 'ERROR']
+const LIVE_WORKER_STATES = new Set(['working', 'running', 'active', 'blocked', 'waiting'])
 
 // stdout carries events only (it runs under the Monitor tool); every diagnostic goes to stderr.
 const vigilarIo = () => ({ ...defaultIo(), err: message => console.error(message), rename: renameSync, now: Date.now })
@@ -80,17 +81,50 @@ const verdict = check => {
 // result carries its run: the most rows any failing check has. A re-run adds a row to each check it runs, so a red re-run
 // has a higher run; ci-ok (needs: the matrix) gets its row later in the same run, so startedAt alone would count one run
 // twice.
-const ciResult = rollup => {
+const ciResult = (rollup, replacedWorkflows = []) => {
   const latest = latestChecks(rollup)
-  const checks = latest.map(({ check }) => check)
-  const red = latest.filter(({ check }) => verdict(check) === 'roja')
+  const replaced = new Set(replacedWorkflows)
+  const cancelledRows = latest.filter(({ check, runId }) => !isStatus(check) && runId && check.workflowName && check.conclusion === 'CANCELLED' && !replaced.has(check.workflowName))
+  const cancellationsByRun = new Map()
+  for (const { check, runId } of cancelledRows) {
+    const key = `${check.workflowName ?? ''}/${runId}`
+    cancellationsByRun.set(key, { runId, checks: [...(cancellationsByRun.get(key)?.checks ?? []), check] })
+  }
+  const cancellations = [...cancellationsByRun.values()]
+  const canceledRuns = new Set(cancellationsByRun.keys())
+  const checks = latest.map(({ check, runId }) => {
+    if (replaced.has(check.workflowName ?? '')) return { ...check, status: 'IN_PROGRESS', conclusion: '' }
+    if (runId && canceledRuns.has(`${check.workflowName ?? ''}/${runId}`) && !isStatus(check)) return { ...check, status: 'IN_PROGRESS', conclusion: '' }
+    return check
+  })
+  const red = latest.filter(({ check, runId }) =>
+    verdict(check) === 'roja' &&
+    !replaced.has(check.workflowName ?? '') &&
+    !(runId && canceledRuns.has(`${check.workflowName ?? ''}/${runId}`)),
+  )
   if (red.length > 0) {
     const text = red.map(({ check }) => `${checkName(check)}=${outcome(check)}`).join(', ')
 
-    return { result: 'roja', text, run: Math.max(...red.map(({ runs }) => runs)) }
+    return { result: 'roja', text, run: Math.max(...red.map(({ runs }) => runs)), cancellations }
   }
 
-  return checks.length > 0 && checks.every(check => verdict(check) === 'verde') ? { result: 'verde' } : undefined
+  return { result: cancellations.length === 0 && checks.length > 0 && checks.every(check => verdict(check) === 'verde') ? 'verde' : undefined, cancellations }
+}
+
+const replacedRuns = (pr, root, io) => {
+  const cancelled = latestChecks(pr.statusCheckRollup).filter(({ check, runId }) => !isStatus(check) && runId && check.workflowName && check.conclusion === 'CANCELLED')
+  const replaced = new Set()
+  const checkedWorkflows = new Set()
+  for (const { check, runId } of cancelled) {
+    const workflow = check.workflowName ?? ''
+    if (checkedWorkflows.has(workflow)) continue
+    checkedWorkflows.add(workflow)
+    const runs = ghJson(io, root, ['run', 'list', '--commit', pr.headRefOid, '--workflow', workflow, '--json', 'databaseId,status,conclusion'])
+    if (!Array.isArray(runs)) throw new Blind('gh run list no devolvió una lista de corridas')
+    if (runs.some(run => isHigherRunId(run.databaseId, runId))) replaced.add(workflow)
+  }
+
+  return [...replaced]
 }
 
 // A PR is the item's by its closing reference, the branch of this repo's worktree linked to the issue, or a
@@ -122,7 +156,21 @@ const readWorld = (targets, cursor, root, io, warn) => {
     const branches = ours.filter(({ row }) => String(row.linkedIssue) === issue).map(({ branch }) => branch).filter(Boolean)
     const mine = [...prs.values()].filter(pr => pr.number === cursor[issue]?.pr || linked(pr, issue, branches))
     const pr = mine.sort((a, b) => b.number - a.number)[0]
-    if (pr) return [issue, { pr, workersReadable }]
+    if (pr) {
+      let worker
+      if (workersReadable) {
+        const linked = ours.filter(({ row }) => String(row.linkedIssue) === issue)
+        const candidates = linked.length > 0 ? linked : ours.filter(({ branch }) => branch === pr.headRefName)
+        if (candidates.length > 1) warn(`vigilar: hay ${candidates.length} worktrees para el worker de #${issue}; no adivino cuál.`)
+        const agents = candidates.length === 1 ? candidates[0].row.agents ?? [] : []
+        const agent = agents.length === 1 ? agents[0] : undefined
+        const identity = String(agent?.agentType ?? '').trim().toLowerCase()
+        const state = identity && identity !== 'pi' ? String(agent?.state ?? '').trim().toLowerCase() : ''
+        if (state) worker = { state, agent: identity }
+      }
+
+      return [issue, { pr, workersReadable, worker: worker ?? null, replacedWorkflows: replacedRuns(pr, root, io) }]
+    }
 
     const res = io.sh('gh', ['issue', 'view', issue, '--json', 'state'], { cwd: root })
     const issueState = res.status === 0 ? parse(res)?.state : undefined
@@ -157,6 +205,7 @@ const advance = (issue, seen, before, merges) => {
   const { pr } = seen
   const fresh = before?.pr !== pr.number
   const entry = fresh ? { ...(before?.worker ? { worker: before.worker } : {}), pr: pr.number } : { ...before }
+  if (seen.workersReadable !== false && seen.worker) entry.worker = seen.worker
   const lines = []
   if (pr.state === 'OPEN') {
     delete entry.fin
@@ -165,14 +214,35 @@ const advance = (issue, seen, before, merges) => {
       entry.head = pr.headRefOid
       delete entry.ci
       delete entry.corrida
+      delete entry.ciRetenido
     }
-    // Every run that ends red is an event (step 8 counts the CI bounces); the same run polled again is not.
-    const ci = ciResult(pr.statusCheckRollup)
-    if (ci && (ci.result !== entry.ci || (ci.result === 'roja' && ci.run > (entry.corrida ?? 0)))) {
-      lines.push(event(`ci-${ci.result}`, issue, pr, pr.headRefOid, ci.text))
-      entry.ci = ci.result
-      if (ci.run) entry.corrida = ci.run
-      else delete entry.corrida
+    const liveWorker = seen.workersReadable !== false && LIVE_WORKER_STATES.has(seen.worker?.state)
+    const ci = ciResult(pr.statusCheckRollup, seen.replacedWorkflows)
+    const cancelledRuns = new Set(Array.isArray(entry.cancelledRuns) ? entry.cancelledRuns : [])
+    for (const cancellation of ci.cancellations) {
+      const runId = cancellation.runId
+      if (cancelledRuns.has(runId)) continue
+      lines.push(event('ci-cancelada', issue, pr, pr.headRefOid, cancellation.checks.map(check => `${checkName(check)}=CANCELLED`).join(', ')))
+      cancelledRuns.add(runId)
+    }
+    if (cancelledRuns.size > 0) entry.cancelledRuns = [...cancelledRuns]
+    if (ci.result === 'roja' && (entry.ci !== 'roja' || ci.run > (entry.corrida ?? 0))) {
+      lines.push(event('ci-roja', issue, pr, pr.headRefOid, ci.text))
+      entry.ci = 'roja'
+      entry.corrida = ci.run
+    } else if (ci.result === 'verde') {
+      if (liveWorker) {
+        if (entry.ciRetenido !== pr.headRefOid) {
+          lines.push(event('ci-verde-retenido', issue, pr, pr.headRefOid, `${seen.worker.agent} ${seen.worker.state}`))
+          entry.ciRetenido = pr.headRefOid
+        }
+        entry.ci = 'retenido'
+      } else {
+        if (entry.ci !== 'verde') lines.push(event('ci-verde', issue, pr, pr.headRefOid))
+        entry.ci = 'verde'
+        delete entry.ciRetenido
+        delete entry.corrida
+      }
     }
   } else if (!entry.fin) {
     entry.head = pr.headRefOid

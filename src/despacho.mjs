@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { ensureCandidateWorktreesExclude } from './candidate-worktrees.mjs'
-import { isPending, latestChecks } from './checks.mjs'
+import { isHigherRunId, isPending, latestChecks } from './checks.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
@@ -762,13 +762,37 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
   const markers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
-  // Only each check's latest row counts: a CANCELLED row that a later run replaced no longer refuses.
-  const checks = latestChecks(Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : []).map(({ check }) => check)
+  // Only checks from the latest run of each workflow count; a cancelled run with an unlisted replacement is pending.
+  const latest = latestChecks(Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : [])
+  const checks = latest.map(({ check }) => check)
   const checkName = check => check.name ?? check.context ?? 'Unnamed check'
   const checkUrl = check => check.detailsUrl ?? check.targetUrl ?? ''
-  const cancelledChecks = checks.filter(check => check.__typename === 'CheckRun' && check.conclusion === 'CANCELLED')
+  const cancelledChecks = latest.filter(({ check }) => check.__typename === 'CheckRun' && check.conclusion === 'CANCELLED')
+  const successors = []
+  const checkedWorkflows = new Set()
+  for (const { check, runId } of cancelledChecks) {
+    const workflow = check.workflowName ?? ''
+    if (!runId || !workflow) continue
+    if (checkedWorkflows.has(workflow)) continue
+    checkedWorkflows.add(workflow)
+    const res = io.sh('gh', ['run', 'list', '--commit', sha, '--workflow', workflow, '--json', 'databaseId,status,conclusion'], { cwd: root })
+    if (res.status !== 0) throw new Error(`No pude comprobar las corridas de CI de ${workflow}: gh run list falló (${(res.stderr || res.stdout || '').trim().split(/\r?\n/)[0]}).`)
+    let runs
+    try {
+      runs = JSON.parse(res.stdout)
+    } catch {
+      throw new Error(`No pude comprobar las corridas de CI de ${workflow}: gh run list no devolvió JSON.`)
+    }
+    if (!Array.isArray(runs)) throw new Error(`No pude comprobar las corridas de CI de ${workflow}: gh run list no devolvió una lista.`)
+    const higher = runs.filter(run => isHigherRunId(run.databaseId, runId)).sort((a, b) => BigInt(a.databaseId) > BigInt(b.databaseId) ? -1 : 1)[0]
+    if (higher) successors.push(higher.databaseId)
+  }
+  if (successors.length > 0) {
+    throw new Error(`El PR #${n} tiene una corrida nueva de CI en curso (${successors.join(', ')}) que reemplaza a la cancelada; esperá a que termine antes de rebotar.`)
+  }
+  // A legacy row without a run id keeps the existing refusal and rerun guidance.
   if (cancelledChecks.length > 0) {
-    const reruns = cancelledChecks.map(check => {
+    const reruns = cancelledChecks.map(({ check }) => {
       const runId = /\/actions\/runs\/(\d+)(?:\/|$)/i.exec(checkUrl(check))?.[1]
       return `${checkName(check)}${runId ? `: gh run rerun ${runId} --failed` : `: ${checkUrl(check) || 'run URL unavailable'} (rerun the failed jobs)`}`
     })

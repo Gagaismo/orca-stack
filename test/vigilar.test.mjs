@@ -91,6 +91,10 @@ const harness = (world = {}) => {
         world.onPrView?.(args)
         return json(found)
       }
+      if (cmd === 'gh' && args[0] === 'run' && args[1] === 'list') {
+        if (world.runListDown) return fail(world.runListDown)
+        return json(world.runs ?? [])
+      }
       if (cmd === 'gh' && args[0] === 'issue' && args[1] === 'view') {
         if (world.ghDown) return fail(world.ghDown)
         if (args.includes('comments')) return json({ comments: (world.comments ?? {})[args[2]] ?? [] })
@@ -222,6 +226,37 @@ describe('orca-stack vigilar (#195)', () => {
     h.world.prs = [pr(70, { checks: GREEN })]
     await once(h, ['7'])
     assert.deepEqual(h.out, ['ci-verde #7 PR #70 abc1234'])
+  })
+
+  test('Issue 225 Rule 1: an open PR resolves its worker by head branch and normalizes its one agent state', async () => {
+    const worker = { path: '/wt/issue-225', branch: 'feat/225', linkedIssue: null, agents: [{ agentType: 'CoDeX', state: 'WORKING' }] }
+    const h = harness({ worktrees: [worker], prs: [pr(70, { branch: 'feat/225', checks: GREEN })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde-retenido #7 PR #70 abc1234: codex working'])
+  })
+
+  test('Issue 225 Rule 2: green CI is held once per head while worker lives, then released when done', async () => {
+    const worker = { path: '/wt/issue-225', branch: 'Gagaismo/orca-stack-7', linkedIssue: 7, agents: [{ agentType: 'codex', state: 'working' }] }
+    const h = harness({ worktrees: [worker], prs: [pr(70, { checks: GREEN })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde-retenido #7 PR #70 abc1234: codex working'])
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+    worker.agents[0].state = 'done'
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['ci-verde #7 PR #70 abc1234'])
+  })
+
+  test('Issue 225 Rule 3: unreadable worktrees and Pi workers keep the existing ci-verde fallback', async () => {
+    const unreadable = harness({ orcaDown: true, prs: [pr(70, { checks: GREEN })] })
+    await once(unreadable, ['7'])
+    assert.deepEqual(unreadable.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
+    assert.ok(unreadable.err.some(line => line.includes('no enlaza PRs por worktree')))
+
+    const pi = harness({ worktrees: [{ path: '/wt/pi', branch: 'Gagaismo/orca-stack-7', linkedIssue: 7, agents: [{ agentType: 'pi', state: 'working' }] }], prs: [pr(70, { checks: GREEN })] })
+    await once(pi, ['7'])
+    assert.deepEqual(pi.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
   })
 
   test('Rule 6: a first run with no cursor emits the current state once', async () => {
@@ -632,5 +667,76 @@ describe('orca-stack vigilar (#206)', () => {
     await once(h, ['7'])
     assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
     assert.equal(h.cursor()['7'].ci, undefined)
+  })
+
+  test('Issue 225 Rule 4: the highest run per workflow counts and missing checks stay pending', async () => {
+    const row = (name, conclusion, run) => ({
+      __typename: 'CheckRun', name, workflowName: 'CI', status: 'COMPLETED', conclusion,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/1`,
+    })
+    const h = harness({ prs: [pr(70, { checks: [row('matrix', 'FAILURE', 10), row('matrix', 'SUCCESS', 11), row('context', 'SUCCESS', 12)] })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
+    assert.equal(h.cursor()['7'].ci, undefined)
+  })
+
+  test('Issue 225 Rule 5: the #218 successor rows are exclusive and later green emits ci-verde', async () => {
+    const row = (name, conclusion, run) => ({
+      __typename: 'CheckRun', name, workflowName: 'CI', status: 'COMPLETED', conclusion,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/1`,
+    })
+    const h = harness({ prs: [pr(70, { checks: [row('matrix', 'SUCCESS', 38843085964), row('ci-ok', 'SUCCESS', 38843085964), row('matrix', 'SUCCESS', 38843110472)] })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
+    assert.equal(h.cursor()['7'].ci, undefined)
+    h.world.prs[0].statusCheckRollup.push(row('ci-ok', 'SUCCESS', 38843110472))
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['ci-verde #7 PR #70 abc1234'])
+  })
+
+  test('Issue 225 Rule 6: a higher queued run replaces a cancelled one, queried only for cancelled checks', async () => {
+    const cancelled = { __typename: 'CheckRun', name: 'matrix', workflowName: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/38843085964/job/1' }
+    const h = harness({ prs: [pr(70, { checks: [cancelled] })], runs: [{ databaseId: 38843110472, status: 'queued', conclusion: null }] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
+    assert.deepEqual(h.calls.filter(line => line.startsWith('gh run list')), ['gh run list --commit abc1234aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --workflow CI --json databaseId,status,conclusion'])
+    const green = harness({ prs: [pr(70, { checks: GREEN })] })
+    await once(green, ['7'])
+    assert.equal(green.calls.filter(line => line.startsWith('gh run list')).length, 0)
+  })
+
+  test('Issue 225 Rule 7: unreplaced cancellation emits ci-cancelada once and excludes ci-ok failure', async () => {
+    const rows = [
+      { __typename: 'CheckRun', name: 'matrix', workflowName: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/38843085964/job/1' },
+      { __typename: 'CheckRun', name: 'ci-ok', workflowName: 'CI', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://github.com/org/repo/actions/runs/38843085964/job/2' },
+    ]
+    const h = harness({ prs: [pr(70, { checks: rows })], runs: [] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-cancelada #7 PR #70 abc1234: matrix=CANCELLED'])
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+
+    const failed = harness({ prs: [pr(70, { checks: rows })], runListDown: 'temporary failure' })
+    await once(failed, ['7'])
+    assert.deepEqual(failed.out, [])
+    assert.ok(failed.err.some(line => line.includes('gh run list falló (temporary failure)')))
+  })
+
+  test('Issue 225 Rule 9: a red rerun in the same workflow run still emits once per failed attempt', async () => {
+    const row = (startedAt, run) => ({
+      __typename: 'CheckRun', name: 'matrix', workflowName: 'CI', status: 'COMPLETED', conclusion: 'FAILURE', startedAt,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/1`,
+    })
+    const h = harness({ prs: [pr(70, { checks: [row('2026-10-15T10:00:00Z', 38843110472)] })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-roja #7 PR #70 abc1234: matrix=FAILURE'])
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+    h.world.prs[0].statusCheckRollup.push(row('2026-10-15T10:30:00Z', 38843110472))
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['ci-roja #7 PR #70 abc1234: matrix=FAILURE'])
   })
 })

@@ -1291,11 +1291,34 @@ describe('rebote', () => {
     await reboteCommand({}, '12', replaced.io)
     assert.equal(replaced.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
 
-    const latest = bounceEnv(pr({ statusCheckRollup: [okRow('SUCCESS', '2026-10-15T10:00:00Z', 987), okRow('CANCELLED', '2026-10-15T10:30:00Z', 988)] }))
+    const latest = bounceEnv(pr({ statusCheckRollup: [okRow('SUCCESS', '2026-10-15T10:00:00Z', 987), okRow('CANCELLED', '2026-10-15T10:30:00Z', 988)] }), { 'gh run': json([]) })
     await assert.rejects(reboteCommand({}, '12', latest.io), {
       message: 'El PR #12 tiene checks CANCELLED en abc123; no lo rebotes hasta volver a ejecutar CI:\nci-ok: gh run rerun 988 --failed',
     })
     assert.equal(latest.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+  })
+
+  test('Issue 225 Rule 8: rebote treats a cancelled run with a higher listed run as pending and never suggests rerun', async () => {
+    const cancelled = {
+      __typename: 'CheckRun', name: 'ci-ok', workflowName: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED',
+      detailsUrl: 'https://github.com/org/repo/actions/runs/38843085964/job/1',
+    }
+    const replacement = [{ databaseId: 38843110472, status: 'queued', conclusion: null }]
+    const replaced = bounceEnv(pr({ statusCheckRollup: [cancelled] }), { 'gh run': json(replacement) })
+    await assert.rejects(reboteCommand({}, '12', replaced.io), {
+      message: 'El PR #12 tiene una corrida nueva de CI en curso (38843110472) que reemplaza a la cancelada; esperá a que termine antes de rebotar.',
+    })
+    assert.ok(!replaced.out.some(line => line.includes('gh run rerun')))
+    assert.equal(replaced.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+
+    const missing = bounceEnv(pr({ statusCheckRollup: [
+      { __typename: 'CheckRun', name: 'matrix', workflowName: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'https://github.com/org/repo/actions/runs/10/job/1' },
+      { __typename: 'CheckRun', name: 'ci-ok', workflowName: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'https://github.com/org/repo/actions/runs/11/job/1' },
+    ] }))
+    await assert.rejects(reboteCommand({}, '12', missing.io), /pendientes .*matrix/)
+
+    const failed = bounceEnv(pr({ statusCheckRollup: [cancelled] }), { 'gh run': { status: 1, stdout: '', stderr: 'temporary failure' } })
+    await assert.rejects(reboteCommand({}, '12', failed.io), /gh run list.*temporary failure/)
   })
 
   test('Rule 10: existing worktree guards still apply to a CI bounce', async () => {
