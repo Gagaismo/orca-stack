@@ -142,6 +142,8 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
 
 const run = (kind, args, env) => dispatch(kind, args, env.io)
 const withModels = modelos => ({ ...PROJECT, agentes: { ...PROJECT.agentes, modelos } })
+// What fakeIo's dispatches launch for codex under PROJECT (no models): the pre-#236 launcher plus the Fast mode flag.
+const codexLauncher = () => `& "${path.win32.join(home, 'orca', 'stack', 'scripts', 'codex-orca-stack.cmd')}" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"`
 
 describe('despachar: refusals', () => {
   test('setup pending', async () => {
@@ -789,10 +791,55 @@ describe('launchers', () => {
 
   test('codex and codex-cc use implement or review model and effort', () => {
     const config = { agentes: { modelos: { codex: { implementar: { modelo: 'a', esfuerzo: 'high' }, revisar: { modelo: 'b', esfuerzo: 'low' } } } } }
-    assert.match(launcherFor({ ...base, agent: 'codex', config }), /--model a -c model_reasoning_effort="high" -c approval_policy="never" -c sandbox_mode="danger-full-access"$/)
+    assert.match(launcherFor({ ...base, agent: 'codex', config }), /--model a -c model_reasoning_effort="high" -c features\.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"$/)
     assert.match(launcherFor({ ...base, agent: 'codex', config, mode: 'review' }), /--model b -c model_reasoning_effort="low"/)
     const cc = launcherFor({ ...base, agent: 'codex-cc' })
     assert.ok(cc.startsWith('$env:CMD_API_KEY = (Get-Content') && cc.includes('model_providers.cc.env_key=CMD_API_KEY') && !cc.includes('--model'))
+  })
+
+  // despachar uses mode 'ticket' and revisar mode 'review'; rebote and reanudar relaunch with mode 'ticket'.
+  test('issue 236 Rule 1: the codex launcher carries -c features.fast_mode=false in every mode', () => {
+    const config = { agentes: { modelos: { codex: { implementar: { modelo: 'gpt-6-luna', esfuerzo: 'high' }, revisar: { modelo: 'gpt-6-sol', esfuerzo: 'low' } } } } }
+    const wrapper = '& "C:\\Users\\me\\orca\\stack\\scripts\\codex-orca-stack.cmd"'
+    assert.equal(launcherFor({ ...base, agent: 'codex', config }), `${wrapper} --model gpt-6-luna -c model_reasoning_effort="high" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"`)
+    assert.equal(launcherFor({ ...base, agent: 'codex', config, mode: 'review' }), `${wrapper} --model gpt-6-sol -c model_reasoning_effort="low" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"`)
+  })
+
+  test('issue 236 Rule 2: the flag is there with no model or effort configured', () => {
+    for (const config of [{}, { agentes: { modelos: {} } }]) {
+      assert.equal(launcherFor({ ...base, agent: 'codex', config }), '& "C:\\Users\\me\\orca\\stack\\scripts\\codex-orca-stack.cmd" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"')
+      assert.equal(launcherFor({ ...base, agent: 'codex', config, win: false, home: '/home/me' }), '"/home/me/orca/stack/scripts/codex-orca-stack.sh" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"')
+    }
+  })
+
+  test('issue 236 Rule 3: the claude, codex-cc, agy and pi launchers do not change', () => {
+    const config = { agentes: { modelos: { claude: 'opus-x', agy: 'gemini-x', 'codex-cc': { modelo: 'glm-x', esfuerzo: 'high' } } } }
+    const scripts = 'C:\\Users\\me\\orca\\stack\\scripts'
+    assert.equal(launcherFor({ ...base, agent: 'claude', config }), `& "${scripts}\\claude-orca-stack.cmd" --dangerously-skip-permissions --model opus-x`)
+    assert.equal(launcherFor({ ...base, agent: 'agy', config }), `& "${scripts}\\agy-orca-stack.cmd" --dangerously-skip-permissions --model gemini-x`)
+    assert.equal(launcherFor({ ...base, agent: 'codex-cc', config }), `$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME\\.pi\\agent\\auth.json" | ConvertFrom-Json).commandcode.key; & "${scripts}\\codex-orca-stack.cmd" -c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses --model glm-x -c model_reasoning_effort="high" -c approval_policy="never" -c sandbox_mode="danger-full-access"`)
+    for (const agent of ['claude', 'codex-cc', 'agy', 'pi']) {
+      for (const win of [true, false]) assert.ok(!launcherFor({ ...base, agent, config, win }).includes('fast_mode'), `${agent} (win: ${win})`)
+    }
+  })
+
+  test('issue 236 Rule 4: despachar --dry-run prints the codex launcher with the flag', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'codex', dryRun: true }, env)
+    assert.ok(env.out.includes(`Lanzador (codex): ${codexLauncher()}`))
+    assert.ok(env.out.some(line => line.startsWith('[simulaci\u00f3n] orca terminal create') && line.includes(JSON.stringify(codexLauncher()))))
+  })
+
+  test('issue 236 Rule 5: despachar and revisar launch as before, codex only gains the flag', async () => {
+    const prView = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }) }
+    const claude = `& "${path.win32.join(home, 'orca', 'stack', 'scripts', 'claude-orca-stack.cmd')}" --dangerously-skip-permissions`
+    for (const [kind, n, over] of [['ticket', '7', {}], ['review', '9', prView]]) {
+      for (const [agent, launcher] of [['codex', codexLauncher()], ['claude', claude]]) {
+        const env = fakeIo(over)
+        await run(kind, { n, agent, dryRun: true }, env)
+        assert.equal(env.out.find(line => line.startsWith(`Lanzador (${agent}):`)), `Lanzador (${agent}): ${launcher}`, `${kind} ${agent}`)
+      }
+    }
   })
 
   test('pi: headless, clears the Orca variables, sets engram, autonomy and the Claude account', () => {
@@ -1115,6 +1162,12 @@ describe('rebote', () => {
     const blocked = { ...PROJECT, guardia: { bloquear: [{ agente: 'agy', hasta: '2999-01-01', motivo: 'paused' }] } }
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(), {}, blocked).io), /paused/)
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'Implementador: codex-cc' })).io), /preguntarle al humano/)
+  })
+
+  test('issue 236 Rules 1 and 5: rebote relaunches a codex author with only the Fast mode flag added', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: codex' }))
+    await reboteCommand({ dryRun: true }, '12', env.io)
+    assert.equal(env.out.find(line => line.startsWith('Lanzador (codex):')), `Lanzador (codex): ${codexLauncher()}`)
   })
 
   test('Rule 9: refuses missing Implementador marker', async () => {

@@ -134,7 +134,10 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   const bin = (win ? '& ' : '') + `"${wrapper}"`
   if (agent === 'claude' || agent === 'agy') return `${bin} --dangerously-skip-permissions${model ? ` --model ${model}` : ''}`
   if (agent === 'codex' || agent === 'codex-cc') {
-    const flags = `${model ? ` --model ${model}` : ''}${effort ? ` -c model_reasoning_effort="${effort}"` : ''} -c approval_policy="never" -c sandbox_mode="danger-full-access"`
+    // Fast mode spends codex credits faster and an unattended worker does not need the speed; codex-cc bills through
+    // Command Code, so it keeps its flags.
+    const fast = agent === 'codex' ? ' -c features.fast_mode=false' : ''
+    const flags = `${model ? ` --model ${model}` : ''}${effort ? ` -c model_reasoning_effort="${effort}"` : ''}${fast} -c approval_policy="never" -c sandbox_mode="danger-full-access"`
     if (agent === 'codex') return `${bin}${flags}`
     const provider = '-c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses'
     const key = win
