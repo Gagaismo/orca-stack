@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
@@ -308,6 +308,7 @@ export const defaultIo = () => ({
   readFile: file => readFileSync(file, 'utf8'),
   listFiles: dir => readdirSync(dir).map(name => path.join(dir, name)),
   writeFile: (file, text) => writeFileSync(file, text, 'utf8'),
+  rename: (from, to) => renameSync(from, to),
   sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
   gentleSkills: home => resolveGentleSkills(layout(home))?.dir ?? null,
 })
@@ -349,6 +350,9 @@ const waitForTui = async (io, handle, agent, root, tries = 45) => {
     // Only the screen: the rest of the reply (the request id, the cursors) changes on every read.
     const tail = res.status === 0 ? parseJson(res, 'orca terminal read').result?.terminal?.tail : undefined
     const text = Array.isArray(tail) ? tail.join('\n') : typeof tail === 'string' ? tail : ''
+    if (/update available/i.test(text) && /update now/i.test(text) && /\bskip\b/i.test(text)) {
+      throw new Error(`Codex muestra su men\u00FA de actualizaci\u00F3n y no recibi\u00F3 el brief. Eleg\u00ED una opci\u00F3n en la terminal ${handle} y relanzalo con orca-stack reanudar <issue> <url-del-comentario>. Pantalla: ${text}`)
+    }
     if (/trust this folder\?/i.test(text)) {
       if (agent !== 'agy') {
         throw new Error(`Codex pide confiar en la carpeta y no recibió el brief. ${codexTrustHint(root)} Pantalla: ${text}`)

@@ -6,6 +6,7 @@ import path from 'node:path'
 import { describe, test } from 'node:test'
 
 import { main } from '../src/cli.mjs'
+import { defaultIo } from '../src/despacho.mjs'
 import { upsertBlock } from '../src/marker.mjs'
 import { reanudarCommand } from '../src/reanudar.mjs'
 import { policyBlock } from '../src/templates.mjs'
@@ -61,6 +62,107 @@ const harness = ({ root = ROOT, home = '/home', state = 'done', agent = 'codex',
 }
 
 describe('orca-stack reanudar (#214)', () => {
+  test('Rule 1: refuses the Codex update menu without sending text or Enter', async () => {
+    const h = harness({ state: null, agents: [], terminals: [], brief: 'You are the implementer (codex) of issue #212.\n' })
+    const original = h.io.sh
+    const menu = [
+      'Update available \u00B7 0.162.1 \u2192 0.163.0',
+      '\u203A 1. Update now (runs `npm install -g @openai/codex`)',
+      '2. Skip',
+    ]
+    h.io.sh = (cmd, args, opts) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read'
+      ? json({ result: { terminal: { tail: menu } } })
+      : original(cmd, args, opts)
+
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error => {
+      assert.match(error.message, /Codex muestra su men\u00FA de actualizaci\u00F3n/)
+      assert.match(error.message, /term-new/)
+      assert.match(error.message, /orca-stack reanudar/)
+      return true
+    })
+    assert.equal(h.sends().length, 0)
+  })
+
+  test('Rule 2: records a relaunch attempt with the default CLI io rename', async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'orca-stack-default-io-'))
+    const home = path.join(root, 'home')
+    const commonDir = path.join(root, '.git')
+    mkdirSync(commonDir)
+    mkdirSync(path.join(home, 'orca', 'briefs'), { recursive: true })
+    writeFileSync(path.join(root, '.orca-stack.json'), JSON.stringify({
+      setup: 'completo', modo: 'multiagente', agentes: { usa: ['codex'], preguntarAntes: [] },
+    }))
+    writeFileSync(path.join(home, 'orca', 'briefs', 'orca-stack-212.md'), 'You are the implementer (codex) of issue #212.\n')
+    const io = defaultIo()
+    io.cwd = root
+    io.home = home
+    io.now = () => 1760616000000
+    const calls = []
+    io.sh = (cmd, args) => {
+      calls.push({ cmd, args })
+      if (cmd === 'git' && args[0] === 'rev-parse') return ok(`${commonDir}\n${commonDir}\n${root}\n`)
+      if (cmd === 'git' && args[0] === 'remote') return ok('https://github.com/Gagaismo/orca-stack.git\n')
+      if (cmd === 'git' && args[0] === 'worktree' && args[1] === 'list') return ok(`worktree ${root}\nHEAD 1\nbranch refs/heads/main\n\nworktree ${WT}\nHEAD 2\nbranch refs/heads/Gagaismo/orca-stack-212\n`)
+      if (cmd === 'git' && args[0] === 'status') return ok('')
+      if (cmd === 'gh' && args[0] === 'api' && args[1] === 'user') return json({ login: 'stack-bot' })
+      if (cmd === 'gh' && args[0] === 'api') return json({ user: { login: 'stack-bot' }, body: 'Respuesta de main: siga.', html_url: URL })
+      if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list') return json([])
+      if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'ps') return json({ result: { worktrees: [{ path: WT, repo: 'orca-stack', linkedIssue: 212, agents: [] }] } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: [] } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') return json({ result: { handle: 'term-new' } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') return json({ result: { terminal: { tail: ['ready'] } } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send') return json({ result: { send: { turnStarted: true } } })
+      return fail(`unexpected call: ${cmd} ${args.join(' ')}`)
+    }
+    try {
+      assert.equal(await reanudarCommand({}, ISSUE, URL, io), 0)
+      assert.equal(JSON.parse(readFileSync(path.join(commonDir, 'orca-stack', 'reanudar.json'), 'utf8'))['6205678817'].issue, ISSUE)
+      assert.equal(typeof io.rename, 'function')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('Rule 3: ignores multiple idle shell terminals and relaunches from the original brief', async () => {
+    const terminals = ['term-one', 'term-two', 'term-three'].map((handle, index) => ({
+      handle, tabId: `tab-${index}`, leafId: `leaf-${index}`, title: 'Terminal', worktreePath: WT,
+    }))
+    const h = harness({ state: null, agents: [], terminals, brief: 'You are the implementer (codex) of issue #212.\n' })
+    const original = h.io.sh
+    h.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
+        const handle = args[args.indexOf('--terminal') + 1]
+        if (handle === 'term-new') return original(cmd, args, opts)
+        return json({ result: { terminal: { tail: ['PS C:\\wt\\orca-stack-212>'] } } })
+      }
+      return original(cmd, args, opts)
+    }
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create').length, 1)
+    assert.ok(h.sends().some(call => call.args.some(arg => arg.startsWith('Read and follow the brief in'))))
+  })
+
+  test('Rule 4: refuses when a later anonymous terminal is not at a shell prompt', async () => {
+    const terminals = ['term-one', 'term-two', 'term-three'].map((handle, index) => ({
+      handle, tabId: `tab-${index}`, leafId: `leaf-${index}`, title: 'Terminal', worktreePath: WT,
+    }))
+    const h = harness({ state: null, agents: [], terminals })
+    const original = h.io.sh
+    h.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
+        const handle = args[args.indexOf('--terminal') + 1]
+        const tail = handle === 'term-three'
+          ? ['Update available', '1. Update now', '2. Skip']
+          : ['PS C:\\wt\\orca-stack-212>']
+        return json({ result: { terminal: { tail } } })
+      }
+      return original(cmd, args, opts)
+    }
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /term-three.*shell prompt/)
+    assert.equal(h.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create').length, 0)
+    assert.equal(h.sends().length, 0)
+  })
+
   test('Rule 5 and UNKNOWN: sends the prescribed single line to a done codex TUI with Enter', async () => {
     const h = harness()
     assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
