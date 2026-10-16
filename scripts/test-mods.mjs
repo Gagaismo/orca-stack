@@ -7,7 +7,11 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const probe = spawnSync('claude', ['--version'], { shell: process.platform === 'win32', encoding: 'utf8' })
 if (probe.status !== 0) {
-  console.log('claude no está instalado: se omiten los tests de los mods.')
+  if (process.env.CI === 'true' || process.env.CI === '1') {
+    console.error('claude no est\u00e1 instalado: en CI los tests de los mods no pueden omitirse.')
+    process.exit(1)
+  }
+  console.log('claude no est\u00e1 instalado: se omiten los tests de los mods.')
   process.exit(0)
 }
 let failed = 0

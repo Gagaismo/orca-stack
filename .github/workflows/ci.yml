@@ -68,6 +68,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  mods:
+    name: Claude Code mod tests
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install pinned Claude Code
+        run: npm install --global @anthropic-ai/claude-code@2.1.300
+      - name: Check Claude plugin test command
+        run: claude plugin test --help
+      - name: Run mod tests
+        run: |
+          echo "CI=$CI"
+          claude --version
+          npm run test:mods
+
   evidencia:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -92,6 +111,7 @@ jobs:
       - test
       - hygiene
       - evidencia
+      - mods
     if: always()
     runs-on: ubuntu-latest
     steps:
