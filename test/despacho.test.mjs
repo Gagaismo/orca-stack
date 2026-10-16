@@ -1173,8 +1173,13 @@ describe('rebote', () => {
 
   describe('issue 241: a worktree behind the PR head', () => {
     const behindPr = () => pr({ headRefOid: 'd25b997c0ffee', reviews: [{ body: 'Commit: d25b997c0ffee\n## BLOQUEA\n1. fix it', url: 'https://example.test/review/1' }] })
+    // Like a real repo, the PR head commit is unknown (exit 128) until the branch is fetched.
     const behindEnv = (ancestor, extra = {}) => {
-      const env = bounceEnv(behindPr(), { 'git merge-base': { status: ancestor, stdout: '', stderr: '' }, ...extra })
+      const fetched = () => env.calls.some(call => call[0] === 'git' && call[1] === 'fetch')
+      const env = bounceEnv(behindPr(), {
+        'git merge-base': () => fetched() ? { status: ancestor, stdout: '', stderr: '' } : { status: 128, stdout: '', stderr: 'fatal: Not a valid commit name d25b997c0ffee' },
+        ...extra,
+      })
       const base = env.io.sh
       env.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('46f2431beef00\n') : base(cmd, args, opts)
       return env
@@ -1217,8 +1222,9 @@ describe('rebote', () => {
       const env = behindEnv(0)
       await reboteCommand({ dryRun: true }, '12', env.io)
       assert.ok(env.out.includes('[simulación] Adelanté el worktree de 46f2431 a d25b997 (el head del PR).'))
-      assert.equal(gitCalls(env, 'fetch').length, 0)
       assert.equal(gitCalls(env, 'merge').length, 0)
+      assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+      assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
       assert.equal(env.written.length, 0)
     })
 

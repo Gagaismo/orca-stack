@@ -180,7 +180,7 @@ orca-stack rebote 15 --dry-run
 orca-stack rebote 15 --nota "El segundo hallazgo es de interpretación: no lo toques, lo decide el humano."
 ```
 
-Relanza al autor (línea `Implementador:`) en el worktree existente de la rama del PR. Exige un review bloqueante vigente o checks fallidos sobre el head, un worktree limpio y detenido en ese commit. Si el worktree está limpio y solo está atrás del head (por ejemplo, después de `gh pr update-branch`), lo adelanta con `git merge --ff-only <sha>` y lo dice en una línea; si tiene commits que no están en el head, se niega. Publica `Rebote: <sha>` (review) y/o `Rebote CI: <sha>` (CI roja); cada contador cuenta SHAs distintos. Detalle de los rechazos en [Casos borde](#5-casos-borde).
+Relanza al autor (línea `Implementador:`) en el worktree existente de la rama del PR. Exige un review bloqueante vigente o checks fallidos sobre el head, un worktree limpio y detenido en ese commit. Si el worktree está limpio y solo está atrás del head (por ejemplo, después de `gh pr update-branch`), lo adelanta con `git merge --ff-only <sha>` y lo dice en una línea; si tiene commits que no están en el head, se niega. Con `--dry-run` igual trae la rama (`git fetch`, que solo toca las referencias remotas) para comprobarlo, pero no adelanta nada. Publica `Rebote: <sha>` (review) y/o `Rebote CI: <sha>` (CI roja); cada contador cuenta SHAs distintos. Detalle de los rechazos en [Casos borde](#5-casos-borde).
 
 #### `brief-revision`
 

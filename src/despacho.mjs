@@ -854,11 +854,13 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (status.stdout.trim() !== '') throw new Error(`El worktree ${worktree} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de relanzar.`)
   const head = ok(io.sh('git', ['rev-parse', 'HEAD'], { cwd: worktree }), 'git rev-parse HEAD').stdout.trim()
   // A clean worktree that is only behind the PR head (e.g. after `gh pr update-branch`) is fast-forwarded, not refused.
+  // The fetch runs under --dry-run too: it only updates remote refs, and the head commit may not be local yet.
   if (head !== sha) {
-    if (!dryRun) ok(io.sh('git', ['fetch', 'origin', pr.headRefName], { cwd: worktree }), 'git fetch')
-    const ancestor = io.sh('git', ['merge-base', '--is-ancestor', 'HEAD', sha], { cwd: worktree })
-    if (ancestor.status === 1) throw new Error(`El worktree ${worktree} est\u00E1 en ${head}, no en el head del PR ${sha}.`)
-    if (ancestor.status !== 0) throw new Error(`No pude comprobar si el worktree ${worktree} (${head}) est\u00E1 atr\u00E1s del head del PR ${sha}: ${(ancestor.stderr || ancestor.stdout || '').trim()}`)
+    ok(io.sh('git', ['fetch', 'origin', pr.headRefName], { cwd: worktree }), 'git fetch')
+    // --is-ancestor exits 0 when HEAD is an ancestor, 1 when it is not, and anything else on a git error.
+    const ancestry = io.sh('git', ['merge-base', '--is-ancestor', 'HEAD', sha], { cwd: worktree })
+    if (ancestry.status === 1) throw new Error(`El worktree ${worktree} est\u00E1 en ${head}, no en el head del PR ${sha}.`)
+    if (ancestry.status !== 0) throw new Error(`No pude comprobar si el worktree ${worktree} (${head}) est\u00E1 atr\u00E1s del head del PR ${sha}: ${(ancestry.stderr || ancestry.stdout || '').trim()}`)
   }
   const ps = io.sh('orca', ['worktree', 'ps', '--json'])
   if (ps.status !== 0) throw new Error(`Orca no contesta (orca worktree ps): ${(ps.stderr || ps.stdout).trim()}`)
