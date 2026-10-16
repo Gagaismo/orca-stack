@@ -111,28 +111,22 @@ const drain = h => h.out.splice(0)
 const mergeDeMain = (h, n) => vigilarCommand({ mergeDeMain: n }, [], h.io)
 
 describe('orca-stack vigilar (#195)', () => {
-  test('issue #214 Rules 1-4: emits one codex pause per done transition, resets after working, and ignores unsupported cases', async () => {
+  test('issue #214 Rule 1: emits worker-en-pausa for the matching no-PR codex worker', async () => {
     const paused = { path: '/wt/orca-stack-212', repo: 'orca-stack', linkedIssue: 212, agents: [{ state: 'done', agentType: 'codex' }] }
     const h = harness({ worktrees: [paused], issues: { 212: 'OPEN', 213: 'OPEN' } })
     await once(h, ['212', '213'])
     assert.deepEqual(h.out, ['worker-en-pausa #212 codex'])
+  })
+
+  test('issue #214 Rule 2: pause cursor survives rearm and reports only a new done transition', async () => {
+    const paused = { path: '/wt/orca-stack-212', repo: 'orca-stack', linkedIssue: 212, agents: [{ state: 'done', agentType: 'codex' }] }
+    const h = harness({ worktrees: [paused], issues: { 212: 'OPEN', 213: 'OPEN' } })
     await once(h, ['212', '213'])
     assert.deepEqual(h.out, ['worker-en-pausa #212 codex'])
     const rearmed = harness({ worktrees: [paused], issues: { 212: 'OPEN', 213: 'OPEN' } })
     rearmed.files[CURSOR] = JSON.stringify(h.cursor())
     await once(rearmed, ['212', '213'])
     assert.deepEqual(rearmed.out, [])
-
-    const working = harness({ worktrees: [{ ...paused, agents: [{ state: 'working', agentType: 'codex' }] }], issues: { 212: 'OPEN' } })
-    working.files[CURSOR] = JSON.stringify(h.cursor())
-    await once(working, ['212'])
-    assert.deepEqual(working.out, [])
-    const pi = harness({ worktrees: [{ ...paused, agents: [{ state: 'done', agentType: 'pi' }] }], issues: { 212: 'OPEN' } })
-    await once(pi, ['212'])
-    assert.deepEqual(pi.out, [])
-    const withPr = harness({ worktrees: [paused], prs: [pr(80, { closes: [212] })] })
-    await once(withPr, ['212'])
-    assert.ok(!withPr.out.some(line => line.startsWith('worker-en-pausa')))
 
     const restarted = harness({ worktrees: [paused], issues: { 212: 'OPEN' } })
     restarted.files[CURSOR] = JSON.stringify(h.cursor())
@@ -141,6 +135,19 @@ describe('orca-stack vigilar (#195)', () => {
     restarted.world.worktrees[0].agents[0].state = 'done'
     await once(restarted, ['212'])
     assert.deepEqual(restarted.out, ['worker-en-pausa #212 codex'])
+  })
+
+  test('issue #214 Rule 3: excludes working workers, Pi, and issues with an open PR', async () => {
+    const paused = { path: '/wt/orca-stack-212', repo: 'orca-stack', linkedIssue: 212, agents: [{ state: 'done', agentType: 'codex' }] }
+    const working = harness({ worktrees: [{ ...paused, agents: [{ state: 'working', agentType: 'codex' }] }], issues: { 212: 'OPEN' } })
+    await once(working, ['212'])
+    assert.deepEqual(working.out, [])
+    const pi = harness({ worktrees: [{ ...paused, agents: [{ state: 'done', agentType: 'pi' }] }], issues: { 212: 'OPEN' } })
+    await once(pi, ['212'])
+    assert.deepEqual(pi.out, [])
+    const withPr = harness({ worktrees: [paused], prs: [pr(80, { closes: [212] })] })
+    await once(withPr, ['212'])
+    assert.ok(!withPr.out.some(line => line.startsWith('worker-en-pausa')))
   })
 
   test('issue #214 Rule 4: warns once when Orca worktree state is unavailable and keeps polling', async () => {

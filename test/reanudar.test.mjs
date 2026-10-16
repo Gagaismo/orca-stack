@@ -178,10 +178,13 @@ describe('orca-stack reanudar (#214)', () => {
     assert.match(cli, /case 'reanudar':\s+return await reanudarCommand/)
   })
 
-  test('Rules 9-10 and 11: brief continues after Consulta or missing skill, and init renders the pause contract in AGENTS', () => {
+  test('Rule 9: ticket brief continues after Consulta or a missing tool or skill prerequisite', () => {
     const brief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
     assert.match(brief, /missing tool or skill prerequisite.*not a blocker/s)
     assert.match(brief, /After posting a Consulta:, the next action is a tool call on work that is not blocked/)
+  })
+
+  test('Rule 10: contract names pause recovery and init renders the managed block into AGENTS', () => {
     const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
     assert.ok(contract.includes('worker-en-pausa #<n> <agente>'))
     assert.match(contract, /`orca-stack avisar` y `orca-stack reanudar` son las \u00FAnicas formas en que main llega a una terminal de worker/)
