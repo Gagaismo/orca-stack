@@ -2,7 +2,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import { currentConfig, homeOf, parseJson } from './orca-config'
 import type { Host, StackConfig } from './orca-config'
-import { buildRules, checkRemovals, inspect } from './inspect'
+import { buildRules, checkLiveMerges, checkRemovals, inspect } from './inspect'
 import type { Shell } from './inspect'
 import { chosenProfile, configuredProfile, piDispatchSlots, profileNames, profileOptions, withProfile } from './perfil-pi'
 
@@ -53,6 +53,10 @@ const askProfile = async ($: EngineInterface, command: string, config: StackConf
 }
 
 const judge = async ($: EngineInterface, command: string, shell: Shell): Promise<Judgement> => {
+  const liveWorker = await checkLiveMerges(command, argv => $.process.run(argv, { timeoutMs: 10_000 }))
+  if (liveWorker !== undefined) {
+    return { deny: liveWorker }
+  }
   // Always on, with or without despacho: removing a worktree can destroy unpublished commits.
   const unsafe = await checkRemovals(command, argv => $.process.run(argv, { timeoutMs: 10_000 }))
   if (unsafe !== undefined) {

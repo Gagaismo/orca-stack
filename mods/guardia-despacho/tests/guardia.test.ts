@@ -2,7 +2,17 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { currentConfig, forgetConfig } from '../hooks/orca-config'
 import { chosenProfile, configuredProfile, piDispatchSlots, profileNames, profileOptions, withProfile } from '../hooks/perfil-pi'
-import { buildRules, checkRemovals, inspect, modelReason, parseUntil, unmergedReason, unresolvedReason, worktreeRemovals } from '../hooks/inspect'
+import {
+  buildRules,
+  checkLiveMerges,
+  checkRemovals,
+  inspect,
+  modelReason,
+  parseUntil,
+  unmergedReason,
+  unresolvedReason,
+  worktreeRemovals,
+} from '../hooks/inspect'
 
 const CODEX_REASON = 'Codex no tiene cuota: despachá a claude o agy.'
 const MODEL = 'claude-sonnet-5-5'
@@ -322,6 +332,124 @@ test('anything git cannot resolve is denied (fail closed)', async () => {
     throw new Error('sin git')
   }
   expect(await checkRemovals('git worktree remove x', boom)).toContain('no pude correr git')
+})
+
+const mergeWorld = (opts: {
+  pr?: { headRefName?: string; closingIssuesReferences?: { number: number }[]; body?: string }
+  worktrees?: { path: string; linkedIssue?: number; agents?: { state?: string; agentType?: string }[] }[]
+  fail?: 'gh' | 'orca' | 'malformed-gh' | 'malformed-orca'
+} = {}) => {
+  const calls: string[][] = []
+  const git = async (argv: string[]) => {
+    calls.push(argv)
+    if (argv[0] === 'git' && argv[1] === 'remote') {
+      return { exitCode: 0, stdout: 'https://github.com/Gagaismo/orca-stack.git\n' }
+    }
+    if (argv[0] === 'gh') {
+      if (opts.fail === 'gh') return { exitCode: 1, stdout: '' }
+      if (opts.fail === 'malformed-gh') return { exitCode: 0, stdout: '{' }
+
+      return { exitCode: 0, stdout: JSON.stringify(opts.pr ?? { headRefName: 'Gagaismo/orca-stack-220', closingIssuesReferences: [{ number: 220 }], body: '' }) }
+    }
+    if (argv[0] === 'git' && argv[1] === 'worktree') {
+      return { exitCode: 0, stdout: 'worktree C:/r/repo\nbranch refs/heads/main\n\nworktree C:/r/ws/issue-220\nbranch refs/heads/Gagaismo/orca-stack-220\n' }
+    }
+    if (argv[0] === 'orca') {
+      if (opts.fail === 'orca') return { exitCode: 1, stdout: '' }
+      if (opts.fail === 'malformed-orca') return { exitCode: 0, stdout: '{' }
+
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({ result: { worktrees: opts.worktrees ?? [{ path: 'C:/r/ws/issue-220', linkedIssue: 220, agents: [{ state: 'working', agentType: 'codex' }] }] } }),
+      }
+    }
+
+    return { exitCode: 1, stdout: '' }
+  }
+
+  return { git, calls }
+}
+
+test('Rule 1: merge forms resolve the PR worker by closing issue, body, then local branch', async () => {
+  const byClosingIssue = mergeWorld()
+  expect(await checkLiveMerges('gh pr merge 222 --merge', byClosingIssue.git)).toContain('PR #222 (codex, #220)')
+  expect(byClosingIssue.calls).toContainEqual(['gh', 'pr', 'view', '222', '--json', 'headRefName,closingIssuesReferences,body'])
+  expect(byClosingIssue.calls).toContainEqual(['orca', 'worktree', 'ps', '--json'])
+
+  const byBody = mergeWorld({ pr: { headRefName: 'some-branch', closingIssuesReferences: [], body: 'Closes #220' } })
+  expect(await checkLiveMerges('gh pr merge --squash 222', byBody.git)).toContain('PR #222')
+
+  const byBranch = mergeWorld({ pr: { headRefName: 'Gagaismo/orca-stack-220', closingIssuesReferences: [], body: '' }, worktrees: [{ path: 'C:/r/ws/issue-220', agents: [{ state: 'working', agentType: 'codex' }] }] })
+  expect(await checkLiveMerges('echo start && gh.exe pr merge --merge 222', byBranch.git)).toContain('PR #222')
+})
+
+test('Rule 2: every live worker state blocks, case-insensitively', async () => {
+  for (const state of ['working', 'running', 'active', 'blocked', 'waiting', 'BLOCKED']) {
+    const world = mergeWorld({ worktrees: [{ path: 'C:/r/ws/issue-220', linkedIssue: 220, agents: [{ state, agentType: 'codex' }] }] })
+    expect(await checkLiveMerges('gh pr merge 222', world.git), state).toContain(`(${state.toLowerCase()})`)
+  }
+})
+
+test('Rule 3: done, missing, and unrecorded Pi workers do not block', async () => {
+  for (const agents of [[{ state: 'done', agentType: 'codex' }], [], [{ state: 'done', agentType: 'pi' }]]) {
+    const world = mergeWorld({ worktrees: [{ path: 'C:/r/ws/issue-220', linkedIssue: 220, agents }] })
+    expect(await checkLiveMerges('gh pr merge 222', world.git)).toBeUndefined()
+  }
+  expect(await checkLiveMerges('gh pr merge 222', mergeWorld({ worktrees: [] }).git)).toBeUndefined()
+})
+
+test('Rule 4: a failed or malformed GitHub or Orca read fails open', async () => {
+  for (const fail of ['gh', 'orca', 'malformed-gh', 'malformed-orca'] as const) {
+    expect(await checkLiveMerges('gh pr merge 222', mergeWorld({ fail }).git), fail).toBeUndefined()
+  }
+})
+
+test('Rule 5: an explicitly named different repo is allowed without lookup', async () => {
+  const world = mergeWorld()
+  expect(await checkLiveMerges('gh pr merge 222 -R owner/another-repo', world.git)).toBeUndefined()
+  expect(world.calls.filter(argv => argv[0] === 'gh' || argv[0] === 'orca')).toHaveLength(0)
+})
+
+test('Rule 5: explicit same-repo flags still use the worker lock', async () => {
+  expect(await checkLiveMerges('gh -R Gagaismo/orca-stack pr merge 222 --merge', mergeWorld().git)).toContain('PR #222')
+})
+
+test('Rule 6: Bash and PowerShell tool calls both deny a live PR worker', async ($, on) => {
+  forgetConfig()
+  mock.clock(on, { now: BEFORE })
+  mock.env(on, { HOME: '/home/u' })
+  on('fs.exists', () => ({ value: false }))
+  const calls: string[][] = []
+  on('process.run', (_$, e) => {
+    calls.push(e.argv)
+    const stdout = e.argv[0] === 'gh'
+      ? JSON.stringify({ headRefName: 'Gagaismo/orca-stack-220', closingIssuesReferences: [{ number: 220 }], body: '' })
+      : e.argv[0] === 'orca'
+        ? JSON.stringify({ result: { worktrees: [{ path: 'C:/r/ws/issue-220', linkedIssue: 220, agents: [{ state: 'working', agentType: 'codex' }] }] } })
+        : e.argv[1] === 'remote'
+          ? 'https://github.com/Gagaismo/orca-stack.git\n'
+          : 'worktree C:/r/repo\nbranch refs/heads/main\n\nworktree C:/r/ws/issue-220\nbranch refs/heads/Gagaismo/orca-stack-220\n'
+
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  const seen: string[] = []
+  on('tool.call', { tool: 'Bash' }, (_$, e) => {
+    seen.push(e.command)
+
+    return { result: { stdout: '', stderr: '', interrupted: false } as never }
+  })
+  on('tool.call', { tool: 'PowerShell' }, (_$, e) => {
+    seen.push(e.command)
+
+    return { result: { stdout: '', stderr: '', interrupted: false } as never }
+  })
+
+  const bash = await $.tool.call({ tool: 'Bash', command: 'gh pr merge 222 --merge' })
+  const powershell = await $.tool.call({ tool: 'PowerShell', command: 'gh.exe pr merge 222 --merge' })
+  expect(bash.deny).toContain('El worker del PR #222 (codex, #220) sigue trabajando (working)')
+  expect(powershell.deny).toBe(bash.deny)
+  expect(seen).toEqual([])
+  expect(calls.filter(argv => argv[0] === 'orca')).toHaveLength(2)
 })
 
 // Two repos: the session runs in one, the scratch worktree belongs to the other (the 2026-10-10 incident).
