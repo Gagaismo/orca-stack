@@ -722,6 +722,7 @@ describe('orca-stack vigilar (#206)', () => {
     await once(failed, ['7'])
     assert.deepEqual(failed.out, [])
     assert.ok(failed.err.some(line => line.includes('gh run list falló (temporary failure)')))
+    assert.equal(failed.files[CURSOR], undefined)
   })
 
   test('Issue 225 Rule 9: a red rerun in the same workflow run still emits once per failed attempt', async () => {

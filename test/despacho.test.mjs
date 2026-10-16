@@ -1319,6 +1319,8 @@ describe('rebote', () => {
 
     const failed = bounceEnv(pr({ statusCheckRollup: [cancelled] }), { 'gh run': { status: 1, stdout: '', stderr: 'temporary failure' } })
     await assert.rejects(reboteCommand({}, '12', failed.io), /gh run list.*temporary failure/)
+    assert.equal(failed.written.length, 0)
+    assert.equal(failed.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
   })
 
   test('Rule 10: existing worktree guards still apply to a CI bounce', async () => {
