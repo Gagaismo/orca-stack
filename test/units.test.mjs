@@ -159,7 +159,7 @@ describe('the repository itself', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   }
-  const logLine = ['    at file:///C:', 'Users', author, 'orca-stack', 'test', 'units.test.mjs:139:12'].join(String.fromCharCode(92))
+  const logLine = ['C:', 'Users', author, 'orca-stack', 'test', 'units.test.mjs:139:12'].join(String.fromCharCode(92))
 
   test('Rule 1: a local npm-test.log at the repo root holding a personal path is not an offender', () => {
     withRepo({ 'npm-test.log': `${logLine}\n` }, dir => assert.deepEqual(personalOffenders(dir), []))
