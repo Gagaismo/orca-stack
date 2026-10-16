@@ -236,10 +236,24 @@ const fanoutInstructions = (agent, nota, bounce = false) => {
   const bounceApproval = bounce
     ? 'A new fan-out note on this bounce requires a new human OK; previous dispatch approval does not carry over. '
     : ''
-  const sessionDelegation = 'The session\'s own subagents for context, verification, and the code-review skill are delegation and remain allowed.'
-  if (agent !== 'claude') return `${bounceApproval}Arena and swarm are not supported for ${agent}, even when the note includes authorization. ${sessionDelegation} Do not run an arena or swarm fan-out.`
-  if (!hasFanoutAuthorization(nota)) return `${bounceApproval}No arena or swarm is authorized without an approved note. ${sessionDelegation} Do not use Workflow or run an unrequested arena or swarm fan-out.`
+  if (agent !== 'claude') return `${bounceApproval}Arena and swarm are not supported for ${agent}, even when the note includes authorization. Do not run an arena or swarm fan-out.`
+  if (!hasFanoutAuthorization(nota)) return `${bounceApproval}No arena or swarm is authorized without an approved note. Do not use Workflow or run an unrequested arena or swarm fan-out.`
   return `${bounceApproval}The approved note authorizes fan-out for this ticket only. Use the Agent tool only, never Workflow. Run only the approved N, one round, no retry. Candidates run at your effort unless the approved note specifies otherwise. If every candidate drops out or you want another round, do not retry; continue the normal path and say so under ## Arena or ## Swarm. Put the results under the matching ## Arena or ## Swarm heading in the PR body.`
+}
+
+// claude imports AGENTS.md through CLAUDE.md (`orca-stack init`), and codex and pi load it on their own. Nobody checked
+// agy and codex-cc, so they keep reading it.
+const LOADS_AGENTS_MD = ['claude', 'codex', 'pi']
+const projectInstructions = agent => LOADS_AGENTS_MD.includes(agent)
+  ? 'AGENTS.md is already in your context: do not read it again. Read GLOSSARY.md or CONTEXT.md and docs/adr when they exist.'
+  : 'Read the project instructions (AGENTS.md, and GLOSSARY.md or CONTEXT.md and docs/adr when they exist).'
+
+const subagentsInstruction = agent => {
+  const scope = 'for ODD\'s explorer and verifier and for the code-review rounds of ## Pull request, and for nothing else, except an arena or swarm fan-out that the Fan-out line under ## Rules allows. Dispatching Orca workers is not allowed.'
+  if (agent === 'claude') return `Subagents: you may use your session's subagents (the Agent tool) ${scope}`
+  // codex does not spawn agents unless it is asked explicitly.
+  if (agent === 'codex') return `Subagents: you may use your session's subagents (\`spawn_agent\`) ${scope} This line is the explicit request to spawn agents that your default asks for.`
+  return `Subagents: when your runtime has subagents, you may use your session's subagents ${scope} When it has none, do those steps inline and note it under ## Desvíos del ticket.`
 }
 
 export const renderBrief = (kind, vars, nota) => {
@@ -255,6 +269,8 @@ export const renderBrief = (kind, vars, nota) => {
     PUBLISH_INSTRUCTIONS: vars.PUBLISH_INSTRUCTIONS ?? 'Write the review in a UTF-8 file and publish it with a body file, never through a pipe:',
     PUBLISH_COMMAND: vars.PUBLISH_COMMAND ?? `gh pr review ${vars.PR} --comment --body-file <file>`,
     REVIEWER_LINE: vars.REVIEWER_LINE ?? vars.AGENT,
+    PROJECT_INSTRUCTIONS: projectInstructions(vars.AGENT),
+    SUBAGENTS_INSTRUCTION: subagentsInstruction(vars.AGENT),
     CODING_STANDARDS_INSTRUCTION: vars.HAS_CODING_STANDARDS ? 'Read CODING_STANDARDS.md and check the change against it before every commit.' : '',
     REVIEW_STANDARDS: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md and AGENTS.md' : 'AGENTS.md',
     FANOUT_INSTRUCTIONS: fanoutInstructions(vars.AGENT, nota),
