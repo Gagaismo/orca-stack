@@ -429,11 +429,11 @@ Antes de cualquier fan-out se comprueba que git ignore `.claude/worktrees/` con 
 
 ### 4.10 El chequeo de `## Evidencia` en CI `[solo en main]`
 
-`[solo en main]` (PR #202). El job `evidencia` de CI lee el cuerpo actual del PR y comprueba que **cada nombre de test citado en `## Evidencia` exista** en `test/*.test.mjs` o en `mods/*/tests/`; `ci-ok` lo exige. Se vuelve a correr cuando editás el cuerpo del PR (la CI ahora también escucha el evento `edited`).
+`[solo en main]` (PR #202). El job `evidencia` de CI lee el cuerpo actual del PR y comprueba que **cada nombre de test citado en `## Evidencia` exista** en `test/*.test.mjs` o en `mods/*/tests/`; `ci-ok` lo exige. Un PR que cierra un issue necesita además una tabla con columna `Test` y al menos una fila. Se vuelve a correr cuando editás el cuerpo del PR (la CI ahora también escucha el evento `edited`).
 
 Cómo se lee la tabla: busca tablas dentro de `## Evidencia` cuya segunda columna empiece con `Test`; en esa columna toma los textos entre backticks, y en la columna de la corrida los títulos de la forma `` `✔ nombre (12ms)` `` (runner de Node) o `` `(pass) nombre [12ms]` `` (runner de Bun). Se ignoran: los comandos (`npm ...`, `node ...`, `gh ...`, `orca-stack ...`, etc.), las rutas o archivos (`src/cli.mjs`), los bloques de código y los comentarios HTML. Salidas:
 
-- Sin `## Evidencia` o sin filas de test: pasa, con "Sin ## Evidencia: nada que comprobar".
+- Sin una referencia de cierre a un issue: si no hay nombres de test que comprobar, pasa con "Sin ## Evidencia: nada que comprobar". En cambio, si el PR cierra un issue y no hay una tabla `Test` con filas, falla con `Evidencia: el PR cierra #<n> pero no encuentro en ## Evidencia una tabla con columna Test`.
 - Todos existen: `Evidencia OK: <n> nombres de test verificados`.
 - Falta alguno: sale con 1 y dice `Evidencia fila <n>: no encuentro el test `<nombre>` en test/ ni mods/*/tests/`.
 
