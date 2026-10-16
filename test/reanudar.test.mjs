@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
 import { main } from '../src/cli.mjs'
+import { upsertBlock } from '../src/marker.mjs'
 import { reanudarCommand } from '../src/reanudar.mjs'
+import { policyBlock } from '../src/templates.mjs'
 import { PACKAGE_ROOT } from '../src/util.mjs'
 
 const ISSUE = '212'
@@ -175,7 +178,7 @@ describe('orca-stack reanudar (#214)', () => {
     assert.match(cli, /case 'reanudar':\s+return await reanudarCommand/)
   })
 
-  test('Rules 9-10: ticket brief keeps working after Consulta or missing skill, and contract explains pause recovery', () => {
+  test('Rules 9-10 and 11: brief continues after Consulta or missing skill, and init renders the pause contract in AGENTS', () => {
     const brief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
     assert.match(brief, /missing tool or skill prerequisite.*not a blocker/s)
     assert.match(brief, /After posting a Consulta:, the next action is a tool call on work that is not blocked/)
@@ -183,7 +186,11 @@ describe('orca-stack reanudar (#214)', () => {
     assert.ok(contract.includes('worker-en-pausa #<n> <agente>'))
     assert.match(contract, /`orca-stack avisar` y `orca-stack reanudar` son las \u00FAnicas formas en que main llega a una terminal de worker/)
     assert.ok(contract.includes('orca-stack reanudar <issue> <url-del-comentario>'))
+    const init = spawnSync(process.execPath, [path.join(PACKAGE_ROOT, 'bin', 'orca-stack.mjs'), 'init'], { cwd: PACKAGE_ROOT, encoding: 'utf8' })
+    assert.equal(init.status, 0, init.stderr)
     const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
     assert.ok(agents.includes('worker-en-pausa #<n> <agente>'))
+    const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
+    assert.equal(upsertBlock(agents, block), agents, 'init rendered the current managed contract block')
   })
 })
