@@ -998,6 +998,25 @@ describe('--dry-run', () => {
 })
 
 describe('launchInWorktree', () => {
+  test('Rule 1: refuses the Codex update menu without sending the brief', async () => {
+    const menu = [
+      'Update available \u00B7 0.162.1 \u2192 0.163.0',
+      '› 1. Update now (runs `npm install -g @openai/codex`)',
+      '2. Skip',
+    ]
+    const env = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: menu } } }) })
+    await assert.rejects(() => launchInWorktree({
+      agent: 'codex', mode: 'ticket', worktree, briefPath: path.join(home, 'orca', 'briefs', 'existing.md'),
+      brief: 'brief', session: 'existing', config: PROJECT, win: true, home, repositoryRoot: root, io: env.io,
+    }), error => {
+      assert.match(error.message, /Codex muestra su men[u\u00FA] de actualizaci[o\u00F3]n/)
+      assert.match(error.message, /term_1/)
+      assert.match(error.message, /orca-stack reanudar/)
+      return true
+    })
+    assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'send').length, 0)
+  })
+
   test('builds and launches the configured agent using an existing worktree without dispatch reads', async () => {
     const env = fakeIo()
     const briefPath = path.join(home, 'orca', 'briefs', 'existing.md')
