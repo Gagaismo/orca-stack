@@ -180,7 +180,7 @@ orca-stack rebote 15 --dry-run
 orca-stack rebote 15 --nota "El segundo hallazgo es de interpretación: no lo toques, lo decide el humano."
 ```
 
-Relanza al autor (línea `Implementador:`) en el worktree existente de la rama del PR. Exige un review bloqueante vigente o checks fallidos sobre el head, un worktree limpio y detenido en ese commit. Publica `Rebote: <sha>` (review) y/o `Rebote CI: <sha>` (CI roja); cada contador cuenta SHAs distintos. Detalle de los rechazos en [Casos borde](#5-casos-borde).
+Relanza al autor (línea `Implementador:`) en el worktree existente de la rama del PR. Exige un review bloqueante vigente o checks fallidos sobre el head, un worktree limpio y detenido en ese commit. En un repo sin reviews, el comentario bloqueante puede venir de una consulta confirmada. Publica `Rebote: <sha>` (review) y/o `Rebote CI: <sha>` (CI roja); cada contador cuenta SHAs distintos. Detalle de los rechazos en [Casos borde](#5-casos-borde).
 
 #### `brief-revision`
 
