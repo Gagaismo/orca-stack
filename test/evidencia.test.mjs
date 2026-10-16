@@ -29,6 +29,49 @@ const withCheckout = (files, run) => {
 const testFile = titles => `import { test } from 'node:test'\n${titles.map(title => `test(${JSON.stringify(title)}, () => {})`).join('\n')}\n`
 const bodyFor = (...rows) => `## Evidencia\n\n${header}\n${rows.join('\n')}\n`
 
+describe('closing PR evidence requirements', () => {
+  test('Rule 1: rejects the one-line PR #207 body through the checker CLI', () => {
+    const pr207Body = '## Summary Add CI enforcement to validate test names in PR evidence Closes #193'
+    withCheckout({}, checkout => {
+      const bodyFile = path.join(checkout, 'body.md')
+      writeFileSync(bodyFile, pr207Body)
+      const result = spawnSync(process.execPath, [checker, bodyFile], { cwd: checkout, encoding: 'utf8' })
+      assert.equal(result.status, 1)
+      assert.equal(result.stderr, 'Evidencia: el PR cierra #193 pero no encuentro en ## Evidencia una tabla con columna Test\n')
+    })
+  })
+
+  test('Rule 2: keeps no-closing-reference bodies as successful no-ops', () => {
+    withCheckout({}, checkout => {
+      const bodyFile = path.join(checkout, 'body.md')
+      writeFileSync(bodyFile, '## Summary A report with no issue-closing reference')
+      const result = spawnSync(process.execPath, [checker, bodyFile], { cwd: checkout, encoding: 'utf8' })
+      assert.equal(result.status, 0)
+      assert.equal(result.stdout, 'Sin ## Evidencia: nada que comprobar\n')
+    })
+  })
+
+  test('Rule 3: accepts a closing PR with a valid Test table', () => {
+    withCheckout({ 'test/a.test.mjs': testFile(['Rule 1: real']) }, checkout => {
+      const result = checkEvidencia(`${bodyFor(row('Rule 1: real'))}Closes #193\n`, checkout)
+      assert.deepEqual(result, { ok: true, count: 1, stdout: 'Evidencia OK: 1 nombres de test verificados\n', stderr: '' })
+    })
+  })
+
+  test('Rule 4: detects each GitHub closing keyword case-insensitively in one-line bodies', () => {
+    for (const keyword of ['close', 'closes', 'closed', 'fix', 'fixes', 'fixed', 'resolve', 'resolves', 'resolved']) {
+      const result = checkEvidencia(`Summary without an evidence section ${keyword.toUpperCase()} #193`, '')
+      assert.equal(result.ok, false, keyword)
+      assert.equal(result.stderr, 'Evidencia: el PR cierra #193 pero no encuentro en ## Evidencia una tabla con columna Test\n', keyword)
+    }
+  })
+
+  test('Rule 5: rejects a closing PR whose Test table has a header but no rows', () => {
+    const body = `Closes #193\n\n## Evidencia\n${header}\n`
+    assert.equal(checkEvidencia(body, '').stderr, 'Evidencia: el PR cierra #193 pero no encuentro en ## Evidencia una tabla con columna Test\n')
+  })
+})
+
 describe('PR evidence test-name checker', () => {
   test('Rule 1: counts each existing test-name span, including a duplicate result name', () => {
     withCheckout({ 'test/a.test.mjs': testFile(['Rule 1: x']) }, checkout => {

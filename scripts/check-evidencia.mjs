@@ -294,9 +294,13 @@ function readTitles(root) {
 }
 
 export function checkEvidencia(body, root) {
+  const closingIssue = String(body ?? '').match(/\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#(\d+)\b/i)?.[1]
   const section = evidenceSection(body)
   const checked = tables(section).filter(table => /^Test/i.test(table.headers[1] ?? ''))
   if (!checked.length || checked.every(table => table.rows.length === 0)) {
+    if (closingIssue) {
+      return { ok: false, count: 0, stdout: '', stderr: `Evidencia: el PR cierra #${closingIssue} pero no encuentro en ## Evidencia una tabla con columna Test\n` }
+    }
     return { ok: true, count: 0, stdout: 'Sin ## Evidencia: nada que comprobar\n', stderr: '' }
   }
 
