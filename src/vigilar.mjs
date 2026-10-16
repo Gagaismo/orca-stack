@@ -104,8 +104,10 @@ const ciResult = (rollup, replacedWorkflows = []) => {
   )
   if (red.length > 0) {
     const text = red.map(({ check }) => `${checkName(check)}=${outcome(check)}`).join(', ')
+    const redRunIds = red.map(({ runId }) => runId).filter(Boolean)
+    const runId = redRunIds.reduce((highest, current) => (!highest || isHigherRunId(current, highest) ? current : highest), undefined)
 
-    return { result: 'roja', text, run: Math.max(...red.map(({ runs }) => runs)), cancellations }
+    return { result: 'roja', text, run: Math.max(...red.map(({ runs }) => runs)), runId, cancellations }
   }
 
   return { result: cancellations.length === 0 && checks.length > 0 && checks.every(check => verdict(check) === 'verde') ? 'verde' : undefined, cancellations }
@@ -214,6 +216,7 @@ const advance = (issue, seen, before, merges) => {
       entry.head = pr.headRefOid
       delete entry.ci
       delete entry.corrida
+      delete entry.corridaRun
       delete entry.ciRetenido
     }
     const liveWorker = seen.workersReadable !== false && LIVE_WORKER_STATES.has(seen.worker?.state)
@@ -226,10 +229,12 @@ const advance = (issue, seen, before, merges) => {
       cancelledRuns.add(runId)
     }
     if (cancelledRuns.size > 0) entry.cancelledRuns = [...cancelledRuns]
-    if (ci.result === 'roja' && (entry.ci !== 'roja' || ci.run > (entry.corrida ?? 0))) {
+    if (ci.result === 'roja' && (entry.ci !== 'roja' || (ci.runId && ci.runId !== entry.corridaRun) || ci.run > (entry.corrida ?? 0))) {
       lines.push(event('ci-roja', issue, pr, pr.headRefOid, ci.text))
       entry.ci = 'roja'
       entry.corrida = ci.run
+      if (ci.runId) entry.corridaRun = ci.runId
+      else delete entry.corridaRun
     } else if (ci.result === 'verde') {
       if (liveWorker) {
         if (entry.ciRetenido !== pr.headRefOid) {
@@ -242,6 +247,7 @@ const advance = (issue, seen, before, merges) => {
         entry.ci = 'verde'
         delete entry.ciRetenido
         delete entry.corrida
+        delete entry.corridaRun
       }
     }
   } else if (!entry.fin) {

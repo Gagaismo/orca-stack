@@ -790,6 +790,27 @@ describe('orca-stack vigilar (#206)', () => {
     assert.deepEqual(h.out, ['ci-roja #7 PR #70 abc1234: matrix=FAILURE'])
   })
 
+  test('Issue 225 Rule 9: rows of run 10 red, then rows of run 11 red on the same head gives two ci-roja events', async () => {
+    const row = (name, run, startedAt = '2026-10-15T10:00:00Z') => ({
+      __typename: 'CheckRun', name, workflowName: 'CI', status: 'COMPLETED', conclusion: 'FAILURE', startedAt,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/1`,
+    })
+    const h = harness({ prs: [pr(70, { checks: [row('test', 10)] })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-roja #7 PR #70 abc1234: test=FAILURE'])
+    assert.equal(h.cursor()['7'].corridaRun, '10')
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+    h.world.prs[0].statusCheckRollup.push(row('test', 11, '2026-10-15T11:00:00Z'))
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['ci-roja #7 PR #70 abc1234: test=FAILURE'])
+    assert.equal(h.cursor()['7'].corridaRun, '11')
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+  })
+
   test('Issue 225 PRESERVE: vigilarCommand preserves cursor file, worker-en-pausa, and merge-de-main', async () => {
     const wt = { path: '/wt/paused', repo: 'orca-stack', linkedIssue: 7, agents: [{ state: 'done', agentType: 'codex' }] }
     const h = harness({ worktrees: [wt], issues: { 7: 'OPEN' } })
