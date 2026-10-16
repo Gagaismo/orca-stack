@@ -206,6 +206,14 @@ orca-stack avisar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecomme
 
 El timbre de Proactive: le escribe al worker una sola línea fija, `Message from main: <url>`, mientras su turno sigue en curso. Solo avisa a `claude`; se niega con pi, codex y agy, si el turno ya terminó, si la terminal muestra un shell o un diálogo, si hay más de un agente vivo, o si el comentario no es de la cuenta del stack o no empieza con `Respuesta de main:` o `Respuesta del humano:`. Nunca reintenta: sin recibo de entrega informa la falla.
 
+#### `reanudar`
+
+```bash
+orca-stack reanudar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecomment-123 --dry-run
+```
+
+Si Orca todavía muestra el turno en `done`, reanuda el TUI con una sola línea que apunta a la respuesta. Si el agente salió, relanza el mismo agente en el worktree existente con el brief original y la URL al principio. Rechaza un PR abierto, un worktree sucio, más de un agente vivo o una respuesta que no sea un comentario real de la cuenta del stack o del humano. `--confirmado` habilita relanzar agentes de `preguntarAntes` solo después del OK humano; `--dry-run` no escribe ni envía nada.
+
 #### `vigilar` `[solo en main]`
 
 ```bash
@@ -250,7 +258,7 @@ Resumen del "Ciclo de `main`" del contrato, con el comando de cada paso:
 | 2 | Cada ticket con criterios y `## Reglas` | Reglas numeradas con ejemplos, bordes y errores; cada valor esperado va como `cliente` o `inferido` |
 | 3 | Elegir la frontera | Issues abiertos, sin bloqueantes, sin assignee, sin `needs-info`, sin sub-issues. Leer con `gh issue view <n> --json title,body,comments` |
 | 4 | Despachar la tanda | `orca-stack despachar <n> <agente>`, un ticket por comando |
-| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>` `[solo en main]`; en Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
+| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>` `[solo en main]`; atiende `worker-en-pausa` respondiendo la `Consulta:` donde apareció y corriendo `orca-stack reanudar <issue> <url-del-comentario>`. En Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
 | 6 | Review de cada PR nuevo | `orca-stack revisar <pr> <agente>`; segundo review de pi si toca `riesgo` |
 | 7 | Mergear si se cumple la condición | Ver [4.8](#48-review-rebote-y-merge); antes de cada `gh pr merge`, `orca-stack vigilar --merge-de-main <n>` `[solo en main]` |
 | 8 | Rebote | `orca-stack rebote <pr>`; una sola vez por review |
@@ -543,6 +551,7 @@ Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag 
 | Brief del worker: `gh issue view <n> --json title,body,comments` y la instrucción de `CODING_STANDARDS.md` solo si el repo lo tiene | #201 (#196) | `assets/stack/brief-ticket.md` y `brief-revision.md` |
 | `despachar` imprime `Rama: <rama>`; despachar, revisar y rebote inspeccionan la pantalla de lanzamiento | #203 (#198) | Ver [4.1](#41-comandos-del-cli) |
 | `orca-stack vigilar` y `vigilar --merge-de-main`; el contrato (pasos 5 y 7) los nombra | #204 (#195) | Ver [`vigilar`](#vigilar-solo-en-main) |
+| `orca-stack reanudar` retoma workers pausados; el contrato nombra `worker-en-pausa` | #214 | Ver [`reanudar`](#reanudar) |
 | Chequeo de nombres de test de `## Evidencia` en CI | #202 | Job `evidencia` de CI, exigido por `ci-ok`; ver [4.10](#410-el-chequeo-de--evidencia-en-ci-solo-en-main) |
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.

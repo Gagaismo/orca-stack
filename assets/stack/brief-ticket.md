@@ -54,6 +54,12 @@ Closes #{{ISSUE}}
 
 If you want to change GLOSSARY.md or docs/adr, do not edit them: propose it in the PR body under `## Propuesta para GLOSSARY.md` or `## Propuesta de ADR`.
 
+## Unattended progress
+
+A missing tool or skill prerequisite, such as unavailable subagents for the code-review self-check, is not a blocker: do that step inline, note it under ## Desvíos del ticket, and open the PR.
+
+After posting a Consulta:, the next action is a tool call on work that is not blocked. Do not end the turn there; continue independently until blocked work is the only work left.
+
 ## Rules
 
 - Smallest correct change: no unrelated cleanup, no new dependencies, no speculative abstractions.

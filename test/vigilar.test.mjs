@@ -76,7 +76,7 @@ const harness = (world = {}) => {
       }
       if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'ps') {
         if (world.orcaDown) return fail('orca: runtime not running')
-        return json({ ok: true, result: { worktrees: (world.worktrees ?? []).map(wt => ({ path: wt.path, repo: 'orca-stack', linkedIssue: wt.linkedIssue })) } })
+        return json({ ok: true, result: { worktrees: (world.worktrees ?? []).map(wt => ({ path: wt.path, repo: 'orca-stack', linkedIssue: wt.linkedIssue, agents: wt.agents ?? [] })) } })
       }
       if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list') {
         if (world.ghDown) return fail(world.ghDown)
@@ -111,6 +111,46 @@ const drain = h => h.out.splice(0)
 const mergeDeMain = (h, n) => vigilarCommand({ mergeDeMain: n }, [], h.io)
 
 describe('orca-stack vigilar (#195)', () => {
+  test('issue #214 Rules 1-4: emits one codex pause per done transition, resets after working, and ignores unsupported cases', async () => {
+    const paused = { path: '/wt/orca-stack-212', repo: 'orca-stack', linkedIssue: 212, agents: [{ state: 'done', agentType: 'codex' }] }
+    const h = harness({ worktrees: [paused], issues: { 212: 'OPEN', 213: 'OPEN' } })
+    await once(h, ['212', '213'])
+    assert.deepEqual(h.out, ['worker-en-pausa #212 codex'])
+    await once(h, ['212', '213'])
+    assert.deepEqual(h.out, ['worker-en-pausa #212 codex'])
+    const rearmed = harness({ worktrees: [paused], issues: { 212: 'OPEN', 213: 'OPEN' } })
+    rearmed.files[CURSOR] = JSON.stringify(h.cursor())
+    await once(rearmed, ['212', '213'])
+    assert.deepEqual(rearmed.out, [])
+
+    const working = harness({ worktrees: [{ ...paused, agents: [{ state: 'working', agentType: 'codex' }] }], issues: { 212: 'OPEN' } })
+    working.files[CURSOR] = JSON.stringify(h.cursor())
+    await once(working, ['212'])
+    assert.deepEqual(working.out, [])
+    const pi = harness({ worktrees: [{ ...paused, agents: [{ state: 'done', agentType: 'pi' }] }], issues: { 212: 'OPEN' } })
+    await once(pi, ['212'])
+    assert.deepEqual(pi.out, [])
+    const withPr = harness({ worktrees: [paused], prs: [pr(80, { closes: [212] })] })
+    await once(withPr, ['212'])
+    assert.ok(!withPr.out.some(line => line.startsWith('worker-en-pausa')))
+
+    const restarted = harness({ worktrees: [paused], issues: { 212: 'OPEN' } })
+    restarted.files[CURSOR] = JSON.stringify(h.cursor())
+    restarted.world.worktrees[0].agents[0].state = 'working'
+    await once(restarted, ['212'])
+    restarted.world.worktrees[0].agents[0].state = 'done'
+    await once(restarted, ['212'])
+    assert.deepEqual(restarted.out, ['worker-en-pausa #212 codex'])
+  })
+
+  test('issue #214 Rule 4: warns once when Orca worktree state is unavailable and keeps polling', async () => {
+    const h = harness({ orcaDown: true, issues: { 212: 'OPEN' } })
+    h.world.script = [world => { world.orcaDown = false; world.issues[212] = 'CLOSED' }]
+    assert.equal(await vigilarCommand({ cada: '1' }, ['212'], h.io), 0)
+    assert.equal(h.err.filter(line => /orca worktree ps/.test(line)).length, 1)
+    assert.equal(h.sleeps.length, 1)
+  })
+
   test('Rule 1: stdout carries only event lines, a poll with nothing new prints nothing, diagnostics go to stderr', async () => {
     const h = harness({ prs: [pr(70, { checks: GREEN })], orcaDown: true })
     h.world.script = [
@@ -465,7 +505,7 @@ describe('orca-stack vigilar (#195)', () => {
       for (const flag of ['--cada <segundos>', '--una-vez', '--consultas', '--merge-de-main <pr>']) {
         assert.ok(output.split('\n').some(line => line.trimStart().startsWith(flag) && line.includes('(vigilar)')), flag)
       }
-      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, vigilar)'))
+      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar)'))
       output = ''
       assert.equal(await main(['vigilar', '--help']), 0)
       assert.ok(output.includes('orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]'))
