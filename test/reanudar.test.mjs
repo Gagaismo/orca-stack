@@ -168,6 +168,12 @@ describe('orca-stack reanudar (#214)', () => {
     const normalized = harness({ agents: [{ paneKey: 'tab-1:leaf-1', state: 'Done', agentType: 'codex' }] })
     assert.equal(await reanudarCommand({}, ISSUE, URL, normalized.io), 0)
     assert.equal(normalized.sends().length, 1)
+    assert.deepEqual(normalized.sends()[0].args.slice(2), ['--terminal', 'term-1', '--text', LINE, '--enter', '--wait-submit', '10', '--json'])
+    assert.equal(normalized.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create').length, 0)
+    const statusOnly = harness({ agents: [{ paneKey: 'tab-1:leaf-1', status: 'Done', agentType: 'codex' }] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, statusOnly.io), 0)
+    assert.deepEqual(statusOnly.sends()[0].args.slice(2), ['--terminal', 'term-1', '--text', LINE, '--enter', '--wait-submit', '10', '--json'])
+    assert.equal(statusOnly.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create').length, 0)
   })
 
   test('Rules 6 and 8: exited worker falls back to the real ticket brief and rejects invalid brief identities', async () => {
