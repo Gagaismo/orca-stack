@@ -5,17 +5,17 @@ Instala de una vez el stack de agentes que uso para trabajar con [Orca](https://
 **¿Cómo se usa día a día?** Leé el [manual de uso](docs/manual.md): comandos, mods, marchas, cuándo conviene usarlo y cuándo no, casos borde y manejo. Marca lo que está solo en `main` y todavía no salió en un release.
 
 ```bash
-npx github:Gagaismo/orca-stack#v0.13.0 global     # instalación a nivel usuario
-npx github:Gagaismo/orca-stack#v0.13.0 init       # cablea el proyecto actual
-npx github:Gagaismo/orca-stack#v0.13.0 doctor     # verifica que todo funcione de verdad
-npx github:Gagaismo/orca-stack#v0.13.0 remove     # deshace lo que instaló global
-npx github:Gagaismo/orca-stack#v0.13.0 sesiones   # lista las sesiones recientes de Claude, Pi y agy (para `/retro`)
-npx github:Gagaismo/orca-stack#v0.13.0 despachar 12 agy   # desde el checkout principal: despacha el ticket #12 al agente
-npx github:Gagaismo/orca-stack#v0.13.0 revisar 15 pi      # despacha el review del PR #15
-npx github:Gagaismo/orca-stack#v0.13.0 brief-revision 15 --modelo <modelo>   # modo un-agente: worktree y brief de review para un subagente
-npx github:Gagaismo/orca-stack#v0.13.0 consultas 42 57    # filtra y avisa consultas nuevas en issues y PRs en curso
-npx github:Gagaismo/orca-stack#v0.13.0 avisar 42 <url>    # Proactive: le toca el timbre al worker de #42 con la URL de la respuesta
-npx github:Gagaismo/orca-stack#v0.13.0 vigilar 42 57      # el Monitor de la tanda: solo eventos de sus PRs, hasta tanda-cerrada
+npx github:Gagaismo/orca-stack#v0.13.1 global     # instalación a nivel usuario
+npx github:Gagaismo/orca-stack#v0.13.1 init       # cablea el proyecto actual
+npx github:Gagaismo/orca-stack#v0.13.1 doctor     # verifica que todo funcione de verdad
+npx github:Gagaismo/orca-stack#v0.13.1 remove     # deshace lo que instaló global
+npx github:Gagaismo/orca-stack#v0.13.1 sesiones   # lista las sesiones recientes de Claude, Pi y agy (para `/retro`)
+npx github:Gagaismo/orca-stack#v0.13.1 despachar 12 agy   # desde el checkout principal: despacha el ticket #12 al agente
+npx github:Gagaismo/orca-stack#v0.13.1 revisar 15 pi      # despacha el review del PR #15
+npx github:Gagaismo/orca-stack#v0.13.1 brief-revision 15 --modelo <modelo>   # modo un-agente: worktree y brief de review para un subagente
+npx github:Gagaismo/orca-stack#v0.13.1 consultas 42 57    # filtra y avisa consultas nuevas en issues y PRs en curso
+npx github:Gagaismo/orca-stack#v0.13.1 avisar 42 <url>    # Proactive: le toca el timbre al worker de #42 con la URL de la respuesta
+npx github:Gagaismo/orca-stack#v0.13.1 vigilar 42 57      # el Monitor de la tanda: solo eventos de sus PRs, hasta tanda-cerrada
 ```
 
 ¿Primera vez, o un proyecto nuevo o ya empezado? Seguí la [guía de setup](docs/guia-setup.md): tiene un cuestionario que dice qué configurar en cada caso.
