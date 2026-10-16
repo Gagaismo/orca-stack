@@ -476,3 +476,199 @@ export const checkRemovals = async (command: string, git: RunGit): Promise<strin
 
   return undefined
 }
+
+type PrMerge = { number: string; repo?: string }
+type PrView = { headRefName?: unknown; closingIssuesReferences?: unknown; body?: unknown }
+type OrcaAgent = { state?: unknown; agentType?: unknown }
+type OrcaWorktree = { path?: unknown; linkedIssue?: unknown; agents?: unknown }
+
+const MERGE_VALUE_FLAGS = new Set(['-b', '--body', '-F', '--body-file', '-t', '--subject', '-A', '--author-email', '--match-head-commit'])
+const MERGE_REPO_FLAGS = new Set(['-R', '--repo'])
+
+const mergeSegments = (command: string): string[] => {
+  const segments: string[] = []
+  let current = ''
+  let quote = ''
+  for (let i = 0; i < command.length; i += 1) {
+    const ch = command[i] ?? ''
+    if (quote !== '') {
+      current += ch
+      quote = ch === quote ? '' : quote
+    } else if (ch === '"' || ch === "'") {
+      current += ch
+      quote = ch
+    } else if (ch === '&' || ch === '|' || ch === ';' || ch === '\n' || ch === '\r') {
+      segments.push(current)
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  segments.push(current)
+
+  return segments
+}
+
+// Mirrors the gh pr merge forms recognized by puente-gentle's merges() without importing another mod.
+const prMerges = (command: string): PrMerge[] => {
+  const found: PrMerge[] = []
+  for (const segment of mergeSegments(command)) {
+    const words = (segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map(word => word.replace(/^['"]|['"]$/g, ''))
+    if (words[0] !== 'gh' && words[0] !== 'gh.exe') {
+      continue
+    }
+    let repo: string | undefined
+    const rest: string[] = []
+    for (let i = 1; i < words.length; i += 1) {
+      const word = words[i] ?? ''
+      if (MERGE_REPO_FLAGS.has(word)) {
+        repo = words[i + 1]
+        i += 1
+      } else if (word.startsWith('--repo=')) {
+        repo = word.slice(7)
+      } else {
+        rest.push(word)
+      }
+    }
+    if (rest[0] !== 'pr' || rest[1] !== 'merge') {
+      continue
+    }
+    for (let i = 2; i < rest.length; i += 1) {
+      const word = rest[i] ?? ''
+      if (MERGE_VALUE_FLAGS.has(word)) {
+        i += 1
+        continue
+      }
+      const match = /^(\d+)$/.exec(word) ?? /\/pull\/(\d+)/.exec(word)
+      if (match?.[1] !== undefined) {
+        found.push(repo === undefined ? { number: match[1] } : { number: match[1], repo })
+        break
+      }
+    }
+  }
+
+  return found
+}
+
+const repoSlug = (url: string): string | undefined => {
+  if (/^[^/\s]+\/[^/\s]+$/.test(url.trim())) return url.trim().replace(/\.git$/i, '').toLowerCase()
+  const match = /(?:github\.com[:/])([^/]+\/[^/]+?)(?:\.git)?\s*$/i.exec(url.trim())
+
+  return match?.[1]?.toLowerCase()
+}
+
+const prIssues = (pr: PrView): string[] => {
+  const refs = Array.isArray(pr.closingIssuesReferences) ? pr.closingIssuesReferences : []
+  const numbers = refs.flatMap(ref => {
+    if (typeof ref !== 'object' || ref === null || !('number' in ref)) return []
+    const number = String((ref as { number?: unknown }).number)
+
+    return /^\d+$/.test(number) ? [number] : []
+  })
+  const body = typeof pr.body === 'string' ? pr.body : ''
+  const matches = [...body.matchAll(/^\s*Closes\s+#(\d+)\b/gim)].map(match => match[1]).filter((number): number is string => number !== undefined)
+
+  return [...new Set([...numbers, ...matches])]
+}
+
+const isLiveState = (state: unknown): state is string =>
+  typeof state === 'string' && ['working', 'running', 'active', 'blocked', 'waiting'].includes(state.toLowerCase())
+
+const liveAgent = (worktree: OrcaWorktree): OrcaAgent | undefined => {
+  if (!Array.isArray(worktree.agents)) return undefined
+
+  return (worktree.agents as OrcaAgent[]).find(agent => isLiveState(agent?.state))
+}
+
+const parsed = <T>(stdout: string): T | undefined => {
+  try {
+    return JSON.parse(stdout) as T
+  } catch {
+    return undefined
+  }
+}
+
+// A failed GitHub/Orca read never blocks a merge. The hook only denies with a concrete live worker record.
+export const checkLiveMerges = async (command: string, git: RunGit): Promise<string | undefined> => {
+  const merges = prMerges(command)
+  if (merges.length === 0) return undefined
+
+  let localSlug: string | undefined
+  const slug = async (): Promise<string | undefined> => {
+    if (localSlug !== undefined) return localSlug
+    try {
+      const remote = await git(['git', 'remote', 'get-url', 'origin'])
+      if (remote.exitCode === 0) localSlug = repoSlug(remote.stdout)
+    } catch {
+      // Without a known local GitHub repository, explicit -R targets are left alone.
+    }
+
+    return localSlug
+  }
+
+  let listed: Worktree[] | undefined
+  const worktrees = async (): Promise<Worktree[] | undefined> => {
+    if (listed !== undefined) return listed
+    try {
+      const result = await git(['git', 'worktree', 'list', '--porcelain'])
+      if (result.exitCode === 0) listed = parseWorktrees(result.stdout)
+    } catch {
+      // Fail open on a worktree inventory failure.
+    }
+
+    return listed
+  }
+
+  let orcaRows: OrcaWorktree[] | undefined
+  const rows = async (): Promise<OrcaWorktree[] | undefined> => {
+    if (orcaRows !== undefined) return orcaRows
+    try {
+      const result = await git(['orca', 'worktree', 'ps', '--json'])
+      const data = result.exitCode === 0 ? parsed<{ result?: { worktrees?: unknown } }>(result.stdout) : undefined
+      if (Array.isArray(data?.result?.worktrees)) orcaRows = data.result.worktrees as OrcaWorktree[]
+    } catch {
+      // Fail open on an Orca inventory failure.
+    }
+
+    return orcaRows
+  }
+
+  for (const merge of merges) {
+    if (merge.repo !== undefined) {
+      const current = await slug()
+      if (current === undefined || repoSlug(merge.repo) !== current) continue
+    }
+    let pr: PrView | undefined
+    try {
+      const result = await git(['gh', 'pr', 'view', merge.number, '--json', 'headRefName,closingIssuesReferences,body'])
+      if (result.exitCode === 0) pr = parsed<PrView>(result.stdout)
+    } catch {
+      // Fail open on a GitHub read failure.
+    }
+    if (pr === undefined) continue
+
+    const known = await worktrees()
+    const all = await rows()
+    if (known === undefined || all === undefined) continue
+    const localPaths = new Set(known.map(worktree => norm(worktree.path)))
+    const ours = all.filter(row => typeof row.path === 'string' && localPaths.has(norm(row.path)))
+    const issues = prIssues(pr)
+    let matches = ours.filter(row => issues.includes(String(row.linkedIssue)))
+    let issue = matches.length === 1 ? String(matches[0]?.linkedIssue) : issues[0]
+    if (matches.length === 0 && typeof pr.headRefName === 'string') {
+      matches = known.flatMap(worktree => worktree.branch === pr?.headRefName
+        ? ours.filter(row => norm(String(row.path)) === norm(worktree.path))
+        : [])
+    }
+    if (matches.length !== 1) continue
+    const agent = liveAgent(matches[0] ?? {})
+    if (agent === undefined) continue
+    const state = String(agent.state).toLowerCase()
+    const name = typeof agent.agentType === 'string' ? agent.agentType : 'worker'
+    const issueLabel = issue === undefined ? '' : `, #${issue}`
+
+    return `El worker del PR #${merge.number} (${name}${issueLabel}) sigue trabajando (${state}): no mergees hasta que termine. vigilar emite ci-verde cuando deja de estar vivo.`
+  }
+
+  return undefined
+}
