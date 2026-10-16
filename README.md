@@ -257,11 +257,13 @@ Al terminar, `global` imprime la lista con tus rutas exactas. Resumen:
 ## Desarrollo
 
 ```bash
-npm test                  # CLI, round-trips en un HOME temporal, chequeo de rutas personales
+npm test                  # CLI, reporter dot en pantalla y spec a npm-test.log
 npm run test:mods         # tests de cada mod con `claude plugin test` (necesita Claude Code; en CI falla si falta)
 npm run verify            # suite completa configurada para el repo
 npm run sync-shared       # copia shared/orca-config.ts a los mods que lo usan
 ```
+
+`npm test` corre `node --test` con dos reporters: `dot` en pantalla y `spec` en `npm-test.log` (en la raíz del repo, sobreescrito en cada corrida; su última línea en stdout avisa `Detalle de cada test en npm-test.log`). Si corren dos `npm test` a la vez en el mismo checkout, se sobreescriben el archivo mutuamente.
 
 Un plugin de Claude Code solo puede importar archivos de su propia carpeta, y el motor no deja pasar `$` a través de un `import`. Por eso el resolvedor de configuración (`shared/orca-config.ts`) se copia tal cual en cada mod que lo usa y recibe sus operaciones como funciones; un test falla si alguna copia se desfasa.
 
