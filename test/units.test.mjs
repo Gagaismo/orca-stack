@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { describe, test } from 'node:test'
@@ -10,6 +11,13 @@ import { buildBlock, removeBlock, upsertBlock } from '../src/marker.mjs'
 import { mergePluginDirs, removePluginDirs } from '../src/settings.mjs'
 import { cmdWrapper, render, shWrapper } from '../src/templates.mjs'
 import { ROOT } from './helpers.mjs'
+
+test('revisar help describes same-family refusal and the pi/claude exception', () => {
+  const help = execFileSync(process.execPath, [path.join(ROOT, 'bin', 'orca-stack.mjs'), 'revisar', '--help'], { encoding: 'utf8' })
+  assert.match(help, /misma familia/)
+  assert.match(help, /pi y claude pueden revisarse entre s\u00ed/)
+  assert.doesNotMatch(help, /codex y codex-cc se revisan entre s\u00ed/)
+})
 
 describe('marker blocks', () => {
   test('appends to a file that has none, replaces in place when present', () => {
