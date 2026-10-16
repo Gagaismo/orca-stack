@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
@@ -20,22 +21,22 @@ const json = value => ({ status: 0, stdout: JSON.stringify(value), stderr: '' })
 const ok = stdout => ({ status: 0, stdout, stderr: '' })
 const fail = stderr => ({ status: 1, stdout: '', stderr })
 
-const harness = ({ state = 'done', agent = 'codex', screen = ['\u{273b} Baked for 2m 5s'], dirty = '', pr = false, comment = {}, send = sendReceipt, psDown = false, dryRun = false } = {}) => {
+const harness = ({ root = ROOT, home = '/home', state = 'done', agent = 'codex', screen = ['\u{273b} Baked for 2m 5s'], dirty = '', pr = false, comment = {}, send = sendReceipt, psDown = false, dryRun = false } = {}) => {
   const outputs = []
   const calls = []
   const files = {
     [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')]: 'Original ticket brief\nKeep this unchanged.\n',
   }
   const io = {
-    cwd: '/repo', home: '/home', win: false, exists: file => file in files,
+    cwd: root, home, win: false, exists: file => file in files,
     readFile: file => { if (!(file in files)) throw new Error(`ENOENT ${file}`); return files[file] },
     writeFile: (file, content) => { files[file] = content }, rename: (from, to) => { files[to] = files[from]; delete files[from] },
     mkdirp: () => {}, sleep: async () => {}, out: line => outputs.push(line),
     sh: (cmd, args, opts = {}) => {
       calls.push({ cmd, args, cwd: opts.cwd })
-      if (cmd === 'git' && args[0] === 'rev-parse') return ok(`${path.join(ROOT, '.git')}\n${path.join(ROOT, '.git')}\n${ROOT}\n`)
+      if (cmd === 'git' && args[0] === 'rev-parse') return ok(`${path.join(root, '.git')}\n${path.join(root, '.git')}\n${root}\n`)
       if (cmd === 'git' && args[0] === 'remote') return ok('https://github.com/Gagaismo/orca-stack.git\n')
-      if (cmd === 'git' && args[0] === 'worktree' && args[1] === 'list') return ok(`worktree ${ROOT}\nHEAD 1\nbranch refs/heads/main\n\nworktree ${WT}\nHEAD 2\nbranch refs/heads/Gagaismo/orca-stack-212\n`)
+      if (cmd === 'git' && args[0] === 'worktree' && args[1] === 'list') return ok(`worktree ${root}\nHEAD 1\nbranch refs/heads/main\n\nworktree ${WT}\nHEAD 2\nbranch refs/heads/Gagaismo/orca-stack-212\n`)
       if (cmd === 'git' && args[0] === 'status') return ok(dirty)
       if (cmd === 'gh' && args[0] === 'api' && args[1] === 'user') return json({ login: 'stack-bot' })
       if (cmd === 'gh' && args[0] === 'api') return json({ user: { login: 'stack-bot' }, body: 'Respuesta de main: siga.', html_url: URL })
@@ -148,6 +149,25 @@ describe('orca-stack reanudar (#214)', () => {
     assert.ok(launch.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create' && call.args.includes(`path:${WT}`)))
     const relaunchedBrief = launch.files[path.join('/home', 'orca', 'briefs', 'orca-stack-212-reanudar.md')]
     assert.equal(relaunchedBrief, `Message from main: ${URL}\n\nOriginal ticket brief\nKeep this unchanged.\n`)
+  })
+
+  test('Rule 7: refuses relaunch while guardia-despacho blocks the agent', async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'orca-stack-214-guardia-'))
+    const home = path.join(root, 'home')
+    mkdirSync(home)
+    writeFileSync(path.join(root, '.orca-stack.json'), JSON.stringify({
+      setup: 'completo', modo: 'multiagente',
+      agentes: { usa: ['codex'], preguntarAntes: [] },
+      guardia: { bloquear: [{ agente: 'codex', hasta: '2099-01-01', motivo: 'blocked for test' }] },
+    }))
+    try {
+      const blocked = harness({ root, home, state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
+      await assert.rejects(() => reanudarCommand({}, ISSUE, URL, blocked.io), /blocked for test/)
+      assert.equal(blocked.sends().length, 0)
+      assert.deepEqual(Object.keys(blocked.files), [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   test('Rules 6 and 7: one worktree read failure is reported without sending; unknown agents fail closed', async () => {
