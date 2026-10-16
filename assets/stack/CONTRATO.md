@@ -141,7 +141,7 @@ El despacho es un handoff: el worker trabaja solo y no se lo supervisa con `orca
 - El cuerpo sigue la skill `pr`: `## Summary` con la vista más chica que deje claro el cambio, `## Evidencia` y `## Merge Danger` (puerta de una o dos vías y blast radius).
 - Un PR de ticket lleva `Closes #<n>`, la línea `Implementador: <agente>` y `## Evidencia` con una fila por cada regla (o, en tickets legacy, por cada criterio de aceptación y modo de falla usado como RED) y por cada entrada pública tocada (la definición está en el brief del ticket que arma `orca-stack despachar`). Cada fila incluye el nombre exacto del test y la línea de la corrida en verde, o cómo se verificó si no hay test. Si no se toca ninguna entrada pública existente, se indica `none touched` sin una fila de relleno. Agregá antes y después cuando el cambio se ve (captura o salida), y `## Desvíos del ticket` (`ninguno`, o qué se hizo distinto y por qué).
 - Un PR de orquestación (este contrato, scripts, ADRs) no lleva `Closes #`: su cuerpo dice qué se pidió y qué criterios cumple.
-- El cuerpo de un PR o de un review se manda con `--body-file`, nunca por tubería: la consola de Windows rompe los acentos.
+- El cuerpo de un PR o de un review se manda con `--body-file`, nunca con `--body` ni por tubería: desde la consola de Windows se rompen los acentos y los saltos de línea.
 - Si existe `CODING_STANDARDS.md`, leelo antes de commitear y verificá tu cambio contra él.
 - Los implementadores no editan `GLOSSARY.md` ni `docs/adr/`: lo proponen en el cuerpo del PR bajo `## Propuesta para GLOSSARY.md` o `## Propuesta de ADR`, y lo integra `main`.
 - Si el diff proyecta más de 700 líneas, pará y avisá en el issue antes de seguir.
