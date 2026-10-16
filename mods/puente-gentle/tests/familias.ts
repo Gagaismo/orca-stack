@@ -11,6 +11,7 @@ export default {
     { "config": { "agentes": { "modelos": { "codex-cc": { "implementar": { "modelo": "gpt-6-luna" }, "revisar": { "modelo": "z-ai/glm-5.3-flash" } } } } }, "agent": "codex-cc", "mode": "ticket", "family": "gpt" },
     { "config": { "agentes": { "modelos": { "codex-cc": "commandcode/zai-org/GLM-5.3" } } }, "agent": "codex-cc", "mode": "ticket", "family": "glm" },
     { "config": { "agentes": { "modelos": { "codex": { "modelo": "o3-mini", "esfuerzo": "high" } } } }, "agent": "codex", "mode": "review", "family": "gpt" },
+    { "config": { "agentes": { "modelos": { "codex": { "implementar": { "modelo": "gpt-6-luna" }, "revisar": { "modelo": "chatgpt-web/gpt-6-sol" } } } } }, "agent": "codex", "mode": "review", "family": "gpt" },
     { "config": { "agentes": { "modelos": { "agy": "claude-sonnet-5-5" } } }, "agent": "agy", "mode": "review", "family": "claude" },
     { "config": { "agentes": { "modelos": { "agy": { "implementar": { "modelo": "gemini-3.8-flash-high" }, "escalar": { "modelo": "gemini-3.1-pro-high" } } } } }, "agent": "agy", "mode": "review", "family": "gemini" },
     { "config": { "agentes": { "modelos": { "claude": "opus" } } }, "agent": "claude", "mode": "ticket", "family": "claude" },

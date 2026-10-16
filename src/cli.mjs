@@ -112,7 +112,7 @@ Sin flag y sin agentes.pi.perfil, o con "preguntar", rige el perfil activo globa
   revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 
 Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
-(línea \`Implementador:\`) o si codex y codex-cc se revisan entre sí.
+(línea \`Implementador:\`) o si el agente usa un modelo de la misma familia (según \`agentes.modelos\`; pi y claude pueden revisarse entre sí).
 `,
   rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 

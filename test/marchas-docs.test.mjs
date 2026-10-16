@@ -11,5 +11,5 @@ test('marchas docs explain the command, gears, gate and off switch', () => {
   assert.match(readme, /`\/marcha lazy`, `\/marcha medium` o `\/marcha proactive`/)
   assert.match(readme, /claude plugin disable marchas@inline --scope user/)
   assert.match(readme, /`--scope local`.*`--scope project`/)
-  assert.match(modReadme, /Un `\/effort` manual gana hasta el siguiente cambio de marcha/)
+  assert.match(modReadme, /Un comando `\/effort <nivel>` manual gana hasta el siguiente cambio de marcha/)
 })
