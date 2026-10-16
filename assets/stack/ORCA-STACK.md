@@ -141,9 +141,10 @@ terminal on Windows, which is PowerShell; in a POSIX shell the leading `& ` is d
 
 - claude: `& "{{WRAPPER_CLAUDE}}" --dangerously-skip-permissions`
 - agy: `& "{{WRAPPER_AGY}}" --dangerously-skip-permissions`
-- codex: `& "{{WRAPPER_CODEX}}" --model <model> -c model_reasoning_effort="<effort>" -c approval_policy="never" -c sandbox_mode="danger-full-access"`
+- codex: `& "{{WRAPPER_CODEX}}" --model <model> -c model_reasoning_effort="<effort>" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"`
   Nobody answers approval prompts in an unattended worker, so the approval and
-  sandbox flags are required.
+  sandbox flags are required. Fast mode is off because it spends Codex credits
+  faster and an unattended worker does not need the speed.
 - codex-cc: `$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME.piagentauth.json" | ConvertFrom-Json).commandcode.key; & "{{WRAPPER_CODEX}}" -c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses --model <model> -c model_reasoning_effort="<effort>" -c approval_policy="never" -c sandbox_mode="danger-full-access"`
   Use the review model and effort to review and the implementation ones to
   implement; the rest of the command does not change. The key is read inside
