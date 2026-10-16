@@ -17,6 +17,7 @@ import {
   engramDir,
   firstLine,
   interpret,
+  isPathAbsolute,
   issueFile,
   joinPath,
   launcherPath,
@@ -148,15 +149,15 @@ const ghRead = async ($: EngineInterface, argv: string[]): Promise<{ stdout: str
 // reaches from any checkout of the repo. Nothing is written unless every view answered.
 const preload = async (
   $: EngineInterface,
-  pr: number | undefined,
-  issue: number | undefined,
+  pr: number | undefined | null,
+  issue: number | undefined | null,
 ): Promise<{ precarga: string } | { error: string }> => {
-  if (pr === undefined && issue === undefined) {
+  if (pr == null && issue == null) {
     return { precarga: '' }
   }
   const files: { name: string; text: string }[] = []
   let head: { pr: number; headRefOid: string } | undefined
-  if (issue !== undefined) {
+  if (issue != null) {
     const read = await ghRead($, ['issue', 'view', String(issue), '--json', ISSUE_FIELDS])
     const text = 'stdout' in read ? issueFile(read.stdout) : undefined
     if (text === undefined) {
@@ -164,7 +165,7 @@ const preload = async (
     }
     files.push({ name: `issue-${issue}.md`, text })
   }
-  if (pr !== undefined) {
+  if (pr != null) {
     const read = await ghRead($, ['pr', 'view', String(pr), '--json', PR_FIELDS_PRELOAD])
     const view = 'stdout' in read ? prFile(read.stdout) : undefined
     if (view === undefined) {
@@ -190,6 +191,9 @@ const preload = async (
   }
   if (common === '') {
     return { error: 'No encontré la carpeta git del repo con git rev-parse. No consulté a Gentle Shell.' }
+  }
+  if (!isPathAbsolute(common)) {
+    return { error: `La carpeta git del repo devuelta por git rev-parse no es una ruta absoluta (${common}). No consulté a Gentle Shell.` }
   }
   const paths: string[] = []
   for (const file of files) {
@@ -352,7 +356,7 @@ export const register: Register = (on, options) => {
     if (invalid !== undefined) {
       return textResult(JSON.stringify({ tema, error: invalid }))
     }
-    const loaded = await preload($, e['pr'] as number | undefined, e['issue'] as number | undefined)
+    const loaded = await preload($, e['pr'] as number | undefined | null, e['issue'] as number | undefined | null)
     if ('error' in loaded) {
       return textResult(JSON.stringify({ tema, error: loaded.error }))
     }

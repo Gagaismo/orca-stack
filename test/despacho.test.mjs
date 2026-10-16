@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
+import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
 import { layout } from '../src/util.mjs'
 import { cleanup, read, tempDir, write } from './helpers.mjs'
 
@@ -551,8 +551,7 @@ describe('briefs', () => {
   test('Rule 1: a claude ticket brief without a note forbids arena/swarm, not its own subagents', () => {
     const brief = renderBrief('ticket', { AGENT: 'claude' })
     assert.doesNotMatch(brief, /Do not spawn subagents/i)
-    assert.match(brief, /session's own subagents.*context.*verification.*code-review.*delegation.*allowed/i)
-    assert.match(brief, /Delegation: the session's own subagents may be used/)
+    assert.match(brief, /you may use your session's subagents \(the Agent tool\) for ODD's explorer and verifier and for the code-review rounds/)
     assert.match(brief, /code-review/)
     const policy = readFileSync(new URL('../assets/stack/ORCA-STACK.md', import.meta.url), 'utf8')
     assert.match(policy, /A Claude worker may run an arena or swarm only when its dispatch or bounce note[\s\S]*authorizes that fan-out for the ticket; read-only swarms require the note too/i)
@@ -561,7 +560,7 @@ describe('briefs', () => {
   test('Rule 2: a claude fan-out line separates authorized own delegation from arena/swarm', () => {
     const brief = renderBrief('ticket', { AGENT: 'claude' })
     assert.match(brief, /No arena or swarm is authorized without an approved note/i)
-    assert.match(brief, /session's own subagents for context, verification, and the code-review skill are delegation and remain allowed/i)
+    assert.match(brief, /you may use your session's subagents \(the Agent tool\)/)
   })
 
   test('Rule 3: a claude brief still forbids an unrequested arena/swarm fan-out', () => {
@@ -583,7 +582,7 @@ describe('briefs', () => {
       const brief = renderBrief('ticket', { AGENT: agent }, fanoutNote)
       assert.match(brief, new RegExp(`Arena and swarm are not supported for ${agent}, even when the note includes authorization`))
       assert.doesNotMatch(brief, /Do not spawn subagents/i)
-      assert.match(brief, /session's own subagents.*context.*verification.*code-review.*delegation.*allowed/i)
+      assert.match(brief, /you may use your session's subagents.*for ODD's explorer and verifier/)
     }
   })
 
@@ -1150,7 +1149,6 @@ describe('rebote', () => {
       const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
       assert.ok(brief, `${agent} bounce brief was written`)
       assert.doesNotMatch(brief, /Do not spawn subagents/i)
-      assert.match(brief, /session's own subagents.*context.*verification.*code-review.*delegation.*allowed/i)
       if (agent === 'claude') {
         assert.match(brief, /No arena or swarm is authorized without an approved note/i)
         assert.match(brief, /unrequested.*arena or swarm fan-out/i)
@@ -1445,6 +1443,114 @@ describe('rebote', () => {
         () => dispatch('ticket', { n: '165', agent: 'unknown' }),
         /Agente desconocido: unknown/,
       )
+    })
+  })
+
+  describe('issue #224: ticket brief before the PR', () => {
+    const fanoutNote = 'arena, N=3, r\u00FAbrica \u2026, Agent tool only'
+    const ticketBrief = (agent, nota) => renderBrief('ticket', { AGENT: agent, ISSUE: '300', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' }, nota)
+    const subagentsScope = "for ODD's explorer and verifier and for the code-review rounds of ## Pull request, and for nothing else, except an arena or swarm fan-out that the Fan-out line under ## Rules allows."
+    const fanoutLine = (agent, bounce) => {
+      const approval = bounce ? 'A new fan-out note on this bounce requires a new human OK; previous dispatch approval does not carry over. ' : ''
+      return agent === 'claude'
+        ? `- Fan-out: ${approval}No arena or swarm is authorized without an approved note. Do not use Workflow or run an unrequested arena or swarm fan-out.`
+        : `- Fan-out: ${approval}Arena and swarm are not supported for ${agent}, even when the note includes authorization. Do not run an arena or swarm fan-out.`
+    }
+
+    test('Rule 1: every check finishes before the PR opens and no code-review instruction is left below gh pr create', () => {
+      for (const agent of AGENTS) {
+        const brief = ticketBrief(agent)
+        const create = brief.indexOf('gh pr create --base')
+        const before = brief.slice(brief.indexOf('## Pull request'), create)
+        assert.ok(before.includes('Every check runs and finishes before the PR opens: the configured verification, any verifier ODD launches, and the code-review rounds below.'), agent)
+        assert.ok(before.includes('Before opening the PR, run the `code-review` skill'), agent)
+        assert.doesNotMatch(brief.slice(create), /code-review/i, `${agent}: a code-review instruction is left below gh pr create`)
+      }
+    })
+
+    test('Rule 2: opening the PR is the last change to the branch', () => {
+      const after = ticketBrief('claude').split('gh pr create --base main --head branch')[1]
+      assert.ok(after.includes('Opening the PR is the last change to the branch: after `gh pr create`, write your final summary and end your turn. Push again only when main relaunches you with `orca-stack rebote` or `orca-stack reanudar`.'))
+    })
+
+    test('Rule 3: the Evidencia table comes first, then at most two code-review rounds, all before the PR', () => {
+      const brief = ticketBrief('codex')
+      const steps = [
+        '1. Write the PR body file (shape below) with its Evidencia table: one row per rule of `## Reglas` and per touched public entry, each naming its test.',
+        "2. Before opening the PR, run the `code-review` skill on the diff as round 1, with that table and the issue as input: besides the diff, it checks that every rule has a row and that the row's test proves that rule.",
+        '3. Fix what round 1 found.',
+        '4. Run round 2 only when round 1 led to a change of code or tests, and only on the delta since round 1. A reviewer always asks for something, so "it asked for changes" is never the reason for another round.',
+        '5. There is no round 3: what round 2 leaves open goes under `## Desv\u00EDos del ticket`.',
+      ].map(step => brief.indexOf(step))
+      assert.ok(steps.every(index => index > -1), JSON.stringify(steps))
+      assert.deepEqual([...steps].sort((a, b) => a - b), steps)
+      assert.ok(steps[4] < brief.indexOf('gh pr create --base'))
+    })
+
+    test('Rule 4: one subagents line rendered per agent, and fanoutInstructions no longer repeats it', () => {
+      const perAgent = {
+        claude: `- Subagents: you may use your session's subagents (the Agent tool) ${subagentsScope} Dispatching Orca workers is not allowed.`,
+        codex: `- Subagents: you may use your session's subagents (\`spawn_agent\`) ${subagentsScope} Dispatching Orca workers is not allowed. This line is the explicit request to spawn agents that your default asks for.`,
+      }
+      const others = `- Subagents: when your runtime has subagents, you may use your session's subagents ${subagentsScope} Dispatching Orca workers is not allowed. When it has none, do those steps inline and note it under ## Desv\u00EDos del ticket.`
+      for (const agent of AGENTS) {
+        for (const nota of [undefined, fanoutNote]) {
+          const brief = ticketBrief(agent, nota)
+          assert.ok(brief.includes(perAgent[agent] ?? others), `${agent} subagents line`)
+          assert.equal(brief.match(/session's (?:own )?subagents/g)?.length, 1, `${agent}: the session's subagents sentence appears once`)
+        }
+        assert.ok(ticketBrief(agent).includes(fanoutLine(agent, false)), `${agent} fan-out line`)
+      }
+      assert.ok(ticketBrief('claude', fanoutNote).includes('- Fan-out: The approved note authorizes fan-out for this ticket only. Use the Agent tool only, never Workflow. Run only the approved N, one round, no retry.'))
+    })
+
+    test('Rule 5: a verifier copies the commit with git clone --local, never git archive or git worktree add', () => {
+      const verification = ticketBrief('pi').split('## Verification')[1].split('## Pull request')[0]
+      assert.ok(verification.includes('When a verifier or a review subagent needs the commit in its own directory, copy it with `git clone --local --no-checkout <worktree> <dir>` and `git -C <dir> checkout --detach <sha>`, with `<dir>` outside this worktree, and delete `<dir>` afterwards.'))
+      assert.ok(verification.includes("If `<dir>` cannot be deleted (on Windows the clone's packs are read-only and may be hard links), that does not block: note it in your final summary."))
+      assert.ok(verification.includes('Do not use `git archive` (it leaves no git index, and tests that need one fail without a defect) or `git worktree add` (it adds a worktree that Orca lists and someone has to remove).'))
+    })
+
+    test("Rule 6: claude, codex and pi are told AGENTS.md is already loaded; agy and codex-cc keep today's line", () => {
+      const today = '- Read the project instructions (AGENTS.md, and GLOSSARY.md or CONTEXT.md and docs/adr when they exist).'
+      const loaded = '- AGENTS.md is already in your context: do not read it again. Read GLOSSARY.md or CONTEXT.md and docs/adr when they exist.'
+      for (const agent of AGENTS) {
+        const brief = ticketBrief(agent)
+        const expected = ['claude', 'codex', 'pi'].includes(agent) ? loaded : today
+        assert.ok(brief.includes(expected), `${agent}: ${expected}`)
+        assert.ok(!brief.includes(expected === loaded ? today : loaded), agent)
+      }
+    })
+
+    test('Rule 7: the PR body is UTF-8 without a BOM and the brief names the PowerShell trap', () => {
+      assert.ok(ticketBrief('agy').includes("The body is UTF-8 without a BOM (Windows PowerShell's `Out-File` and `Set-Content -Encoding utf8` write one) and has exactly this shape."))
+    })
+
+    test('Rule 8: despachar renders a ticket brief for every agent; the rebote and revisar briefs change only in the fanoutInstructions sentence', async () => {
+      for (const agent of AGENTS) {
+        const env = fakeIo()
+        await run('ticket', { n: '300', agent, dryRun: true, ...(agent === 'codex-cc' ? { confirmado: true } : {}) }, env)
+        const out = env.out.join('\n')
+        assert.ok(out.includes('# Ticket brief: issue #300'), `${agent} ticket brief`)
+        assert.ok(out.includes("- Subagents: "), `${agent} subagents line`)
+        assert.ok(!out.includes('{{'), `${agent}: placeholder left`)
+
+        const bounce = bounceEnv(pr({ body: `Implementador: ${agent}` }))
+        if (agent === 'pi') {
+          bounce.io.gentleSkills = () => 'C:\\pi\\skills'
+          bounce.io.now = () => 100
+          bounce.io.modifiedAt = () => 101
+        }
+        await reboteCommand(agent === 'codex-cc' ? { confirmado: true } : {}, '12', bounce.io)
+        const bounceBrief = bounce.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+        assert.ok(bounceBrief.includes(`${fanoutLine(agent, true)}\n- Work only in this existing worktree`), `${agent} bounce fan-out line`)
+        assert.doesNotMatch(bounceBrief, /session's (?:own )?subagents|AGENTS\.md is already/, agent)
+      }
+      const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) })
+      await run('review', { n: '9', agent: 'agy', dryRun: true }, review)
+      const reviewOut = review.out.join('\n')
+      assert.ok(reviewOut.includes('Revisor: agy'), 'review brief rendered')
+      assert.doesNotMatch(reviewOut, /- Subagents: |AGENTS\.md is already|Every check runs and finishes/)
     })
   })
 })
