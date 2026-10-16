@@ -15,7 +15,7 @@ const parse = res => {
   }
 }
 const detail = res => (res.stderr || res.stdout || String(res.error ?? '')).trim().split(/\r?\n/)[0]
-const noPrForIssue = (pr, issue, branches) =>
+const prMatchesIssue = (pr, issue, branches) =>
   (pr.closingIssuesReferences ?? []).some(ref => String(ref.number) === issue) ||
   branches.includes(pr.headRefName) ||
   new RegExp(`^\\s*Closes\\s+#${issue}\\b`, 'im').test(pr.body ?? '')
@@ -104,7 +104,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (ours.length === 0) throw new Error(`No encuentro un worktree de este repo para #${n}: no reanudo.`)
   if (ours.length > 1) throw new Error(`Hay ${ours.length} worktrees de este repo para #${n}: no adivino cu\u{e1}l reanudar.`)
   const { row, branch } = ours[0]
-  const pr = pullRequests.find(candidate => noPrForIssue(candidate, n, [branch].filter(Boolean)))
+  const pr = pullRequests.find(candidate => prMatchesIssue(candidate, n, [branch].filter(Boolean)))
   if (pr) throw new Error(`El issue #${n} ya tiene un PR abierto (#${pr.number}); us\u{e1} \`orca-stack rebote ${pr.number}\`.`)
 
   const terminals = workerTerminals(row.path, n, io)
