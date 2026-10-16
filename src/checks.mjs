@@ -56,3 +56,100 @@ export const latestChecks = rollup => {
 
   return [...latest.values()]
 }
+
+const parseTime = value => {
+  if (!value) return undefined
+  const ms = Date.parse(value)
+  return Number.isNaN(ms) ? value : ms
+}
+
+export const isEarlier = (a, b) => {
+  const ta = parseTime(a)
+  const tb = parseTime(b)
+  if (ta === undefined || tb === undefined) return false
+  if (typeof ta === 'number' && typeof tb === 'number') return ta < tb
+  return String(a) < String(b)
+}
+
+export const isFailure = check =>
+  isStatus(check)
+    ? ['FAILURE', 'ERROR'].includes(check.state)
+    : ['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE', 'ACTION_REQUIRED'].includes(check.conclusion)
+
+export const analyzeChecks = latest => {
+  const runs = new Map()
+  const standalone = []
+
+  for (const entry of latest ?? []) {
+    const { check, runId } = entry
+    const workflow = check?.workflowName ?? ''
+    if (isStatus(check) || !runId || !workflow) {
+      standalone.push(entry)
+      continue
+    }
+    const key = `${workflow}/${runId}`
+    if (!runs.has(key)) runs.set(key, { workflow, runId, entries: [] })
+    runs.get(key).entries.push(entry)
+  }
+
+  const realFailures = []
+  const unexplainedCancellations = []
+  const cancelledSiblingsByFailure = new Map()
+  const standaloneCancelled = []
+
+  for (const [, run] of runs) {
+    const cancelledEntries = run.entries.filter(e => e.check.conclusion === 'CANCELLED')
+    const failureEntries = run.entries.filter(e => isFailure(e.check))
+
+    if (cancelledEntries.length === 0) {
+      realFailures.push(...failureEntries)
+      continue
+    }
+
+    let earliestCompletedAt
+    for (const { check } of cancelledEntries) {
+      if (!check.completedAt) continue
+      if (!earliestCompletedAt || isEarlier(check.completedAt, earliestCompletedAt)) {
+        earliestCompletedAt = check.completedAt
+      }
+    }
+
+    const runRealFailures = earliestCompletedAt
+      ? failureEntries.filter(e => isEarlier(e.check.startedAt, earliestCompletedAt))
+      : []
+
+    if (runRealFailures.length > 0) {
+      realFailures.push(...runRealFailures)
+      const cancelledChecks = cancelledEntries.map(e => e.check)
+      for (const f of runRealFailures) {
+        cancelledSiblingsByFailure.set(f.check, cancelledChecks)
+      }
+    } else {
+      unexplainedCancellations.push({
+        workflow: run.workflow,
+        runId: run.runId,
+        checks: cancelledEntries.map(e => e.check),
+      })
+    }
+  }
+
+  for (const entry of standalone) {
+    if (isFailure(entry.check)) {
+      realFailures.push(entry)
+    } else if (!isStatus(entry.check) && entry.check.conclusion === 'CANCELLED') {
+      standaloneCancelled.push(entry)
+      unexplainedCancellations.push({
+        workflow: entry.check.workflowName ?? '',
+        runId: entry.runId,
+        checks: [entry.check],
+      })
+    }
+  }
+
+  return {
+    realFailures,
+    unexplainedCancellations,
+    cancelledSiblingsByFailure,
+    standaloneCancelled,
+  }
+}

@@ -841,4 +841,87 @@ describe('orca-stack vigilar (#206)', () => {
     assert.ok(checks.some(c => c.check.name === 'lint' && !c.runId))
     assert.ok(checks.some(c => c.check.name === 'unit' && c.runId === '123'))
   })
+
+  test('Issue 240 Rule 1: real failure earlier than cancelled siblings emits ci-roja and not ci-cancelada', async () => {
+    const run = 999
+    const row = (name, conclusion, startedAt, completedAt, job = 1) => ({
+      __typename: 'CheckRun', name, workflowName: 'CI', status: 'COMPLETED', conclusion, startedAt, completedAt,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/${job}`,
+    })
+    const checks = [
+      row('ubuntu-latest / Node 20', 'FAILURE', '2026-10-15T10:00:05Z', '2026-10-15T10:00:40Z', 1),
+      row('ubuntu-latest / Node 22', 'CANCELLED', '2026-10-15T10:00:05Z', '2026-10-15T10:00:41Z', 2),
+      row('windows-latest / Node 20', 'CANCELLED', '2026-10-15T10:00:05Z', '2026-10-15T10:00:41Z', 3),
+      row('windows-latest / Node 22', 'CANCELLED', '2026-10-15T10:00:05Z', '2026-10-15T10:00:41Z', 4),
+    ]
+    const h = harness({ prs: [pr(70, { checks })], runs: [] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [
+      'pr-abierto #7 PR #70 abc1234',
+      'ci-roja #7 PR #70 abc1234: ubuntu-latest / Node 20=FAILURE',
+    ])
+    assert.equal(h.cursor()['7'].ci, 'roja')
+  })
+
+  test('Issue 240 Rule 2: red row started after first cancellation completed is not reported and emits ci-cancelada', async () => {
+    const run = 38843085964
+    const row = (name, conclusion, startedAt, completedAt, job = 1) => ({
+      __typename: 'CheckRun', name, workflowName: 'CI', status: 'COMPLETED', conclusion, startedAt, completedAt,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/${job}`,
+    })
+    const checks = [
+      row('matrix-job', 'CANCELLED', '2026-10-15T02:57:40Z', '2026-10-15T02:58:16Z', 1),
+      row('ci-ok', 'FAILURE', '2026-10-15T02:59:09Z', '2026-10-15T02:59:15Z', 2),
+    ]
+    const h = harness({ prs: [pr(70, { checks })], runs: [] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [
+      'pr-abierto #7 PR #70 abc1234',
+      'ci-cancelada #7 PR #70 abc1234: matrix-job=CANCELLED',
+    ])
+    assert.equal(h.cursor()['7'].ci, undefined)
+
+    const withNewer = harness({ prs: [pr(70, { checks })], runs: [{ databaseId: 38843110472, status: 'queued', conclusion: null }] })
+    await once(withNewer, ['7'])
+    assert.deepEqual(withNewer.out, ['pr-abierto #7 PR #70 abc1234'])
+  })
+
+  test('Issue 240 Rule 3: red row with no startedAt or cancelled rows with no completedAt keeps #225 behaviour', async () => {
+    const run = 999
+    const row = (name, conclusion, startedAt, completedAt, job = 1) => ({
+      __typename: 'CheckRun', name, workflowName: 'CI', status: 'COMPLETED', conclusion, startedAt, completedAt,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/${job}`,
+    })
+    const noStarted = [
+      row('matrix-job', 'CANCELLED', '2026-10-15T10:00:00Z', '2026-10-15T10:00:40Z', 1),
+      row('unit-test', 'FAILURE', null, '2026-10-15T10:00:40Z', 2),
+    ]
+    const h1 = harness({ prs: [pr(70, { checks: noStarted })], runs: [] })
+    await once(h1, ['7'])
+    assert.deepEqual(h1.out, [
+      'pr-abierto #7 PR #70 abc1234',
+      'ci-cancelada #7 PR #70 abc1234: matrix-job=CANCELLED',
+    ])
+
+    const noCompleted = [
+      row('matrix-job', 'CANCELLED', '2026-10-15T10:00:00Z', null, 1),
+      row('unit-test', 'FAILURE', '2026-10-15T10:00:05Z', '2026-10-15T10:00:40Z', 2),
+    ]
+    const h2 = harness({ prs: [pr(70, { checks: noCompleted })], runs: [] })
+    await once(h2, ['7'])
+    assert.deepEqual(h2.out, [
+      'pr-abierto #7 PR #70 abc1234',
+      'ci-cancelada #7 PR #70 abc1234: matrix-job=CANCELLED',
+    ])
+  })
+
+  test('Issue 240 PRESERVE: vigilarCommand preserves existing green, pending and unhandled cancelled events', async () => {
+    const green = harness({ prs: [pr(70, { checks: GREEN })] })
+    await once(green, ['7'])
+    assert.deepEqual(green.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
+
+    const pending = harness({ prs: [pr(70, { checks: PENDING })] })
+    await once(pending, ['7'])
+    assert.deepEqual(pending.out, ['pr-abierto #7 PR #70 abc1234'])
+  })
 })
