@@ -69,7 +69,7 @@ Son plugins de Claude Code que se recargan en caliente (`.claude-plugin/plugin.j
 | --- | --- | --- |
 | `tablero-despacho` | Tablero de PRs abiertos con checks, review y worktrees (`/tablero`). Usa `gh`. | Los atajos de despacho aparecen solo si hay `despacho` |
 | `guardia-despacho` | Bloquea o corrige las llamadas a tus scripts de despacho y revisión según reglas del proyecto. Siempre activo, con o sin `despacho`: pregunta qué perfil de gentle-pi usa un despacho a pi (`--perfil-pi`); rechaza `orca worktree rm` y `git worktree remove` si la rama de ese worktree tiene commits que no están en ningún remoto, porque `orca worktree rm` borra también la rama local. Si no puede resolver la rama, rechaza | Las reglas de despacho están **apagadas** salvo que haya `despacho` |
-| `puente-gentle` | Consulta a Gentle Shell (Pi) como otro orquestador par (`/pi`, `/gentle`). La instrucción de consultar y la herramienta `consultar_gentle_shell` aparecen solo en un repo con `.orca-stack.json`. Frena el merge de un PR grande sin consulta y el de uno que toca `riesgo` sin sus reviews limpios (de pi, o de dos familias de modelo que no sean la de pi si el PR lo escribió pi) | `humano`, `riesgo`, `agentes.pi.claudeConfigDir` |
+| `puente-gentle` | Consulta a Gentle Shell (Pi) como otro orquestador par (`/pi`, `/gentle`). La instrucción de consultar y la herramienta `consultar_gentle_shell` aparecen solo en un repo con `.orca-stack.json`. Para consultar sobre un PR o un issue, pasale `pr` o `issue` en vez de pegar el cuerpo, los comentarios o el diff en el planteo: el mod los lee con `gh` y se los da a Pi en archivos bajo `<git-common-dir>/orca-stack/gentle/` (Pi sigue sin `gh`). Frena el merge de un PR grande sin consulta y el de uno que toca `riesgo` sin sus reviews limpios (de pi, o de dos familias de modelo que no sean la de pi si el PR lo escribió pi) | `humano`, `riesgo`, `agentes.pi.claudeConfigDir` |
 | `bandeja-mensajes` | Captura los bloques ` ```mensaje <destinatario> ` que redacta Claude y deja copiarlos o guardarlos | `mensajes.destinatarios` |
 | `grilling-ok` | Responde con un clic (o con un `ok`) a las preguntas Q1…Qn de una sesión de grilling | — |
 | `modo-autonomo` | Instrucción permanente de trabajo autónomo hasta la meta, con recordatorio anti-parada acotado | — |
@@ -257,11 +257,13 @@ Al terminar, `global` imprime la lista con tus rutas exactas. Resumen:
 ## Desarrollo
 
 ```bash
-npm test                  # CLI, round-trips en un HOME temporal, chequeo de rutas personales
+npm test                  # CLI, reporter dot en pantalla y spec a npm-test.log
 npm run test:mods         # tests de cada mod con `claude plugin test` (necesita Claude Code; en CI falla si falta)
 npm run verify            # suite completa configurada para el repo
 npm run sync-shared       # copia shared/orca-config.ts a los mods que lo usan
 ```
+
+`npm test` corre `node --test` con dos reporters: `dot` en pantalla y `spec` en `npm-test.log` (en la raíz del repo, sobreescrito en cada corrida; su última línea en stdout avisa `Detalle de cada test en npm-test.log`). Si corren dos `npm test` a la vez en el mismo checkout, se sobreescriben el archivo mutuamente.
 
 Un plugin de Claude Code solo puede importar archivos de su propia carpeta, y el motor no deja pasar `$` a través de un `import`. Por eso el resolvedor de configuración (`shared/orca-config.ts`) se copia tal cual en cada mod que lo usa y recibe sus operaciones como funciones; un test falla si alguna copia se desfasa.
 

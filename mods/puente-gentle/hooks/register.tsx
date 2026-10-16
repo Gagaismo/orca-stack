@@ -3,15 +3,21 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Intercambio } from '../types'
 import {
   BIG_PR_LINES,
+  ISSUE_FIELDS,
+  NOT_JSON,
   PLANTEO_STORED,
+  PR_FIELDS_PRELOAD,
   TIMEOUT_MS,
   bigPrReason,
   buildArgs,
   buildMessage,
   clock,
   consultEnv,
+  diffUnavailable,
   engramDir,
+  firstLine,
   interpret,
+  issueFile,
   joinPath,
   launcherPath,
   loadMemoria,
@@ -20,7 +26,11 @@ import {
   piClaudeConfigDir,
   piPrompt,
   prFacts,
+  prFile,
   prSize,
+  precargaSection,
+  preloadInputError,
+  readError,
   remember,
   riskDeny,
   riskyFile,
@@ -28,6 +38,7 @@ import {
   skillsInGlobal,
   skillsInPi,
   slug,
+  str,
   truncate,
   vista,
 } from './puente'
@@ -118,19 +129,97 @@ const claudeConfigDir = async ($: EngineInterface): Promise<string | undefined> 
   }
 }
 
+// One gh read for the preload, run like the merge gate's (no cwd: the session's repo). An output the engine cut
+// counts as a failure, so a preloaded text is never passed on half.
+const ghRead = async ($: EngineInterface, argv: string[]): Promise<{ stdout: string } | { detail: string }> => {
+  try {
+    const run = await $.process.run(['gh', ...argv], { timeoutMs: 30_000 })
+    if (run.exitCode !== 0) {
+      return { detail: firstLine(run.stderr) || `gh salió con ${run.exitCode}` }
+    }
+
+    return run.isStdoutTruncated ? { detail: 'la salida pasa de 4 MiB y quedaría recortada' } : { stdout: run.stdout }
+  } catch (error) {
+    return { detail: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+// Reads the issue and the PR with gh, then writes them under <git-common-dir>/orca-stack/gentle/, which Pi's read
+// reaches from any checkout of the repo. Nothing is written unless every view answered.
+const preload = async (
+  $: EngineInterface,
+  pr: number | undefined,
+  issue: number | undefined,
+): Promise<{ precarga: string } | { error: string }> => {
+  if (pr === undefined && issue === undefined) {
+    return { precarga: '' }
+  }
+  const files: { name: string; text: string }[] = []
+  let head: { pr: number; headRefOid: string } | undefined
+  if (issue !== undefined) {
+    const read = await ghRead($, ['issue', 'view', String(issue), '--json', ISSUE_FIELDS])
+    const text = 'stdout' in read ? issueFile(read.stdout) : undefined
+    if (text === undefined) {
+      return { error: readError('el issue', issue, 'gh issue view', 'detail' in read ? read.detail : NOT_JSON) }
+    }
+    files.push({ name: `issue-${issue}.md`, text })
+  }
+  if (pr !== undefined) {
+    const read = await ghRead($, ['pr', 'view', String(pr), '--json', PR_FIELDS_PRELOAD])
+    const view = 'stdout' in read ? prFile(read.stdout) : undefined
+    if (view === undefined) {
+      return { error: readError('el PR', pr, 'gh pr view', 'detail' in read ? read.detail : NOT_JSON) }
+    }
+    head = { pr, headRefOid: view.headRefOid }
+    const name = `pr-${pr}-${view.headRefOid.slice(0, 7)}`
+    files.push({ name: `${name}.md`, text: view.text })
+    // GitHub refuses very large diffs: the consult still runs, with the file list instead.
+    const diff = await ghRead($, ['pr', 'diff', String(pr)])
+    const list = 'detail' in diff ? await ghRead($, ['pr', 'view', String(pr), '--json', 'files']) : undefined
+    files.push({
+      name: `${name}.diff`,
+      text: 'stdout' in diff ? diff.stdout : diffUnavailable(pr, diff.detail, list !== undefined && 'stdout' in list ? list.stdout : undefined),
+    })
+  }
+  let common = ''
+  try {
+    const git = await $.process.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'], { timeoutMs: 10_000 })
+    common = git.exitCode === 0 ? firstLine(git.stdout) : ''
+  } catch {
+    common = ''
+  }
+  if (common === '') {
+    return { error: 'No encontré la carpeta git del repo con git rev-parse. No consulté a Gentle Shell.' }
+  }
+  const paths: string[] = []
+  for (const file of files) {
+    const path = joinPath(common, 'orca-stack', 'gentle', file.name)
+    try {
+      await $.fs.write(path, file.text)
+    } catch (error) {
+      return { error: `No pude escribir ${path}: ${error instanceof Error ? error.message : String(error)}. No consulté a Gentle Shell.` }
+    }
+    paths.push(path)
+  }
+
+  return { precarga: precargaSection(paths, head) }
+}
+
 const consult = async (
   $: EngineInterface,
   modelo: string,
   tema: string,
   planteo: string,
   pregunta: string,
+  precarga = '',
 ): Promise<Outcome> => {
   $.ui.toast(`Consultando a Gentle Shell (${tema})…`)
   let outcome: Outcome
   try {
     const prefix = await launcher($)
     const skills = await gentleSkills($)
-    const run = await $.process.run([...prefix, ...buildArgs(tema, modelo, buildMessage(planteo, pregunta), skills)], {
+    const message = precarga === '' ? buildMessage(planteo, pregunta) : `${buildMessage(planteo, pregunta)}\n\n${precarga}`
+    const run = await $.process.run([...prefix, ...buildArgs(tema, modelo, message, skills)], {
       env: consultEnv(engramDir(await homeDir($)), await claudeConfigDir($)),
       // Pi in print mode waits for stdin to close: an open stdin hangs it forever.
       stdin: '',
@@ -163,8 +252,6 @@ const consult = async (
 
 // A plugin tool's result is a string, a content array, or nothing: a plain string is the simplest valid shape.
 const textResult = (text: string) => ({ result: text })
-
-const str = (value: unknown): string => (typeof value === 'string' ? value : '')
 
 // Big PRs need a consult before they merge, only where the consult tool exists (a project with orca-stack config);
 // PRs touching a `riesgo` path need clean reviews of their head commit (riskDeny).
@@ -233,6 +320,16 @@ export const register: Register = (on, options) => {
             tema: { type: 'string', description: 'Slug corto del tema, por ejemplo pr-612 o auditoria. Misma conversaci\u00f3n por tema.' },
             planteo: { type: 'string', description: 'Contexto neutral: el problema, las restricciones, nuestra propuesta actual y las rutas relevantes.' },
             pregunta: { type: 'string', description: 'Lo que querés que opine.' },
+            pr: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Opcional: número de PR. El mod lo lee con gh (cuerpo, comentarios, reviews y diff) y se lo pasa en archivos; no lo pegues en el planteo.',
+            },
+            issue: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Opcional: número de issue. El mod lo lee con gh (cuerpo y comentarios) y se lo pasa en un archivo; no lo pegues en el planteo.',
+            },
           },
           required: ['tema', 'planteo', 'pregunta'],
         },
@@ -251,7 +348,15 @@ export const register: Register = (on, options) => {
     if (tema === '' || planteo.trim() === '' || pregunta.trim() === '') {
       return textResult(JSON.stringify({ error: 'Faltan tema, planteo o pregunta.' }))
     }
-    const outcome = await consult($, modelo, tema, planteo, pregunta)
+    const invalid = preloadInputError('pr', e['pr']) ?? preloadInputError('issue', e['issue'])
+    if (invalid !== undefined) {
+      return textResult(JSON.stringify({ tema, error: invalid }))
+    }
+    const loaded = await preload($, e['pr'] as number | undefined, e['issue'] as number | undefined)
+    if ('error' in loaded) {
+      return textResult(JSON.stringify({ tema, error: loaded.error }))
+    }
+    const outcome = await consult($, modelo, tema, planteo, pregunta, loaded.precarga)
 
     return textResult(
       JSON.stringify(outcome.ok ? { tema, respuesta: outcome.respuesta } : { tema, error: outcome.error }),
