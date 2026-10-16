@@ -381,6 +381,9 @@ test('Rule 1: merge forms resolve the PR worker by closing issue, body, then loc
 
   const byBranch = mergeWorld({ pr: { headRefName: 'Gagaismo/orca-stack-220', closingIssuesReferences: [], body: '' }, worktrees: [{ path: 'C:/r/ws/issue-220', agents: [{ state: 'working', agentType: 'codex' }] }] })
   expect(await checkLiveMerges('echo start && gh.exe pr merge --merge 222', byBranch.git)).toContain('PR #222')
+
+  const bySingleAmpersand = mergeWorld()
+  expect(await checkLiveMerges('echo start & gh pr merge 222 --merge', bySingleAmpersand.git)).toContain('PR #222')
 })
 
 test('Rule 2: every live worker state blocks, case-insensitively', async () => {

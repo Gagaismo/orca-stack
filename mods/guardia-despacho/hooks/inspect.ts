@@ -485,10 +485,34 @@ type OrcaWorktree = { path?: unknown; linkedIssue?: unknown; agents?: unknown }
 const MERGE_VALUE_FLAGS = new Set(['-b', '--body', '-F', '--body-file', '-t', '--subject', '-A', '--author-email', '--match-head-commit'])
 const MERGE_REPO_FLAGS = new Set(['-R', '--repo'])
 
+const mergeSegments = (command: string): string[] => {
+  const segments: string[] = []
+  let current = ''
+  let quote = ''
+  for (let i = 0; i < command.length; i += 1) {
+    const ch = command[i] ?? ''
+    if (quote !== '') {
+      current += ch
+      quote = ch === quote ? '' : quote
+    } else if (ch === '"' || ch === "'") {
+      current += ch
+      quote = ch
+    } else if (ch === '&' || ch === '|' || ch === ';' || ch === '\n' || ch === '\r') {
+      segments.push(current)
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  segments.push(current)
+
+  return segments
+}
+
 // Mirrors the gh pr merge forms recognized by puente-gentle's merges() without importing another mod.
 const prMerges = (command: string): PrMerge[] => {
   const found: PrMerge[] = []
-  for (const segment of splitSegments(command)) {
+  for (const segment of mergeSegments(command)) {
     const words = (segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map(word => word.replace(/^['"]|['"]$/g, ''))
     if (words[0] !== 'gh' && words[0] !== 'gh.exe') {
       continue
