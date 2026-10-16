@@ -230,13 +230,15 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 | --- | --- |
 | `pr-abierto #<n> PR #<pr> <sha>` | Un PR del issue, visto por primera vez |
 | `ci-verde #<n> PR #<pr> <sha>` | Todos los checks del head terminaron en verde |
-| `ci-roja #<n> PR #<pr> <sha>: ...` | Un check terminado falló, venció o se canceló; uno por corrida, también si un `gh run rerun --failed` vuelve a fallar en el mismo head |
+| `ci-verde-retenido #<n> PR #<pr> <sha>: <agente> <estado>` | CI está verde, pero el worker sigue vivo; esperá a que termine antes de mergear |
+| `ci-roja #<n> PR #<pr> <sha>: ...` | Un check terminado falló o venció; uno por corrida, también si un `gh run rerun --failed` vuelve a fallar en el mismo head |
+| `ci-cancelada #<n> PR #<pr> <sha>: <check>=CANCELLED, ...` | No hay una corrida más nueva que reemplace a la cancelada; revisá la causa y re-ejecutá con `gh run rerun <run> --failed` |
 | `pr-mergeado #<n> PR #<pr> <sha>` | Se mergeó y `main` no registró ese merge |
 | `pr-cerrado #<n> PR #<pr>` | Se cerró sin mergear |
 | `vigilar-ciego: <error>` | Tres vueltas seguidas sin poder leer GitHub (una vez por corte; nunca dice "no hay PRs") |
 | `tanda-cerrada #<n> #<m>...` | Terminaron todos los items; sale con 0 |
 
-Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue, o por una línea `Closes #<n>` en su cuerpo; nunca por adivinar el nombre de la rama. Un issue cerrado sin PR cuenta como terminado. Lo emitido queda en `<git-common-dir>/orca-stack/vigilar.json`: si rearmás con los mismos argumentos, retoma sin repetir.
+Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue, o por una línea `Closes #<n>` en su cuerpo; nunca por adivinar el nombre de la rama. Con el PR abierto, `vigilar` sigue leyendo el worker del worktree enlazado al issue o, si no hay uno, el de la rama del PR. Un `ci-verde-retenido` mantiene visible que el autor todavía trabaja; el primer poll después de que termine emite `ci-verde`. Un issue cerrado sin PR cuenta como terminado. Lo emitido queda en `<git-common-dir>/orca-stack/vigilar.json`: si rearmás con los mismos argumentos, retoma sin repetir.
 
 `--merge-de-main <pr>` existe porque todas las sesiones comparten la cuenta de `gh`: un merge de `main` se ve igual que uno del humano. `main` lo corre justo antes de cada `gh pr merge <pr>` (y otra vez tras `gh pr update-branch`); registra el head en `<git-common-dir>/orca-stack/vigilar-merges.json` y un merge de ese head visto dentro de los 30 minutos no emite `pr-mergeado`. Sale sin imprimir nada.
 
@@ -420,7 +422,7 @@ En un PR que toca `riesgo`, los reviews son siempre sobre el `headRefOid`, y un 
 
 > **Regla de este repo** (`AGENTS.md` del propio orca-stack): hoy no se despachan reviews; `main` mergea con la CI verde y el `## Evidencia` en el cuerpo del PR. Un PR de más de 400 líneas igual requiere consulta a Gentle Shell. Esto es una excepción del repo, no del stack.
 
-**Rebote.** Un PR rebota una vez por review. Para CI roja, `rebote` se niega mientras haya checks pendientes (corrélo de nuevo cuando termine la CI) y también ante un check `CANCELLED`, hasta que `main` corra `gh run rerun <run> --failed`. Si la falla es de infraestructura, `main` re-ejecuta el job y no rebota al autor. Después del segundo rebote de CI, si vuelve a fallar, se lo pasa al humano.
+**Rebote.** Un PR rebota una vez por review. Para CI roja, `rebote` se niega mientras haya checks pendientes (corrélo de nuevo cuando termine la CI). Los checks se comparan dentro de la corrida más nueva de cada workflow: las filas de una corrida anterior no cancelan ni justifican un rebote; si un check falta en la corrida más nueva, se considera pendiente. Ante un check `CANCELLED`, `rebote` consulta si ya hay una corrida más nueva de ese workflow: si existe, se niega como pendiente y espera; si no, muestra `gh run rerun <run> --failed` para que `main` la re-ejecute. Si la falla es de infraestructura, `main` re-ejecuta el job y no rebota al autor. Después del segundo rebote de CI, si vuelve a fallar, se lo pasa al humano.
 
 **Cuerpo del PR.** Sigue la skill `pr`: `## Summary`, `## Evidencia` y `## Merge Danger`. Un PR de ticket lleva `Closes #<n>`, `Implementador: <agente>` y una fila de `## Evidencia` por cada regla y por cada entrada pública tocada, con el nombre exacto del test y la línea de la corrida en verde. Un PR de orquestación no lleva `Closes #`.
 
@@ -463,7 +465,7 @@ Tomados del código, los tests y el contrato. Cada fila dice qué pasa y qué ha
 | Un worker que se detuvo sin abrir PR | No hay PR que `vigilar` detecte; el issue queda con assignee y worktree | Mirá el worktree en Orca; no despaches de nuevo (el cerrojo lo rechaza). Releé el brief y decidí con el humano |
 | Autor ya salió y hay bloqueos de review | `rebote <pr>` relanza en su worktree y publica `Rebote: <sha>` | Si el worktree no está limpio y detenido en ese commit, `rebote` se niega |
 | Hallazgo de `interpretación` | Solo bloquea el rebote por review: va al humano | Pasale las dos lecturas con sus razones; no uses `Decidido por main` |
-| CI con un check `CANCELLED` | `rebote` se niega, lista las corridas | `gh run rerun <run> --failed` y esperá |
+| CI con un check `CANCELLED` | Si ya hay una corrida más nueva, `rebote` se niega como pendiente; si no, lista los reruns | Esperá a la nueva corrida o, si no existe, corré `gh run rerun <run> --failed` |
 | CI con checks pendientes | `rebote` se niega | Esperá a que termine |
 | CI roja dos veces | El contrato manda al humano; no se salda con `Decidido por main` | Leé `gh run view --job <job> --log-failed`; si es infra, re-ejecutá |
 | PR atrás de `ramaBase` (BEHIND) con la rama protegida | `gh pr merge` se niega | `gh pr update-branch <n>`, esperá la CI del head nuevo, mergeá. El review anterior sigue valiendo solo si el head nuevo es un merge de GitHub (`web-flow`, firma verificada, primer padre el commit revisado). Un merge pusheado a mano no cuenta. En `riesgo`, los reviews se piden de nuevo |

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
+import { isStatus, latestChecks } from '../src/checks.mjs'
 import { main } from '../src/cli.mjs'
 import { upsertBlock } from '../src/marker.mjs'
 import { policyBlock } from '../src/templates.mjs'
@@ -90,6 +91,10 @@ const harness = (world = {}) => {
         if (world.ghDown || !found) return fail(world.ghDown ?? `no pull requests found for ${args[2]}`)
         world.onPrView?.(args)
         return json(found)
+      }
+      if (cmd === 'gh' && args[0] === 'run' && args[1] === 'list') {
+        if (world.runListDown) return fail(world.runListDown)
+        return json(world.runs ?? [])
       }
       if (cmd === 'gh' && args[0] === 'issue' && args[1] === 'view') {
         if (world.ghDown) return fail(world.ghDown)
@@ -222,6 +227,64 @@ describe('orca-stack vigilar (#195)', () => {
     h.world.prs = [pr(70, { checks: GREEN })]
     await once(h, ['7'])
     assert.deepEqual(h.out, ['ci-verde #7 PR #70 abc1234'])
+  })
+
+  test('Issue 225 Rule 1: an open PR resolves its worker by head branch and normalizes its one agent state', async () => {
+    const workerBranch = { path: '/wt/issue-225', branch: 'feat/225', linkedIssue: null, agents: [{ agentType: 'CoDeX', state: 'WORKING' }] }
+    const hBranch = harness({ worktrees: [workerBranch], prs: [pr(70, { branch: 'feat/225', checks: GREEN })] })
+    await once(hBranch, ['7'])
+    assert.deepEqual(hBranch.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde-retenido #7 PR #70 abc1234: codex working'])
+
+    const workerLinked = { path: '/wt/issue-225-linked', branch: 'other-branch', linkedIssue: 7, agents: [{ agentType: 'codex', state: 'working' }] }
+    const hLinked = harness({ worktrees: [workerLinked], prs: [pr(70, { branch: 'feat/225', checks: GREEN })] })
+    await once(hLinked, ['7'])
+    assert.deepEqual(hLinked.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde-retenido #7 PR #70 abc1234: codex working'])
+  })
+
+  test('Issue 225 Rule 2: green CI is held once per head while worker lives, then released when done', async () => {
+    const worker = { path: '/wt/issue-225', branch: 'Gagaismo/orca-stack-7', linkedIssue: 7, agents: [{ agentType: 'codex', state: 'working' }] }
+    const h = harness({ worktrees: [worker], prs: [pr(70, { checks: GREEN })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde-retenido #7 PR #70 abc1234: codex working'])
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+    worker.agents[0].state = 'done'
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['ci-verde #7 PR #70 abc1234'])
+
+    const blockedWorker = { path: '/wt/blocked', branch: 'Gagaismo/orca-stack-7', linkedIssue: 7, agents: [{ agentType: 'codex', state: 'blocked' }] }
+    const hBlocked = harness({ worktrees: [blockedWorker], prs: [pr(70, { checks: GREEN })] })
+    await once(hBlocked, ['7'])
+    assert.deepEqual(hBlocked.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde-retenido #7 PR #70 abc1234: codex blocked'])
+    hBlocked.out.length = 0
+    await once(hBlocked, ['7'])
+    assert.deepEqual(hBlocked.out, [])
+
+    const exitWorker = { path: '/wt/exit', branch: 'Gagaismo/orca-stack-7', linkedIssue: 7, agents: [{ agentType: 'codex', state: 'working' }] }
+    const hExit = harness({ worktrees: [exitWorker], prs: [pr(70, { checks: GREEN })] })
+    await once(hExit, ['7'])
+    assert.deepEqual(hExit.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde-retenido #7 PR #70 abc1234: codex working'])
+    hExit.out.length = 0
+    exitWorker.agents = []
+    await once(hExit, ['7'])
+    assert.deepEqual(hExit.out, ['ci-verde #7 PR #70 abc1234'])
+
+    const liveRed = harness({ worktrees: [worker], prs: [pr(70, { checks: [check('matrix', 'FAILURE')] })] })
+    worker.agents = [{ agentType: 'codex', state: 'working' }]
+    await once(liveRed, ['7'])
+    assert.deepEqual(liveRed.out, ['pr-abierto #7 PR #70 abc1234', 'ci-roja #7 PR #70 abc1234: matrix=FAILURE'])
+  })
+
+  test('Issue 225 Rule 3: unreadable worktrees and Pi workers keep the existing ci-verde fallback', async () => {
+    const unreadable = harness({ orcaDown: true, prs: [pr(70, { checks: GREEN })] })
+    await once(unreadable, ['7'])
+    assert.deepEqual(unreadable.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
+    assert.ok(unreadable.err.some(line => line.includes('no enlaza PRs por worktree')))
+
+    const pi = harness({ worktrees: [{ path: '/wt/pi', branch: 'Gagaismo/orca-stack-7', linkedIssue: 7, agents: [{ agentType: 'pi', state: 'working' }] }], prs: [pr(70, { checks: GREEN })] })
+    await once(pi, ['7'])
+    assert.deepEqual(pi.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
   })
 
   test('Rule 6: a first run with no cursor emits the current state once', async () => {
@@ -632,5 +695,150 @@ describe('orca-stack vigilar (#206)', () => {
     await once(h, ['7'])
     assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
     assert.equal(h.cursor()['7'].ci, undefined)
+  })
+
+  test('Issue 225 Rule 4: the highest run per workflow counts and missing checks stay pending', async () => {
+    const row = (name, conclusion, run) => ({
+      __typename: 'CheckRun', name, workflowName: 'CI', status: 'COMPLETED', conclusion,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/1`,
+    })
+    const h = harness({ prs: [pr(70, { checks: [row('matrix', 'FAILURE', 10), row('matrix', 'SUCCESS', 11), row('context', 'SUCCESS', 12)] })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
+    assert.equal(h.cursor()['7'].ci, undefined)
+
+    const mixed = harness({
+      prs: [pr(70, {
+        checks: [
+          row('matrix', 'SUCCESS', 12),
+          row('context', 'SUCCESS', 12),
+          { __typename: 'StatusContext', context: 'security/guard', state: 'SUCCESS' },
+          { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+        ],
+      })],
+    })
+    await once(mixed, ['7'])
+    assert.deepEqual(mixed.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
+  })
+
+  test('Issue 225 Rule 5: the #218 successor rows are exclusive and later green emits ci-verde', async () => {
+    const row = (name, conclusion, run) => ({
+      __typename: 'CheckRun', name, workflowName: 'CI', status: 'COMPLETED', conclusion,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/1`,
+    })
+    const h = harness({ prs: [pr(70, { checks: [row('matrix', 'SUCCESS', 38843085964), row('ci-ok', 'SUCCESS', 38843085964), row('matrix', 'SUCCESS', 38843110472)] })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
+    assert.equal(h.cursor()['7'].ci, undefined)
+    h.world.prs[0].statusCheckRollup.push(row('ci-ok', 'SUCCESS', 38843110472))
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['ci-verde #7 PR #70 abc1234'])
+  })
+
+  test('Issue 225 Rule 6: a higher queued run replaces a cancelled one, queried only for cancelled checks', async () => {
+    const cancelled = { __typename: 'CheckRun', name: 'matrix', workflowName: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/38843085964/job/1' }
+    const h = harness({ prs: [pr(70, { checks: [cancelled] })], runs: [{ databaseId: 38843110472, status: 'queued', conclusion: null }] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
+    assert.deepEqual(h.calls.filter(line => line.startsWith('gh run list')), ['gh run list --commit abc1234aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --workflow CI --json databaseId,status,conclusion'])
+    const green = harness({ prs: [pr(70, { checks: GREEN })] })
+    await once(green, ['7'])
+    assert.equal(green.calls.filter(line => line.startsWith('gh run list')).length, 0)
+  })
+
+  test('Issue 225 Rule 7: unreplaced cancellation emits ci-cancelada once and excludes ci-ok failure', async () => {
+    const rows = [
+      { __typename: 'CheckRun', name: 'matrix', workflowName: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/38843085964/job/1' },
+      { __typename: 'CheckRun', name: 'ci-ok', workflowName: 'CI', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://github.com/org/repo/actions/runs/38843085964/job/2' },
+    ]
+    const h = harness({ prs: [pr(70, { checks: rows })], runs: [] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-cancelada #7 PR #70 abc1234: matrix=CANCELLED'])
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+
+    const failed = harness({ prs: [pr(70, { checks: rows })], runListDown: 'temporary failure' })
+    await once(failed, ['7'])
+    assert.deepEqual(failed.out, [])
+    assert.ok(failed.err.some(line => line.includes('gh run list falló (temporary failure)')))
+    assert.equal(failed.files[CURSOR], undefined)
+
+    const blind = harness({ prs: [pr(70, { checks: rows })], runListDown: 'temporary failure' })
+    blind.world.script = [() => {}, () => {}, world => {
+      world.runListDown = undefined
+      world.prs = [pr(70, { state: 'MERGED' })]
+    }]
+    assert.equal(await vigilarCommand({}, ['7'], blind.io), 0)
+    assert.deepEqual(blind.out, ['vigilar-ciego: gh run list falló (temporary failure)', 'pr-mergeado #7 PR #70 abc1234', 'tanda-cerrada #7'])
+  })
+
+  test('Issue 225 Rule 9: a red rerun in the same workflow run still emits once per failed attempt', async () => {
+    const row = (startedAt, run) => ({
+      __typename: 'CheckRun', name: 'matrix', workflowName: 'CI', status: 'COMPLETED', conclusion: 'FAILURE', startedAt,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/1`,
+    })
+    const h = harness({ prs: [pr(70, { checks: [row('2026-10-15T10:00:00Z', 38843110472)] })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-roja #7 PR #70 abc1234: matrix=FAILURE'])
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+    h.world.prs[0].statusCheckRollup.push(row('2026-10-15T10:30:00Z', 38843110472))
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['ci-roja #7 PR #70 abc1234: matrix=FAILURE'])
+  })
+
+  test('Issue 225 Rule 9: rows of run 10 red, then rows of run 11 red on the same head gives two ci-roja events', async () => {
+    const row = (name, run, startedAt = '2026-10-15T10:00:00Z') => ({
+      __typename: 'CheckRun', name, workflowName: 'CI', status: 'COMPLETED', conclusion: 'FAILURE', startedAt,
+      detailsUrl: `https://github.com/org/repo/actions/runs/${run}/job/1`,
+    })
+    const h = harness({ prs: [pr(70, { checks: [row('test', 10)] })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-roja #7 PR #70 abc1234: test=FAILURE'])
+    assert.equal(h.cursor()['7'].corridaRun, '10')
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+    h.world.prs[0].statusCheckRollup.push(row('test', 11, '2026-10-15T11:00:00Z'))
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['ci-roja #7 PR #70 abc1234: test=FAILURE'])
+    assert.equal(h.cursor()['7'].corridaRun, '11')
+    h.out.length = 0
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+  })
+
+  test('Issue 225 PRESERVE: vigilarCommand preserves cursor file, worker-en-pausa, and merge-de-main', async () => {
+    const wt = { path: '/wt/paused', repo: 'orca-stack', linkedIssue: 7, agents: [{ state: 'done', agentType: 'codex' }] }
+    const h = harness({ worktrees: [wt], issues: { 7: 'OPEN' } })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['worker-en-pausa #7 codex'])
+    assert.equal(h.cursor()['7'].worker?.state, 'done')
+
+    const hMerge = harness({ prs: [pr(70)] })
+    await once(hMerge, ['7'])
+    drain(hMerge)
+    assert.equal(await mergeDeMain(hMerge, '70'), 0)
+    hMerge.world.prs = [pr(70, { state: 'MERGED' })]
+    hMerge.world.now = T0 + 5 * MINUTE
+    await once(hMerge, ['7'])
+    assert.deepEqual(drain(hMerge), ['tanda-cerrada #7'])
+    assert.equal(hMerge.cursor()['7'].fin, 'main')
+  })
+
+  test('Issue 225 PRESERVE: latestChecks preserves CheckRun without runId and StatusContext checks', () => {
+    const rollup = [
+      { __typename: 'StatusContext', context: 'security/guard', state: 'SUCCESS' },
+      { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+      { __typename: 'CheckRun', name: 'unit', workflowName: 'CI', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'https://github.com/org/repo/actions/runs/123/job/1' },
+    ]
+    const checks = latestChecks(rollup)
+    assert.equal(checks.length, 3)
+    assert.ok(checks.some(c => isStatus(c.check) && c.check.context === 'security/guard'))
+    assert.ok(checks.some(c => c.check.name === 'lint' && !c.runId))
+    assert.ok(checks.some(c => c.check.name === 'unit' && c.runId === '123'))
   })
 })
