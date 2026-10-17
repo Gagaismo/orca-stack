@@ -73,6 +73,7 @@ export const harness = (
     return { value: path.endsWith('/AGENTS.md') ? contract : '' }
   })
   on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Text', children: ['engine'] }))
+  on('ui.render', { component: 'SessionMode' }, () => ({ type: 'Text', children: ['engine-modes'] }))
 
   return {
     registered,

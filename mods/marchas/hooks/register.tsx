@@ -358,16 +358,24 @@ export const register: Register = on => {
     }
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+  // The gear sits with the mode labels at the right of the prompt footer, beside whatever the
+  // engine and other plugins draw there, so it never competes for the one band above the prompt.
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const modes = await next(e)
     if (!(await enabled($))) {
-      return next(e)
+      return modes
     }
-    const { Text } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
     const gear = await currentGear($)
     const state = gearState(await $.store.get(await sessionKey($)))
     const label = gear[0].toUpperCase() + gear.slice(1)
     const text = state?.needsReminder === true ? `${label} - repet\u00ed /marcha ${gear}` : label
 
-    return <Text color={COLORS[gear]}>{text}</Text>
+    return (
+      <Box gap={1}>
+        <Text color={COLORS[gear]}>{text}</Text>
+        {modes}
+      </Box>
+    )
   })
 }
