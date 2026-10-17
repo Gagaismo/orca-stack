@@ -136,6 +136,8 @@ describe('gear contract', () => {
       'Implementador: <agente>', 'Revisor: <agente>', 'Commit: <sha>',
       'Verificado por main: hallazgos <n,\u2026> corregidos en <sha>', 'Decidido por main: <hallazgo> \u2014 <raz\u00F3n>',
     ]
+    // Issue 250 Rule 12: the rebote markers sit between the existing lines and the gear lines.
+    const bounceLines = ['Rebote: <sha>', 'Rebote CI: <sha>', 'Rebote conflicto: <sha>']
     const addedLines = [
       'Marcha: <lazy|medium|proactive>', 'Esperando marcha: <items>', 'Consulta: <agente>',
       'Respuesta de main:', 'Respuesta del humano:',
@@ -143,7 +145,7 @@ describe('gear contract', () => {
     assert.ok(fixedLine)
     const markerList = fixedLine.split(', son marcas fijas')[0]
     const actual = [...markerList.matchAll(/`([^`]+)`/g)].map(([, marker]) => marker)
-    assert.deepEqual(actual, [...existingHeadings, ...addedHeadings, ...existingLines, ...addedLines])
+    assert.deepEqual(actual, [...existingHeadings, ...addedHeadings, ...existingLines, ...bounceLines, ...addedLines])
     assert.equal(addedHeadings.length + addedLines.length, 7)
   })
 
