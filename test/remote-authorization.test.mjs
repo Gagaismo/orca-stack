@@ -156,7 +156,7 @@ describe('Reglas 1-8', () => {
 
     assert.ok(out.includes('## Remote authorization'))
     assert.ok(out.includes('- Destination: github.com, repository Gagaismo/orca-stack'))
-    assert.ok(out.includes('- Operations: read the PR, its reviews and checks (including `gh run view ... --log-failed`); push only the PR branch to `origin`; comment on the PR.'))
+    assert.ok(out.includes('- Operations: read the PR, its reviews and checks (including `gh run view ... --log-failed`); push only the PR branch to `origin`; comment on the PR; `gh pr edit 7 --body-file <file>` for the PR body only.'))
   })
 
   test('Regla 4: revisar authorizes reading and publishing review only, and says no push', async () => {

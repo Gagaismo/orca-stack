@@ -265,6 +265,12 @@ const bodyPrecheckStep = cuerpoPr => {
   return `\n6. Run \`${cmd}\` on your PR body file and fix the body until it passes.`
 }
 
+const reboteBodyPrecheckStep = cuerpoPr => {
+  if (typeof cuerpoPr !== 'string' || cuerpoPr.trim() === '') return ''
+  const cmd = cuerpoPr.trim().replace(/\{file\}/g, '<your body file>')
+  return `\n- Run \`${cmd}\` on the new body file before \`gh pr edit\` and fix the body until it passes.`
+}
+
 export const renderBrief = (kind, vars, nota) => {
   const defaultOps = kind === 'ticket'
     ? `read issue #${vars.ISSUE ?? '<n>'} and its comments and the repo; comment on the issue; push only the ticket branch to \`origin\`; open the PR against ${vars.BASE ?? 'main'}.`
@@ -928,11 +934,12 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     ISSUE: issue,
     REMOTE_HOST: remote.host,
     REMOTE_REPO: remote.ownerRepo,
-    REMOTE_OPERATIONS: `read the PR, its reviews and checks (including \`gh run view ... --log-failed\`); ${conflict ? `\`git fetch origin\` (the base branch \`${base}\`); ` : ''}push only the PR branch to \`origin\`; comment on the PR.`,
+    REMOTE_OPERATIONS: `read the PR, its reviews and checks (including \`gh run view ... --log-failed\`); ${conflict ? `\`git fetch origin\` (the base branch \`${base}\`); ` : ''}push only the PR branch to \`origin\`; comment on the PR; \`gh pr edit ${n} --body-file <file>\` for the PR body only.`,
     FINDINGS: findings || (conflict ? 'No current blocking review findings.' : 'No current blocking review findings; this is a CI-only bounce.'),
     FAILED_CHECKS: failedChecksText,
     CONFLICT_SECTION: conflictSection,
     VERIFICATION: verificationBlock(config),
+    BODY_PRECHECK_STEP: reboteBodyPrecheckStep(config.verificacion?.cuerpoPR),
     FANOUT_INSTRUCTIONS: fanoutInstructions(agent, nota, true),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
   })

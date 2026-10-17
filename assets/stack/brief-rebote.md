@@ -16,6 +16,7 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 - Work only in this existing worktree and stay on its PR branch.
 - Resume the ODD feature `issue-{{ISSUE}}` with ODD's resume protocol (the document is still in the worktree).
 - Fix every listed review finding and failed check. Do not resolve interpretation findings; those are never sent in a bounce brief.
+- When a finding or failed check is about the PR body, fix the body file, edit the PR with `--body-file` (`gh pr edit {{PR}} --body-file <file>`), make no commit for it, and say in the PR comment that the head did not change. The edited body keeps its `Implementador:` and `Closes #<n>` lines and is UTF-8 without a BOM.{{BODY_PRECHECK_STEP}}
 - Do not delete, skip or weaken a test to make CI pass.
 - Do not edit `.github/workflows/` unless the ticket asks for it.
 - If a failure depends on the environment, make the test hermetic.

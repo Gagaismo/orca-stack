@@ -1513,6 +1513,29 @@ describe('rebote', () => {
     })
   })
 
+  test('Issue 256 Rule 2: rebote bounces real fail-fast rows as a failed check instead of asking for gh run rerun', async () => {
+    // Real statusCheckRollup rows of https://github.com/encode/httpx/pull/3796 (run 37009481166, default fail-fast matrix).
+    const row = (name, conclusion, startedAt, completedAt, job) => ({
+      __typename: 'CheckRun', name, workflowName: 'Test Suite', status: 'COMPLETED', conclusion, startedAt, completedAt,
+      detailsUrl: `https://github.com/encode/httpx/actions/runs/37009481166/job/${job}`,
+    })
+    const checks = [
+      row('Python 3.10', 'CANCELLED', '2026-10-02T12:54:17Z', '2026-10-02T12:55:11Z', 110845502632),
+      row('Python 3.11', 'CANCELLED', '2026-10-02T12:53:52Z', '2026-10-02T12:54:36Z', 110845502341),
+      row('Python 3.12', 'FAILURE', '2026-10-02T12:53:52Z', '2026-10-02T12:54:34Z', 110845502631),
+      row('Python 3.13', 'CANCELLED', '2026-10-02T12:53:54Z', '2026-10-02T12:54:56Z', 110845502533),
+    ]
+    const env = bounceEnv(pr({ reviews: [], statusCheckRollup: checks }), { 'gh run': json([]) })
+    await reboteCommand({}, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.match(brief, /Python 3\.12/)
+    assert.match(brief, /https:\/\/github\.com\/encode\/httpx\/actions\/runs\/37009481166\/job\/110845502631/)
+    assert.match(brief, /gh run view --job 110845502631 --log-failed/)
+    assert.match(brief, /Cancelled siblings.*Python 3\.10, Python 3\.11, Python 3\.13/)
+    assert.doesNotMatch(brief, /gh run rerun/)
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: abc123\n')
+  })
+
   test('Issue 225 PRESERVE: reboteCommand retains existing arguments, refusals and Rebote CI counters', async () => {
     const closed = bounceEnv(pr({ state: 'CLOSED' }))
     await assert.rejects(reboteCommand({}, '12', closed.io), /no se puede rebotar/)
@@ -2041,6 +2064,130 @@ describe('rebote', () => {
       await run('ticket', { n: '300', agent: 'agy', dryRun: true }, env)
       const out = env.out.join('\n')
       assert.ok(out.includes('brief -> '))
+    })
+  })
+
+  describe('issue #255: rebote brief authorizes editing the PR body for body-only fixes', () => {
+    const briefOf = env => env.written.find(([file]) => file.endsWith('-rebote.md'))?.[1]
+
+    test('Rule 1: every bounce brief lists gh pr edit <pr> --body-file <file> for the PR body only in allowed remote operations', async () => {
+      // CI bounce for PR #251
+      const ciPull = pr({ number: 251, headRefOid: 'df9e86a', reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'evidencia', conclusion: 'FAILURE' }] })
+      const ciEnv = bounceEnv(ciPull)
+      await reboteCommand({}, '251', ciEnv.io)
+      const ciBrief = briefOf(ciEnv)
+      assert.ok(ciBrief.includes('- Operations: read the PR, its reviews and checks (including `gh run view ... --log-failed`); push only the PR branch to `origin`; comment on the PR; `gh pr edit 251 --body-file <file>` for the PR body only.'))
+
+      // Review bounce for PR #12
+      const revEnv = bounceEnv(pr({ number: 12 }))
+      await reboteCommand({}, '12', revEnv.io)
+      const revBrief = briefOf(revEnv)
+      assert.ok(revBrief.includes('`gh pr edit 12 --body-file <file>` for the PR body only.'))
+    })
+
+    test('Rule 2: bounce brief keeps title, base branch, labels, assignees, reviewers and PR state out of allowed operations, keeps merge and force push unauthorized, and edited body keeps Implementador and Closes lines and UTF-8 without BOM', async () => {
+      const env = bounceEnv(pr({ number: 12 }))
+      await reboteCommand({}, '12', env.io)
+      const brief = briefOf(env)
+
+      const opsLine = brief.split('- Operations: ')[1].split('\n')[0]
+      for (const field of ['title', 'base branch', 'label', 'assignee', 'reviewer', 'PR state']) {
+        assert.doesNotMatch(opsLine, new RegExp(field, 'i'))
+      }
+      assert.ok(brief.includes('- Explicitly not authorized: merge, force push, deleting branches or issues, other repos, remotes or hosts.'))
+      assert.ok(brief.includes('The edited body keeps its `Implementador:` and `Closes #<n>` lines and is UTF-8 without a BOM.'))
+    })
+
+    test('Rule 3: Work section says when finding or failed check is about PR body, fix body file, edit PR with --body-file, make no commit, and say head did not change', async () => {
+      const env = bounceEnv(pr({ number: 12 }))
+      await reboteCommand({}, '12', env.io)
+      const brief = briefOf(env)
+      const workSection = brief.split('## Work')[1].split(/\n## /)[0]
+
+      assert.match(workSection, /when a finding or failed check is about the PR body, fix the body file, edit the PR with `--body-file`.*make no commit for it, and say in the PR comment that the head did not change/i)
+      assert.ok(workSection.includes('gh pr edit 12 --body-file <file>'))
+    })
+
+    test('Rule 4: when verificacion.cuerpoPR is set, bounce brief tells author to run it on new body file before gh pr edit; without the key, no such line and no placeholder', async () => {
+      const configWith = {
+        ...PROJECT,
+        verificacion: {
+          ...PROJECT.verificacion,
+          cuerpoPR: 'node scripts/check-evidencia.mjs {file}',
+        },
+      }
+      const envWith = bounceEnv(pr({ number: 12 }), {}, configWith)
+      await reboteCommand({}, '12', envWith.io)
+      const briefWith = briefOf(envWith)
+      assert.ok(briefWith.includes('node scripts/check-evidencia.mjs <your body file>'))
+      assert.ok(briefWith.includes('Run `node scripts/check-evidencia.mjs <your body file>` on the new body file before `gh pr edit` and fix the body until it passes.'))
+
+      const envWithout = bounceEnv(pr({ number: 12 }), {}, PROJECT)
+      await reboteCommand({}, '12', envWithout.io)
+      const briefWithout = briefOf(envWithout)
+      assert.ok(!briefWithout.includes('on the new body file before `gh pr edit`'))
+      assert.ok(!briefWithout.includes('BODY_PRECHECK_STEP'))
+      assert.ok(!briefWithout.includes('{{'))
+    })
+
+    test('Rule 5: ticket and review briefs keep current remote operations unchanged and review stays read-only', async () => {
+      const ticketBrief = renderBrief('ticket', { AGENT: 'agy', ISSUE: '255', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(ticketBrief.includes('- Operations: read issue #255 and its comments and the repo; comment on the issue; push only the ticket branch to `origin`; open the PR against main.'))
+      assert.ok(!ticketBrief.includes('gh pr edit'))
+
+      const reviewBrief = renderBrief('review', { AGENT: 'codex', PR: '255', REPO: 'orca-stack', BASE: 'main', SHA: 'abc123', IMPLEMENTER: 'agy' })
+      assert.ok(reviewBrief.includes('- Operations: read the PR, its diff, its checks and the issue it closes; publish the review with the command the brief already gives. No push.'))
+      assert.ok(!reviewBrief.includes('gh pr edit'))
+
+      const brEnv = fakeIo(
+        {
+          'gh pr': json({ number: 255, headRefOid: 'abc123', body: 'Implementador: agy' }),
+          'git worktree list': okRes(`worktree ${root}\n`),
+          'git rev-parse FETCH_HEAD': okRes('abc123\n'),
+          'git rev-parse HEAD': okRes('abc123\n'),
+        },
+        { config: { ...PROJECT, modo: 'un-agente' } },
+      )
+      await briefRevisionCommand({ n: '255', modelo: 'claude-sonnet-5-5' }, brEnv.io)
+      const brBrief = readFileSync(path.join(home, 'orca', 'briefs', 'proj-revision-255-subagente.md'), 'utf8')
+      assert.ok(brBrief.includes('- Operations: read-only (PR, diff, checks, issue). main publishes the review. No push.'))
+      assert.ok(!brBrief.includes('gh pr edit'))
+    })
+
+    test('Rule 6: rebote section of docs/manual.md says author may edit the PR body', () => {
+      const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs', 'manual.md'), 'utf8')
+      const reboteSection = manual.split('#### `rebote`')[1].split(/\n#### /)[0]
+      assert.match(reboteSection, /cuerpo del PR/i)
+      assert.match(reboteSection, /gh pr edit.*--body-file/i)
+    })
+
+    test('Preserve touched public entries in despacho: reboteCommand retains behavior for review, CI and conflict bounces', async () => {
+      // Review bounce
+      const revEnv = bounceEnv(pr({ number: 12 }))
+      await reboteCommand({}, '12', revEnv.io)
+      assert.ok(revEnv.out.some(l => l.includes('Rebote: abc123')))
+      const revBrief = briefOf(revEnv)
+      assert.ok(revBrief.includes('# PR bounce brief'))
+      assert.ok(revBrief.includes('## Review findings'))
+
+      // CI bounce
+      const ciEnv = bounceEnv(pr({ number: 12, reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }] }))
+      await reboteCommand({}, '12', ciEnv.io)
+      assert.ok(ciEnv.out.some(l => l.includes('Rebote CI: abc123')))
+      const ciBrief = briefOf(ciEnv)
+      assert.ok(ciBrief.includes('## Failed checks'))
+
+      // Conflict bounce
+      const mergeTree = { status: 1, stdout: '4b825dc642cb6eb9a060e54bf8d69288fbee4904\0docs/manual.md\0', stderr: '' }
+      const conflictEnv = bounceEnv(pr({ number: 12, reviews: [], mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY', baseRefName: 'main' }), {
+        'git merge-tree': mergeTree,
+        'git log': okRes('dec52eb docs(manual): rebote paragraph\n'),
+      })
+      await reboteCommand({}, '12', conflictEnv.io)
+      assert.ok(conflictEnv.out.some(l => l.includes('Rebote conflicto: abc123')))
+      const confBrief = briefOf(conflictEnv)
+      assert.ok(confBrief.includes('## Merge conflict'))
+      assert.ok(confBrief.includes('`git fetch origin` (the base branch `main`)'))
     })
   })
 })
