@@ -984,6 +984,11 @@ describe('orca-stack vigilar (#254)', () => {
     const h = harness({ worktrees: [worker], prs: [pr251({ mergeable: 'CONFLICTING' })] })
     await once(h, ['250'])
     assert.deepEqual(h.out, ['pr-abierto #250 PR #251 df9e86a', 'pr-en-conflicto #250 PR #251 df9e86a'])
+
+    const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs', 'manual.md'), 'utf8')
+    const row = manual.split(/\r?\n/).find(line => line.startsWith('| `pr-en-conflicto #<n> PR #<pr> <sha>`'))
+    assert.ok(row?.includes('con el agente vivo, `rebote` se niega'), row)
+    assert.ok(row.includes('`orca-stack rebote <pr>` una vez que el worker se detuvo'), row)
   })
 
   test('Issue 254 Rule 5: re-arming vigilar resumes from the cursor and does not emit the conflict of the current head again', async () => {
@@ -1007,11 +1012,11 @@ describe('orca-stack vigilar (#254)', () => {
     assert.deepEqual(h.out, ['pr-mergeado #250 PR #251 df9e86a', 'tanda-cerrada #7 #250'])
   })
 
-  test('Issue 254 Rule 7: the manual events table has pr-en-conflicto with rebote; CONTRATO step 5 names it next to worker-en-pausa; AGENTS.md equals the asset', () => {
+  test('Issue 254 Rule 7: the manual events table has pr-en-conflicto with rebote; CONTRATO step 5 names it next to worker-en-pausa; AGENTS.md equals the asset; vigilar --help lists it', async () => {
     const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs', 'manual.md'), 'utf8')
     const row = manual.split(/\r?\n/).find(line => line.startsWith('| `pr-en-conflicto #<n> PR #<pr> <sha>`'))
     assert.ok(row, 'manual events row')
-    assert.ok(row.includes('`orca-stack rebote <pr>`') && row.includes('worker'), row)
+    assert.ok(row.includes('Corré `orca-stack rebote <pr>` una vez que el worker se detuvo'), row)
 
     const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
     const step5 = contract.split(/\r?\n/).find(line => line.startsWith('5. '))
@@ -1022,6 +1027,16 @@ describe('orca-stack vigilar (#254)', () => {
     const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
     const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
     assert.equal(upsertBlock(agents, block), agents, 'init would change nothing in AGENTS.md')
+
+    const oldLog = console.log
+    let output = ''
+    console.log = value => { output += `${value}\n` }
+    try {
+      assert.equal(await main(['vigilar', '--help']), 0)
+    } finally {
+      console.log = oldLog
+    }
+    assert.ok(output.split('\n').some(line => line.trim() === 'pr-en-conflicto #<n> PR #<pr> <sha>'), output)
   })
 
   test('Issue 254 Rule 8 and PRESERVE: vigilarCommand keeps every existing event and --merge-de-main on a non-conflicting PR', async () => {

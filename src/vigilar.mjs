@@ -216,6 +216,7 @@ const advance = (issue, seen, before, merges) => {
       delete entry.corrida
       delete entry.corridaRun
       delete entry.ciRetenido
+      delete entry.conflicto
     }
     // GitHub runs no pull_request workflow while the PR conflicts with its base, so no CI event would ever come: one
     // event per head, even with the worker live. UNKNOWN (still computing) is read again next poll and clears nothing.
