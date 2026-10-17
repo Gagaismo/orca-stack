@@ -16,7 +16,8 @@
   },
   "verificacion": {
     "suite": "npm run verify",
-    "typecheck": "ninguno"
+    "typecheck": "ninguno",
+    "cuerpoPR": "node scripts/check-evidencia.mjs {file}"
   },
   "riesgo": [],
   "merge": "main merges on its own as soon as CI is green (no reviews in this repo for now, see AGENTS.md Project rules)",

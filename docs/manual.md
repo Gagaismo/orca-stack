@@ -313,7 +313,7 @@ Cada capa pisa a la anterior: los objetos se fusionan clave por clave y **una li
 
 `<repo>` es el checkout principal (se resuelve con `git rev-parse --git-common-dir`), así que una sesión dentro de un worktree lee los archivos del checkout principal.
 
-Claves del contrato: `setup`, `modo`, `ramaBase`, `agentes` (`usa`, `preguntarAntes`), `verificacion` (`suite`, `typecheck`), `riesgo`, `review`, `merge`, `despliegue`, `idioma`. Claves de los mods: `humano`, `mensajes.destinatarios`, `despacho.script`, `despacho.revisar`, `guardia.bloquear`, `guardia.modeloClaude`. La tabla completa está en el [README](../README.md#claves) y en la [guía de setup](guia-setup.md#parte-4-configuración-de-los-mods-dónde-va-cada-cosa).
+Claves del contrato: `setup`, `modo`, `ramaBase`, `agentes` (`usa`, `preguntarAntes`), `verificacion` (`suite`, `typecheck`, `cuerpoPR`), `riesgo`, `review`, `merge`, `despliegue`, `idioma`. `cuerpoPR` permite configurar un comando con placeholder `{file}` para pre-validar localmente el cuerpo del PR antes de crearlo; la validación de `## Evidencia` acepta títulos exactos declarados en `test()`/`it()`, describe paths aceptados por su último segmento y patrones de template, exigiendo que solo los nombres de test lleven backticks y las verificaciones sin test vayan en texto plano. Claves de los mods: `humano`, `mensajes.destinatarios`, `despacho.script`, `despacho.revisar`, `guardia.bloquear`, `guardia.modeloClaude`. La tabla completa está en el [README](../README.md#claves) y en la [guía de setup](guia-setup.md#parte-4-configuración-de-los-mods-dónde-va-cada-cosa).
 
 Ejemplo: bloquear a un agente sin cuota hasta una fecha, en `.orca-stack.local.json`:
 

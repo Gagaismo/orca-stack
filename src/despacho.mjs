@@ -259,6 +259,12 @@ const subagentsInstruction = agent => {
   return `Subagents: when your runtime has subagents, you may use your session's subagents ${scope} When it has none, do those steps inline and note it under ## Desvíos del ticket.`
 }
 
+const bodyPrecheckStep = cuerpoPr => {
+  if (typeof cuerpoPr !== 'string' || cuerpoPr.trim() === '') return ''
+  const cmd = cuerpoPr.trim().replace(/\{file\}/g, '<your body file>')
+  return `\n6. Run \`${cmd}\` on your PR body file and fix the body until it passes.`
+}
+
 export const renderBrief = (kind, vars, nota) => {
   const defaultOps = kind === 'ticket'
     ? `read issue #${vars.ISSUE ?? '<n>'} and its comments and the repo; comment on the issue; push only the ticket branch to \`origin\`; open the PR against ${vars.BASE ?? 'main'}.`
@@ -274,6 +280,7 @@ export const renderBrief = (kind, vars, nota) => {
     REVIEWER_LINE: vars.REVIEWER_LINE ?? vars.AGENT,
     PROJECT_INSTRUCTIONS: projectInstructions(vars.AGENT),
     SUBAGENTS_INSTRUCTION: subagentsInstruction(vars.AGENT),
+    BODY_PRECHECK_STEP: vars.BODY_PRECHECK_STEP ?? bodyPrecheckStep(vars.CUERPO_PR),
     CODING_STANDARDS_INSTRUCTION: vars.HAS_CODING_STANDARDS ? 'Read CODING_STANDARDS.md and check the change against it before every commit.' : '',
     REVIEW_STANDARDS: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md and AGENTS.md' : 'AGENTS.md',
     FANOUT_INSTRUCTIONS: fanoutInstructions(vars.AGENT, nota),
@@ -663,6 +670,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     BASE: base,
     BRANCH: branch,
     VERIFICATION: verificationBlock(config),
+    CUERPO_PR: config.verificacion?.cuerpoPR,
     HAS_CODING_STANDARDS: hasCodingStandards,
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
   }, nota)

@@ -35,7 +35,7 @@ Every check runs and finishes before the PR opens: the configured verification, 
 2. Before opening the PR, run the `code-review` skill on the diff as round 1, with that table and the issue as input: besides the diff, it checks that every rule has a row and that the row's test proves that rule.
 3. Fix what round 1 found.
 4. Run round 2 only when round 1 led to a change of code or tests, and only on the delta since round 1. A reviewer always asks for something, so "it asked for changes" is never the reason for another round.
-5. There is no round 3: what round 2 leaves open goes under `## Desvíos del ticket`.
+5. There is no round 3: what round 2 leaves open goes under `## Desvíos del ticket`.{{BODY_PRECHECK_STEP}}
 
 When the work is done and verified, push the branch and open the PR with a body file (never through a pipe: the Windows console breaks accents):
 
@@ -52,7 +52,7 @@ The body is UTF-8 without a BOM (Windows PowerShell's `Out-File` and `Set-Conten
 ## Evidencia
 | Rule, legacy RED item, or touched public entry | Test (exact name) | Result |
 |---|---|---|
-<one row per rule (or, for a legacy ticket, per acceptance criterion and failure mode used as a RED item) and one row per touched public entry: the exact test name and passing line, or how it was verified when there is no test. If no existing public entry is touched, state "none touched"; do not add a placeholder row. Add before/after (screenshot or output) when the change is visible.>
+<one row per rule (or, for a legacy ticket, per acceptance criterion and failure mode used as a RED item) and one row per touched public entry: the test title exactly as declared in `test()`/`it()`, without the describe path or abbreviations; only test names go in backticks in the Test column; a verification without a test (a command, a manual check) is written as plain text, without backticks. If no existing public entry is touched, state "none touched"; do not add a placeholder row. Add before/after (screenshot or output) when the change is visible.>
 A row's evidence is a measured number (time, size, throughput, cost): read `~/.claude/skills/principle-explain-the-number/SKILL.md`.
 
 ## Merge Danger
