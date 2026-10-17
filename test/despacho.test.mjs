@@ -1786,6 +1786,221 @@ describe('rebote', () => {
     })
   })
 
+  describe('issue 250: merge conflict bounce', () => {
+    const conflicting = (overrides = {}) => pr({ reviews: [], mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY', baseRefName: 'main', ...overrides })
+    const mergeTree = { status: 1, stdout: '4b825dc642cb6eb9a060e54bf8d69288fbee4904\0docs/manual.md\0src/despacho.mjs\0', stderr: '' }
+    const baseLog = okRes('dfc7ad2 Merge pull request #248\ndec52eb docs(manual): rebote paragraph\n')
+    const conflictEnv = (pull = conflicting(), extra = {}) => bounceEnv(pull, { 'git merge-tree': mergeTree, 'git log': baseLog, ...extra })
+    const briefOf = env => env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    const markerOf = env => env.written.find(([file]) => file.endsWith('-comment.md'))?.[1]
+    const launches = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal')
+    const commented = env => env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+
+    test('Rule 1: a conflicting PR with green or missing CI and no blocking review is relaunched (#246 after #248)', async () => {
+      for (const statusCheckRollup of [[{ __typename: 'CheckRun', name: 'ci-ok', status: 'COMPLETED', conclusion: 'SUCCESS' }], []]) {
+        const env = conflictEnv(conflicting({ statusCheckRollup }))
+        await reboteCommand({}, '12', env.io)
+        const view = env.calls.find(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'view')
+        for (const field of ['mergeable', 'mergeStateStatus', 'baseRefName']) assert.ok(view[view.indexOf('--json') + 1].split(',').includes(field), field)
+        assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create').length, 1)
+        assert.equal(markerOf(env), 'Rebote conflicto: abc123\n')
+      }
+    })
+
+    test('Rule 2: the brief gets a Merge conflict section with the base, the merge steps, the files and the base commits', async () => {
+      const env = conflictEnv()
+      await reboteCommand({}, '12', env.io)
+      const section = briefOf(env).split('## Merge conflict')[1]?.split(/\n## /)[0] ?? ''
+      assert.ok(section.includes('`main`'), 'names the base branch')
+      for (const step of ['git fetch origin', 'git merge origin/main', 'never rebase', 'never force push', 'Push', 'Comment on PR #12']) assert.ok(section.includes(step), step)
+      assert.match(section, /run the configured verification/i)
+      assert.match(section, /how each conflicting file was resolved/)
+      assert.match(section, /- `docs\/manual\.md`\n- `src\/despacho\.mjs`/)
+      assert.match(section, /dfc7ad2 Merge pull request #248\ndec52eb docs\(manual\): rebote paragraph/)
+      const log = env.calls.find(call => call[0] === 'git' && call[1] === 'log')
+      assert.deepEqual(log.slice(1), ['log', '--oneline', 'abc123..origin/main', '--', 'docs/manual.md', 'src/despacho.mjs'])
+      assert.ok(env.calls.some(call => call.join(' ') === 'git fetch origin main'))
+      assert.ok(env.calls.find(call => call[0] === 'git' && call[1] === 'merge-tree').includes('-z'))
+
+      const noLog = conflictEnv(conflicting(), { 'git log': { status: 128, stdout: '', stderr: 'fatal: bad revision' } })
+      await reboteCommand({}, '12', noLog.io)
+      const partial = briefOf(noLog).split('## Merge conflict')[1].split(/\n## /)[0]
+      assert.match(partial, /- `docs\/manual\.md`\n- `src\/despacho\.mjs`/)
+      assert.match(partial, /could not compute the base commits/)
+
+      const unknown = conflictEnv(conflicting(), { 'git merge-tree': { status: 128, stdout: '', stderr: 'fatal: unknown option' } })
+      await reboteCommand({}, '12', unknown.io)
+      const fallback = briefOf(unknown).split('## Merge conflict')[1].split(/\n## /)[0]
+      assert.match(fallback, /could not compute the conflicting files/)
+      assert.doesNotMatch(fallback, /docs\/manual\.md/)
+      assert.equal(markerOf(unknown), 'Rebote conflicto: abc123\n')
+    })
+
+    test('Rule 3: a conflict bounce allows git fetch origin; other bounces keep their remote operations', async () => {
+      const env = conflictEnv()
+      await reboteCommand({}, '12', env.io)
+      const ops = briefOf(env).split('- Operations: ')[1].split('\n')[0]
+      assert.match(ops, /`git fetch origin` \(the base branch `main`\)/)
+      const review = bounceEnv(pr())
+      await reboteCommand({}, '12', review.io)
+      assert.doesNotMatch(briefOf(review).split('- Operations: ')[1].split('\n')[0], /git fetch/)
+    })
+
+    test('Rule 4: Rebote conflicto is published only after the author starts', async () => {
+      const env = conflictEnv()
+      await reboteCommand({}, '12', env.io)
+      const launch = env.calls.findIndex(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'send')
+      const comment = env.calls.findIndex(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+      assert.ok(launch > -1 && comment > launch)
+      assert.ok(env.out.includes('Rebote conflicto: abc123'))
+
+      const failed = conflictEnv()
+      const original = failed.io.sh
+      failed.io.sh = (cmd, args, opts) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create' ? { status: 1, stdout: '', stderr: 'launch failed' } : original(cmd, args, opts)
+      await assert.rejects(reboteCommand({}, '12', failed.io), /launch failed/)
+      assert.ok(!commented(failed))
+    })
+
+    test('Rule 5: UNKNOWN mergeability refuses with the next step and launches and publishes nothing', async () => {
+      for (const pull of [pr({ mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN', baseRefName: 'main' }), conflicting({ mergeable: 'UNKNOWN' })]) {
+        const env = conflictEnv(pull)
+        await assert.rejects(reboteCommand({}, '12', env.io), /GitHub todavía está calculando si el PR #12 se puede mergear; repetí el comando/)
+        assert.equal(launches(env).length, 0)
+        assert.ok(!commented(env))
+        assert.equal(env.written.length, 0)
+      }
+    })
+
+    test('Rule 6: a PR that is only behind, with no blocker and green CI, is refused pointing to gh pr update-branch', async () => {
+      const env = bounceEnv(pr({ reviews: [], mergeable: 'MERGEABLE', mergeStateStatus: 'BEHIND', baseRefName: 'main', statusCheckRollup: [{ __typename: 'CheckRun', name: 'ci-ok', status: 'COMPLETED', conclusion: 'SUCCESS' }] }))
+      await assert.rejects(reboteCommand({}, '12', env.io), /no tiene un review bloqueante vigente[\s\S]*gh pr update-branch 12/)
+      assert.equal(launches(env).length, 0)
+    })
+
+    test('Rule 7: pending or cancelled checks do not refuse a conflict bounce; failed head checks join the brief', async () => {
+      const pending = conflictEnv(conflicting({ statusCheckRollup: [{ __typename: 'CheckRun', name: 'old head job', status: 'IN_PROGRESS' }] }))
+      await reboteCommand({}, '12', pending.io)
+      assert.match(briefOf(pending), /## Failed checks\n\nNone\.\n/)
+      assert.equal(markerOf(pending), 'Rebote conflicto: abc123\n')
+
+      const cancelled = conflictEnv(conflicting({ statusCheckRollup: [{ __typename: 'CheckRun', name: 'ci-ok', workflowName: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/987/job/1' }] }))
+      await reboteCommand({}, '12', cancelled.io)
+      assert.ok(!cancelled.calls.some(call => call[0] === 'gh' && call[1] === 'run'))
+      assert.equal(markerOf(cancelled), 'Rebote conflicto: abc123\n')
+
+      const red = conflictEnv(conflicting({ statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://github.com/org/repo/actions/runs/5/job/6' }] }))
+      await reboteCommand({}, '12', red.io)
+      assert.match(briefOf(red).split('## Failed checks')[1], /unit[\s\S]*gh run view --job 6 --log-failed/)
+    })
+
+    test('Rule 8: conflict plus review blockers or red CI on the head: one brief, every marker', async () => {
+      const review = conflictEnv(conflicting({ reviews: pr().reviews }))
+      await reboteCommand({}, '12', review.io)
+      assert.match(briefOf(review), /fix it[\s\S]*## Merge conflict/)
+      assert.equal(review.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create').length, 1)
+      assert.equal(markerOf(review), 'Rebote: abc123\nRebote conflicto: abc123\n')
+
+      const red = conflictEnv(conflicting({ statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', status: 'COMPLETED', conclusion: 'FAILURE' }] }))
+      await reboteCommand({}, '12', red.io)
+      assert.match(briefOf(red), /unit[\s\S]*## Merge conflict/)
+      assert.equal(markerOf(red), 'Rebote CI: abc123\nRebote conflicto: abc123\n')
+    })
+
+    test('Rule 9: conflict bounces have their own count and refuse a repeat on the same head', async () => {
+      const spent = conflictEnv(conflicting({ comments: [{ body: 'Rebote: old1' }, { body: 'Rebote CI: old1\nRebote CI: old2' }, { body: 'Rebote conflicto: old1' }] }))
+      await reboteCommand({}, '12', spent.io)
+      assert.equal(markerOf(spent), 'Rebote conflicto: abc123\n')
+
+      const again = conflictEnv(conflicting({ comments: [{ body: 'Rebote conflicto: old1' }, { body: 'Rebote conflicto: abc123' }] }))
+      await assert.rejects(reboteCommand({}, '12', again.io), /ya rebotó por conflicto en abc123/)
+      assert.equal(launches(again).length, 0)
+      assert.ok(!commented(again))
+
+      // Three PRs merged one by one: the last one is conflict-bounced on two different heads.
+      const second = conflictEnv(conflicting({ headRefOid: 'def456', comments: [{ body: 'Rebote conflicto: abc123' }] }))
+      await reboteCommand({}, '12', second.io)
+      assert.equal(markerOf(second), 'Rebote conflicto: def456\n')
+
+      // A conflict marker is not a review or CI bounce: later bounces on a new head still go through.
+      const review = bounceEnv(pr({ headRefOid: 'def456', reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. finding' }], comments: [{ body: 'Rebote conflicto: abc123' }] }))
+      await reboteCommand({}, '12', review.io)
+      assert.equal(markerOf(review), 'Rebote: def456\n')
+      const ci = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote conflicto: old1' }, { body: 'Rebote conflicto: old2' }] }))
+      await reboteCommand({}, '12', ci.io)
+      assert.equal(markerOf(ci), 'Rebote CI: abc123\n')
+
+      // The review limit still applies when the conflict comes with review blockers on a new head.
+      const spentReview = conflictEnv(conflicting({ headRefOid: 'def456', reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. finding' }], comments: [{ body: 'Rebote: abc123' }] }))
+      await assert.rejects(reboteCommand({}, '12', spentReview.io), /avanzó desde el rebote/)
+      assert.equal(launches(spentReview).length, 0)
+    })
+
+    test('Rule 10: contract step 8 and the manual say how main merges after a conflict bounce', () => {
+      const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/CONTRATO.md'), 'utf8')
+      const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
+      const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs/manual.md'), 'utf8')
+      const rule = 'Después de un rebote por conflicto, el merge commit del autor es un push a mano: las líneas `Commit:` anteriores dejan de contar (paso 7 (b)) y main mergea con un review nuevo sobre el head nuevo o, fuera de `riesgo`, con `Verificado por main` escrito después de leer el diff de la resolución; en un PR que toca `riesgo`, los reviews del paso 6 se piden de nuevo sobre el head nuevo.'
+      const step8 = text => text.split(/\r?\n/).find(line => line.startsWith('8. Un PR rebota una sola vez por review.')) ?? ''
+      assert.ok(step8(contract).includes(rule))
+      assert.ok(step8(agents).includes(rule))
+      assert.ok(manual.includes(rule))
+    })
+
+    test('Rule 11: with the new fields on a non-conflicting PR, existing refusals and --dry-run keep their result', async () => {
+      const clean = { mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', baseRefName: 'main' }
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [] })).io), /no tiene un review bloqueante vigente en abc123\.$/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, statusCheckRollup: [{ __typename: 'CheckRun', name: 'still running', status: 'IN_PROGRESS' }] })).io), /pendientes/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }] })).io), /avanzó desde el rebote/)
+      for (const state of ['CLOSED', 'MERGED']) await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, state })).io), /no se puede rebotar/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, body: 'no author' })).io), /no tiene la línea "Implementador/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(clean), { 'git status': okRes(' M src/app.mjs\n') }).io), /está sucio/)
+      const diverged = bounceEnv(pr(clean), { 'git merge-base': { status: 1, stdout: '', stderr: '' } })
+      const sh = diverged.io.sh
+      diverged.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('other\n') : sh(cmd, args, opts)
+      await assert.rejects(reboteCommand({}, '12', diverged.io), /no en el head del PR/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(clean), { 'orca worktree': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'working' }] }] } }) }).io), /agente vivo/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [{ body: 'Commit: abc123\n## BLOQUEA\n1. (inferida, interpretación): product disagreement' }] })).io), /interpretación/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, statusCheckRollup: [{ __typename: 'CheckRun', name: 'job', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/987/job/1' }] })).io), /gh run rerun 987 --failed/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1\nRebote CI: old2' }] })).io), /dos rebotes de CI/)
+
+      const plain = bounceEnv(pr(clean))
+      await reboteCommand({ dryRun: true }, '12', plain.io)
+      assert.ok(plain.out.some(line => line.includes('# PR bounce brief')))
+      assert.ok(!plain.out.some(line => line.includes('## Merge conflict')))
+      assert.ok(!plain.calls.some(call => call[0] === 'git' && (call[1] === 'merge-tree' || call.join(' ') === 'git fetch origin main')))
+      assert.ok(plain.out.some(line => line.includes('[simulación] Rebote: abc123')))
+      assert.equal(plain.written.length, 0)
+      assert.ok(!commented(plain))
+
+      const dry = conflictEnv()
+      await reboteCommand({ dryRun: true }, '12', dry.io)
+      assert.ok(dry.out.some(line => line.includes('## Merge conflict')))
+      assert.ok(dry.calls.some(call => call.join(' ') === 'git fetch origin main'))
+      assert.ok(dry.out.some(line => line.includes('[simulación] Rebote conflicto: abc123')))
+      assert.equal(dry.written.length, 0)
+      assert.ok(!commented(dry))
+    })
+
+    test('Rule 12: --help, the manual and the contract name the conflict source and the markers', () => {
+      const cli = readFileSync(path.join(PACKAGE_ROOT, 'src/cli.mjs'), 'utf8')
+      const help = cli.split('rebote: `orca-stack rebote')[1].split('`,\n')[0]
+      assert.match(help, /conflicto/)
+      assert.match(help, /Rebote conflicto: <sha>/)
+      const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs/manual.md'), 'utf8')
+      const section = manual.split('#### `rebote`')[1].split('\n#### ')[0]
+      assert.match(section, /Rebote conflicto: <sha>/)
+      const table = manual.split('## 5. Casos borde')[1]
+      assert.ok(table.split(/\r?\n/).some(line => line.startsWith('| PR en conflicto con la base') && line.includes('Rebote conflicto: <sha>')))
+      for (const file of ['assets/stack/CONTRATO.md', 'AGENTS.md']) {
+        const text = readFileSync(path.join(PACKAGE_ROOT, file), 'utf8')
+        const markers = text.split(/\r?\n/).find(line => line.includes('son marcas fijas del protocolo')) ?? ''
+        for (const marker of ['`Rebote: <sha>`', '`Rebote CI: <sha>`', '`Rebote conflicto: <sha>`']) assert.ok(markers.includes(marker), `${file}: ${marker}`)
+        const step8 = text.split(/\r?\n/).find(line => line.startsWith('8. Un PR rebota una sola vez por review.')) ?? ''
+        assert.match(step8, /conflicto con la base[\s\S]*Rebote conflicto: <sha>/, file)
+      }
+    })
+  })
+
   describe('issue #249: local pre-check from verificacion.cuerpoPR', () => {
     test('Rule 1: local pre-check from config renders step 6 right before gh pr create with {file} replaced by <your body file>', async () => {
       const configWithPrecheck = {

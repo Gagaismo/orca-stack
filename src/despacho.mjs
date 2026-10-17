@@ -759,7 +759,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
 
   const remote = getRemoteOrigin(root, io)
 
-  const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'state,headRefName,headRefOid,body,comments,reviews,statusCheckRollup'], { cwd: root }), 'gh pr view'), 'gh pr view')
+  const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'state,headRefName,headRefOid,baseRefName,mergeable,mergeStateStatus,body,comments,reviews,statusCheckRollup'], { cwd: root }), 'gh pr view'), 'gh pr view')
   if (String(pr.state).toUpperCase() !== 'OPEN') throw new Error(`El PR #${n} est\u00E1 ${String(pr.state).toLowerCase()}; no se puede rebotar.`)
   const agent = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim().toLowerCase()
   if (!agent) throw new Error(`El PR #${n} no tiene la l\u00EDnea "Implementador: <agente>".`)
@@ -777,13 +777,21 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
   const markers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
+  const conflictMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote conflicto:\s*(\S+)\s*$/gim)].map(match => match[1]))
+  const mergeable = String(pr.mergeable ?? '').toUpperCase()
+  if (mergeable === 'UNKNOWN') throw new Error(`GitHub todavía está calculando si el PR #${n} se puede mergear; repetí el comando en unos segundos.`)
+  // GitHub does not run pull_request workflows while a PR conflicts, so its CI gate (pending, cancelled) is skipped.
+  const conflict = mergeable === 'CONFLICTING'
+  const base = pr.baseRefName || config.ramaBase || 'main'
+  if (conflict && conflictMarkers.includes(sha)) throw new Error(`El PR #${n} ya rebotó por conflicto en ${sha} y el autor no pusheó nada desde entonces; mirá su worktree antes de repetir.`)
   // Only checks from the latest run of each workflow count; a cancelled run with an unlisted replacement is pending.
+  // statusCheckRollup is the head commit's rollup, so every check in it belongs to headRefOid.
   const latest = latestChecks(Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : [])
   const analysis = analyzeChecks(latest)
   const checks = latest.map(({ check }) => check)
   const checkName = check => check.name ?? check.context ?? 'Unnamed check'
   const checkUrl = check => check.detailsUrl ?? check.targetUrl ?? ''
-  const cancelledChecks = latest.filter(({ check }) => check.__typename === 'CheckRun' && check.conclusion === 'CANCELLED')
+  const cancelledChecks = conflict ? [] : latest.filter(({ check }) => check.__typename === 'CheckRun' && check.conclusion === 'CANCELLED')
   const successors = []
   const checkedWorkflows = new Set()
   for (const { check, runId } of cancelledChecks) {
@@ -807,7 +815,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     throw new Error(`El PR #${n} tiene una corrida nueva de CI en curso (${successors.join(', ')}) que reemplaza a la cancelada; esperá a que termine antes de rebotar.`)
   }
   // A legacy row without a run id keeps the existing refusal and rerun guidance.
-  const unexplainedCancelled = analysis.unexplainedCancellations.flatMap(c => c.checks)
+  const unexplainedCancelled = conflict ? [] : analysis.unexplainedCancellations.flatMap(c => c.checks)
   if (unexplainedCancelled.length > 0) {
     const reruns = unexplainedCancelled.map(check => {
       const runId = /\/actions\/runs\/(\d+)(?:\/|$)/i.exec(checkUrl(check))?.[1]
@@ -815,7 +823,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     })
     throw new Error(`El PR #${n} tiene checks CANCELLED en ${sha}; no lo rebotes hasta volver a ejecutar CI:\n${reruns.join('\n')}`)
   }
-  const pendingChecks = checks.filter(isPending)
+  const pendingChecks = conflict ? [] : checks.filter(isPending)
   if (pendingChecks.length > 0) {
     throw new Error(`El PR #${n} todavía tiene checks pendientes en ${sha}: ${pendingChecks.map(checkName).join(', ')}. Esperá a que termine la CI antes de rebotar.`)
   }
@@ -826,21 +834,25 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
       throw new Error(`Ya hubo dos rebotes de CI distintos para el PR #${n}; la CI sigue roja en ${sha}. Pasalo al humano para resolverlo.`)
     }
   }
-  if (markers.some(marker => marker !== sha)) throw new Error(`El head del PR avanz\u00F3 desde el rebote (${markers.at(-1)} -> ${sha}); lo que siga en pie lo decide main con Decidido por main.`)
   const blockers = allReviews.filter(item => {
     const body = reviewBody(item)
     return blockingBody(body) && /^\s*Commit:\s*(\S+)/mi.exec(body)?.[1] === sha
   })
   const interpretations = blockers.filter(item => /interpretaci[o\u00F3]n/i.test(blockingSection(reviewBody(item))))
-  if (interpretations.length > 0 && failedChecks.length === 0) {
+  const reviewBlockers = blockers.filter(item => !interpretations.includes(item))
+  // A conflict-only bounce does not spend the review bounce, so an older Rebote: marker does not refuse it.
+  if (markers.some(marker => marker !== sha) && !(conflict && reviewBlockers.length === 0)) throw new Error(`El head del PR avanz\u00F3 desde el rebote (${markers.at(-1)} -> ${sha}); lo que siga en pie lo decide main con Decidido por main.`)
+  if (interpretations.length > 0 && failedChecks.length === 0 && !conflict) {
     const lines = interpretations.map(item => `${item.url ?? item.html_url ?? 'review'}: ${blockingSection(reviewBody(item)).split(/\r?\n/).filter(line => /interpretaci[o\u00F3]n/i.test(line)).join(' ')}`)
     throw new Error(`Los bloqueos de interpretaci\u00F3n van al humano, no al autor:\n${lines.join('\n')}`)
   }
-  const reviewBlockers = blockers.filter(item => !interpretations.includes(item))
   const findings = reviewBlockers.map(item => {
     return `${item.url ?? item.html_url ?? 'Review'}\n${blockingSection(reviewBody(item))}`
   }).join('\n\n')
-  if (reviewBlockers.length === 0 && failedChecks.length === 0) throw new Error(`El PR #${n} no tiene un review bloqueante vigente en ${sha}.`)
+  if (reviewBlockers.length === 0 && failedChecks.length === 0 && !conflict) {
+    const behind = String(pr.mergeStateStatus ?? '').toUpperCase() === 'BEHIND'
+    throw new Error(`El PR #${n} no tiene un review bloqueante vigente en ${sha}.${behind ? ` Est\u00E1 atr\u00E1s de ${base} sin conflicto: main lo pone al d\u00EDa con \`gh pr update-branch ${n}\`.` : ''}`)
+  }
   const failedChecksText = failedChecks.length > 0
     ? failedChecks.map(check => {
       const url = checkUrl(check)
@@ -884,6 +896,23 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     if (!dryRun) ok(io.sh('git', ['merge', '--ff-only', sha], { cwd: worktree }), 'git merge --ff-only')
     say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Adelant\u00E9 el worktree de ${head.slice(0, 7)} a ${sha.slice(0, 7)} (el head del PR).`)
   }
+  let conflictSection = ''
+  if (conflict) {
+    // Like the head fetch, this runs under --dry-run too: it only updates remote refs.
+    const fetched = io.sh('git', ['fetch', 'origin', base], { cwd: worktree })
+    say(`${dryRun ? '[simulaci\u00F3n] ' : ''}git fetch origin ${base} (para listar los archivos en conflicto)`)
+    // merge-tree exits 1 on conflicts and prints the tree, then one conflicting file each, NUL-separated (-z keeps paths unquoted).
+    const tree = fetched.status === 0 ? io.sh('git', ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', sha, `origin/${base}`], { cwd: worktree }) : undefined
+    const files = tree?.status === 1 ? tree.stdout.split('\0').slice(1).filter(Boolean) : []
+    const log = files.length > 0 ? io.sh('git', ['log', '--oneline', `${sha}..origin/${base}`, '--', ...files], { cwd: worktree }) : undefined
+    const commits = log?.status === 0
+      ? `\`\`\`text\n${log.stdout.trim() || '(none listed)'}\n\`\`\``
+      : 'rebote could not compute the base commits.'
+    const conflictFiles = files.length > 0
+      ? `Conflicting files:\n\n${files.map(file => `- \`${file}\``).join('\n')}\n\nBase commits that touched them (\`git log --oneline HEAD..origin/${base} -- <files>\`):\n\n${commits}`
+      : `rebote could not compute the conflicting files; \`git merge origin/${base}\` lists them.`
+    conflictSection = `\n## Merge conflict\n\nPR #${n} conflicts with its base branch \`${base}\`. Resolve it with a merge:\n\n1. \`git fetch origin\`\n2. \`git merge origin/${base}\` (never rebase, never force push).\n3. Resolve every conflict and commit the merge.\n4. Run the configured verification (below).\n5. Push to the same branch.\n6. Comment on PR #${n} with how each conflicting file was resolved.\n\n${conflictFiles}\n`
+  }
 
   const name = `${repo}-pr-${n}-rebote`
   const session = `${name}-${(io.now ?? Date.now)()}`
@@ -899,9 +928,10 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     ISSUE: issue,
     REMOTE_HOST: remote.host,
     REMOTE_REPO: remote.ownerRepo,
-    REMOTE_OPERATIONS: 'read the PR, its reviews and checks (including `gh run view ... --log-failed`); push only the PR branch to `origin`; comment on the PR.',
-    FINDINGS: findings || 'No current blocking review findings; this is a CI-only bounce.',
+    REMOTE_OPERATIONS: `read the PR, its reviews and checks (including \`gh run view ... --log-failed\`); ${conflict ? `\`git fetch origin\` (the base branch \`${base}\`); ` : ''}push only the PR branch to \`origin\`; comment on the PR.`,
+    FINDINGS: findings || (conflict ? 'No current blocking review findings.' : 'No current blocking review findings; this is a CI-only bounce.'),
     FAILED_CHECKS: failedChecksText,
+    CONFLICT_SECTION: conflictSection,
     VERIFICATION: verificationBlock(config),
     FANOUT_INSTRUCTIONS: fanoutInstructions(agent, nota, true),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
@@ -914,12 +944,13 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0 })
   if (!dryRun) {
     const markerPath = path.join(io.home, 'orca', 'briefs', `${name}-comment.md`)
-    const markersToPost = [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null].filter(Boolean)
+    const markersToPost = [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null, conflict ? `Rebote conflicto: ${sha}` : null].filter(Boolean)
     io.writeFile(markerPath, `${markersToPost.join('\n')}\n`)
     ok(io.sh('gh', ['pr', 'comment', String(n), '--body-file', markerPath], { cwd: root }), 'gh pr comment')
   }
   if (reviewBlockers.length > 0) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote: ${sha}`)
   if (failedChecks.length > 0) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote CI: ${sha}`)
+  if (conflict) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote conflicto: ${sha}`)
   return 0
 }
 

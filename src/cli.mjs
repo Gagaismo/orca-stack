@@ -22,7 +22,7 @@ Comandos:
   doctor    Verifica la instalación con sondeos reales y sale con código 1 si hay fallas.
   remove    Deshace lo que instaló \`global\`, según ~/.orca-stack/state.json.
   despachar Despacha un ticket a un agente: worktree en Orca, brief y lanzamiento (desde el checkout principal).
-  rebote   Relanza al autor de un PR bloqueado o con CI roja en su worktree existente.
+  rebote   Relanza al autor de un PR bloqueado o con CI roja, o en conflicto con la base, en su worktree existente.
   revisar   Despacha el review de un PR a un agente que no sea su autor.
   brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
@@ -122,6 +122,9 @@ Relanza al autor indicado por \`Implementador:\` en el worktree existente de la 
 vigente o checks fallidos sobre el head, worktree limpio y detenido en ese commit; los hallazgos de interpretaci\u00F3n solo bloquean el rebote por review.
 Un worktree limpio que solo est\u00E1 atr\u00E1s del head (por ejemplo, tras \`gh pr update-branch\`) se adelanta con \`git merge --ff-only <sha>\`.
 Para CI roja agrega los checks fallidos al brief y publica \`Rebote CI: <sha>\`; publica \`Rebote: <sha>\` solo con bloqueos de review.
+Un PR en conflicto con la base (mergeable CONFLICTING) rebota aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente:
+el brief suma \`## Merge conflict\` (git merge origin/<base>, nunca rebase) y publica \`Rebote conflicto: <sha>\`, con contador propio; repetirlo en el mismo head se niega.
+Con mergeable UNKNOWN se niega hasta que GitHub termine de calcular; un PR solo atrás (BEHIND) se niega y apunta a \`gh pr update-branch <n>\`.
 `,
   'brief-revision': `orca-stack brief-revision <pr> --modelo <modelo> [--dry-run]
 

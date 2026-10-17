@@ -1,6 +1,6 @@
 # PR bounce brief
 
-You are relaunching the author of PR #{{PR}} in its existing worktree at commit {{SHA}}. Read only the findings and failed checks below, fix their causes, and do not broaden the change. If you are blocked, ask with a `Consulta:` comment on PR #{{PR}} (gh pr comment {{PR}} --body-file <file>), then continue with whatever is not blocked. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait.
+You are relaunching the author of PR #{{PR}} in its existing worktree at commit {{SHA}}. Read only the findings, failed checks and merge conflict below, fix their causes, and do not broaden the change. If you are blocked, ask with a `Consulta:` comment on PR #{{PR}} (gh pr comment {{PR}} --body-file <file>), then continue with whatever is not blocked. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait.
 
 ## Review findings
 
@@ -9,7 +9,7 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 ## Failed checks
 
 {{FAILED_CHECKS}}
-
+{{CONFLICT_SECTION}}
 ## Work
 
 - Fan-out: {{FANOUT_INSTRUCTIONS}}
