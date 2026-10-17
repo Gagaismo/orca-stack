@@ -10,7 +10,7 @@ export const CURSOR_REL = ['orca-stack', 'vigilar.json']
 export const MERGES_REL = ['orca-stack', 'vigilar-merges.json']
 
 const USAGE = 'Uso: orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas], o orca-stack vigilar --merge-de-main <pr>.'
-const PR_FIELDS = 'number,state,headRefName,headRefOid,mergedAt,body,closingIssuesReferences,statusCheckRollup'
+const PR_FIELDS = 'number,state,headRefName,headRefOid,mergedAt,body,closingIssuesReferences,statusCheckRollup,mergeable'
 // A record by --merge-de-main covers a merge of its head commit made within this window after the record.
 const MERGE_WINDOW_MS = 30 * 60 * 1000
 // Polls in a row that failed to read GitHub before the watcher says it is blind (once per outage).
@@ -216,6 +216,12 @@ const advance = (issue, seen, before, merges) => {
       delete entry.corrida
       delete entry.corridaRun
       delete entry.ciRetenido
+    }
+    // GitHub runs no pull_request workflow while the PR conflicts with its base, so no CI event would ever come: one
+    // event per head, even with the worker live. UNKNOWN (still computing) is read again next poll and clears nothing.
+    if (String(pr.mergeable ?? '').toUpperCase() === 'CONFLICTING' && entry.conflicto !== pr.headRefOid) {
+      lines.push(event('pr-en-conflicto', issue, pr, pr.headRefOid))
+      entry.conflicto = pr.headRefOid
     }
     const liveWorker = seen.workersReadable !== false && LIVE_WORKER_STATES.has(seen.worker?.state)
     const ci = ciResult(pr.statusCheckRollup, seen.replacedWorkflows)
