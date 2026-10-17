@@ -484,7 +484,7 @@ Tomados del código, los tests y el contrato. Cada fila dice qué pasa y qué ha
 | El setup quedó pendiente | `despachar`, `revisar` y `rebote` se niegan | Abrí una sesión de Claude en el checkout principal: `orca-setup` lo ofrece |
 | Estás dentro de un worktree y corrés `despachar` | "Esto es un worktree" | Corrélo desde el checkout principal |
 | `/effort` cambia el esfuerzo con una marcha activa | Cuenta como ajuste manual solo si abriste el menú o corriste `/effort auto` después del último `/marcha` | Ver `mods/marchas/README.md` |
-| Rewind a antes de un cambio de marcha | La banda puede mostrar la marcha nueva aunque el mensaje de postura se haya ido (issue #163) | Repetí `/marcha <marcha>` |
+| Rewind a antes de un cambio de marcha | La etiqueta de marcha puede mostrar la marcha nueva aunque el mensaje de postura se haya ido (issue #163) | Repetí `/marcha <marcha>` |
 | Una `ruta de riesgo` sin review limpio | `puente-gentle` frena el merge y dice qué agente despachar | Despachá el review que falta con `orca-stack revisar <pr> <agente>` |
 
 ## 6. Manejo: operación y problemas
@@ -500,7 +500,7 @@ orca-stack rebote 15                 # relanzar al autor
 orca-stack sesiones                  # para /retro
 ```
 
-`/tablero` en Claude Code muestra PRs, checks, reviews y worktrees de un vistazo; `/marcha` muestra la marcha actual.
+`/tablero` en Claude Code muestra PRs, checks, reviews y worktrees de un vistazo; `/marcha` muestra la marcha actual, que también se ve a la derecha del pie del prompt.
 
 ### Cómo leer `doctor`
 

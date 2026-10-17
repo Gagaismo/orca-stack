@@ -39,7 +39,10 @@ const setup = (on: On, options: { contract?: string; config?: boolean; git?: str
 }
 
 const start = async ($: EngineInterface) => $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
-const band = async ($: EngineInterface) => $.ui.mount({ plugin: 'marchas', surface: 'terminal', component: 'AbovePrompt', props: BAND })
+const MODES = { modes: ['focus'] }
+
+const band = async ($: EngineInterface) => $.ui.mount({ plugin: 'marchas', surface: 'terminal', component: 'SessionMode', props: MODES })
+const abovePrompt = async ($: EngineInterface) => $.ui.mount({ plugin: 'marchas', surface: 'terminal', component: 'AbovePrompt', props: BAND })
 const observeSteps = (on: On) => {
   const requests: Array<{ effort?: string; agentId?: string }> = []
   on('turn.step', async function* (_$, e) {
@@ -164,6 +167,22 @@ test('Rule 11: the band names each gear and uses its required color', async ($, 
     expect(text?.props?.color).toBe(color)
     await ui.unmount()
   }
+})
+
+test('Rule 13: the gear label sits in the prompt footer beside the engine modes and leaves the band above the prompt free', async ($, on) => {
+  setup(on)
+  await start($)
+  await $.command.run(RUN('proactive'))
+
+  const footer = await band($)
+  expect((await footer.find({ type: 'Text', text: /Proactive/ }))?.props?.color).toBe('warning')
+  expect(await footer.find({ type: 'Text', text: 'engine-modes' })).toBeDefined()
+  await footer.unmount()
+
+  const above = await abovePrompt($)
+  expect(await above.find({ type: 'Text', text: 'engine' })).toBeDefined()
+  expect(await above.find({ type: 'Text', text: /Proactive|Medium|Lazy/ })).toBeUndefined()
+  await above.unmount()
 })
 
 test('Rule 12: the gate reads no config keys', async ($, on) => {
