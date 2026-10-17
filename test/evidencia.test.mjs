@@ -11,6 +11,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const checker = path.join(root, 'scripts', 'check-evidencia.mjs')
 const header = '| Rule | Test (exact name) | Result |\n|---|---|---|'
 const row = (name, result = '') => `| Rule | \`${name}\` | ${result} |`
+const expectedFormLine = '  Un span entre backticks en la columna Test debe ser un título de test tal como fue declarado en test()/it(), sin abreviar; una verificación sin test va en texto plano.'
+const missingError = (rowNum, name) => `Evidencia fila ${rowNum}: no encuentro el test \`${name}\` en test/ ni mods/*/tests/\n${expectedFormLine}\n`
 
 const withCheckout = (files, run) => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'orca-evidencia-'))
@@ -90,7 +92,7 @@ describe('PR evidence test-name checker', () => {
     withCheckout({ 'test/a.test.mjs': testFile(['Rule 1: x', 'Rule 2: x', 'Rule 3: x']) }, checkout => {
       const result = checkEvidencia(body, checkout)
       assert.equal(result.ok, false)
-      assert.equal(result.stderr, 'Evidencia fila 4: no encuentro el test `Rule 9: nope` en test/ ni mods/*/tests/\n')
+      assert.equal(result.stderr, missingError(4, 'Rule 9: nope'))
       const bodyFile = path.join(checkout, 'body.md')
       writeFileSync(bodyFile, body)
       const cli = spawnSync(process.execPath, [checker, bodyFile], { cwd: checkout, encoding: 'utf8' })
@@ -123,7 +125,7 @@ describe('PR evidence test-name checker', () => {
     const body = `## Evidencia\n| Check | Result |\n|---|---|\n| CI | \`Not a test\` |\n\n\`\`\`md\n${header}\n${row('Fenced fake')}\n\`\`\`\n<!--\n${header}\n${row('Comment fake')}\n-->\n`
     assert.deepEqual(checkEvidencia(body, ''), { ok: true, count: 0, stdout: 'Sin ## Evidencia: nada que comprobar\n', stderr: '' })
     const headingInsideFence = `## Evidencia\n\`\`\`md\n## Example\n\`\`\`\n${header}\n${row('Missing title')}\n`
-    assert.equal(checkEvidencia(headingInsideFence, '').stderr, 'Evidencia fila 1: no encuentro el test `Missing title` en test/ ni mods/*/tests/\n')
+    assert.equal(checkEvidencia(headingInsideFence, '').stderr, missingError(1, 'Missing title'))
   })
 
   test('Rule 7: matches template titles and otherwise compares case exactly', () => {
@@ -162,7 +164,7 @@ describe('PR evidence test-name checker', () => {
     ]
     const existingOnly = readFileSync(path.join(fixtures, 'pr-187.test.mjs.fixture'), 'utf8')
       .split(/\r?\n/).filter(line => !oldNames.some(name => line.includes(name))).join('\n')
-    const expectedMisses = oldNames.map(name => `Evidencia fila ${oldNames.indexOf(name) + 1}: no encuentro el test \`${name}\` en test/ ni mods/*/tests/`).join('\n') + '\n'
+    const expectedMisses = oldNames.map(name => `Evidencia fila ${oldNames.indexOf(name) + 1}: no encuentro el test \`${name}\` en test/ ni mods/*/tests/\n${expectedFormLine}`).join('\n') + '\n'
     withCheckout({ 'test/pr.test.mjs': existingOnly }, checkout => {
       const result = checkEvidencia(oldBody, checkout)
       assert.equal(result.stderr, expectedMisses)
@@ -271,7 +273,7 @@ describe('PR evidence test-name checker', () => {
     const body = `## Evidencia\n${header}\n| Rule 5 | sin test: lo verifiqu\u00E9 con \`--dry-run\` sobre \`ci-ok\` | \u2714 |\n| Rule 6 | \`ci ok\` | \u2714 |\n`
     const result = checkEvidencia(body, '')
     assert.equal(result.ok, false)
-    assert.equal(result.stderr, 'Evidencia fila 2: no encuentro el test `ci ok` en test/ ni mods/*/tests/\n')
+    assert.equal(result.stderr, missingError(2, 'ci ok'))
   })
 
   test('Issue 205 Rule 5 and Rule 8: keeps the exact CLI error, message, and exit code', () => {
@@ -280,7 +282,7 @@ describe('PR evidence test-name checker', () => {
       writeFileSync(bodyFile, bodyFor('|| `Rule 99: no existe` | pass |'))
       const result = spawnSync(process.execPath, [checker, bodyFile], { cwd: checkout, encoding: 'utf8' })
       assert.equal(result.status, 1)
-      assert.equal(result.stderr, 'Evidencia fila 1: no encuentro el test `Rule 99: no existe` en test/ ni mods/*/tests/\n')
+      assert.equal(result.stderr, missingError(1, 'Rule 99: no existe'))
     })
   })
 
@@ -288,6 +290,141 @@ describe('PR evidence test-name checker', () => {
     withCheckout({ 'test/a.test.mjs': testFile(['Rule 1: real']) }, checkout => {
       const body = bodyFor(row('Rule 1: real', '`\u2714 \u2026 (0.4685ms)`'))
       assert.equal(checkEvidencia(body, checkout).ok, false)
+    })
+  })
+
+  describe('issue #249: describe paths, clearer test-name errors, brief and docs', () => {
+    test('Rule 3: describe path accepted by its last segment, exact match of whole span tried first', () => {
+      withCheckout({
+        'test/a.test.mjs': testFile([
+          'Rule 1: fast-forwards a clean worktree',
+          'suite > test title with > inside',
+        ]),
+      }, checkout => {
+        // Describe path with decoration prefix passes when last segment is declared title
+        const pathSpan = 'rebote > issue 241: a worktree behind the PR head > Rule 1: fast-forwards a clean worktree'
+        const body = bodyFor(row(pathSpan))
+        const res = checkEvidencia(body, checkout)
+        assert.equal(res.ok, true, res.stderr)
+        assert.equal(res.count, 1)
+
+        // Exact match of whole span containing ' > ' passes
+        const exactSpan = 'suite > test title with > inside'
+        const bodyExact = bodyFor(row(exactSpan))
+        const resExact = checkEvidencia(bodyExact, checkout)
+        assert.equal(resExact.ok, true, resExact.stderr)
+        assert.equal(resExact.count, 1)
+      })
+    })
+
+    test('Rule 4: describe path with an unknown test fails and names the last segment, not the whole span', () => {
+      withCheckout({ 'test/a.test.mjs': testFile([]) }, checkout => {
+        const body = bodyFor(row('rebote > Rule 99: not a test'))
+        const res = checkEvidencia(body, checkout)
+        assert.equal(res.ok, false)
+        assert.match(res.stderr, /Evidencia fila 1: no encuentro el test `Rule 99: not a test` en test\/ ni mods\/\*\/tests\//)
+        assert.doesNotMatch(res.stderr, /rebote > Rule 99: not a test/)
+      })
+    })
+
+    test('Rule 5: errors state the expected form and suggest uniquely matching title on ellipsis', () => {
+      const titles = [
+        'Rule 8: despachar renders a ticket brief for every agent; the rebote and revisar briefs change only in the fanoutInstructions sentence',
+        'Rule 10: unique title',
+        'Ambiguous: alpha',
+        'Ambiguous: beta',
+      ]
+      withCheckout({ 'test/a.test.mjs': testFile(titles) }, checkout => {
+        // Single candidate matching prefix of 'Rule 8: …' (unicode ellipsis) -> suggests title
+        const bodyUnicode = bodyFor(row('Rule 8: …'))
+        const resUnicode = checkEvidencia(bodyUnicode, checkout)
+        assert.equal(resUnicode.ok, false)
+        assert.match(resUnicode.stderr, /Un span entre backticks en la columna Test debe ser un título de test tal como fue declarado en test\(\)\/it\(\), sin abreviar; una verificación sin test va en texto plano\./)
+        assert.match(resUnicode.stderr, /¿Quisiste decir `Rule 8: despachar renders a ticket brief for every agent; the rebote and revisar briefs change only in the fanoutInstructions sentence`\?/)
+
+        // Three dots '...' also suggests unique title
+        const bodyDots = bodyFor(row('Rule 10: ...'))
+        const resDots = checkEvidencia(bodyDots, checkout)
+        assert.equal(resDots.ok, false)
+        assert.match(resDots.stderr, /¿Quisiste decir `Rule 10: unique title`\?/)
+
+        // Multiple candidates starting with 'Ambiguous: ' -> no suggestion
+        const bodyMulti = bodyFor(row('Ambiguous: …'))
+        const resMulti = checkEvidencia(bodyMulti, checkout)
+        assert.equal(resMulti.ok, false)
+        assert.doesNotMatch(resMulti.stderr, /¿Quisiste decir/)
+
+        // Zero candidates starting with 'Nonexistent: ' -> no suggestion
+        const bodyZero = bodyFor(row('Nonexistent: …'))
+        const resZero = checkEvidencia(bodyZero, checkout)
+        assert.equal(resZero.ok, false)
+        assert.doesNotMatch(resZero.stderr, /¿Quisiste decir/)
+
+        // Non-ellipsis unknown name -> states expected form without suggestion
+        const bodyNormal = bodyFor(row('Plain unknown'))
+        const resNormal = checkEvidencia(bodyNormal, checkout)
+        assert.equal(resNormal.ok, false)
+        assert.match(resNormal.stderr, /Un span entre backticks en la columna Test debe ser un título de test tal como fue declarado en test\(\)\/it\(\), sin abreviar; una verificación sin test va en texto plano\./)
+        assert.doesNotMatch(resNormal.stderr, /¿Quisiste decir/)
+      })
+    })
+
+    test('Rule 6: brief-ticket.md replaces Test column guidance with exact required wording', () => {
+      const brief = readFileSync(path.join(root, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
+      assert.ok(brief.includes('the test title exactly as declared in `test()`/`it()`, without the describe path or abbreviations; only test names go in backticks in the Test column; a verification without a test (a command, a manual check) is written as plain text, without backticks.'))
+      assert.doesNotMatch(brief, /the exact test name and passing line, or how it was verified when there is no test/)
+    })
+
+    test('Rule 7: what passes today keeps passing', () => {
+      withCheckout({
+        'test/a.test.mjs': "test('bare declared title', () => {})\ntest(`${file} states: ${invariant.name}`, () => {})\n",
+      }, checkout => {
+        // 1. Bare declared title
+        assert.equal(checkEvidencia(bodyFor(row('bare declared title')), checkout).ok, true)
+        // 2. Template-literal pattern
+        assert.equal(checkEvidencia(bodyFor(row('a.md states: foo')), checkout).ok, true)
+        // 3. Backticked command in COMMANDS
+        assert.equal(checkEvidencia(bodyFor('| Check | `npm test && npm run test:mods` | pass |'), checkout).ok, true)
+        // 4. Single-word span
+        assert.equal(checkEvidencia(bodyFor('| Check | `ci-ok` | pass |'), checkout).ok, true)
+        // 5. Runner line in Result column
+        assert.equal(checkEvidencia(bodyFor(row('bare declared title', '`✔ bare declared title (1.5ms)`')), checkout).ok, true)
+      })
+    })
+
+    test('Rule 8: docs describe cuerpoPR and accepted forms in README, manual and guia-setup', () => {
+      const readme = readFileSync(path.join(root, 'README.md'), 'utf8')
+      assert.match(readme, /cuerpoPR/)
+      assert.match(readme, /describe paths/)
+
+      const manual = readFileSync(path.join(root, 'docs', 'manual.md'), 'utf8')
+      assert.match(manual, /cuerpoPR/)
+
+      const guia = readFileSync(path.join(root, 'docs', 'guia-setup.md'), 'utf8')
+      assert.match(guia, /cuerpoPR/)
+    })
+
+    test('PRESERVE touched public entries in check-evidencia: checkEvidencia and CLI interface', () => {
+      withCheckout({ 'test/a.test.mjs': testFile(['Rule 1: real']) }, checkout => {
+        // checkEvidencia return object shape
+        const valid = checkEvidencia(`${bodyFor(row('Rule 1: real'))}Closes #193\n`, checkout)
+        assert.equal(valid.ok, true)
+        assert.equal(valid.count, 1)
+        assert.equal(typeof valid.stdout, 'string')
+        assert.equal(typeof valid.stderr, 'string')
+
+        // CLI interface exit 0 on pass
+        const bodyFile = path.join(checkout, 'body.md')
+        writeFileSync(bodyFile, `${bodyFor(row('Rule 1: real'))}Closes #193\n`)
+        const cliPass = spawnSync(process.execPath, [checker, bodyFile], { cwd: checkout, encoding: 'utf8' })
+        assert.equal(cliPass.status, 0)
+
+        // CLI interface exit 1 on fail
+        const failBody = path.join(checkout, 'fail.md')
+        writeFileSync(failBody, `${bodyFor(row('Unknown test'))}Closes #193\n`)
+        const cliFail = spawnSync(process.execPath, [checker, failBody], { cwd: checkout, encoding: 'utf8' })
+        assert.equal(cliFail.status, 1)
+      })
     })
   })
 })

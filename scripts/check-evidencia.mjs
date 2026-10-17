@@ -111,6 +111,10 @@ function backticked(text) {
 
 function isExempt(name, titles) {
   if (titles.some(title => title.exact === name || title.pattern?.test(name))) return false
+  if (name.includes(' > ')) {
+    const last = name.split(' > ').at(-1)
+    if (titles.some(title => title.exact === last || title.pattern?.test(last))) return false
+  }
   const command = name.match(/^([^ ]+) /)
   if (command && COMMANDS.has(command[1])) return true
   return !/\s/.test(name)
@@ -293,6 +297,15 @@ function readTitles(root) {
   return declarations
 }
 
+function suggestTitle(name, titles) {
+  const match = name.match(/^(.*?)(?:\u2026|\.\.\.)$/)
+  if (!match) return undefined
+  const rest = match[1]
+  const distinct = [...new Set(titles.map(t => t.exact).filter(Boolean))]
+  const candidates = distinct.filter(t => t.startsWith(rest))
+  return candidates.length === 1 ? candidates[0] : undefined
+}
+
 export function checkEvidencia(body, root) {
   const closingIssue = String(body ?? '').match(/\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#(\d+)\b/i)?.[1]
   const section = evidenceSection(body)
@@ -315,8 +328,17 @@ export function checkEvidencia(body, root) {
       names.push(...runnerTitles(row[2] ?? ''))
       for (const name of names) {
         count += 1
-        const exists = titles.some(title => title.exact === name || title.pattern?.test(name))
-        if (!exists) misses.push(`Evidencia fila ${rowNumber}: no encuentro el test \`${name}\` en test/ ni mods/*/tests/`)
+        const wholeMatch = titles.some(title => title.exact === name || title.pattern?.test(name))
+        if (wholeMatch) continue
+        if (name.includes(' > ')) {
+          const lastSegment = name.split(' > ').at(-1)
+          if (titles.some(title => title.exact === lastSegment || title.pattern?.test(lastSegment))) continue
+        }
+        const reportedName = name.includes(' > ') ? name.split(' > ').at(-1) : name
+        const suggestion = suggestTitle(reportedName, titles)
+        const expected = 'Un span entre backticks en la columna Test debe ser un título de test tal como fue declarado en test()/it(), sin abreviar; una verificación sin test va en texto plano.'
+        const hint = suggestion ? ` ¿Quisiste decir \`${suggestion}\`?` : ''
+        misses.push(`Evidencia fila ${rowNumber}: no encuentro el test \`${reportedName}\` en test/ ni mods/*/tests/\n  ${expected}${hint}`)
       }
     }
   }
