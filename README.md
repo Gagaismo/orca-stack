@@ -196,7 +196,7 @@ Las claves del contrato de trabajo, que escribe `orca-setup` y que el bloque de 
 | `ramaBase` | La rama contra la que se abren los PRs |
 | `agentes` | Qué agentes usa el repo (`usa`) y cuáles necesitan el OK del humano (`preguntarAntes`). Los modelos y esfuerzos (`agentes.modelos`) viven en `~/.orca-stack/config.json`, por máquina |
 | `review` | Solo en modo `un-agente`: `"subagente"` (por defecto) o `"humano"` |
-| `verificacion` | `{ "suite", "typecheck" }`: los comandos exactos |
+| `verificacion` | `{ "suite", "typecheck", "cuerpoPR" }`: los comandos exactos de la suite y typecheck, y opcionalmente `cuerpoPR` para pre-checkear el cuerpo del PR antes de abrirlo |
 | `merge` | Si `main` mergea sola cuando se cumple la condición de merge |
 | `despliegue` | `{ "despues": false }`, o el comando y cómo se verifica |
 | `idioma` | Idioma del código, los commits y los PRs |
@@ -269,7 +269,7 @@ Un plugin de Claude Code solo puede importar archivos de su propia carpeta, y el
 
 Los mods se cargan por `CLAUDE_CODE_PLUGIN_DIRS` (carpetas absolutas separadas por el separador de rutas del sistema, tomadas del entorno o del bloque `env` de `~/.claude/settings.json`). La documenta la guía de authoring de plugins de Claude Code (skill `plugin-authoring`); no la encontré en la referencia pública de ajustes.
 
-El job `evidencia` de CI valida que los nombres de test de `## Evidencia` existan antes de que `ci-ok` pase. Un PR que cierra un issue también necesita una tabla `Test` con al menos una fila; sin ella, CI falla.
+El job `evidencia` de CI valida que los nombres de test de `## Evidencia` existan antes de que `ci-ok` pase. Un PR que cierra un issue también necesita una tabla `Test` con al menos una fila; sin ella, CI falla. La columna Test acepta el título exacto declarado en `test()`/`it()`, patrones de template literal y describe paths cuyo último segmento sea el título declarado; solo los nombres de test van entre backticks, mientras que una verificación sin test (un comando o chequeo manual) va en texto plano sin backticks. Con `verificacion.cuerpoPR` (por ejemplo `"node scripts/check-evidencia.mjs {file}"`), el brief le pide al worker ejecutar el pre-check localmente sobre su archivo de cuerpo de PR antes de `gh pr create`.
 
 ## Licencia
 
