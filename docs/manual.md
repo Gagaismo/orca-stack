@@ -233,6 +233,7 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 | `ci-verde-retenido #<n> PR #<pr> <sha>: <agente> <estado>` | CI está verde, pero el worker sigue vivo; esperá a que termine antes de mergear |
 | `ci-roja #<n> PR #<pr> <sha>: ...` | Un check terminado falló o venció; uno por corrida, también si un `gh run rerun --failed` vuelve a fallar en el mismo head |
 | `ci-cancelada #<n> PR #<pr> <sha>: <check>=CANCELLED, ...` | No hay una corrida más nueva que reemplace a la cancelada y ninguna falla real previa en la corrida la explica; revisá la causa y re-ejecutá con `gh run rerun <run> --failed` |
+| `pr-en-conflicto #<n> PR #<pr> <sha>` | El PR quedó en conflicto con la base (`mergeable: CONFLICTING`) y GitHub no le corre la CI; uno por head, también con el worker vivo (el autor puede estar resolviéndolo). Corré `orca-stack rebote <pr>` una vez que el worker se detuvo: con el agente vivo, `rebote` se niega |
 | `pr-mergeado #<n> PR #<pr> <sha>` | Se mergeó y `main` no registró ese merge |
 | `pr-cerrado #<n> PR #<pr>` | Se cerró sin mergear |
 | `vigilar-ciego: <error>` | Tres vueltas seguidas sin poder leer GitHub (una vez por corte; nunca dice "no hay PRs") |
@@ -260,7 +261,7 @@ Resumen del "Ciclo de `main`" del contrato, con el comando de cada paso:
 | 2 | Cada ticket con criterios y `## Reglas` | Reglas numeradas con ejemplos, bordes y errores; cada valor esperado va como `cliente` o `inferido` |
 | 3 | Elegir la frontera | Issues abiertos, sin bloqueantes, sin assignee, sin `needs-info`, sin sub-issues. Leer con `gh issue view <n> --json title,body,comments` |
 | 4 | Despachar la tanda | `orca-stack despachar <n> <agente>`, un ticket por comando |
-| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>` `[solo en main]`; atiende `worker-en-pausa` respondiendo la `Consulta:` donde apareció y corriendo `orca-stack reanudar <issue> <url-del-comentario>`. En Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
+| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>` `[solo en main]`; atiende `worker-en-pausa` respondiendo la `Consulta:` donde apareció y corriendo `orca-stack reanudar <issue> <url-del-comentario>`, y `pr-en-conflicto` con `orca-stack rebote <pr>` cuando el worker se detuvo. En Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
 | 6 | Review de cada PR nuevo | `orca-stack revisar <pr> <agente>`; segundo review de pi si toca `riesgo` |
 | 7 | Mergear si se cumple la condición | Ver [4.8](#48-review-rebote-y-merge); antes de cada `gh pr merge`, `orca-stack vigilar --merge-de-main <n>` `[solo en main]` |
 | 8 | Rebote | `orca-stack rebote <pr>`; una sola vez por review |

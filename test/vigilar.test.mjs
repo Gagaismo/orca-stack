@@ -30,8 +30,8 @@ const GREEN = [check('ubuntu-latest / Node 20', 'SUCCESS'), check('ci-ok', 'SUCC
 const PENDING = [check('ubuntu-latest / Node 20', '', { status: 'IN_PROGRESS' })]
 
 // A merged PR is merged a minute after T0 unless a test says when.
-const pr = (number, { state = 'OPEN', head = ABC, branch = 'Gagaismo/orca-stack-7', closes = [7], body = '', checks = [], mergedAt = state === 'MERGED' ? new Date(T0 + MINUTE).toISOString() : null } = {}) =>
-  ({ number, state, headRefName: branch, headRefOid: head, mergedAt, body, closingIssuesReferences: closes.map(n => ({ number: n })), statusCheckRollup: checks })
+const pr = (number, { state = 'OPEN', head = ABC, branch = 'Gagaismo/orca-stack-7', closes = [7], body = '', checks = [], mergeable, mergedAt = state === 'MERGED' ? new Date(T0 + MINUTE).toISOString() : null } = {}) =>
+  ({ number, state, headRefName: branch, headRefOid: head, mergedAt, body, closingIssuesReferences: closes.map(n => ({ number: n })), statusCheckRollup: checks, mergeable })
 
 // A fake GitHub, git and Orca. Tests change `world` between runs; inside one run, each io.sleep applies the next
 // scripted change, so a looping watcher sees the world move and ends on its own with tanda-cerrada.
@@ -944,5 +944,149 @@ describe('orca-stack vigilar (#206)', () => {
       'ci-roja #7 PR #70 abc1234: Python 3.12=FAILURE',
     ])
     assert.equal(h.cursor()['7'].ci, 'roja')
+  })
+})
+
+describe('orca-stack vigilar (#254)', () => {
+  const DF9 = 'df9e86accccccccccccccccccccccccccccccccc'
+  const pr251 = options => pr(251, { head: DF9, branch: 'Gagaismo/orca-stack-250', closes: [250], ...options })
+  const readsMergeable = (h, prefix) => h.calls.some(call => call.startsWith(prefix) && call.split(' ').at(-1).split(',').includes('mergeable'))
+
+  test('Issue 254 Rule 1: #250 / PR #251 conflicting on head df9e86a after PR #252 merged gives pr-en-conflicto #250 PR #251 df9e86a', async () => {
+    const h = harness({ prs: [pr251({ mergeable: 'CONFLICTING' })] })
+    await once(h, ['250'])
+    assert.ok(readsMergeable(h, 'gh pr list'), 'mergeable is read with the PR fields')
+    assert.deepEqual(h.out, ['pr-abierto #250 PR #251 df9e86a', 'pr-en-conflicto #250 PR #251 df9e86a'])
+
+    // A cursor PR past the list's --limit is read with gh pr view and the same fields.
+    const viewed = harness({ prs: [pr251({ mergeable: 'CONFLICTING' })], hidden: [251] })
+    viewed.files[CURSOR] = JSON.stringify({ 250: { pr: 251, head: DF9 } })
+    await once(viewed, ['250'])
+    assert.ok(readsMergeable(viewed, 'gh pr view 251'))
+    assert.deepEqual(viewed.out, ['pr-en-conflicto #250 PR #251 df9e86a'])
+  })
+
+  test('Issue 254 Rule 2: once per head; a new conflicting head emits again; a new mergeable head emits no conflict and CI follows', async () => {
+    const h = harness({ prs: [pr251({ mergeable: 'CONFLICTING' })] })
+    await once(h, ['250'])
+    drain(h)
+    await once(h, ['250'])
+    assert.deepEqual(h.out, [])
+
+    h.world.prs = [pr251({ head: ABC, mergeable: 'CONFLICTING' })]
+    await once(h, ['250'])
+    assert.deepEqual(drain(h), ['pr-en-conflicto #250 PR #251 abc1234'])
+
+    h.world.prs = [pr251({ head: DEF, mergeable: 'MERGEABLE', checks: PENDING })]
+    await once(h, ['250'])
+    assert.deepEqual(drain(h), [])
+    h.world.prs = [pr251({ head: DEF, mergeable: 'MERGEABLE', checks: GREEN })]
+    await once(h, ['250'])
+    assert.deepEqual(h.out, ['ci-verde #250 PR #251 def5678'])
+  })
+
+  test('Issue 254 Rule 3: UNKNOWN emits nothing, is evaluated again next poll, and does not clear a conflict emitted for that head', async () => {
+    const h = harness({ prs: [pr251({ mergeable: 'UNKNOWN' })] })
+    await once(h, ['250'])
+    assert.deepEqual(drain(h), ['pr-abierto #250 PR #251 df9e86a'])
+    h.world.prs = [pr251({ mergeable: 'CONFLICTING' })]
+    await once(h, ['250'])
+    assert.deepEqual(drain(h), ['pr-en-conflicto #250 PR #251 df9e86a'])
+
+    h.world.prs = [pr251({ mergeable: 'UNKNOWN' })]
+    await once(h, ['250'])
+    h.world.prs = [pr251({ mergeable: 'CONFLICTING' })]
+    await once(h, ['250'])
+    assert.deepEqual(h.out, [])
+  })
+
+  test('Issue 254 Rule 4: the conflict event is emitted while the PR\'s worker is live', async () => {
+    const worker = { path: '/wt/orca-stack-250', branch: 'Gagaismo/orca-stack-250', linkedIssue: 250, agents: [{ agentType: 'codex', state: 'working' }] }
+    const h = harness({ worktrees: [worker], prs: [pr251({ mergeable: 'CONFLICTING' })] })
+    await once(h, ['250'])
+    assert.deepEqual(h.out, ['pr-abierto #250 PR #251 df9e86a', 'pr-en-conflicto #250 PR #251 df9e86a'])
+
+    const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs', 'manual.md'), 'utf8')
+    const row = manual.split(/\r?\n/).find(line => line.startsWith('| `pr-en-conflicto #<n> PR #<pr> <sha>`'))
+    assert.ok(row?.includes('con el agente vivo, `rebote` se niega'), row)
+    assert.ok(row.includes('`orca-stack rebote <pr>` una vez que el worker se detuvo'), row)
+  })
+
+  test('Issue 254 Rule 5: re-arming vigilar resumes from the cursor and does not emit the conflict of the current head again', async () => {
+    const h = harness({ prs: [pr251({ mergeable: 'CONFLICTING' })] })
+    await once(h, ['250'])
+    assert.ok(h.out.includes('pr-en-conflicto #250 PR #251 df9e86a'))
+    const rearmed = harness({ prs: [pr251({ mergeable: 'CONFLICTING' })] })
+    rearmed.files[CURSOR] = h.files[CURSOR]
+    await once(rearmed, ['250'])
+    assert.deepEqual(rearmed.out, [])
+  })
+
+  test('Issue 254 Rule 6: a conflicting PR is open and does not close the batch; tanda-cerrada keeps its condition', async () => {
+    const h = harness({ prs: [pr(70, { state: 'MERGED' }), pr251({ mergeable: 'CONFLICTING' })] })
+    await once(h, ['7', '250'])
+    assert.deepEqual(drain(h), ['pr-mergeado #7 PR #70 abc1234', 'pr-abierto #250 PR #251 df9e86a', 'pr-en-conflicto #250 PR #251 df9e86a'])
+    assert.equal(h.cursor()['250'].fin, undefined)
+
+    h.world.prs = [pr(70, { state: 'MERGED' }), pr251({ state: 'MERGED' })]
+    assert.equal(await vigilarCommand({}, ['7', '250'], h.io), 0)
+    assert.deepEqual(h.out, ['pr-mergeado #250 PR #251 df9e86a', 'tanda-cerrada #7 #250'])
+  })
+
+  test('Issue 254 Rule 7: the manual events table has pr-en-conflicto with rebote; CONTRATO step 5 names it next to worker-en-pausa; AGENTS.md equals the asset; vigilar --help lists it', async () => {
+    const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs', 'manual.md'), 'utf8')
+    const row = manual.split(/\r?\n/).find(line => line.startsWith('| `pr-en-conflicto #<n> PR #<pr> <sha>`'))
+    assert.ok(row, 'manual events row')
+    assert.ok(row.includes('Corré `orca-stack rebote <pr>` una vez que el worker se detuvo'), row)
+
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
+    const step5 = contract.split(/\r?\n/).find(line => line.startsWith('5. '))
+    assert.ok(step5.includes('`worker-en-pausa #<n> <agente>`'))
+    assert.ok(step5.includes('`pr-en-conflicto #<n> PR #<pr> <sha>`'))
+    assert.ok(step5.includes('`orca-stack rebote <pr>`'))
+
+    const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
+    const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
+    assert.equal(upsertBlock(agents, block), agents, 'init would change nothing in AGENTS.md')
+
+    const oldLog = console.log
+    let output = ''
+    console.log = value => { output += `${value}\n` }
+    try {
+      assert.equal(await main(['vigilar', '--help']), 0)
+    } finally {
+      console.log = oldLog
+    }
+    assert.ok(output.split('\n').some(line => line.trim() === 'pr-en-conflicto #<n> PR #<pr> <sha>'), output)
+  })
+
+  test('Issue 254 Rule 8 and PRESERVE: vigilarCommand keeps every existing event and --merge-de-main on a non-conflicting PR', async () => {
+    const worker = { path: '/wt/orca-stack-7', branch: 'Gagaismo/orca-stack-7', linkedIssue: 7, agents: [{ agentType: 'codex', state: 'working' }] }
+    const h = harness({ worktrees: [worker], prs: [pr(70, { mergeable: 'MERGEABLE', checks: [check('ci-ok', 'FAILURE')] })] })
+    await once(h, ['7'])
+    assert.deepEqual(drain(h), ['pr-abierto #7 PR #70 abc1234', 'ci-roja #7 PR #70 abc1234: ci-ok=FAILURE'])
+    h.world.prs = [pr(70, { head: DEF, mergeable: 'MERGEABLE', checks: GREEN })]
+    await once(h, ['7'])
+    assert.deepEqual(drain(h), ['ci-verde-retenido #7 PR #70 def5678: codex working'])
+    worker.agents[0].state = 'done'
+    await once(h, ['7'])
+    assert.deepEqual(drain(h), ['ci-verde #7 PR #70 def5678'])
+    assert.equal(await mergeDeMain(h, '70'), 0)
+    h.world.prs = [pr(70, { state: 'MERGED', head: DEF, mergeable: 'UNKNOWN' })]
+    assert.equal(await vigilarCommand({}, ['7'], h.io), 0)
+    assert.deepEqual(drain(h), ['tanda-cerrada #7'])
+    assert.equal(h.cursor()['7'].fin, 'main')
+
+    const cancelled = [{ __typename: 'CheckRun', name: 'matrix', workflowName: 'CI', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/38843085964/job/1' }]
+    const c = harness({ prs: [pr(70, { mergeable: 'MERGEABLE', checks: cancelled }), pr(80, { mergeable: 'MERGEABLE', branch: 'Gagaismo/orca-stack-8', closes: [8] })], runs: [] })
+    await once(c, ['7', '8'])
+    assert.deepEqual(drain(c), ['pr-abierto #7 PR #70 abc1234', 'ci-cancelada #7 PR #70 abc1234: matrix=CANCELLED', 'pr-abierto #8 PR #80 abc1234'])
+    c.world.prs = [pr(70, { state: 'MERGED' }), pr(80, { state: 'CLOSED', branch: 'Gagaismo/orca-stack-8', closes: [8] })]
+    assert.equal(await vigilarCommand({}, ['7', '8'], c.io), 0)
+    assert.deepEqual(c.out, ['pr-mergeado #7 PR #70 abc1234', 'pr-cerrado #8 PR #80', 'tanda-cerrada #7 #8'])
+
+    const paused = harness({ worktrees: [{ path: '/wt/orca-stack-9', branch: 'b9', linkedIssue: 9, agents: [{ state: 'done', agentType: 'codex' }] }] })
+    await once(paused, ['9'])
+    assert.deepEqual(paused.out, ['worker-en-pausa #9 codex'])
   })
 })
