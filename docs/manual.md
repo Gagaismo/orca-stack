@@ -2,7 +2,7 @@
 
 Este manual cuenta cómo se usa orca-stack día a día: qué hace cada comando, mod y skill, cuándo conviene usarlo y cuándo no, qué pasa en los bordes y cómo se opera y se arregla. No repite el setup: para instalar y configurar un proyecto, seguí la [guía de setup](guia-setup.md). Para el detalle de cada instalación y de cada clave de configuración, el [README](../README.md).
 
-Versión de referencia: `orca-stack v0.11.0` más lo que hay en `main`. Todo lo que se mergeó después de ese tag lleva la marca **`[solo en main]`**: todavía no está publicado en un release, así que con `npx github:Gagaismo/orca-stack#v0.11.0` no lo vas a tener. Para usarlo, corré el CLI desde un checkout de `main` (`node bin/orca-stack.mjs <comando>`) o esperá al próximo release.
+Versión de referencia: `orca-stack v0.16.0`. Lo que se mergee después de ese tag lleva la marca **`[solo en main]`** y se lista en la [sección 7](#7-qué-hay-solo-en-main): todavía no está publicado en un release, así que con `npx github:Gagaismo/orca-stack#v0.16.0` no lo vas a tener. Para usarlo, corré el CLI desde un checkout de `main` (`node bin/orca-stack.mjs <comando>`) o esperá al próximo release.
 
 ## Contenido
 
@@ -19,7 +19,7 @@ Versión de referencia: `orca-stack v0.11.0` más lo que hay en `main`. Todo lo 
    - [4.7 Modos `multiagente` y `un-agente`](#47-modos-multiagente-y-un-agente)
    - [4.8 Review, rebote y merge](#48-review-rebote-y-merge)
    - [4.9 Arena y swarm](#49-arena-y-swarm)
-   - [4.10 El chequeo de `## Evidencia` en CI](#410-el-chequeo-de--evidencia-en-ci-solo-en-main)
+   - [4.10 El chequeo de `## Evidencia` en CI](#410-el-chequeo-de--evidencia-en-ci)
 5. [Casos borde](#5-casos-borde)
 6. [Manejo: operación y problemas](#6-manejo-operación-y-problemas)
 7. [Qué hay solo en `main`](#7-qué-hay-solo-en-main)
@@ -97,7 +97,7 @@ Reglas que sostienen todo lo demás:
 | `brief-revision` | Worktree y brief de review para un subagente (modo `un-agente`) | Checkout principal |
 | `consultas` | Avisa comentarios `Consulta:` nuevos | Checkout principal |
 | `avisar` | Le toca el timbre a un worker con el turno en curso | Checkout principal |
-| `vigilar` | Monitor de una tanda de PRs `[solo en main]` | Checkout principal |
+| `vigilar` | Monitor de una tanda de PRs | Checkout principal |
 | `sesiones` | Lista sesiones recientes de Claude, Pi y agy (entrada de `/retro`) | Cualquier carpeta |
 
 **Opciones generales.** `--dry-run` muestra cada acción sin escribir nada (vale en `global`, `init`, `remove`, `despachar`, `revisar`, `rebote`, `brief-revision`, `consultas`, `avisar` y `vigilar`). `--help` por comando da el detalle.
@@ -159,8 +159,8 @@ Agentes válidos: `claude`, `agy`, `codex`, `codex-cc`, `pi`. Orden de lo que ha
 1. Se niega si estás en un worktree, si el setup está pendiente, si `modo` es `un-agente`, si el agente no está en `agentes.usa`, si tiene una regla `guardia.bloquear` vigente, si está en `agentes.preguntarAntes` sin `--confirmado`, si el issue está cerrado o ya tiene assignee, o si ya hay un worktree o un agente vivo para ese ticket.
 2. Hace `git fetch origin` y comprueba que **cada ruta que cita el brief exista** en `origin/<ramaBase>` y no esté ignorada por git. Si falta una, aborta sin asignar ni crear nada.
 3. Asigna el issue (el assignee es el cerrojo: no lo asignes a mano), crea el worktree con `orca worktree create`, escribe el brief en `~/orca/briefs/`, lanza el agente en una terminal de Orca y le manda el brief.
-4. Imprime `Rama: <rama>` con el nombre que devolvió Orca `[solo en main]`.
-5. Lee la pantalla tres veces (pausas de 5 segundos, salvo con pi) y falla ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell `[solo en main]`.
+4. Imprime `Rama: <rama>` con el nombre que devolvió Orca.
+5. Lee la pantalla tres veces (pausas de 5 segundos, salvo con pi) y falla ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell.
 
 Con `pi`, `--perfil-pi <nombre>` fija el perfil de modelos de gentle-pi para ese worktree (los perfiles viven en `~/.pi/gentle-ai/profiles.json`); la clave `agentes.pi.perfil` lo fija para todos los despachos a pi y el flag gana.
 
@@ -214,7 +214,7 @@ orca-stack reanudar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecom
 
 Si Orca todavía muestra el turno en `done`, reanuda el TUI con una sola línea que apunta a la respuesta. Si el agente salió y Orca ya no lo lista ni hay terminal de worker, identifica el mismo agente desde la línea de implementador del brief original y lo relanza en el worktree existente con el brief y la URL al principio. Se niega si Orca informa un estado de agente desconocido o si queda una terminal de worker que no muestra un shell prompt mientras Orca no lista su agente (por ejemplo, Pi headless). También se niega sin enviar el brief si Codex muestra su menú de actualización: elegí una opción en la terminal y relanzá con la misma respuesta de `main`. Rechaza un PR abierto, un worktree sucio, más de un agente vivo o una respuesta que no sea un comentario real de la cuenta del stack o del humano. Si ya intentó usar el mismo comentario, informa la hora registrada y no reenvía ni relanza: comprobá primero el agente y su terminal; si el intento no llegó, publicá una nueva `Respuesta de main:` y usá su URL. `--confirmado` habilita relanzar agentes de `preguntarAntes` solo después del OK humano; `--dry-run` no escribe ni envía nada.
 
-#### `vigilar` `[solo en main]`
+#### `vigilar`
 
 ```bash
 orca-stack vigilar 41 42 43                 # el Monitor de la tanda
@@ -261,9 +261,9 @@ Resumen del "Ciclo de `main`" del contrato, con el comando de cada paso:
 | 2 | Cada ticket con criterios y `## Reglas` | Reglas numeradas con ejemplos, bordes y errores; cada valor esperado va como `cliente` o `inferido` |
 | 3 | Elegir la frontera | Issues abiertos, sin bloqueantes, sin assignee, sin `needs-info`, sin sub-issues. Leer con `gh issue view <n> --json title,body,comments` |
 | 4 | Despachar la tanda | `orca-stack despachar <n> <agente>`, un ticket por comando |
-| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>` `[solo en main]`; atiende `worker-en-pausa` respondiendo la `Consulta:` donde apareció y corriendo `orca-stack reanudar <issue> <url-del-comentario>`, y `pr-en-conflicto` con `orca-stack rebote <pr>` cuando el worker se detuvo. En Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
+| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>`; atiende `worker-en-pausa` respondiendo la `Consulta:` donde apareció y corriendo `orca-stack reanudar <issue> <url-del-comentario>`, y `pr-en-conflicto` con `orca-stack rebote <pr>` cuando el worker se detuvo. En Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
 | 6 | Review de cada PR nuevo | `orca-stack revisar <pr> <agente>`; segundo review de pi si toca `riesgo` |
-| 7 | Mergear si se cumple la condición | Ver [4.8](#48-review-rebote-y-merge); antes de cada `gh pr merge`, `orca-stack vigilar --merge-de-main <n>` `[solo en main]` |
+| 7 | Mergear si se cumple la condición | Ver [4.8](#48-review-rebote-y-merge); antes de cada `gh pr merge`, `orca-stack vigilar --merge-de-main <n>` |
 | 8 | Rebote | `orca-stack rebote <pr>`; una sola vez por review |
 | 9 | Después del merge | Cerrar a mano el issue si la base no es la rama por defecto; integrar propuestas de `GLOSSARY.md` y ADR; desplegar solo si `despliegue` lo dice, y correr `despliegue.pruebaFuncional` |
 | 10 | Cerrar la tanda | Proponer `retro` y, si ya cerró una antes, `handoff` a una sesión nueva |
@@ -377,7 +377,7 @@ La marcha fija cuánto explora, delega, consulta y narra `main`. Solo toca la li
 
 - **Solo el humano cambia la marcha**, con `/marcha <lazy|medium|proactive>`. `main` nunca ejecuta `/marcha`: sugiere el cambio en una línea (por ejemplo `Sugiero subir a Proactive para #42 (toca riesgo): /marcha proactive`), como mucho una vez por item y señal.
 - Sin un mensaje `Marcha:`, rige Medium. Al cerrar una tanda se propone volver a Medium.
-- Un `/effort` manual gana hasta el siguiente cambio de marcha. Elegir en el menú de `/effort` el mismo nivel que ya estaba **no** cuenta como ajuste manual, porque el mod no lo distingue de cerrar el menú `[solo en main]`. Más detalle en `mods/marchas/README.md`.
+- Un `/effort` manual gana hasta el siguiente cambio de marcha. Elegir en el menú de `/effort` el mismo nivel que ya estaba **no** cuenta como ajuste manual, porque el mod no lo distingue de cerrar el menú. Más detalle en `mods/marchas/README.md`.
 - En modo autónomo, si solo quedan items esperando un cambio de marcha, `main` cierra sin escribir `[AUTONOMO-LISTO]` y deja `Esperando marcha: <items>`.
 - El estado de marcha de una sesión caduca a los 30 días desde el último `/marcha <marcha>`; una sesión retomada con la clave vencida empieza en Medium.
 
@@ -438,9 +438,9 @@ En un PR que toca `riesgo`, los reviews son siempre sobre el `headRefOid`, y un 
 
 Antes de cualquier fan-out se comprueba que git ignore `.claude/worktrees/` con `git check-ignore`; si no, no se ejecuta. Ultracode (solo lo activa el humano) autoriza la fan-out propia de `main`, pero nunca la nota de un worker y no sobrevive a un handoff. La arena nunca reemplaza el segundo review ni la consulta a Gentle Shell en una puerta de una vía.
 
-### 4.10 El chequeo de `## Evidencia` en CI `[solo en main]`
+### 4.10 El chequeo de `## Evidencia` en CI
 
-`[solo en main]` (PR #202). El job `evidencia` de CI lee el cuerpo actual del PR y comprueba que **cada nombre de test citado en `## Evidencia` exista** en `test/*.test.mjs` o en `mods/*/tests/`; `ci-ok` lo exige. Un PR que cierra un issue necesita además una tabla con columna `Test` y al menos una fila. Se vuelve a correr cuando editás el cuerpo del PR (la CI ahora también escucha el evento `edited`).
+El job `evidencia` de CI (PR #202) lee el cuerpo actual del PR y comprueba que **cada nombre de test citado en `## Evidencia` exista** en `test/*.test.mjs` o en `mods/*/tests/`; `ci-ok` lo exige. Un PR que cierra un issue necesita además una tabla con columna `Test` y al menos una fila. Se vuelve a correr cuando editás el cuerpo del PR (la CI ahora también escucha el evento `edited`).
 
 Cómo se lee la tabla: busca tablas dentro de `## Evidencia` cuya segunda columna empiece con `Test`; en esa columna toma los textos entre backticks, y en la columna de la corrida los títulos de la forma `` `✔ nombre (12ms)` `` (runner de Node) o `` `(pass) nombre [12ms]` `` (runner de Bun). Se ignoran: los comandos (`npm ...`, `node ...`, `gh ...`, `orca-stack ...`, etc.), las rutas o archivos (`src/cli.mjs`), los bloques de código y los comentarios HTML. Salidas:
 
@@ -448,7 +448,7 @@ Cómo se lee la tabla: busca tablas dentro de `## Evidencia` cuya segunda column
 - Todos existen: `Evidencia OK: <n> nombres de test verificados`.
 - Falta alguno: sale con 1 y dice `Evidencia fila <n>: no encuentro el test `<nombre>` en test/ ni mods/*/tests/`.
 
-Para probarlo en local, con el cuerpo en un archivo: `node scripts/check-evidencia.mjs <archivo>`. Ver también la [sección 7](#7-qué-hay-solo-en-main).
+Para probarlo en local, con el cuerpo en un archivo: `node scripts/check-evidencia.mjs <archivo>`.
 
 ## 5. Casos borde
 
@@ -472,9 +472,9 @@ Tomados del código, los tests y el contrato. Cada fila dice qué pasa y qué ha
 | CI roja dos veces | El contrato manda al humano; no se salda con `Decidido por main` | Leé `gh run view --job <job> --log-failed`; si es infra, re-ejecutá |
 | PR atrás de `ramaBase` (BEHIND) con la rama protegida | `gh pr merge` se niega | `gh pr update-branch <n>`, esperá la CI del head nuevo, mergeá. El review anterior sigue valiendo solo si el head nuevo es un merge de GitHub (`web-flow`, firma verificada, primer padre el commit revisado). Un merge pusheado a mano no cuenta. En `riesgo`, los reviews se piden de nuevo |
 | Dos sesiones de `main` en el mismo repo | Se pisan: el assignee es un cerrojo que ambas ven igual | Una sola sesión de `main` por repo |
-| Monitor rearmado | Si el anterior sigue vivo, le roba los eventos al nuevo | Matá el anterior antes de rearmar. Con `vigilar`, rearmar con los mismos argumentos retoma sin repetir eventos `[solo en main]` |
-| `main` mergea y el Monitor devuelve su propio merge | Un merge de `main` se ve igual que uno del humano | Correr `vigilar --merge-de-main <n>` antes de cada `gh pr merge` y de nuevo tras `update-branch`; vale 30 minutos `[solo en main]` |
-| `vigilar` no puede leer GitHub | Emite `vigilar-ciego: <error>` tras tres vueltas fallidas, una vez por corte | Revisá `gh auth status` y la red; sigue vigilando solo. Un issue ilegible o un cursor que no se puede escribir no lo detienen `[solo en main]` |
+| Monitor rearmado | Si el anterior sigue vivo, le roba los eventos al nuevo | Matá el anterior antes de rearmar. Con `vigilar`, rearmar con los mismos argumentos retoma sin repetir eventos |
+| `main` mergea y el Monitor devuelve su propio merge | Un merge de `main` se ve igual que uno del humano | Correr `vigilar --merge-de-main <n>` antes de cada `gh pr merge` y de nuevo tras `update-branch`; vale 30 minutos |
+| `vigilar` no puede leer GitHub | Emite `vigilar-ciego: <error>` tras tres vueltas fallidas, una vez por corte | Revisá `gh auth status` y la red; sigue vigilando solo. Un issue ilegible o un cursor que no se puede escribir no lo detienen |
 | `avisar` con un worker que ya terminó, con pi, codex o agy | Se niega; no hay timbre | La respuesta queda como comentario: pi relee los comentarios antes de su PR |
 | Cuerpo de PR o review con acentos desde la consola de Windows | La consola rompe los acentos si el texto viaja por tubería | Mandalo siempre con `--body-file`, nunca por tubería |
 | Codex en Windows escribe cada letra acentuada como dos caracteres raros | PowerShell 5.1 lee UTF-8 sin BOM como cp1252 | `global` agrega la regla ASCII a `~/.codex/AGENTS.md`; sumá a mano la línea de `$PROFILE` (ver la [guía de setup](guia-setup.md#codex-en-windows-acentos-rotos)) |
@@ -494,7 +494,7 @@ Tomados del código, los tests y el contrato. Cada fila dice qué pasa y qué ha
 ```bash
 orca-stack doctor                    # verificación diaria, desde la raíz del proyecto
 orca-stack despachar 12 agy          # ticket -> worker
-orca-stack vigilar 12 13 14          # Monitor de la tanda [solo en main]
+orca-stack vigilar 12 13 14          # Monitor de la tanda
 orca-stack revisar 15 pi             # review del PR #15
 orca-stack rebote 15                 # relanzar al autor
 orca-stack sesiones                  # para /retro
@@ -519,8 +519,8 @@ orca-stack sesiones                  # para /retro
 | Mods | `~/.claude/mods/` y `env.CLAUDE_CODE_PLUGIN_DIRS` en `~/.claude/settings.json` |
 | Skills | `~/.claude/skills/` y `~/.agents/skills/` |
 | Consultas ya reportadas | `<repo>/.git/orca-stack/consultas-reportadas.json` |
-| Cursor de `vigilar` | `<git-common-dir>/orca-stack/vigilar.json` `[solo en main]` |
-| Merges registrados por `main` | `<git-common-dir>/orca-stack/vigilar-merges.json` `[solo en main]` |
+| Cursor de `vigilar` | `<git-common-dir>/orca-stack/vigilar.json` |
+| Merges registrados por `main` | `<git-common-dir>/orca-stack/vigilar-merges.json` |
 | Perfil de pi fijado por worktree | `.pi/gentle-ai/profile.json` (fuera de git, vía `info/exclude`) y `<git-common-dir>/gentle-ai/profile-pin.json` (el del clon gana) |
 
 Para no tocar tu carpeta personal al probar: `ORCA_STACK_HOME=/ruta/temporal orca-stack global`.
@@ -547,15 +547,8 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 
 ## 7. Qué hay solo en `main`
 
-Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.11.0`, todavía no publicado en un release.
+Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.16.0`, todavía no publicado en un release.
 
-| Cambio | PR | Qué trae |
-| --- | --- | --- |
-| `/effort`: elegir en el menú el mismo nivel no cuenta como ajuste manual | #200 (#194) | Mod `marchas`; ver [4.6](#46-marchas) |
-| Brief del worker: `gh issue view <n> --json title,body,comments` y la instrucción de `CODING_STANDARDS.md` solo si el repo lo tiene | #201 (#196) | `assets/stack/brief-ticket.md` y `brief-revision.md` |
-| `despachar` imprime `Rama: <rama>`; despachar, revisar y rebote inspeccionan la pantalla de lanzamiento | #203 (#198) | Ver [4.1](#41-comandos-del-cli) |
-| `orca-stack vigilar` y `vigilar --merge-de-main`; el contrato (pasos 5 y 7) los nombra | #204 (#195) | Ver [`vigilar`](#vigilar-solo-en-main) |
-| `orca-stack reanudar` retoma workers pausados; el contrato nombra `worker-en-pausa` | #214 | Ver [`reanudar`](#reanudar) |
-| Chequeo de nombres de test de `## Evidencia` en CI | #202 | Job `evidencia` de CI, exigido por `ci-ok`; ver [4.10](#410-el-chequeo-de--evidencia-en-ci-solo-en-main) |
+Por ahora no hay nada: todo lo mergeado salió en `v0.16.0`.
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.
