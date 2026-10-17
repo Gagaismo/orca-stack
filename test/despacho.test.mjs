@@ -1788,7 +1788,7 @@ describe('rebote', () => {
 
   describe('issue 250: merge conflict bounce', () => {
     const conflicting = (overrides = {}) => pr({ reviews: [], mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY', baseRefName: 'main', ...overrides })
-    const mergeTree = { status: 1, stdout: '4b825dc642cb6eb9a060e54bf8d69288fbee4904\ndocs/manual.md\nsrc/despacho.mjs\n', stderr: '' }
+    const mergeTree = { status: 1, stdout: '4b825dc642cb6eb9a060e54bf8d69288fbee4904\0docs/manual.md\0src/despacho.mjs\0', stderr: '' }
     const baseLog = okRes('dfc7ad2 Merge pull request #248\ndec52eb docs(manual): rebote paragraph\n')
     const conflictEnv = (pull = conflicting(), extra = {}) => bounceEnv(pull, { 'git merge-tree': mergeTree, 'git log': baseLog, ...extra })
     const briefOf = env => env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
@@ -1820,6 +1820,13 @@ describe('rebote', () => {
       const log = env.calls.find(call => call[0] === 'git' && call[1] === 'log')
       assert.deepEqual(log.slice(1), ['log', '--oneline', 'abc123..origin/main', '--', 'docs/manual.md', 'src/despacho.mjs'])
       assert.ok(env.calls.some(call => call.join(' ') === 'git fetch origin main'))
+      assert.ok(env.calls.find(call => call[0] === 'git' && call[1] === 'merge-tree').includes('-z'))
+
+      const noLog = conflictEnv(conflicting(), { 'git log': { status: 128, stdout: '', stderr: 'fatal: bad revision' } })
+      await reboteCommand({}, '12', noLog.io)
+      const partial = briefOf(noLog).split('## Merge conflict')[1].split(/\n## /)[0]
+      assert.match(partial, /- `docs\/manual\.md`\n- `src\/despacho\.mjs`/)
+      assert.match(partial, /could not compute the base commits/)
 
       const unknown = conflictEnv(conflicting(), { 'git merge-tree': { status: 128, stdout: '', stderr: 'fatal: unknown option' } })
       await reboteCommand({}, '12', unknown.io)
@@ -1908,6 +1915,24 @@ describe('rebote', () => {
       await assert.rejects(reboteCommand({}, '12', again.io), /ya rebotó por conflicto en abc123/)
       assert.equal(launches(again).length, 0)
       assert.ok(!commented(again))
+
+      // Three PRs merged one by one: the last one is conflict-bounced on two different heads.
+      const second = conflictEnv(conflicting({ headRefOid: 'def456', comments: [{ body: 'Rebote conflicto: abc123' }] }))
+      await reboteCommand({}, '12', second.io)
+      assert.equal(markerOf(second), 'Rebote conflicto: def456\n')
+
+      // A conflict marker is not a review or CI bounce: later bounces on a new head still go through.
+      const review = bounceEnv(pr({ headRefOid: 'def456', reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. finding' }], comments: [{ body: 'Rebote conflicto: abc123' }] }))
+      await reboteCommand({}, '12', review.io)
+      assert.equal(markerOf(review), 'Rebote: def456\n')
+      const ci = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote conflicto: old1' }, { body: 'Rebote conflicto: old2' }] }))
+      await reboteCommand({}, '12', ci.io)
+      assert.equal(markerOf(ci), 'Rebote CI: abc123\n')
+
+      // The review limit still applies when the conflict comes with review blockers on a new head.
+      const spentReview = conflictEnv(conflicting({ headRefOid: 'def456', reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. finding' }], comments: [{ body: 'Rebote: abc123' }] }))
+      await assert.rejects(reboteCommand({}, '12', spentReview.io), /avanzó desde el rebote/)
+      assert.equal(launches(spentReview).length, 0)
     })
 
     test('Rule 10: contract step 8 and the manual say how main merges after a conflict bounce', () => {
@@ -1926,6 +1951,26 @@ describe('rebote', () => {
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [] })).io), /no tiene un review bloqueante vigente en abc123\.$/)
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, statusCheckRollup: [{ __typename: 'CheckRun', name: 'still running', status: 'IN_PROGRESS' }] })).io), /pendientes/)
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }] })).io), /avanzó desde el rebote/)
+      for (const state of ['CLOSED', 'MERGED']) await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, state })).io), /no se puede rebotar/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, body: 'no author' })).io), /no tiene la línea "Implementador/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(clean), { 'git status': okRes(' M src/app.mjs\n') }).io), /está sucio/)
+      const diverged = bounceEnv(pr(clean), { 'git merge-base': { status: 1, stdout: '', stderr: '' } })
+      const sh = diverged.io.sh
+      diverged.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('other\n') : sh(cmd, args, opts)
+      await assert.rejects(reboteCommand({}, '12', diverged.io), /no en el head del PR/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(clean), { 'orca worktree': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'working' }] }] } }) }).io), /agente vivo/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [{ body: 'Commit: abc123\n## BLOQUEA\n1. (inferida, interpretación): product disagreement' }] })).io), /interpretación/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, statusCheckRollup: [{ __typename: 'CheckRun', name: 'job', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/987/job/1' }] })).io), /gh run rerun 987 --failed/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1\nRebote CI: old2' }] })).io), /dos rebotes de CI/)
+
+      const plain = bounceEnv(pr(clean))
+      await reboteCommand({ dryRun: true }, '12', plain.io)
+      assert.ok(plain.out.some(line => line.includes('# PR bounce brief')))
+      assert.ok(!plain.out.some(line => line.includes('## Merge conflict')))
+      assert.ok(!plain.calls.some(call => call[0] === 'git' && (call[1] === 'merge-tree' || call.join(' ') === 'git fetch origin main')))
+      assert.ok(plain.out.some(line => line.includes('[simulación] Rebote: abc123')))
+      assert.equal(plain.written.length, 0)
+      assert.ok(!commented(plain))
 
       const dry = conflictEnv()
       await reboteCommand({ dryRun: true }, '12', dry.io)

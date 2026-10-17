@@ -893,14 +893,17 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     // Like the head fetch, this runs under --dry-run too: it only updates remote refs.
     const fetched = io.sh('git', ['fetch', 'origin', base], { cwd: worktree })
     say(`${dryRun ? '[simulaci\u00F3n] ' : ''}git fetch origin ${base} (para listar los archivos en conflicto)`)
-    // merge-tree exits 1 on conflicts and prints the tree, then one conflicting file per line.
-    const tree = fetched.status === 0 ? io.sh('git', ['merge-tree', '--write-tree', '--name-only', '--no-messages', sha, `origin/${base}`], { cwd: worktree }) : undefined
-    const files = tree?.status === 1 ? tree.stdout.split(/\r?\n/).slice(1).map(line => line.trim()).filter(Boolean) : []
+    // merge-tree exits 1 on conflicts and prints the tree, then one conflicting file each, NUL-separated (-z keeps paths unquoted).
+    const tree = fetched.status === 0 ? io.sh('git', ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', sha, `origin/${base}`], { cwd: worktree }) : undefined
+    const files = tree?.status === 1 ? tree.stdout.split('\0').slice(1).filter(Boolean) : []
     const log = files.length > 0 ? io.sh('git', ['log', '--oneline', `${sha}..origin/${base}`, '--', ...files], { cwd: worktree }) : undefined
-    const detail = log?.status === 0
-      ? `Conflicting files:\n\n${files.map(file => `- \`${file}\``).join('\n')}\n\nBase commits that touched them (\`git log --oneline HEAD..origin/${base} -- <files>\`):\n\n\`\`\`text\n${log.stdout.trim() || '(none listed)'}\n\`\`\``
+    const commits = log?.status === 0
+      ? `\`\`\`text\n${log.stdout.trim() || '(none listed)'}\n\`\`\``
+      : 'rebote could not compute the base commits.'
+    const conflictFiles = files.length > 0
+      ? `Conflicting files:\n\n${files.map(file => `- \`${file}\``).join('\n')}\n\nBase commits that touched them (\`git log --oneline HEAD..origin/${base} -- <files>\`):\n\n${commits}`
       : `rebote could not compute the conflicting files; \`git merge origin/${base}\` lists them.`
-    conflictSection = `\n## Merge conflict\n\nPR #${n} conflicts with its base branch \`${base}\`. Resolve it with a merge:\n\n1. \`git fetch origin\`\n2. \`git merge origin/${base}\` (never rebase, never force push).\n3. Resolve every conflict and commit the merge.\n4. Run the configured verification (below).\n5. Push to the same branch.\n6. Comment on PR #${n} with how each conflicting file was resolved.\n\n${detail}\n`
+    conflictSection = `\n## Merge conflict\n\nPR #${n} conflicts with its base branch \`${base}\`. Resolve it with a merge:\n\n1. \`git fetch origin\`\n2. \`git merge origin/${base}\` (never rebase, never force push).\n3. Resolve every conflict and commit the merge.\n4. Run the configured verification (below).\n5. Push to the same branch.\n6. Comment on PR #${n} with how each conflicting file was resolved.\n\n${conflictFiles}\n`
   }
 
   const name = `${repo}-pr-${n}-rebote`
