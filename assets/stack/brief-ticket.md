@@ -52,7 +52,7 @@ The body is UTF-8 without a BOM (Windows PowerShell's `Out-File` and `Set-Conten
 ## Evidencia
 | Rule, legacy RED item, or touched public entry | Test (exact name) | Result |
 |---|---|---|
-<one row per rule (or, for a legacy ticket, per acceptance criterion and failure mode used as a RED item) and one row per touched public entry: the exact test name and passing line, or how it was verified when there is no test. If no existing public entry is touched, state "none touched"; do not add a placeholder row. Add before/after (screenshot or output) when the change is visible.>
+<one row per rule (or, for a legacy ticket, per acceptance criterion and failure mode used as a RED item) and one row per touched public entry: the test title exactly as declared in `test()`/`it()`, without the describe path or abbreviations; only test names go in backticks in the Test column; a verification without a test (a command, a manual check) is written as plain text, without backticks. If no existing public entry is touched, state "none touched"; do not add a placeholder row. Add before/after (screenshot or output) when the change is visible.>
 A row's evidence is a measured number (time, size, throughput, cost): read `~/.claude/skills/principle-explain-the-number/SKILL.md`.
 
 ## Merge Danger
