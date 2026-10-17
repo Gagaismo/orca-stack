@@ -1785,5 +1785,49 @@ describe('rebote', () => {
       assert.doesNotMatch(reviewOut, /- Subagents: |AGENTS\.md is already|Every check runs and finishes/)
     })
   })
+
+  describe('issue #249: local pre-check from verificacion.cuerpoPR', () => {
+    test('Rule 1: local pre-check from config renders step 6 right before gh pr create with {file} replaced by <your body file>', async () => {
+      const configWithPrecheck = {
+        ...PROJECT,
+        verificacion: {
+          ...PROJECT.verificacion,
+          cuerpoPR: 'node scripts/check-evidencia.mjs {file}',
+        },
+      }
+      const env = fakeIo({}, { config: configWithPrecheck })
+      await run('ticket', { n: '300', agent: 'claude', dryRun: true }, env)
+      const out = env.out.join('\n')
+      assert.ok(out.includes('node scripts/check-evidencia.mjs <your body file>'))
+      assert.ok(out.includes('6. Run `node scripts/check-evidencia.mjs <your body file>` on your PR body file and fix the body until it passes.'))
+      const step6Index = out.indexOf('6. Run `node scripts/check-evidencia.mjs <your body file>`')
+      const createIndex = out.indexOf('gh pr create --base')
+      const step5Index = out.indexOf('5. There is no round 3: what round 2 leaves open goes under `## Desv\u00EDos del ticket`.')
+      assert.ok(step5Index < step6Index && step6Index < createIndex)
+    })
+
+    test('Rule 2: when verificacion.cuerpoPR is absent, no pre-check step and no empty placeholder or {{...}}', () => {
+      const brief = renderBrief('ticket', { AGENT: 'claude', ISSUE: '300', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(!brief.includes('6.'))
+      assert.ok(!brief.includes('<your body file>'))
+      assert.ok(!brief.includes('{{BODY_PRECHECK_STEP}}'))
+      assert.ok(brief.includes('5. There is no round 3: what round 2 leaves open goes under `## Desv\u00EDos del ticket`.\n\nWhen the work is done and verified, push the branch and open the PR with a body file'))
+    })
+
+    test('Preserve touched public entries in despacho: renderBrief and dispatch retain behavior', async () => {
+      const ticketBrief = renderBrief('ticket', { AGENT: 'agy', ISSUE: '300', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(ticketBrief.includes('# Ticket brief: issue #300 (orca-stack)'))
+      assert.ok(ticketBrief.includes('gh pr create --base main --head branch'))
+
+      const reviewBrief = renderBrief('review', { AGENT: 'codex', PR: '42', REPO: 'orca-stack', BASE: 'main', SHA: '1234567', IMPLEMENTER: 'agy' })
+      assert.ok(reviewBrief.includes('# Review brief: PR #42 (orca-stack)'))
+
+      const env = fakeIo()
+      await run('ticket', { n: '300', agent: 'agy', dryRun: true }, env)
+      const out = env.out.join('\n')
+      assert.ok(out.includes('brief -> '))
+    })
+  })
 })
+
 

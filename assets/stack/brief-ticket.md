@@ -35,7 +35,7 @@ Every check runs and finishes before the PR opens: the configured verification, 
 2. Before opening the PR, run the `code-review` skill on the diff as round 1, with that table and the issue as input: besides the diff, it checks that every rule has a row and that the row's test proves that rule.
 3. Fix what round 1 found.
 4. Run round 2 only when round 1 led to a change of code or tests, and only on the delta since round 1. A reviewer always asks for something, so "it asked for changes" is never the reason for another round.
-5. There is no round 3: what round 2 leaves open goes under `## Desvíos del ticket`.
+5. There is no round 3: what round 2 leaves open goes under `## Desvíos del ticket`.{{BODY_PRECHECK_STEP}}
 
 When the work is done and verified, push the branch and open the PR with a body file (never through a pipe: the Windows console breaks accents):
 
