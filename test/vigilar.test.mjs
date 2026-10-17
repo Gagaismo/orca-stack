@@ -924,4 +924,25 @@ describe('orca-stack vigilar (#206)', () => {
     await once(pending, ['7'])
     assert.deepEqual(pending.out, ['pr-abierto #7 PR #70 abc1234'])
   })
+
+  test('Issue 256 Rule 2: real fail-fast rows emit ci-roja with the failing row', async () => {
+    // Real statusCheckRollup rows of https://github.com/encode/httpx/pull/3796 (run 37009481166, default fail-fast matrix).
+    const row = (name, conclusion, startedAt, completedAt, job) => ({
+      __typename: 'CheckRun', name, workflowName: 'Test Suite', status: 'COMPLETED', conclusion, startedAt, completedAt,
+      detailsUrl: `https://github.com/encode/httpx/actions/runs/37009481166/job/${job}`,
+    })
+    const checks = [
+      row('Python 3.10', 'CANCELLED', '2026-10-02T12:54:17Z', '2026-10-02T12:55:11Z', 110845502632),
+      row('Python 3.11', 'CANCELLED', '2026-10-02T12:53:52Z', '2026-10-02T12:54:36Z', 110845502341),
+      row('Python 3.12', 'FAILURE', '2026-10-02T12:53:52Z', '2026-10-02T12:54:34Z', 110845502631),
+      row('Python 3.13', 'CANCELLED', '2026-10-02T12:53:54Z', '2026-10-02T12:54:56Z', 110845502533),
+    ]
+    const h = harness({ prs: [pr(70, { checks })], runs: [] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [
+      'pr-abierto #7 PR #70 abc1234',
+      'ci-roja #7 PR #70 abc1234: Python 3.12=FAILURE',
+    ])
+    assert.equal(h.cursor()['7'].ci, 'roja')
+  })
 })

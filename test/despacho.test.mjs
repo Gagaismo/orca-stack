@@ -1513,6 +1513,29 @@ describe('rebote', () => {
     })
   })
 
+  test('Issue 256 Rule 2: rebote bounces real fail-fast rows as a failed check instead of asking for gh run rerun', async () => {
+    // Real statusCheckRollup rows of https://github.com/encode/httpx/pull/3796 (run 37009481166, default fail-fast matrix).
+    const row = (name, conclusion, startedAt, completedAt, job) => ({
+      __typename: 'CheckRun', name, workflowName: 'Test Suite', status: 'COMPLETED', conclusion, startedAt, completedAt,
+      detailsUrl: `https://github.com/encode/httpx/actions/runs/37009481166/job/${job}`,
+    })
+    const checks = [
+      row('Python 3.10', 'CANCELLED', '2026-10-02T12:54:17Z', '2026-10-02T12:55:11Z', 110845502632),
+      row('Python 3.11', 'CANCELLED', '2026-10-02T12:53:52Z', '2026-10-02T12:54:36Z', 110845502341),
+      row('Python 3.12', 'FAILURE', '2026-10-02T12:53:52Z', '2026-10-02T12:54:34Z', 110845502631),
+      row('Python 3.13', 'CANCELLED', '2026-10-02T12:53:54Z', '2026-10-02T12:54:56Z', 110845502533),
+    ]
+    const env = bounceEnv(pr({ reviews: [], statusCheckRollup: checks }), { 'gh run': json([]) })
+    await reboteCommand({}, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.match(brief, /Python 3\.12/)
+    assert.match(brief, /https:\/\/github\.com\/encode\/httpx\/actions\/runs\/37009481166\/job\/110845502631/)
+    assert.match(brief, /gh run view --job 110845502631 --log-failed/)
+    assert.match(brief, /Cancelled siblings.*Python 3\.10, Python 3\.11, Python 3\.13/)
+    assert.doesNotMatch(brief, /gh run rerun/)
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: abc123\n')
+  })
+
   test('Issue 225 PRESERVE: reboteCommand retains existing arguments, refusals and Rebote CI counters', async () => {
     const closed = bounceEnv(pr({ state: 'CLOSED' }))
     await assert.rejects(reboteCommand({}, '12', closed.io), /no se puede rebotar/)
