@@ -9,8 +9,8 @@ import { policyBlock } from './templates.mjs'
 import { homeDir, readTextIfExists, run, timestamp, tilde, which } from './util.mjs'
 
 // Portable pointers: never an absolute user path.
-const POLICY = '~/orca/stack/ORCA-STACK.md'
-const BRIEFS = '~/orca/stack/ROLE-BRIEFS.md'
+export const POLICY = '~/orca/stack/ORCA-STACK.md'
+export const BRIEFS = '~/orca/stack/ROLE-BRIEFS.md'
 
 const projectRoot = cwd => {
   const git = which('git')
