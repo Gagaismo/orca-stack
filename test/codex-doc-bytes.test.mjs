@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, test } from 'node:test'
 
@@ -20,9 +20,14 @@ afterEach(() => {
 })
 
 // Only node on PATH: no real codex binary runs (its codemode step would rewrite config.toml under the test).
-const NODE_ONLY = { PATH: path.dirname(process.execPath) }
-const runGlobal = (home, codexDir, args = []) =>
-  cli(home, ['global', '--skip-pi', ...args], { env: { ...NODE_ONLY, CODEX_HOME: codexDir } })
+// A throwaway directory goes first so global installs its command there, never into node's own (writable on CI) bin.
+const runGlobal = (home, codexDir, args = []) => {
+  const commandDir = path.join(home, 'path-bin')
+  mkdirSync(commandDir, { recursive: true })
+  const env = { PATH: [commandDir, path.dirname(process.execPath)].join(path.delimiter), CODEX_HOME: codexDir }
+
+  return cli(home, ['global', '--skip-pi', ...args], { env })
+}
 
 // The orca-stack block exactly as `init` writes it into a project's AGENTS.md, markers excluded.
 const initBlockBytes = () => {
