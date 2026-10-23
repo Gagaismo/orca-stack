@@ -1,15 +1,15 @@
 {
   "repo": "https://github.com/cursor/plugins",
-  "version": "0.15.24",
-  "commit": "1e5c90a4b6f249917bd21fe361b3a2a7deb741b8",
+  "version": "0.15.31",
+  "commit": "642289e6b1eb01c25b02ea041dccaf7b5864e131",
   "skills": {
     "principle-make-operations-idempotent": {
       "adapted": false,
-      "upstreamSha256": "540738217c3da7bf513b9886924ad6a2bc77e58be867f5bd2e1831c74bf2ce70"
+      "upstreamSha256": "7aa9327cf1f1aa057e95d47a0a78bd88a8f9d556b608866fee939d455a53a019"
     },
     "principle-attack-the-premise": {
       "adapted": false,
-      "upstreamSha256": "c87bd7536f772f8a403ad8155535ee17a1bbec9a353156693eb3bb1520c87ae3"
+      "upstreamSha256": "6a932884daad4aa189e9b5d1665226bbc75621d4d2a398fd4003bebd382f4599"
     },
     "principle-explain-the-number": {
       "adapted": false,
@@ -17,13 +17,13 @@
     },
     "arena": {
       "adapted": true,
-      "upstreamSha256": "cdc931b0f0cb3bda818d117a173aa62b84d58882222847e85c3ea6eb22a0e218",
-      "shippedSha256": "253adb5506c358760bf46bdb8424cbb92a72f09a1a8fc3764a3d2f8a2a6cc6d3"
+      "upstreamSha256": "ed72f6c132b1ce3974d949581d0adc5dade424fe20793ac3b4c4fae22ecb9354",
+      "shippedSha256": "0716bcd8aba6bde83d8afdd3b7c28056c17d0f05802f7cfcba5bfeffe1e7f247"
     },
     "swarm": {
       "adapted": true,
-      "upstreamSha256": "c8fe1b28282e7a051a4041a146a11f076e0fd95252bb010106a58209805303d5",
-      "shippedSha256": "d4966fc9b042837c8fb3b6c9c18962d2fb9d4e58ffde8d2f561e32da46992dcb"
+      "upstreamSha256": "031657cb81e490f9aed5c75d6ff2a4fda35ccafbaf72be604e59481cc4080cdc",
+      "shippedSha256": "1047018d839652daf088966c19d3239f6549597473ec1f66daa15341939ac103"
     }
   }
 }

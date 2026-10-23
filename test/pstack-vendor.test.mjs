@@ -13,18 +13,18 @@ const sha256 = text => createHash('sha256').update(text.replace(/\r\n/g, '\n'), 
 const provenance = JSON.parse(readSkill(SKILLS, 'pstack-upstream.json'))
 const skill = name => readSkill(SKILLS, name, 'SKILL.md')
 
-describe('vendored pstack principles (upstream v0.15.24)', () => {
+describe('vendored pstack principles (upstream v0.15.31)', () => {
   test('rule 1: every vendored SKILL.md matches upstream at the pinned commit, changing one byte makes the hash test fail, naming the skill', () => {
     const unadapted = Object.entries(provenance.skills).filter(([, e]) => !e.adapted)
     const vendored = readdirSync(SKILLS).filter(name => name.startsWith('principle-') && statSync(path.join(SKILLS, name)).isDirectory())
     assert.deepEqual(vendored.sort(), unadapted.map(([k]) => k).sort())
     for (const [name, entry] of unadapted) {
       assert.equal(entry.adapted, false, `${name} must not be adapted`)
-      assert.equal(sha256(skill(name)), entry.upstreamSha256, `${name} differs from upstream v0.15.24`)
+      assert.equal(sha256(skill(name)), entry.upstreamSha256, `${name} differs from upstream v0.15.31`)
       // Corrupting one byte must fail naming the skill
       const corrupted = skill(name) + ' '
       assert.throws(() => {
-        assert.equal(sha256(corrupted), entry.upstreamSha256, `${name} differs from upstream v0.15.24`)
+        assert.equal(sha256(corrupted), entry.upstreamSha256, `${name} differs from upstream v0.15.31`)
       }, new RegExp(name))
     }
   })
@@ -119,11 +119,11 @@ describe('vendored pstack principles (upstream v0.15.24)', () => {
 
   test('provenance manifest and README credit row match', () => {
     assert.equal(provenance.repo, 'https://github.com/cursor/plugins')
-    assert.equal(provenance.version, '0.15.24')
+    assert.equal(provenance.version, '0.15.31')
     assert.match(provenance.commit, /^[0-9a-f]{40}$/)
     const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
     assert.ok(row, 'README has no pstack row in "Origen y licencias"')
-    assert.ok(row.includes('0.15.24') && row.includes(provenance.commit.slice(0, 7)), row)
+    assert.ok(row.includes('0.15.31') && row.includes(provenance.commit.slice(0, 7)), row)
     assert.ok(row.includes('assets/skills/pstack-upstream.json'), row)
     assert.ok(row.includes('Lauren Tan'), row)
   })
@@ -140,7 +140,7 @@ describe('vendored pstack principles (upstream v0.15.24)', () => {
   })
 })
 
-describe('#168 adapted arena and swarm skills (upstream v0.15.24)', () => {
+describe('#168 adapted arena and swarm skills (upstream v0.15.31)', () => {
   test('rule 1: the manifest lists arena and swarm with adapted: true, and changing a byte of a shipped copy fails the hash test', () => {
     for (const name of ['arena', 'swarm']) {
       const entry = provenance.skills[name]
@@ -203,3 +203,87 @@ describe('#168 adapted arena and swarm skills (upstream v0.15.24)', () => {
   })
 })
 
+describe('#265 re-vendor pstack principles and swarm from 0.15.31', () => {
+  test('rule 1: provenance manifest says 0.15.31 and commit 642289e6b1eb01c25b02ea041dccaf7b5864e131, upstreamSha256 hashes match, and README line 249 says 0.15.31 (commit 642289e)', () => {
+    assert.equal(provenance.version, '0.15.31')
+    assert.equal(provenance.commit, '642289e6b1eb01c25b02ea041dccaf7b5864e131')
+    assert.equal(provenance.skills['arena'].upstreamSha256, 'ed72f6c132b1ce3974d949581d0adc5dade424fe20793ac3b4c4fae22ecb9354')
+    assert.equal(provenance.skills['swarm'].upstreamSha256, '031657cb81e490f9aed5c75d6ff2a4fda35ccafbaf72be604e59481cc4080cdc')
+    const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
+    assert.ok(row, 'README has no pstack row in "Origen y licencias"')
+    assert.ok(row.includes('0.15.31'), 'README must name 0.15.31')
+    assert.ok(row.includes('642289e'), 'README must name 642289e')
+  })
+
+  test('rule 2: principle-attack-the-premise and principle-make-operations-idempotent match upstream byte for byte with disable-model-invocation: true, negative: no shipped file says Take a census', () => {
+    const attackText = skill('principle-attack-the-premise')
+    assert.match(attackText, /description:\s*"[^"]*Write the premise down and test it directly before you write another fix that assumes it\.[^"]*"/)
+    assert.match(attackText, /^disable-model-invocation:\s*true$/m)
+    assert.equal(sha256(attackText), provenance.skills['principle-attack-the-premise'].upstreamSha256)
+
+    const idempotentText = skill('principle-make-operations-idempotent')
+    assert.match(idempotentText, /^disable-model-invocation:\s*true$/m)
+    assert.equal(sha256(idempotentText), provenance.skills['principle-make-operations-idempotent'].upstreamSha256)
+
+    // Negative: no shipped file still says Take a census
+    for (const name of Object.keys(provenance.skills)) {
+      assert.doesNotMatch(skill(name), /take a census/i, `${name} still contains "Take a census"`)
+    }
+  })
+
+  test('rule 3: principle-explain-the-number and arena stay byte-identical to what ships today and their hashes do not change', () => {
+    assert.equal(provenance.skills['principle-explain-the-number'].upstreamSha256, 'cd5a25f9e7cf023627ccb470dc5faa97542f29b4319496a32b839a8e1e988047')
+    assert.equal(sha256(skill('principle-explain-the-number')), provenance.skills['principle-explain-the-number'].upstreamSha256)
+    assert.equal(sha256(skill('arena')), provenance.skills['arena'].shippedSha256)
+  })
+
+  test('rule 4: swarm drops the three removed upstream sentences unless carrying Orca text, and shippedSha256 is updated', () => {
+    const text = skill('swarm')
+    assert.doesNotMatch(text, /Fan out N parallel in-process workers/)
+    assert.doesNotMatch(text, /Fan out N parallel cloud workers/)
+    assert.doesNotMatch(text, /3\.\s+Set N from the user/)
+    assert.doesNotMatch(text, /Keep a compact result table,\s+one-line evidenced issues/)
+    assert.match(text, /The swarm report is not a review and replaces neither CI nor `Verificado por main`\./)
+    assert.equal(sha256(text), provenance.skills['swarm'].shippedSha256)
+  })
+
+  test('rule 5: the adaptation note on line 13 of arena/SKILL.md and under Adaptation Note in swarm/SKILL.md says 0.15.31', () => {
+    for (const name of ['arena', 'swarm']) {
+      const text = skill(name)
+      assert.match(text, /Adapted from pstack \(`cursor\/plugins`, version 0\.15\.31\)/, `${name} adaptation note must say version 0.15.31`)
+      assert.doesNotMatch(text, /0\.15\.24/, `${name} must not say 0.15.24`)
+    }
+  })
+
+  test('rule 6: version strings in test/pstack-vendor.test.mjs say 0.15.31 and corrupting one byte fails the hash test naming the skill', () => {
+    const self = read(path.join(ROOT, 'test', 'pstack-vendor.test.mjs'))
+    assert.doesNotMatch(self, /upstream v0\.15\.24/)
+    assert.equal(provenance.version, '0.15.31')
+    const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
+    assert.ok(row.includes('0.15.31'))
+
+    for (const [name, entry] of Object.entries(provenance.skills)) {
+      const targetHash = entry.shippedSha256 ?? entry.upstreamSha256
+      const corrupted = skill(name) + ' '
+      assert.throws(() => {
+        assert.equal(sha256(corrupted), targetHash, `${name} differs from manifest hash`)
+      }, new RegExp(name))
+    }
+  })
+
+  test('rule 7: trigger lines in brief-ticket.md, brief-rebote.md and CONTRATO.md are not edited, negative: no file under assets/stack is touched', () => {
+    const ticketBrief = read(path.join(ROOT, 'assets', 'stack', 'brief-ticket.md'))
+    const bounceBrief = read(path.join(ROOT, 'assets', 'stack', 'brief-rebote.md'))
+    const contract = read(path.join(ROOT, 'assets', 'stack', 'CONTRATO.md'))
+
+    assert.match(ticketBrief, /The ticket touches a command, lifecycle step or loop that can run again after a crash, retry or rerun:\s*read `~\/\.claude\/skills\/principle-make-operations-idempotent\/SKILL\.md`\./)
+    assert.match(ticketBrief, /Two fixes sharing one premise have failed the same check; apply it before a third:\s*read `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
+    assert.match(bounceBrief, /The PR already bounced and the new failure shares the previous fix's premise:\s*read `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
+    assert.match(contract, /Antes de decidir qué sigue en pie después de la segunda ronda de review o de CI, o de pasárselo al humano:\s*leé `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
+
+    for (const file of ['brief-ticket.md', 'brief-rebote.md', 'brief-revision.md', 'CONTRATO.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']) {
+      const current = read(path.join(ROOT, 'assets', 'stack', file))
+      assert.ok(current.length > 0, `${file} must exist`)
+    }
+  })
+})

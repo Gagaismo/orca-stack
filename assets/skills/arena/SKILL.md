@@ -10,7 +10,7 @@ Open a todolist with one entry per phase (Frame, Fan out, Judge, Pick, Graft, Ve
 
 ## Adaptation Note
 
-Adapted from pstack (`cursor/plugins`, version 0.15.24). Dropped references to pstack's router, model configuration files (`~/.cursor/rules/pstack-models.mdc`), `poteto-mode`, and external principle skills (`separate-before-serializing-shared-state`, `Laziness Protocol`, `redesign-from-first-principles`, `prove-it-works`).
+Adapted from pstack (`cursor/plugins`, version 0.15.31). Dropped references to pstack's router, model configuration files (`~/.cursor/rules/pstack-models.mdc`), `poteto-mode`, and external principle skills (`separate-before-serializing-shared-state`, `Laziness Protocol`, `redesign-from-first-principles`, `prove-it-works`).
 
 In orca-stack, arena runs in-process only: subagents of the task owner (Agent tool, or Workflow when the human authorized it), each writer in an isolated worktree. Never route candidates through `despachar` or `revisar`.
 
