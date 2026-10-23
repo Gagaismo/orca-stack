@@ -2,8 +2,8 @@
 
 export const PINNED = {
   pi: '1.2.0',
-  gentlePi: '4.2.0',
-  claudeBridge: '0.9.2',
+  gentlePi: '4.3.0',
+  claudeBridge: '0.9.3',
 }
 
 // Oldest Pi that gentle-pi PINNED.gentlePi runs on (its peer range): an older Pi makes gentle-shell exit.

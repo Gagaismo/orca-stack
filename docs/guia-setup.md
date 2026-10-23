@@ -46,7 +46,7 @@ Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el mét
 - [ ] Claude Code instalado.
 - [ ] En Windows, Go 1.25.10 o más nuevo en el `PATH` (el `postinstall` de gentle-pi compila con Go).
 - [ ] Orca, Engram, gentle-ai y Pi instalados. Si falta alguno, `global` lo detecta y te imprime el comando oficial.
-- [ ] Pi 1.2.0 o más nuevo (gentle-pi 4.2.0 no arranca con uno anterior) y Engram 3.4.0 o más nuevo (con uno anterior, Gentle Shell deja la memoria apagada).
+- [ ] Pi 1.2.0 o más nuevo (gentle-pi 4.3.0 no arranca con uno anterior) y Engram 3.4.0 o más nuevo (con uno anterior, Gentle Shell deja la memoria apagada).
 
 ### Instalar
 
@@ -62,7 +62,7 @@ npx github:Gagaismo/orca-stack#v0.16.1 doctor
 ```
 
 - `global` respalda todo lo que toca en `~/.orca-stack/backups/<fecha>/` y anota lo que instaló en `~/.orca-stack/state.json`. `remove` lo deshace.
-- Si Pi, gentle-pi o pi-claude-bridge faltan o están en otra versión, `global` instala la versión fijada **aunque no uses `--force`** (`pi install npm:gentle-pi@4.2.0`, `npm i -g gentle-pi@4.2.0` y `pi install npm:pi-claude-bridge@0.9.2`). Si querés conservar tus versiones de Pi, agregá `--skip-pi`.
+- Si Pi, gentle-pi o pi-claude-bridge faltan o están en otra versión, `global` instala la versión fijada **aunque no uses `--force`** (`pi install npm:gentle-pi@4.3.0`, `npm i -g gentle-pi@4.3.0` y `pi install npm:pi-claude-bridge@0.9.3`). Si querés conservar tus versiones de Pi, agregá `--skip-pi`.
 - Si tu Pi es anterior a 1.2.0, `global` no instala gentle-pi y falla: actualizá Pi con el comando oficial que imprime y volvé a correrlo.
 - Gentle Shell se actualiza volviendo a correr `global`. Desde gentle-pi 4.2.0, `gentle-shell update` reinstala solo el paquete global dueño del Pi que corre, y si no puede probar qué paquete global es dueño de Pi, no toca nada.
 - Al final, `global` sugiere `doctor` e `init` sin la etiqueta de versión. Usalos con `#v0.16.1`.
