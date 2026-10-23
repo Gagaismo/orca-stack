@@ -7,9 +7,11 @@ import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestra
 import { cleanupKnownSdd } from './sdd-cleanup.mjs'
 import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, codexAgentsMd } from './codex-windows.mjs'
 import { removeAnyBlock, removeBlock, upsertBlock } from './marker.mjs'
+import { BRIEFS, POLICY } from './init.mjs'
 import { installPathCommand } from './path-command.mjs'
 import { orcaInstalled } from './orca.mjs'
 import { ensureCodexCodemode, ensurePiCodemode } from './codemode.mjs'
+import { CODEX_DOC_DEFAULT, codexDocBytesFor, readCodexDocBytes, withCodexDocBytes } from './codex-doc-bytes.mjs'
 import { setupPi } from './pi.mjs'
 import { mergePluginDirs, parseSettings, stringifySettings } from './settings.mjs'
 import {
@@ -17,6 +19,7 @@ import {
   listDirs,
   listFiles,
   readAsset,
+  policyBlock,
   render,
   skipForMod,
   wrapperContent,
@@ -312,6 +315,36 @@ const installCodexAsciiRule = ctx => {
   }
 }
 
+// codex truncates the project AGENTS.md at project_doc_max_bytes (32 KiB by default), which cuts the work contract (#269).
+// Raised to fit the orca-stack block twice over; a higher value is never lowered.
+const raiseCodexDocBytes = ctx => {
+  ctx.say('\nLímite de AGENTS.md de codex (project_doc_max_bytes)')
+  if (!existsSync(ctx.L.codexDir)) {
+    const why = process.env.CODEX_HOME ? 'CODEX_HOME apunta a una carpeta que no existe' : 'codex no está instalado'
+    ctx.say(`  se omite: no hay ${ctx.show(ctx.L.codexDir)} (${why})`)
+
+    return
+  }
+  // The block exactly as `init` writes it into a project's AGENTS.md.
+  const block = policyBlock({ policyPath: POLICY, briefsPath: BRIEFS })
+  const target = codexDocBytesFor(Buffer.byteLength(block))
+  const file = path.join(ctx.L.codexDir, 'config.toml')
+  const original = readTextIfExists(file) ?? ''
+  const current = readCodexDocBytes(original)
+  if (current.invalid !== undefined) {
+    ctx.say(`  ${ctx.show(file)} tiene project_doc_max_bytes = ${current.invalid}, que no es un entero: no lo toco`)
+
+    return
+  }
+  if (current.value !== null && current.value >= target) {
+    ctx.say(`  project_doc_max_bytes ya es ${current.value} (alcanza con ${target}): no lo toco`)
+
+    return
+  }
+  const before = current.value === null ? `sin valor, codex usaba ${CODEX_DOC_DEFAULT}` : `antes ${current.value}`
+  ctx.writeShared(file, withCodexDocBytes(original, target), `${ctx.show(file)} (project_doc_max_bytes = ${target}; ${before})`)
+}
+
 const gitUserName = () => {
   const git = which('git')
   if (!git) {
@@ -441,6 +474,7 @@ export const globalCommand = async flags => {
     removeClaudeMdBlock(ctx)
     gentleBlockStep(ctx)
     installCodexAsciiRule(ctx)
+    raiseCodexDocBytes(ctx)
     setupPi(ctx, { skipPi: flags.skipPi })
     setupCodemode(ctx, { skipPi: flags.skipPi })
     installPersonalConfig(ctx, { humano: flags.humano })
