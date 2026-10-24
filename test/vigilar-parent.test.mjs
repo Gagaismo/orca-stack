@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import path from 'node:path'
 import { after, describe, test } from 'node:test'
 
-import { parentToWatch } from '../src/parent-watch.mjs'
+import { alive, parentToWatch } from '../src/parent-watch.mjs'
 import { BIN, cleanup, tempDir } from './helpers.mjs'
 
 const WIN = process.platform === 'win32'
@@ -73,15 +73,6 @@ const startUnderParent = (ctx, args, extraEnv = {}) => {
   return { parent, lines }
 }
 
-const alive = pid => {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return error.code === 'EPERM'
-  }
-}
-
 const waitFor = async (what, check, ms) => {
   const end = Date.now() + ms
   for (;;) {
@@ -109,21 +100,21 @@ describe('vigilar ends with its parent (#281)', () => {
     dirs.push(ctx.dir)
     const ghPidFile = path.join(ctx.dir, 'gh.pid')
     const { parent, lines } = startUnderParent(ctx, ['7', '--cada', '1'], { FAKE_GH_SLOW: ghPidFile })
+    stray.push(parent.pid)
     const vigilar = await waitFor('vigilar pid', () => pidOf(lines), 15000)
     const [gh, fake] = await waitFor('the gh poll', () => ghPids(ghPidFile), 15000)
     stray.push(vigilar, gh, fake)
     assert.ok(alive(vigilar) && alive(gh))
 
     parent.kill('SIGKILL')
-    const killedAt = Date.now()
     await waitFor('vigilar and gh to exit', () => !alive(vigilar) && !alive(gh), 5000)
-    assert.ok(Date.now() - killedAt <= 5000)
   })
 
   test('Rule 3: after the parent dies, rearming vigilar with the same issue resumes and repeats no event', async () => {
     const ctx = setup()
     dirs.push(ctx.dir)
     const { parent, lines } = startUnderParent(ctx, ['7', '--cada', '1'])
+    stray.push(parent.pid)
     const vigilar = await waitFor('vigilar pid', () => pidOf(lines), 15000)
     stray.push(vigilar)
     await waitFor('pr-abierto', () => lines.includes('pr-abierto #7 PR #70 abc1234'), 15000)
@@ -141,6 +132,7 @@ describe('vigilar ends with its parent (#281)', () => {
     dirs.push(ctx.dir)
     const ghPidFile = path.join(ctx.dir, 'gh.pid')
     const { parent, lines } = startUnderParent(ctx, ['7', '--cada', '1'], { FAKE_GH_SLOW: ghPidFile })
+    stray.push(parent.pid)
     const vigilar = await waitFor('vigilar pid', () => pidOf(lines), 15000)
     const [gh, fake] = await waitFor('the gh poll', () => ghPids(ghPidFile), 15000)
     stray.push(vigilar, gh, fake)

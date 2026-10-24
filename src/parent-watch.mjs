@@ -34,7 +34,7 @@ export const parentToWatch = ({ platform = process.platform, pid = process.pid, 
   return owner?.winpid ?? ppid
 }
 
-const alive = pid => {
+export const alive = pid => {
   try {
     process.kill(pid, 0)
     return true
@@ -44,30 +44,31 @@ const alive = pid => {
 }
 
 // Kills this process and the child it is still waiting on (a gh in a spawnSync), so nothing outlives the watcher. On
-// Windows libuv puts every child in a job that ends with this process; POSIX has no such job, so they go first.
+// Windows libuv puts every child in a job that ends with this process; POSIX has no such job, so pkill (procps) ends
+// them first.
 const killTree = (pid, platform) => {
   if (platform !== 'win32') spawnSync('pkill', ['-KILL', '-P', String(pid)], { stdio: 'ignore' })
   process.kill(pid, 'SIGKILL')
 }
 
-// Runs in a worker thread: the main thread blocks inside spawnSync for a whole gh call, so its timers cannot notice.
+// This same file is the worker's script (see watchParent). It runs in a worker thread: the main thread blocks inside spawnSync for a whole gh call, so its timers cannot notice.
 // A slow poll is never a reason to exit; only the watched parent going away is.
 if (!isMainThread && workerData?.parentWatch) {
-  const { pid, watched, platform, label } = workerData.parentWatch
+  const { self, watched, platform, label } = workerData.parentWatch
   const lost = () => (platform === 'win32' ? !alive(watched) : process.ppid !== watched)
   setInterval(() => {
     if (!lost()) return
     try {
       writeSync(2, `${label}: el proceso que me lanzó (${watched}) ya no existe; salgo.\n`)
     } catch {}
-    killTree(pid, platform)
+    killTree(self, platform)
   }, CHECK_MS)
 }
 
 // Starts the watch; it never keeps the process alive on its own.
-export const watchParent = (label, { platform = process.platform } = {}) => {
+export const watchParent = label => {
   const worker = new Worker(new URL(import.meta.url), {
-    workerData: { parentWatch: { pid: process.pid, watched: parentToWatch({ platform }), platform, label } },
+    workerData: { parentWatch: { self: process.pid, watched: parentToWatch(), platform: process.platform, label } },
   })
   worker.unref()
 
