@@ -504,7 +504,7 @@ orca-stack sesiones                  # para /retro
 
 ### Cómo leer `doctor`
 
-`✖` es una falla (código 1), `⚠` un aviso (código 0) con el comando que lo arregla. Revisa: autodiagnóstico de cada wrapper (`--orca-stack-self-test`), versiones de Pi (`1.2.0` o más nueva) y paquetes (gentle-pi `4.2.0`, pi-claude-bridge `0.9.2`), login de Pi (se omite con `--offline`), mods en `CLAUDE_CODE_PLUGIN_DIRS`; avisa si están activos los plugins `ponytail` o `caveman` de Claude Code (sus hooks duplican el control de Orca); scripts de `despacho` que no existen, deriva (plugin de Matt por debajo de 1.3.1, skills duplicadas, bloque viejo de `CLAUDE.md`, bloque de gentle-ai reescrito), `engram` anterior a 3.4.0, y en Windows con `codex` en uso, la lectura de acentos. También avisa si falta `"setup": "completo"`. **Corrélo desde la raíz del proyecto**: algunas comprobaciones dependen de la config de ese repo.
+`✖` es una falla (código 1), `⚠` un aviso (código 0) con el comando que lo arregla. Revisa: autodiagnóstico de cada wrapper (`--orca-stack-self-test`), versiones de Pi (`1.2.0` o más nueva) y paquetes (gentle-pi `4.3.0`, pi-claude-bridge `0.9.3`), login de Pi (se omite con `--offline`), mods en `CLAUDE_CODE_PLUGIN_DIRS`; avisa si están activos los plugins `ponytail` o `caveman` de Claude Code (sus hooks duplican el control de Orca); scripts de `despacho` que no existen, deriva (plugin de Matt por debajo de 1.3.1, skills duplicadas, bloque viejo de `CLAUDE.md`, bloque de gentle-ai reescrito), `engram` anterior a 3.4.0, y en Windows con `codex` en uso, la lectura de acentos. También avisa si falta `"setup": "completo"`. **Corrélo desde la raíz del proyecto**: algunas comprobaciones dependen de la config de ese repo.
 
 ### Dónde vive el estado
 
