@@ -5,6 +5,7 @@ import { repoWorktrees } from './avisar.mjs'
 import { analyzeChecks, checkRunId, isHigherRunId, isStatus, latestChecks } from './checks.mjs'
 import { consultasCommand, getCommonDir } from './consultas.mjs'
 import { defaultIo } from './despacho.mjs'
+import { watchParent } from './parent-watch.mjs'
 
 export const CURSOR_REL = ['orca-stack', 'vigilar.json']
 export const MERGES_REL = ['orca-stack', 'vigilar-merges.json']
@@ -22,7 +23,8 @@ const STATUS_RED = ['FAILURE', 'ERROR']
 const LIVE_WORKER_STATES = new Set(['working', 'running', 'active', 'blocked', 'waiting'])
 
 // stdout carries events only (it runs under the Monitor tool); every diagnostic goes to stderr.
-const vigilarIo = () => ({ ...defaultIo(), err: message => console.error(message), rename: renameSync, now: Date.now })
+// A Monitor that stops leaves this process running with nobody reading its output: the watch ends it (#281).
+const vigilarIo = () => ({ ...defaultIo(), err: message => console.error(message), rename: renameSync, now: Date.now, watchParent: () => watchParent('vigilar') })
 
 const parse = res => {
   try {
@@ -367,6 +369,7 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     return allEnded
   }
 
+  if (!flags.unaVez && !flags.dryRun) io.watchParent?.()
   for (;;) {
     const done = poll()
     // One Monitor in Proactive: the consultas check runs on every poll, unchanged, and its failure never stops the poll.

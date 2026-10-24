@@ -23,6 +23,19 @@ const json = value => ({ status: 0, stdout: JSON.stringify(value), stderr: '' })
 const ok = stdout => ({ status: 0, stdout, stderr: '' })
 const fail = stderr => ({ status: 1, stdout: '', stderr })
 
+const STORE = path.join('/home', '.pi', 'gentle-ai', 'profiles.json')
+const PIN = path.join(WT, '.pi', 'gentle-ai', 'profile.json')
+const PROFILES = { active: 'OpusFull', profiles: {
+  'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },
+  OpusFull: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' }, 'gentle-ai-worker': { model: 'anthropic/claude-opus-5-5' } },
+} }
+const pinFile = profile => JSON.stringify({ kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile })
+// A pi worker needs a resolvable profile before reanudar touches its terminal (#276).
+const pinned = h => {
+  h.files[STORE] = JSON.stringify(PROFILES)
+  h.files[PIN] = pinFile('opus-sonnet')
+  return h
+}
 const harness = ({ root = ROOT, home = '/home', state = 'done', agent = 'codex', screen = ['\u{273b} Baked for 2m 5s'], dirty = '', pr = false, comment = {}, send = sendReceipt, psDown = false, dryRun = false, agents, terminals, brief, now = () => 1760616000000 } = {}) => {
   const outputs = []
   const calls = []
@@ -303,6 +316,33 @@ describe('orca-stack reanudar (#214)', () => {
     assert.ok(exited.outputs.includes('Lanzador (codex): "/home/orca/stack/scripts/codex-orca-stack.sh" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"'))
   })
 
+  test('issue #277 Rule 4: a done pi TUI showing its idle prompt frame gets the resume line', async () => {
+    const idle = ['● PR opened.', '╭─ ✿ ────────────────────────────╮', '│ type, or / for commands        │', '╰────────────────────────────────╯', ' claude-opus-5-5 · high']
+    const h = pinned(harness({ agent: 'pi', screen: idle }))
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.sends().length, 1)
+    assert.deepEqual(h.sends()[0].args.slice(2), ['--terminal', 'term-1', '--text', LINE, '--enter', '--wait-submit', '10', '--json'])
+    assert.equal(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create'), false)
+  })
+
+  test('issue #277 Rule 4: a done pi TUI whose screen it does not recognize is refused without sending', async () => {
+    const working = ['╭─ ❀ implementing… ───────────────╮', '│                                │', '╰────────────────────────────────╯']
+    for (const screen of [working, ['\u{273b} Baked for 2m 5s']]) {
+      const h = pinned(harness({ agent: 'pi', screen }))
+      await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /No veo a Pi en reposo/)
+      assert.equal(h.sends().length, 0)
+      assert.equal(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create'), false)
+    }
+  })
+
+  test('issue #277 Rule 3: relaunching an exited pi worker refuses when no new pi session appears', async () => {
+    const h = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
+    h.io.gentleSkills = () => '/pi/skills'
+    h.io.listFiles = () => []
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+    assert.ok(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create' && call.args.some(arg => /; pi --no-skills /.test(arg))))
+  })
+
   test('Rule 7: terminal or Orca identity wins without consulting the original brief', async () => {
     const identified = harness({ state: 'done', agent: 'codex', brief: undefined })
     assert.equal(await reanudarCommand({}, ISSUE, URL, identified.io), 0)
@@ -462,16 +502,11 @@ describe('orca-stack reanudar (#214)', () => {
 })
 
 describe('reanudar: the pi profile (#276)', () => {
-  const STORE = path.join('/home', '.pi', 'gentle-ai', 'profiles.json')
-  const PIN = path.join(WT, '.pi', 'gentle-ai', 'profile.json')
-  const PROFILES = { active: 'OpusFull', profiles: {
-    'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },
-    OpusFull: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' }, 'gentle-ai-worker': { model: 'anthropic/claude-opus-5-5' } },
-  } }
+  // An exited pi worker: the relaunch path is where the profile decides the model.
   const piHarness = pin => {
-    const h = harness({ state: 'done', agent: 'pi' })
+    const h = harness({ state: null, agent: 'pi', screen: ['PS C:\\wt\\orca-stack-212>'] })
     h.files[STORE] = JSON.stringify(PROFILES)
-    if (pin) h.files[PIN] = JSON.stringify({ kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile: pin })
+    if (pin) h.files[PIN] = pinFile(pin)
     h.io.gentleSkills = () => '/skills'
     return h
   }

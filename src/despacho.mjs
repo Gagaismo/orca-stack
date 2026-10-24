@@ -29,14 +29,15 @@ export const AGENTS = FAMILIES.agents
 const CODEX_CC_REMOVED = 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00F3 el 2026-10-24); us\u00E1 codex.'
 
 // Source of truth: mods/puente-gentle/hooks/puente.ts (ORCA_VARS_CLEARED, engramDir). Duplicated because the mod is TypeScript
-// that can only import its own folder; the pi consult and this launcher must clear and set the same things.
-const ORCA_VARS_CLEARED = [
-  'ORCA_AGENT_HOOK_ENDPOINT', 'ORCA_AGENT_HOOK_PORT', 'ORCA_AGENT_HOOK_TOKEN', 'ORCA_AGENT_HOOK_ENV',
-  'ORCA_AGENT_HOOK_VERSION', 'ORCA_AGENT_HOOK_TRANSPORT', 'ORCA_AGENT_LAUNCH', 'ORCA_AGENT_LAUNCH_TOKEN',
-  'ORCA_AGENT_PANE', 'ORCA_PANE_KEY', 'ORCA_TAB_ID', 'ORCA_WORKTREE_ID', 'ORCA_TERMINAL_HANDLE',
+// that can only import its own folder. The launcher clears only the stack markers of that list: Orca's managed pi
+// extension (orca-agent-status.ts) reports pi's card state through the Orca pane variables, so a worker keeps them,
+// while the consult clears them too because it runs inside claude's pane (#277).
+const STACK_VARS_CLEARED = [
   'ORCA_STACK_AGENT', 'ORCA_STACK_MODE', 'ORCA_STACK_POLICY_PATH', 'ORCA_STACK_PONYTAIL_LEVEL',
   'ORCA_STACK_CAVEMAN_LEVEL',
 ]
+// gentle-pi tools that open a TUI dialog: nobody answers one in an unattended worker (under `pi -p` they failed).
+const PI_DIALOG_TOOLS = 'ask_user_choice,ask_user_question'
 // Only a review closes pi's tools (read-only). A ticket gets all of them: an allowlist would also drop gentle-pi's
 // subagents, ODD and engram tools.
 export const PI_TOOLS = { review: 'read,bash,grep,find,ls,codemode' }
@@ -139,20 +140,22 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
     const flags = `${model ? ` --model ${model}` : ''}${effort ? ` -c model_reasoning_effort="${effort}"` : ''} -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"`
     return `${bin}${flags}`
   }
-  // pi: headless, no TUI. The brief rides in the prompt; the Orca and stack variables are cleared so Orca does not
-  // take this pane for a second agent and the stack markers do not leak into Gentle Shell.
+  // pi: an interactive TUI like the other workers, so Orca shows it on its card and a turn that waits on a background
+  // verify resumes when it reports (`pi -p` ended with the turn, #277). The brief rides in the first message. Nothing
+  // may wait on a person: the dialog tools are left out and --no-approve skips the project-trust prompt (untrusted, as
+  // `pi -p` left it). The stack markers are cleared so they do not leak into Gentle Shell.
   const q = win ? psQuote : shQuote
-  const prompt = `Read and carry out the brief in ${briefPath}. Non-interactive: never wait for user input.`
+  const prompt = `Read and carry out the brief in ${briefPath}. Unattended: never wait for user input.`
   const tools = PI_TOOLS[mode] ? ` --tools ${q(PI_TOOLS[mode])}` : ''
   // With a profile the orchestrator is the profile's own, not whatever the global settings.json says (a pin never moves it).
   const piFlags = piModel ? ` --model ${q(piModel)}${PI_THINKING.includes(piThinking) ? ` --thinking ${piThinking}` : ''}` : ''
-  const cmd = `pi -p --no-skills --skill ${q(skills)} --session-id ${session}${piFlags}${tools} ${q(prompt)}`
+  const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve --exclude-tools ${q(PI_DIALOG_TOOLS)}${piFlags}${tools} ${q(prompt)}`
   const set = [['ENGRAM_DATA_DIR', P.join(home, '.gentle-shell', 'engram')], ['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
   if (win) {
-    return [`Remove-Item ${ORCA_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
+    return [`Remove-Item ${STACK_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
   }
 
-  return [`unset ${ORCA_VARS_CLEARED.join(' ')}`, `export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`, cmd].join('; ')
+  return [`unset ${STACK_VARS_CLEARED.join(' ')}`, `export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`, cmd].join('; ')
 }
 
 // Repo-relative paths a brief cites in inline backticks: contains a slash or ends in a known extension, no spaces, not a
@@ -447,8 +450,9 @@ const piSessionTools = (io, home, worktree, after = 0) => {
   return undefined
 }
 
+// Up to 30 s: the TUI draws its screen before it takes the first message, so it can start slower than `pi -p` did.
 const waitForPiSession = async (io, home, worktree, after = 0) => {
-  for (let i = 0; i < 25; i += 1) {
+  for (let i = 0; i < 150; i += 1) {
     const tools = piSessionTools(io, home, worktree, after)
     if (tools !== undefined) return tools
     await io.sleep(200)
@@ -503,7 +507,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
   } else {
     const tools = await waitForPiSession(io, home, worktree, piSessionAfter)
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
-    if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el rebote por iniciado.`)
+    if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
   }
   say(`\u2714 ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
 
@@ -823,6 +827,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     await launchInWorktree({
       agent, mode, worktree, briefPath, brief, session, config, win, home: io.home, skills,
       piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun,
+      piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0,
     })
 
     return 0

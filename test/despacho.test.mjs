@@ -84,6 +84,7 @@ afterEach(() => {
 })
 
 // A scripted environment: every external call is recorded; `over` answers specific ones ("cmd arg0 [arg1]").
+// piTools 'missing': the pi launch leaves no session, as when pi never started.
 const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => {
   write(path.join(root, '.orca-stack.json'), JSON.stringify(config))
   const calls = []
@@ -94,10 +95,12 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
   const sessionDir = path.join(sessionRoot, 'project')
   const sessionFile = path.join(sessionDir, '2026-10-09T00-00-00-000Z_session.jsonl')
   const files = new Map()
+  const modified = new Map()
   const io = {
     home,
     cwd: root,
     win: true,
+    modifiedAt: file => modified.get(file) ?? 0,
     out: line => out.push(line),
     sleep: async ms => { sleeps.push(ms) },
     exists: existsSync,
@@ -124,12 +127,13 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
       if (args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })
       if (args.join(' ').startsWith('worktree create')) return json({ result: { worktree: { path: worktree, branch: 'refs/heads/proj-7' } } })
       if (args[0] === 'terminal' && args[1] === 'create') {
-        if (String(args[args.indexOf('--command') + 1] ?? '').includes('pi -p')) {
+        if (/(^|; )pi /.test(String(args[args.indexOf('--command') + 1] ?? '')) && piTools !== 'missing') {
           const text = piTools === 'none' ? '<tools>\n(none)' : '<tools>\n- read: Read file contents\n- bash: Execute commands'
           files.set(sessionFile, [
             JSON.stringify({ type: 'session', cwd: worktree }),
             '{}', '{}', '{}', JSON.stringify({ type: 'message', message: { role: 'system', content: '', sections: { tools: text } } }),
           ].join('\n'))
+          modified.set(sessionFile, Date.now() + 1)
         }
         return json({ result: { terminal: { handle: 'term_1' } } })
       }
@@ -985,17 +989,17 @@ describe('launchers', () => {
     }
   })
 
-  test('pi: headless, clears the Orca variables, sets engram, autonomy and the Claude account', () => {
+  test('pi: clears the stack markers, sets engram, autonomy and the Claude account', () => {
     const config = { piClaudeConfigDir: 'C:\\Users\\me\\.claude-pi' }
     const ps = launcherFor({ ...base, agent: 'pi', config })
-    assert.ok(ps.startsWith('Remove-Item Env:ORCA_AGENT_HOOK_ENDPOINT, Env:ORCA_AGENT_HOOK_PORT'))
+    assert.ok(ps.startsWith('Remove-Item Env:ORCA_STACK_AGENT, Env:ORCA_STACK_MODE'))
     assert.ok(ps.includes('Env:ORCA_STACK_CAVEMAN_LEVEL -ErrorAction SilentlyContinue'))
     assert.ok(ps.includes("$env:ENGRAM_DATA_DIR = 'C:\\Users\\me\\.gentle-shell\\engram'"))
     assert.ok(ps.includes("$env:GENTLE_PI_AUTONOMOUS_MODE = '1'") && ps.includes("$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\me\\.claude-pi'"))
-    assert.ok(ps.endsWith("pi -p --no-skills --skill 'C:\\skills' --session-id proj-7 'Read and carry out the brief in C:\\b.md. Non-interactive: never wait for user input.'"))
+    assert.ok(ps.endsWith("pi --no-skills --skill 'C:\\skills' --session-id proj-7 --no-approve --exclude-tools 'ask_user_choice,ask_user_question' 'Read and carry out the brief in C:\\b.md. Unattended: never wait for user input.'"))
     assert.ok(!ps.includes('--tools'), "a ticket keeps all of pi's tools: subagents, SDD, engram")
     const sh = launcherFor({ ...base, agent: 'pi', win: false, mode: 'review', home: '/h', briefPath: '/b.md', skills: '/s' })
-    assert.ok(sh.startsWith('unset ORCA_AGENT_HOOK_ENDPOINT ') && sh.includes("export ENGRAM_DATA_DIR='/h/.gentle-shell/engram' GENTLE_PI_AUTONOMOUS_MODE='1';"))
+    assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && sh.includes("export ENGRAM_DATA_DIR='/h/.gentle-shell/engram' GENTLE_PI_AUTONOMOUS_MODE='1';"))
     assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode'") && !sh.includes('CLAUDE_CONFIG_DIR'))
   })
 
@@ -1006,6 +1010,66 @@ describe('launchers', () => {
     const launcher = env.out.find(l => l.startsWith('Lanzador'))
     assert.ok(launcher.includes(path.join(home, '.claude-pi')) && !launcher.includes('evil'))
     assert.ok(!env.calls.some(c => c[2] === 'send'))
+  })
+})
+
+describe('issue #277: pi workers run as an interactive TUI', () => {
+  const base = { mode: 'ticket', config: {}, home: 'C:\\Users\\me', briefPath: 'C:\\b.md', session: 'proj-7', skills: 'C:\\skills', agent: 'pi' }
+  // Orca's managed pi extension (~/.pi/agent/extensions/orca-agent-status.ts) reports pi's state through these.
+  const ORCA_PANE_VARS = ['ORCA_AGENT_HOOK_ENDPOINT', 'ORCA_AGENT_HOOK_PORT', 'ORCA_AGENT_HOOK_TOKEN', 'ORCA_AGENT_LAUNCH_TOKEN', 'ORCA_PANE_KEY', 'ORCA_TAB_ID', 'ORCA_WORKTREE_ID']
+  const launched = env => {
+    const create = env.calls.find(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    return create[create.indexOf('--command') + 1]
+  }
+
+  test("Rule 0: the pi launcher keeps Orca's pane variables, so Orca's pi extension reports it on the card", () => {
+    for (const win of [true, false]) {
+      for (const mode of ['ticket', 'review']) {
+        const launcher = launcherFor({ ...base, win, mode })
+        for (const name of ORCA_PANE_VARS) assert.ok(!launcher.includes(name), `${name} stays set (win: ${win}, ${mode})`)
+        assert.match(launcher, /ORCA_STACK_CAVEMAN_LEVEL/, 'the stack markers are still cleared')
+      }
+    }
+  })
+
+  test('Rule 1: despachar and revisar launch pi as a TUI with the brief as its first message', async () => {
+    const ticket = fakeIo()
+    await run('ticket', { n: '7', agent: 'pi' }, ticket)
+    const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) })
+    await run('review', { n: '9', agent: 'pi' }, review)
+    for (const env of [ticket, review]) {
+      const command = launched(env)
+      assert.match(command, /; pi --no-skills /)
+      assert.doesNotMatch(command, /\spi\s+(-p|--print)\b/)
+      assert.match(command, /'Read and carry out the brief in [^']+\.md\. Unattended: never wait for user input\.'$/)
+      assert.ok(env.out.some(line => line.includes('\u2714 pi despachado')))
+    }
+  })
+
+  test('Rule 2: the pi launcher has no print mode and nothing it runs can wait on a person', () => {
+    for (const win of [true, false]) {
+      const launcher = launcherFor({ ...base, win })
+      // Print mode ends the process with the turn, before a background verify reports; the TUI stays.
+      assert.doesNotMatch(launcher, /\s(-p|--print)(\s|$)/)
+      // The two dialog tools would wait in a TUI, and --no-approve skips the project-trust prompt.
+      assert.match(launcher, / --no-approve --exclude-tools '?ask_user_choice,ask_user_question'? /)
+      assert.ok(launcher.includes("GENTLE_PI_AUTONOMOUS_MODE"))
+    }
+  })
+
+  test('Rule 3: despachar refuses when no new pi session appears after the launch', async () => {
+    const env = fakeIo({}, { piTools: 'missing' })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+    assert.ok(!env.out.some(line => line.includes('pi despachado')))
+  })
+
+  test('Rule 5: README and the manual describe how pi is launched, as an interactive TUI', () => {
+    for (const file of ['README.md', path.join('docs', 'manual.md')]) {
+      const text = readFileSync(path.join(PACKAGE_ROOT, file), 'utf8').replace(/\s+/g, ' ')
+      assert.match(text, /Pi se lanza como TUI interactiva/, file)
+      assert.ok(text.includes('pi --no-skills --skill <skills de gentle-pi> --session-id <id> --no-approve --exclude-tools ask_user_choice,ask_user_question'), file)
+      assert.doesNotMatch(text, /Pi corre sin TUI|Pi headless/, file)
+    }
   })
 })
 
@@ -1227,7 +1291,7 @@ describe('pi: --perfil-pi', () => {
   test('launcherFor adds --model only when given, in PowerShell and POSIX', () => {
     const base = { mode: 'ticket', config: {}, home: '/h', briefPath: '/b.md', session: 's', skills: '/s', agent: 'pi' }
     assert.ok(!launcherFor({ ...base, win: false }).includes('--model'))
-    assert.ok(launcherFor({ ...base, win: false, piModel: 'p/m' }).includes("--session-id s --model 'p/m' 'Read"))
+    assert.ok(launcherFor({ ...base, win: false, piModel: 'p/m' }).includes("--exclude-tools 'ask_user_choice,ask_user_question' --model 'p/m' 'Read"))
     assert.ok(launcherFor({ ...base, win: true, piModel: 'p/m', piThinking: 'bogus' }).includes("--model 'p/m' 'Read"))
   })
 })
@@ -1538,6 +1602,19 @@ describe('rebote', () => {
     await reboteCommand({ perfilPi: 'OpusFull' }, '12', flagged.io)
     assert.ok(flagged.out.includes('perfil de Pi: OpusFull (fuente: flag)'))
     assert.equal(JSON.parse(read(pinFile)).profile, 'OpusFull')
+  })
+
+  test('issue #277 Rule 1: rebote relaunches a pi author as a TUI with the brief as its first message', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: pi' }))
+    env.io.gentleSkills = () => 'C:\\pi\\skills'
+    env.io.now = () => 100
+    env.io.modifiedAt = () => 101
+    await reboteCommand({}, '12', env.io)
+    const launch = env.calls.find(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    const command = launch[launch.indexOf('--command') + 1]
+    assert.match(command, /; pi --no-skills /)
+    assert.doesNotMatch(command, /\spi\s+(-p|--print)\b/)
+    assert.match(command, /'Read and carry out the brief in [^']+\.md\. Unattended: never wait for user input\.'$/)
   })
 
   test('Rule 5: bounce briefs restrict arena/swarm, not the agent\'s own subagents', async () => {
