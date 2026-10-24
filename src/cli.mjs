@@ -38,7 +38,7 @@ Opciones:
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
   --nota <texto>   (despachar, revisar, rebote) Texto que se agrega al brief.
   --confirmado     (despachar, revisar, rebote, reanudar) El humano dijo que s\u00ED a un agente de agentes.preguntarAntes.
-  --perfil-pi <nombre> (despachar, revisar, rebote) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver --help del comando).
+  --perfil-pi <nombre> (despachar, revisar, rebote, reanudar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver --help del comando).
   --modelo <modelo>  (brief-revision) Modelo del subagente revisor.
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
   --limite <n>     (sesiones) Cuántas sesiones mostrar (por defecto: 10).
@@ -108,8 +108,11 @@ fallan ante un mensaje de cuota o si el último renglón no vacío volvió al pr
 
 Con pi, --perfil-pi <nombre> (o agentes.pi.perfil en la config; el flag gana) fija para ese worktree uno de los perfiles de
 ~/.pi/gentle-ai/profiles.json: escribe .pi/gentle-ai/profile.json en el worktree (fuera de git, vía info/exclude) y lanza pi con el
-modelo del orquestador del perfil. Se niega si el perfil no existe o si el clon ya fija otro (<git-common-dir>/gentle-ai/profile-pin.json).
-Sin flag y sin agentes.pi.perfil, o con "preguntar", rige el perfil activo global.
+modelo del orquestador del perfil (por ejemplo --perfil-pi opus-sonnet). Se niega si el perfil no existe, si el clon ya fija otro
+(<git-common-dir>/gentle-ai/profile-pin.json) o si algún modelo del perfil no es claude-bridge/, anthropic/ ni openai/.
+Sin flag y sin agentes.pi.perfil, o con "preguntar", se niega antes de tocar nada (también en --dry-run): nunca cae solo al perfil
+activo global. agentes.pi.perfil: "global" usa ese perfil activo a propósito. Imprime "perfil de Pi: <nombre> (fuente: flag | config |
+pin | global)" y el brief guarda la misma línea.
 `,
   revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 
@@ -126,6 +129,8 @@ Para CI roja agrega los checks fallidos al brief y publica \`Rebote CI: <sha>\`;
 Un PR en conflicto con la base (mergeable CONFLICTING) rebota aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente:
 el brief suma \`## Merge conflict\` (git merge origin/<base>, nunca rebase) y publica \`Rebote conflicto: <sha>\`, con contador propio; repetirlo en el mismo head se niega.
 Con mergeable UNKNOWN se niega hasta que GitHub termine de calcular; un PR solo atrás (BEHIND) se niega y apunta a \`gh pr update-branch <n>\`.
+Con pi usa el perfil que fija el worktree (.pi/gentle-ai/profile.json; --perfil-pi no lo cambia). Sin pin, --perfil-pi o agentes.pi.perfil
+lo eligen y se escribe el pin; sin ninguno se niega como despachar, antes de mover el worktree.
 `,
   'brief-revision': `orca-stack brief-revision <pr> --modelo <modelo> [--dry-run]
 
@@ -150,12 +155,15 @@ Se niega si el comentario no es de la cuenta del stack (\`gh api user\`), no est
 informa la falla y no reenvía.
 Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
 `,
-  reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--dry-run]
+  reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 
 Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una línea con la URL de la respuesta; si ya salió,
 lo relanza en su worktree existente con el brief original y la URL al principio. Exige que la respuesta sea un comentario real
 de la cuenta del stack o del humano, y se niega si el worker sigue trabajando, si ya hay un PR abierto, o si el worktree está sucio.
 Usa --confirmado solo después de que el humano haya confirmado relanzar un agente de agentes.preguntarAntes.
+Un worker de pi se relanza con el modelo y el thinking del orquestador del perfil que fija su worktree (.pi/gentle-ai/profile.json).
+Sin pin y sin agentes.pi.perfil se niega como despachar. Si el pin nombra un perfil que ya no existe, repetí con --perfil-pi <nombre>:
+el flag elige el perfil y reescribe el pin.
 Con --dry-run muestra qué enviaría o lanzaría sin escribir el brief ni tocar la terminal.
 `,
   vigilar: `orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]

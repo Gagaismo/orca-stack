@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, shellPrompt } from './despacho.mjs'
+import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, readPin, shellPrompt, writePin } from './despacho.mjs'
 import { identityOf, isDialog, paneAgents, PI_IDLE, readScreen, SPINNER_LINES, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
@@ -59,7 +59,7 @@ const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt) => {
 }
 
 export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) => {
-  if (!/^\d+$/.test(String(item ?? '')) || !url) throw new Error('Uso: orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--dry-run].')
+  if (!/^\d+$/.test(String(item ?? '')) || !url) throw new Error('Uso: orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--dry-run].')
   const n = String(Number(item))
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
   if (git.status !== 0) throw new Error('Corr\u{e9} este comando dentro del checkout principal de un repo git.')
@@ -160,6 +160,19 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if ((config.agentes?.preguntarAntes ?? []).includes(agent) && !flags.confirmado) {
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de relanzarlo. Si dijo que s\u{ed}, repet\u{ed} el comando con --confirmado.`)
   }
+  if (flags.perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
+  // Like rebote: the worktree pin decides, so the orchestrator follows the same profile as the subagents. --perfil-pi
+  // replaces a pin that can no longer be honored; with neither (and no config), it fails closed.
+  let profile
+  if (agent === 'pi') {
+    const pin = readPin(io, row.path)
+    try {
+      profile = piProfileFor({ flag: flags.perfilPi, pin, config, home: io.home, commonDir, io })
+    } catch (error) {
+      if (flags.perfilPi === undefined && pin !== undefined) error.message += ` Repet\u{ed} con --perfil-pi <nombre> para fijar otro perfil en el worktree.`
+      throw error
+    }
+  }
 
   if (!io.exists(originalPath)) throw new Error(`No encuentro el brief original ${originalPath}; no relanzo sin \u{e9}l.`)
 
@@ -174,7 +187,9 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (status.stdout.trim() !== '') throw new Error(`El worktree ${row.path} est\u{e1} sucio; guard\u{e1} o descart\u{e1} sus cambios antes de relanzar.`)
 
   originalBrief ??= io.readFile(originalPath)
-  const brief = `Message from main: ${url}\n\n${originalBrief}`
+  if (profile) for (const line of piProfileLines(profile)) io.out(`${flags.dryRun ? '[simulaci\u{f3}n] ' : ''}${line}`)
+  if (needsPin(profile) && !flags.dryRun) writePin(io, row.path, commonDir, profile.name)
+  const brief = `Message from main: ${url}\n\n${originalBrief}${profile ? `\n${piProfileLines(profile).join('\n')}\n` : ''}`
   const briefPath = path.join(io.home, 'orca', 'briefs', `${repo}-${n}-reanudar.md`)
   if (!flags.dryRun) {
     io.mkdirp(path.dirname(briefPath))
@@ -182,7 +197,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     markAttempt()
   }
   const session = `${repo}-${n}-reanudar-${(io.now ?? Date.now)()}`
-  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0 })
+  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0 })
 
   return 0
 }
