@@ -385,3 +385,45 @@ describe('orca-stack reanudar (#214)', () => {
     assert.equal(upsertBlock(agents, block), agents, 'init rendered the current managed contract block')
   })
 })
+
+describe('reanudar: the pi profile (#276)', () => {
+  const STORE = path.join('/home', '.pi', 'gentle-ai', 'profiles.json')
+  const PIN = path.join(WT, '.pi', 'gentle-ai', 'profile.json')
+  const PROFILES = { active: 'OpusFull', profiles: {
+    'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },
+    OpusFull: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' }, 'gentle-ai-worker': { model: 'anthropic/claude-opus-5-5' } },
+  } }
+  const piHarness = pin => {
+    const h = harness({ state: 'done', agent: 'pi' })
+    h.files[STORE] = JSON.stringify(PROFILES)
+    if (pin) h.files[PIN] = JSON.stringify({ kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile: pin })
+    h.io.gentleSkills = () => '/skills'
+    return h
+  }
+  const launches = h => h.calls.filter(({ cmd, args }) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create')
+
+  test('issue 276 Rule 4: a pi worker relaunches with the orchestrator model and thinking of its pin', async () => {
+    const h = piHarness('opus-sonnet')
+    assert.equal(await reanudarCommand({ dryRun: true }, ISSUE, URL, h.io), 0)
+    assert.ok(h.outputs.includes('[simulaci\u00F3n] perfil de Pi: opus-sonnet (fuente: pin)'), h.outputs.join('\n'))
+    assert.ok(h.outputs.some(line => line.startsWith('Lanzador (pi):') && line.includes("--model 'claude-bridge/claude-opus-5-5' --thinking high")), h.outputs.join('\n'))
+  })
+
+  test('issue 276 Rule 4: a pi worker with no pin and no profile refuses as despachar does', async () => {
+    const h = piHarness()
+    const before = Object.keys(h.files)
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /Falta el perfil de Pi: pas\u00E1 --perfil-pi <nombre> \(hay: opus-sonnet, OpusFull\)/)
+    assert.equal(launches(h).length, 0)
+    assert.deepEqual(Object.keys(h.files), before)
+  })
+
+  test('issue 276 Rule 4: a pin naming a missing profile refuses and points at --perfil-pi, which replaces it', async () => {
+    const h = piHarness('opus-haiku')
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /No existe el perfil de Pi "opus-haiku".*Repet\u00ED con --perfil-pi <nombre>/)
+    assert.equal(launches(h).length, 0)
+    const flagged = piHarness('opus-haiku')
+    assert.equal(await reanudarCommand({ perfilPi: 'OpusFull', dryRun: true }, ISSUE, URL, flagged.io), 0)
+    assert.ok(flagged.outputs.includes('[simulaci\u00F3n] perfil de Pi: OpusFull (fuente: flag)'), flagged.outputs.join('\n'))
+    await assert.rejects(() => reanudarCommand({ perfilPi: 'OpusFull', dryRun: true }, ISSUE, URL, harness({ state: 'done', agent: 'codex' }).io), /solo vale para el agente pi/)
+  })
+})
