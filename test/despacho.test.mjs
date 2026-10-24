@@ -15,7 +15,7 @@ const PROJECT = {
   setup: 'completo',
   modo: 'multiagente',
   ramaBase: 'main',
-  agentes: { usa: ['claude', 'agy', 'codex', 'codex-cc', 'pi'], preguntarAntes: ['codex-cc'] },
+  agentes: { usa: ['claude', 'agy', 'codex', 'pi'], preguntarAntes: [] },
   verificacion: { suite: 'npm test -- --run', typecheck: 'npm run typecheck' },
 }
 
@@ -157,9 +157,18 @@ describe('despachar: refusals', () => {
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), /no está en agentes\.usa/)
   })
 
-  test('preguntarAntes needs --confirmado', async () => {
-    await assert.rejects(run('ticket', { n: '7', agent: 'codex-cc' }, fakeIo()), /preguntarle al humano[\s\S]*--confirmado/)
-    await run('ticket', { n: '7', agent: 'codex-cc', confirmado: true, dryRun: true }, fakeIo())
+  test('Rule 1: codex-cc refuses despachar, revisar and rebote without side effects', async () => {
+    const expected = 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00f3 el 2026-10-24); us\u00e1 codex.'
+    const ticket = fakeIo()
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex-cc' }, ticket), error => error.message === expected)
+    assert.deepEqual(ticket.writes(), [])
+    assert.equal(ticket.calls.length, 0)
+
+    const review = fakeIo()
+    await assert.rejects(run('review', { n: '9', agent: 'codex-cc' }, review), error => error.message === expected)
+    assert.deepEqual(review.writes(), [])
+    assert.equal(review.calls.length, 0)
+
   })
 
   test('assigned and closed issues', async () => {
@@ -184,15 +193,11 @@ describe('despachar: refusals', () => {
   test('review: reviewer is the implementer, same model family, missing line', async () => {
     const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('x\nImplementador: agy\n'))), /nadie revisa su propio PR/)
-    await assert.rejects(run('review', { n: '9', agent: 'codex-cc', confirmado: true }, fakeIo(pr('Implementador: codex\n'), { config: withModels({ 'codex-cc': 'gpt-6-luna' }) })), /familia gpt, comparten modelo/)
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('sin línea'))), /no tiene la línea "Implementador/)
   })
 
   test('review: the family comes from the configured model, and pi may review a Claude agent', async () => {
     const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
-    // codex-cc on GLM reviews codex (gpt); with no model it proves nothing and is not stopped either.
-    await run('review', { n: '9', agent: 'codex-cc', confirmado: true, dryRun: true }, fakeIo(pr('Implementador: codex'), { config: withModels({ 'codex-cc': { revisar: { modelo: 'z-ai/glm-5.3-flash' } } }) }))
-    await run('review', { n: '9', agent: 'codex-cc', confirmado: true, dryRun: true }, fakeIo(pr('Implementador: codex')))
     // agy on a Claude model does not review claude; pi does, and claude reviews pi.
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('Implementador: claude'), { config: withModels({ agy: 'claude-sonnet-5-5' }) })), /familia claude/)
     await run('review', { n: '9', agent: 'pi', dryRun: true }, fakeIo(pr('Implementador: claude')))
@@ -202,10 +207,10 @@ describe('despachar: refusals', () => {
   test('a guardia.bloquear rule stops despachar and revisar, from any layer', async () => {
     const until = new Date(Date.now() + 86_400_000 * 3)
     const hasta = `${until.getFullYear()}-${String(until.getMonth() + 1).padStart(2, '0')}-${String(until.getDate()).padStart(2, '0')}`
-    write(layout(home).config, JSON.stringify({ guardia: { bloquear: [{ agente: 'codex', hasta, motivo: 'codex no tiene cuota: usá codex-cc.' }] } }))
+    write(layout(home).config, JSON.stringify({ guardia: { bloquear: [{ agente: 'codex', hasta, motivo: 'codex no tiene cuota.' }] } }))
     // The project layer has its own list: the personal block still applies.
     const env = fakeIo({}, { config: { ...PROJECT, guardia: { bloquear: [{ agente: 'agy', hasta: '2020-01-01' }] } } })
-    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), /No despacho a codex: codex no tiene cuota: usá codex-cc\./)
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), /No despacho a codex: codex no tiene cuota\./)
     assert.deepEqual(env.writes(), [])
     await run('ticket', { n: '7', agent: 'agy', dryRun: true }, env) // an expired rule does nothing
     const pr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }) }
@@ -543,7 +548,7 @@ describe('despachar: failures along the way', () => {
   test('the implementer line is compared case-insensitively and trimmed', async () => {
     const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('Implementador:   AGY  \n'))), /nadie revisa su propio PR/)
-    await assert.rejects(run('review', { n: '9', agent: 'codex', confirmado: true }, fakeIo(pr('implementador: Codex-CC'), { config: withModels({ 'codex-cc': 'gpt-6-luna' }) })), /comparten modelo/)
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('implementador: Codex'), { config: withModels({ agy: 'gpt-6-luna' }) })), /comparten modelo/)
   })
 })
 
@@ -580,7 +585,7 @@ describe('briefs', () => {
   })
 
   test('Rule 4: non-claude ticket briefs reject arena and swarm even with a note', () => {
-    for (const agent of ['codex', 'codex-cc', 'agy', 'pi']) {
+    for (const agent of ['codex', 'agy', 'pi']) {
       const brief = renderBrief('ticket', { AGENT: agent }, fanoutNote)
       assert.match(brief, new RegExp(`Arena and swarm are not supported for ${agent}, even when the note includes authorization`))
       assert.doesNotMatch(brief, /Do not spawn subagents/i)
@@ -784,17 +789,14 @@ describe('launchers', () => {
     const posix = { ...base, win: false, home: '/home/me', briefPath: '/b.md', skills: '/s' }
     assert.equal(launcherFor({ ...posix, agent: 'claude' }), '"/home/me/orca/stack/scripts/claude-orca-stack.sh" --dangerously-skip-permissions')
     assert.ok(launcherFor({ ...posix, agent: 'codex' }).startsWith('"/home/me/orca/stack/scripts/codex-orca-stack.sh" '))
-    assert.ok(launcherFor({ ...posix, agent: 'codex-cc' }).startsWith('export CMD_API_KEY='))
     assert.ok(launcherFor({ ...posix, agent: 'pi' }).includes("ENGRAM_DATA_DIR='/home/me/.gentle-shell/engram'"))
     assert.equal(launcherFor({ ...base, agent: 'claude' }), '& "C:\\Users\\me\\orca\\stack\\scripts\\claude-orca-stack.cmd" --dangerously-skip-permissions')
   })
 
-  test('codex and codex-cc use implement or review model and effort', () => {
+  test('codex uses implement or review model and effort', () => {
     const config = { agentes: { modelos: { codex: { implementar: { modelo: 'a', esfuerzo: 'high' }, revisar: { modelo: 'b', esfuerzo: 'low' } } } } }
     assert.match(launcherFor({ ...base, agent: 'codex', config }), /--model a -c model_reasoning_effort="high" -c features\.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"$/)
     assert.match(launcherFor({ ...base, agent: 'codex', config, mode: 'review' }), /--model b -c model_reasoning_effort="low"/)
-    const cc = launcherFor({ ...base, agent: 'codex-cc' })
-    assert.ok(cc.startsWith('$env:CMD_API_KEY = (Get-Content') && cc.includes('model_providers.cc.env_key=CMD_API_KEY') && !cc.includes('--model'))
   })
 
   // despachar uses mode 'ticket' and revisar mode 'review'; rebote and reanudar relaunch with mode 'ticket'.
@@ -812,13 +814,12 @@ describe('launchers', () => {
     }
   })
 
-  test('issue 236 Rule 3: the claude, codex-cc, agy and pi launchers do not change', () => {
-    const config = { agentes: { modelos: { claude: 'opus-x', agy: 'gemini-x', 'codex-cc': { modelo: 'glm-x', esfuerzo: 'high' } } } }
+  test('issue 236 Rule 3: the claude, agy and pi launchers do not change', () => {
+    const config = { agentes: { modelos: { claude: 'opus-x', agy: 'gemini-x' } } }
     const scripts = 'C:\\Users\\me\\orca\\stack\\scripts'
     assert.equal(launcherFor({ ...base, agent: 'claude', config }), `& "${scripts}\\claude-orca-stack.cmd" --dangerously-skip-permissions --model opus-x`)
     assert.equal(launcherFor({ ...base, agent: 'agy', config }), `& "${scripts}\\agy-orca-stack.cmd" --dangerously-skip-permissions --model gemini-x`)
-    assert.equal(launcherFor({ ...base, agent: 'codex-cc', config }), `$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME\\.pi\\agent\\auth.json" | ConvertFrom-Json).commandcode.key; & "${scripts}\\codex-orca-stack.cmd" -c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses --model glm-x -c model_reasoning_effort="high" -c approval_policy="never" -c sandbox_mode="danger-full-access"`)
-    for (const agent of ['claude', 'codex-cc', 'agy', 'pi']) {
+    for (const agent of ['claude', 'agy', 'pi']) {
       for (const win of [true, false]) assert.ok(!launcherFor({ ...base, agent, config, win }).includes('fast_mode'), `${agent} (win: ${win})`)
     }
   })
@@ -1109,6 +1110,13 @@ describe('rebote', () => {
     return env
   }
 
+  test('Rule 1: codex-cc refuses rebote without side effects', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: codex-cc' }))
+    await assert.rejects(reboteCommand({}, '12', env.io), error => error.message === 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00F3 el 2026-10-24); us\u00E1 codex.')
+    assert.deepEqual(env.writes(), [])
+    assert.equal(env.calls.filter(call => call[0] === 'orca').length, 0)
+  })
+
   test('Rule 3: rebote does not print a branch line', async () => {
     const env = bounceEnv(pr(), {}, PROJECT)
     await reboteCommand({ dryRun: true }, '12', env.io)
@@ -1246,7 +1254,7 @@ describe('rebote', () => {
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'Implementador: claude' }), {}, { ...PROJECT, agentes: { usa: ['agy'] } }).io), /no est\u00E1 en agentes\.usa/)
     const blocked = { ...PROJECT, guardia: { bloquear: [{ agente: 'agy', hasta: '2999-01-01', motivo: 'paused' }] } }
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(), {}, blocked).io), /paused/)
-    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'Implementador: codex-cc' })).io), /preguntarle al humano/)
+    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'Implementador: codex-cc' })).io), /codex-cc ya no existe/)
   })
 
   test('issue 236 Rules 1 and 5: rebote relaunches a codex author with only the Fast mode flag added', async () => {
@@ -1276,14 +1284,14 @@ describe('rebote', () => {
   })
 
   test('Rule 5: bounce briefs restrict arena/swarm, not the agent\'s own subagents', async () => {
-    for (const agent of ['claude', 'codex', 'codex-cc', 'agy', 'pi']) {
+    for (const agent of ['claude', 'codex', 'agy', 'pi']) {
       const env = bounceEnv(pr({ body: `Implementador: ${agent}` }))
       if (agent === 'pi') {
         env.io.gentleSkills = () => 'C:\\pi\\skills'
         env.io.now = () => 100
         env.io.modifiedAt = () => 101
       }
-      await reboteCommand(agent === 'codex-cc' ? { confirmado: true } : {}, '12', env.io)
+      await reboteCommand({}, '12', env.io)
       const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
       assert.ok(brief, `${agent} bounce brief was written`)
       assert.doesNotMatch(brief, /Do not spawn subagents/i)
@@ -1766,7 +1774,7 @@ describe('rebote', () => {
       assert.ok(verification.includes('Do not use `git archive` (it leaves no git index, and tests that need one fail without a defect) or `git worktree add` (it adds a worktree that Orca lists and someone has to remove).'))
     })
 
-    test("Rule 6: claude, codex and pi are told AGENTS.md is already loaded; agy and codex-cc keep today's line", () => {
+    test("Rule 6: claude, codex and pi are told AGENTS.md is already loaded; agy keeps today's line", () => {
       const today = '- Read the project instructions (AGENTS.md, and GLOSSARY.md or CONTEXT.md and docs/adr when they exist).'
       const loaded = '- AGENTS.md is already in your context: do not read it again. Read GLOSSARY.md or CONTEXT.md and docs/adr when they exist.'
       for (const agent of AGENTS) {
@@ -1784,7 +1792,7 @@ describe('rebote', () => {
     test('Rule 8: despachar renders a ticket brief for every agent; the rebote and revisar briefs change only in the fanoutInstructions sentence', async () => {
       for (const agent of AGENTS) {
         const env = fakeIo()
-        await run('ticket', { n: '300', agent, dryRun: true, ...(agent === 'codex-cc' ? { confirmado: true } : {}) }, env)
+        await run('ticket', { n: '300', agent, dryRun: true }, env)
         const out = env.out.join('\n')
         assert.ok(out.includes('# Ticket brief: issue #300'), `${agent} ticket brief`)
         assert.ok(out.includes("- Subagents: "), `${agent} subagents line`)
