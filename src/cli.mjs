@@ -176,6 +176,7 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
 Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue o por una línea
 \`Closes #<n>\` en su cuerpo; nunca por adivinar el nombre de la rama. Un issue cerrado sin PR cuenta como terminado.
 Guarda lo emitido en <git-common-dir>/orca-stack/vigilar.json: rearmado con los mismos argumentos, retoma sin repetir.
+Si el proceso que lo lanzó desaparece (el Monitor venció o se paró), sale en menos de 5 segundos con su gh u orca.
 --una-vez consulta una vez y sale; --dry-run consulta una vez y no escribe nada; --consultas corre en cada vuelta el
 chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor en Proactive).
 

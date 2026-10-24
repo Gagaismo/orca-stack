@@ -245,6 +245,8 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 
 Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue, o por una línea `Closes #<n>` en su cuerpo; nunca por adivinar el nombre de la rama. Con el PR abierto, `vigilar` sigue leyendo el worker del worktree enlazado al issue o, si no hay uno, el de la rama del PR. Un `ci-verde-retenido` mantiene visible que el autor todavía trabaja; el primer poll después de que termine emite `ci-verde`. Un issue cerrado sin PR cuenta como terminado. Lo emitido queda en `<git-common-dir>/orca-stack/vigilar.json`: si rearmás con los mismos argumentos, retoma sin repetir.
 
+Cuando el Monitor vence o lo parás, `vigilar` sale solo en menos de 5 segundos, con el `gh` o el `orca` que estuviera corriendo, y lo dice en stderr: vigila el proceso que lo lanzó (en Git Bash, el `bash` del Monitor, no el stub de `sh` que sobrevive). Un poll lento nunca lo hace salir.
+
 `--merge-de-main <pr>` existe porque todas las sesiones comparten la cuenta de `gh`: un merge de `main` se ve igual que uno del humano. `main` lo corre justo antes de cada `gh pr merge <pr>` (y otra vez tras `gh pr update-branch`); registra el head en `<git-common-dir>/orca-stack/vigilar-merges.json` y un merge de ese head visto dentro de los 30 minutos no emite `pr-mergeado`. Sale sin imprimir nada.
 
 #### `sesiones`
