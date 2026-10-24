@@ -171,6 +171,16 @@ describe('despachar: refusals', () => {
 
   })
 
+  test('Rule 3: legacy codex-cc config values do not block a Codex dispatch', async () => {
+    const config = {
+      ...PROJECT,
+      agentes: { usa: ['codex-cc', 'codex'], preguntarAntes: ['codex-cc'], modelos: { 'codex-cc': 'gpt-6-luna' } },
+    }
+    const env = fakeIo({}, { config })
+    await run('ticket', { n: '7', agent: 'codex', dryRun: true }, env)
+    assert.ok(env.out.includes(`Lanzador (codex): ${codexLauncher()}`))
+  })
+
   test('assigned and closed issues', async () => {
     const assigned = fakeIo({ 'gh issue': json({ state: 'OPEN', assignees: [{ login: 'me' }] }) })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, assigned), /ya tiene assignee/)

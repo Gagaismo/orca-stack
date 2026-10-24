@@ -7,11 +7,9 @@
       "claude",
       "agy",
       "codex",
-      "codex-cc",
       "pi"
     ],
     "preguntarAntes": [
-      "codex-cc"
     ]
   },
   "verificacion": {
