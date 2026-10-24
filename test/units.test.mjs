@@ -20,6 +20,12 @@ test('revisar help describes same-family refusal and the pi/claude exception', (
   assert.doesNotMatch(help, /codex-cc/)
 })
 
+test('issue 283 Rule 1: dispatch help lists only supported agents', () => {
+  const help = execFileSync(process.execPath, [path.join(ROOT, 'bin', 'orca-stack.mjs'), 'despachar', '--help'], { encoding: 'utf8' })
+  assert.match(help, /agentes: claude, agy, codex, pi/)
+  assert.doesNotMatch(help, /codex-cc/)
+})
+
 describe('marker blocks', () => {
   test('appends to a file that has none, replaces in place when present', () => {
     const first = upsertBlock('hola\n', 'uno')
