@@ -115,6 +115,7 @@ Sin flag y sin agentes.pi.perfil, o con "preguntar", rige el perfil activo globa
 
 Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
 (línea \`Implementador:\`) o si el agente usa un modelo de la misma familia (según \`agentes.modelos\`; pi y claude pueden revisarse entre sí).
+Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, sin agentes ni terminales en done, y su HEAD anterior alcanza el nuevo head del PR; rechaza el mismo head, los commits locales y los perfiles de Pi distintos.
 `,
   rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 

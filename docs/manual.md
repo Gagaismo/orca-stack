@@ -173,6 +173,8 @@ orca-stack revisar 15 agy --nota "Mirá con cuidado la migración."
 
 Igual que `despachar`, para un review: crea el worktree `revision-<pr>-<agente>` parado en la rama del PR. Se niega si el PR no trae la línea `Implementador: <agente>`, si el revisor es el implementador, o si los dos corren modelos de la misma familia (sale de `agentes.modelos`; pi y claude sí se revisan entre sí).
 
+Si ya existe ese worktree porque el PR rebotó, `revisar` lo reutiliza en una segunda ronda: exige que no haya agentes activos ni una terminal anterior en `done`, que el árbol esté limpio y que el HEAD anterior sea alcanzable desde el nuevo head del PR. Rechaza si ese revisor ya vio el mismo head, si el worktree tiene cambios o commits locales, o si el perfil de Pi no coincide. El brief fija el commit anterior como base para que el reviewer lea solo el delta; el review previo se archiva con ese SHA. `--dry-run` muestra el caso sin cambiar el worktree ni los archivos.
+
 #### `rebote`
 
 ```bash
