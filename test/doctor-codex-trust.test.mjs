@@ -22,6 +22,33 @@ afterEach(() => {
 })
 
 describe('doctor: Codex project trust', () => {
+  test('Rule 3: doctor warns for retired agent values in every config layer without editing them', () => {
+    const home = temp('retired-agent-doctor-home')
+    const repo = temp('retired-agent-doctor-repo')
+    assert.equal(git(repo, 'init').status, 0)
+    const layers = [
+      { file: path.join(home, '.orca-stack', 'config.json'), label: '~/.orca-stack/config.json' },
+      { file: path.join(repo, '.orca-stack.json'), label: '.orca-stack.json' },
+      { file: path.join(repo, '.orca-stack.local.json'), label: '.orca-stack.local.json' },
+    ]
+    const values = [
+      ['agentes.usa', { agentes: { usa: ['codex-cc'] } }],
+      ['agentes.preguntarAntes', { agentes: { preguntarAntes: ['codex-cc'] } }],
+      ['agentes.modelos', { agentes: { modelos: { 'codex-cc': { modelo: 'gpt-6-luna' } } } }],
+    ]
+
+    for (const layer of layers) {
+      for (const [key, value] of values) {
+        for (const candidate of layers) write(candidate.file, JSON.stringify({ setup: 'completo', agentes: { usa: ['claude'], preguntarAntes: [], modelos: {} } }))
+        write(layer.file, JSON.stringify({ setup: 'completo', ...value }))
+        const before = layers.map(candidate => read(candidate.file))
+        const result = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo })
+        assert.ok(result.out.includes(`codex-cc ya no existe: sacalo de ${layer.label} (${key}).`), result.out)
+        assert.deepEqual(layers.map(candidate => read(candidate.file)), before)
+      }
+    }
+  })
+
   test('a trusted entry for the repo root reports ok', () => {
     const root = sampleRoot()
     const file = path.join(temp('codex-trust'), 'config.toml')
@@ -107,10 +134,11 @@ describe('doctor: Codex project trust', () => {
     const before = read(codexConfig)
 
     const enabled = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo })
-    assert.match(enabled.out, /codex repo root trust/)
-    assert.match(enabled.out, /\[projects\.'[^']+'\]/)
+    assert.match(enabled.out, /codex-cc ya no existe: sacalo de \.orca-stack\.local\.json \(agentes\.usa\)\./)
+    assert.doesNotMatch(enabled.out, /codex repo root trust/)
     assert.equal(read(codexConfig), before)
 
+    write(path.join(repo, '.orca-stack.local.json'), JSON.stringify({ agentes: { usa: ['codex'] } }))
     write(codexConfig, `[projects.'${repo.replaceAll('/', '\\')}']\ntrust_level = "trusted"\n`)
     const trusted = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: repo })
     assert.match(trusted.out, /✔ codex repo root trust/)

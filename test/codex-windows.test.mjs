@@ -164,15 +164,15 @@ describe('doctor: codex ASCII block', () => {
     assert.equal(blockCheck(checks(exec)).level, 'ok')
   })
 
-  test('rule 4: a repo whose agentes.usa has codex-cc but not codex prints the Codex en Windows section on Windows', () => {
-    write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ agentes: { usa: ['claude', 'codex-cc'] } }))
+  test('rule 4: a repo whose agentes.usa includes codex prints the Codex en Windows section on Windows', () => {
+    write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ agentes: { usa: ['claude', 'codex'] } }))
     const result = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home, env: { ORCA_STACK_PLATFORM: 'win32' } })
     assert.match(result.out, /Codex en Windows/)
     assert.match(result.out, /Get-Content/)
     assert.match(result.out, /regla ASCII/)
   })
 
-  test('rule 5: neither codex nor codex-cc in use does not print the section on Windows', () => {
+  test('rule 5: a repo without codex does not print the section on Windows', () => {
     write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ agentes: { usa: ['claude', 'agy'] } }))
     const noCodex = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home, env: { ORCA_STACK_PLATFORM: 'win32' } })
     assert.doesNotMatch(noCodex.out, /Codex en Windows|Get-Content|regla ASCII/)

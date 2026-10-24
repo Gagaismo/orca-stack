@@ -21,6 +21,31 @@ const settingsPath = () => path.join(home, '.claude', 'settings.json')
 const claudeMdPath = () => path.join(home, '.claude', 'CLAUDE.md')
 
 describe('global', () => {
+  test('issue 283 Rule 7: setup docs offer only supported agents', () => {
+    const documents = ['README.md', 'docs/manual.md', 'docs/guia-setup.md', 'assets/skills/orca-setup/SKILL.md']
+    for (const file of documents) {
+      const text = read(path.join(ROOT, file))
+      assert.doesNotMatch(text, /codex-cc|Command Code|commandcode/, file)
+    }
+    const setup = read(path.join(ROOT, 'assets/skills/orca-setup/SKILL.md'))
+    assert.match(setup, /agents? of the contract|agentes de la tabla del contrato/i)
+    assert.match(setup, /claude, agy, codex y pi/)
+  })
+
+  test('issue 283 Rule 4: this repo config uses only supported agents', () => {
+    const config = JSON.parse(read(path.join(ROOT, '.orca-stack.json')))
+    assert.deepEqual(config.agentes.usa, ['claude', 'agy', 'codex', 'pi'])
+    assert.deepEqual(config.agentes.preguntarAntes, [])
+  })
+
+  test('issue 283 Rule 5: AGENTS and contract share the codex reviewer fallback', () => {
+    const contract = read(path.join(ROOT, 'assets/stack/CONTRATO.md'))
+    const agents = read(path.join(ROOT, 'AGENTS.md'))
+    const fallback = text => text.split(/\r?\n/).find(line => line.startsWith('Revisa agy,'))
+    assert.ok(fallback(contract)?.includes('Si codex est\u00E1 bloqueado o no tiene cuota, el PR espera a que codex vuelva.'))
+    assert.equal(fallback(agents), fallback(contract))
+  })
+
   test('installs an offline command that reports the version global ran', () => {
     const commandDir = path.join(home, 'path-bin')
     write(path.join(commandDir, '.probe'), '')
@@ -507,9 +532,9 @@ describe('doctor', () => {
     assert.match(policy, /## Launching agents/)
     assert.match(policy, /ticket authoring rules.*AGENTS\.md/i)
     assert.doesNotMatch(policy, /{{[A-Z_]+}}/)
-    for (const agent of ['claude:', 'agy:', 'codex:', 'codex-cc:', 'pi (Gentle Shell):']) assert.ok(policy.includes(`- ${agent}`), agent)
+    for (const agent of ['claude:', 'agy:', 'codex:', 'pi (Gentle Shell):']) assert.ok(policy.includes(`- ${agent}`), agent)
+    assert.doesNotMatch(policy, /codex-cc|Command Code|model_provider=cc/)
     assert.match(policy, /claude-orca-stack/)
-    assert.match(policy, /model_provider=cc/)
     const contract = read(path.join(ROOT, 'assets', 'stack', 'CONTRATO.md'))
     assert.doesNotMatch(contract, /model_provider=cc|orca-stack.cmd|auth.json/)
   })
