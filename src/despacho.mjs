@@ -14,7 +14,7 @@ import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from '.
 // shared/familias.json against both sides.
 // BEGIN FAMILIES
 export const FAMILIES = {
-  "agents": ["claude", "agy", "codex", "codex-cc", "pi"],
+  "agents": ["claude", "agy", "codex", "pi"],
   "fixed": { "pi": "claude" },
   "defaults": { "claude": "claude", "codex": "gpt", "agy": "gemini" },
   "patterns": [
@@ -26,6 +26,7 @@ export const FAMILIES = {
 }
 // END FAMILIES
 export const AGENTS = FAMILIES.agents
+const CODEX_CC_REMOVED = 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00F3 el 2026-10-24); us\u00E1 codex.'
 
 // Source of truth: mods/puente-gentle/hooks/puente.ts (ORCA_VARS_CLEARED, engramDir). Duplicated because the mod is TypeScript
 // that can only import its own folder. The launcher clears only the stack markers of that list: Orca's managed pi
@@ -134,18 +135,10 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   const wrapper = P.join(home, ...SCRIPTS_REL, wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
   const bin = (win ? '& ' : '') + `"${wrapper}"`
   if (agent === 'claude' || agent === 'agy') return `${bin} --dangerously-skip-permissions${model ? ` --model ${model}` : ''}`
-  if (agent === 'codex' || agent === 'codex-cc') {
-    // Fast mode spends codex credits faster and an unattended worker does not need the speed; codex-cc bills through
-    // Command Code, so it keeps its flags.
-    const fast = agent === 'codex' ? ' -c features.fast_mode=false' : ''
-    const flags = `${model ? ` --model ${model}` : ''}${effort ? ` -c model_reasoning_effort="${effort}"` : ''}${fast} -c approval_policy="never" -c sandbox_mode="danger-full-access"`
-    if (agent === 'codex') return `${bin}${flags}`
-    const provider = '-c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses'
-    const key = win
-      ? '$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME\\.pi\\agent\\auth.json" | ConvertFrom-Json).commandcode.key'
-      : `export CMD_API_KEY="$(node -p "require(process.env.HOME + '/.pi/agent/auth.json').commandcode.key")"`
-
-    return `${key}; ${bin} ${provider}${flags}`
+  if (agent === 'codex') {
+    // Fast mode spends codex credits faster and an unattended worker does not need the speed.
+    const flags = `${model ? ` --model ${model}` : ''}${effort ? ` -c model_reasoning_effort="${effort}"` : ''} -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"`
+    return `${bin}${flags}`
   }
   // pi: an interactive TUI like the other workers, so Orca shows it on its card and a turn that waits on a background
   // verify resumes when it reports (`pi -p` ended with the turn, #277). The brief rides in the first message. Nothing
@@ -248,7 +241,7 @@ const fanoutInstructions = (agent, nota, bounce = false) => {
 }
 
 // claude imports AGENTS.md through CLAUDE.md (`orca-stack init`), and codex and pi load it on their own. Nobody checked
-// agy and codex-cc, so they keep reading it.
+// agy keeps reading it.
 const LOADS_AGENTS_MD = ['claude', 'codex', 'pi']
 const projectInstructions = agent => LOADS_AGENTS_MD.includes(agent)
   ? 'AGENTS.md is already in your context: do not read it again. Read GLOSSARY.md or CONTEXT.md and docs/adr when they exist.'
@@ -287,6 +280,7 @@ export const renderBrief = (kind, vars, nota) => {
     PUBLISH_INSTRUCTIONS: vars.PUBLISH_INSTRUCTIONS ?? 'Write the review in a UTF-8 file and publish it with a body file, never through a pipe:',
     PUBLISH_COMMAND: vars.PUBLISH_COMMAND ?? `gh pr review ${vars.PR} --comment --body-file <file>`,
     REVIEWER_LINE: vars.REVIEWER_LINE ?? vars.AGENT,
+    DELTA_INSTRUCTIONS: vars.DELTA_INSTRUCTIONS ?? '',
     PROJECT_INSTRUCTIONS: projectInstructions(vars.AGENT),
     SUBAGENTS_INSTRUCTION: subagentsInstruction(vars.AGENT),
     BODY_PRECHECK_STEP: vars.BODY_PRECHECK_STEP ?? bodyPrecheckStep(vars.CUERPO_PR),
@@ -587,6 +581,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const review = kind === 'review'
   const say = io.out
   if (!/^\d+$/.test(String(n ?? ''))) throw new Error(`Falta el número de ${review ? 'PR' : 'issue'}. Uso: orca-stack ${review ? 'revisar <pr>' : 'despachar <issue>'} <agente>.`)
+  if (agent === 'codex-cc') throw new Error(CODEX_CC_REMOVED)
   if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido: ${agent ?? '(ninguno)'}. Los agentes son: ${AGENTS.join(', ')}.`)
 
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
@@ -639,19 +634,36 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const name = review ? `revision-${n}-${agent}` : `${repo}-${n}`
   const session = review ? `${repo}-${name}` : name
   const briefPath = path.join(io.home, 'orca', 'briefs', `${session}.md`)
+  const reviewPath = path.join(io.home, 'orca', 'briefs', `${session}.review.md`)
   const startRef = `origin/${review ? branchOfPr : base}`
 
   // Idempotence lock: an existing worktree for this branch/name, or a live agent in it. A prunable entry is a worktree
   // whose folder is gone (`orca worktree rm` leaves one until `git worktree prune`): it does not count.
   const listed = ok(io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root }), 'git worktree list').stdout
-  const taken = listed.split(/\r?\n\s*\r?\n/).filter(entry => !/^prunable\b/m.test(entry)).join('\n').split(/\r?\n/).filter(l => l.startsWith('worktree ') || l.startsWith('branch ')).map(l => l.replace(/^(worktree|branch) /, ''))
-  if (taken.some(t => t.replace(/\\/g, '/').split('/').pop() === name)) throw new Error(`Ya hay un worktree para ${name}. No despacho dos veces: revisalo con \`orca worktree ps\`.`)
+  const entries = listed.split(/\r?\n\s*\r?\n/).filter(entry => !/^prunable\b/m.test(entry))
+  const worktreeName = value => String(value).replace(/\\/g, '/').split('/').pop()
+  const pathMatchesName = value => worktreeName(value) === name
+  const existing = entries.find(entry => [...entry.matchAll(/^worktree (.+)$/gm)].some(([, value]) => pathMatchesName(value)))
+  const conflict = entries.find(entry => [...entry.matchAll(/^(?:worktree |branch refs\/heads\/)(.+)$/gm)].some(([, value]) => pathMatchesName(value)))
+  if (conflict && !review) throw new Error(`Ya hay un worktree para ${name}. No despacho dos veces: revisalo con \`orca worktree ps\`.`)
+  if (conflict && review && !existing) throw new Error(`Ya hay un worktree o rama para ${name}, pero no pude identificar su ruta para reutilizarlo.`)
+  const existingPath = existing ? [...existing.matchAll(/^worktree (.+)$/gm)].map(([, value]) => value).find(pathMatchesName) : undefined
+  const previousHead = existing ? /^HEAD (.+)$/m.exec(existing)?.[1] : undefined
+  if (existing && !previousHead) throw new Error(`No pude leer HEAD del worktree ${existingPath}; no voy a reutilizarlo.`)
   const ps = io.sh('orca', ['worktree', 'ps', '--json'])
   if (ps.status === 0) {
     const live = (parseJson(ps, 'orca worktree ps').result?.worktrees ?? []).find(
-      w => String(w.path ?? '').replace(/\\/g, '/').split('/').pop() === name || (!review && w.repo === repo && w.linkedIssue === Number(n)),
+      w => worktreeName(w.path ?? '') === name || (!review && w.repo === repo && w.linkedIssue === Number(n)),
     )
-    if (live) throw new Error(`Orca ya tiene un worktree para ${name}${(live.agents ?? []).length > 0 ? ' con un agente vivo' : ''}: ${live.path}.`)
+    if (live && (!review || !existing)) throw new Error(`Orca ya tiene un worktree para ${name}${(live.agents ?? []).length > 0 ? ' con un agente vivo' : ''}: ${live.path}.`)
+    if (existing && live) {
+      const agents = live.agents ?? []
+      const active = agents.find(item => /^(working|running|active)$/i.test(item.state ?? item.status ?? ''))
+      if (active) throw new Error(`Orca ya tiene un worktree para ${name} con un agente vivo: ${live.path}.`)
+      const done = agents.find(item => /^done$/i.test(item.state ?? item.status ?? ''))
+      if (done) throw new Error(`La terminal ${done.paneKey ?? done.agentType ?? agent} de ${live.path} sigue abierta en done; cerrala antes de revisar de nuevo.`)
+    }
+    if (existing && !live) throw new Error(`Orca no muestra ${existingPath}; no puedo comprobar que no haya una terminal abierta antes de reutilizarlo.`)
   } else if (!dryRun) {
     throw new Error(`Orca no contesta (orca worktree ps): ${(ps.stderr || ps.stdout).trim()}`)
   } else say('⚠ Orca no contesta: no pude comprobar si ya hay un agente vivo.')
@@ -667,10 +679,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     return dryRun ? { status: 0, stdout: '', stderr: '' } : ok(io.sh(cmd, argv, opts), `${cmd} ${argv[0]}`)
   }
 
-  if (!dryRun) {
-    const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
-    if (fetched.status !== 0) throw new Error(`git fetch origin falló, no asigné ni creé nada: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
-  }
+  let fetchedOrigin = false
   let hasCodingStandards = false
   const briefFor = branch => renderBrief(kind, {
     REPO: repo,
@@ -683,6 +692,11 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     CUERPO_PR: config.verificacion?.cuerpoPR,
     HAS_CODING_STANDARDS: hasCodingStandards,
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
+    ...(review ? {
+      DELTA_INSTRUCTIONS: previousHead ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : 'This is the first review round; review the full PR.',
+      PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
+      PUBLISH_COMMAND: `gh pr review ${n} --comment --body-file ${reviewPath}`,
+    } : {}),
   }, nota)
   // Validate the cited paths against the tree the worktree will be created from, before any side effect.
   const tree = io.sh('git', ['ls-tree', '-r', '--name-only', startRef], { cwd: root })
@@ -695,25 +709,52 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     }
   } else if (dryRun) say(`⚠ No pude listar ${startRef}: la validación de rutas del brief se hace al despachar.`)
   else throw new Error(`No pude listar ${startRef} para validar las rutas del brief: ${(tree.stderr || tree.stdout).trim()}`)
+  if (existing) {
+    const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: existingPath })
+    if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${existingPath}: ${(status.stderr || status.stdout).trim()}`)
+    if (status.stdout.trim() !== '') throw new Error(`El worktree ${existingPath} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de revisar de nuevo.`)
+    if (previousHead === sha) throw new Error(`Ya revisaste ${sha} con ${agent}.`)
+    if (agent === 'pi') {
+      const pinned = readJson(path.join(existingPath, '.pi', 'gentle-ai', 'profile.json'), io)?.profile
+      if (profile && pinned !== profile.name) throw new Error(`El worktree fija el perfil de Pi "${pinned ?? '(ninguno)'}"; no se puede cambiar a "${profile.name}" en una segunda revisión.`)
+    }
+    if (!dryRun) {
+      const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
+      if (fetched.status !== 0) throw new Error(`git fetch origin fall\u00F3, no cambi\u00E9 el worktree: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
+      fetchedOrigin = true
+    }
+    const reachable = io.sh('git', ['for-each-ref', '--contains=HEAD', '--format=%(refname)', 'refs/remotes/origin'], { cwd: existingPath })
+    if (reachable.status !== 0 || reachable.stdout.trim() === '') throw new Error(`El HEAD del worktree ${existingPath} (${previousHead}) no est\u00E1 alcanzable desde origin; no cambi\u00E9 nada.`)
+  }
+  if (!dryRun && !fetchedOrigin) {
+    const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
+    if (fetched.status !== 0) throw new Error(`git fetch origin falló, no asigné ni creé nada: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
+  }
   const left = { assigned: false, worktree: null, brief: null }
   if (!review) {
     act('gh', ['issue', 'edit', String(n), '--add-assignee', '@me'], { cwd: root })
     left.assigned = !dryRun
   }
   const createArgs = ['worktree', 'create', '--name', name, '--base-branch', startRef, '--no-parent', ...(review ? [] : ['--issue', String(n)]), '--json']
-  let worktree = '<worktree>'
+  let worktree = existingPath ?? '<worktree>'
   let branch = name
   try {
-    if (agent === 'claude') {
+    if (agent === 'claude' && !existing) {
       ensureCandidateWorktreesExclude({ root, commonDir, io, dryRun, say })
     }
-    const created = act('orca', createArgs)
-    if (!dryRun) {
-      const json = parseJson(created, 'orca worktree create')
-      worktree = deepFind(json.result ?? json, ['path', 'worktreePath'])
-      branch = (deepFind(json.result ?? json, ['branch']) ?? name).replace(/^refs\/heads\//, '')
-      if (!worktree) throw new Error('orca worktree create no devolvió la ruta del worktree.')
-      left.worktree = worktree
+    if (existing) {
+      say(`${dryRun ? '[simulación] ' : ''}Reutilizo ${worktree} desde ${previousHead} para revisar ${sha}.`)
+      act('git', ['checkout', '--detach', sha], { cwd: worktree })
+      branch = undefined
+    } else {
+      const created = act('orca', createArgs)
+      if (!dryRun) {
+        const json = parseJson(created, 'orca worktree create')
+        worktree = deepFind(json.result ?? json, ['path', 'worktreePath'])
+        branch = (deepFind(json.result ?? json, ['branch']) ?? name).replace(/^refs\/heads\//, '')
+        if (!worktree) throw new Error('orca worktree create no devolvió la ruta del worktree.')
+        left.worktree = worktree
+      }
     }
 
     if (!review) say(`${dryRun ? '[simulaci\u00f3n] ' : ''}Rama: ${dryRun ? `la define Orca al crear el worktree (se pidi\u00f3 --name ${name})` : branch}`)
@@ -723,6 +764,12 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       if (!dryRun) writePin(io, worktree, commonDir, profile.name)
     }
     const brief = briefFor(branch)
+    if (existing && io.exists(reviewPath)) {
+      const archivedReviewPath = path.join(io.home, 'orca', 'briefs', `${session}.review.${previousHead}.md`)
+      if (io.exists(archivedReviewPath)) throw new Error(`Ya existe el review archivado ${archivedReviewPath}; no voy a sobrescribirlo.`)
+      say(`${dryRun ? '[simulación] ' : ''}review anterior -> ${archivedReviewPath}`)
+      if (!dryRun) io.rename(reviewPath, archivedReviewPath)
+    }
     say(`${dryRun ? '[simulación] ' : ''}brief -> ${briefPath}`)
     if (!dryRun) {
       io.mkdirp(path.dirname(briefPath))
@@ -774,6 +821,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (String(pr.state).toUpperCase() !== 'OPEN') throw new Error(`El PR #${n} est\u00E1 ${String(pr.state).toLowerCase()}; no se puede rebotar.`)
   const agent = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim().toLowerCase()
   if (!agent) throw new Error(`El PR #${n} no tiene la l\u00EDnea "Implementador: <agente>".`)
+  if (agent === 'codex-cc') throw new Error(CODEX_CC_REMOVED)
   if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido en Implementador: ${agent}.`)
   if (!(config.agentes?.usa ?? []).includes(agent)) throw new Error(`${agent} no est\u00E1 en agentes.usa de este repo (${(config.agentes?.usa ?? []).join(', ') || 'vac\u00EDo'}).`)
   const blocked = blockOf(config, agent, (io.now ?? Date.now)())
@@ -936,6 +984,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
   const brief = render(readAsset('stack', 'brief-rebote.md'), {
     PR: String(n), SHA: sha,
+    AGENT: agent,
     ISSUE: issue,
     REMOTE_HOST: remote.host,
     REMOTE_REPO: remote.ownerRepo,

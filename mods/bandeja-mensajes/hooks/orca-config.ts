@@ -35,7 +35,7 @@ export type StackConfig = {
 // The literal between the markers is JSON: src/despacho.mjs keeps the same one, and test/units.test.mjs compares them.
 // BEGIN FAMILIES
 export const FAMILIES = {
-  "agents": ["claude", "agy", "codex", "codex-cc", "pi"],
+  "agents": ["claude", "agy", "codex", "pi"],
   "fixed": { "pi": "claude" },
   "defaults": { "claude": "claude", "codex": "gpt", "agy": "gemini" },
   "patterns": [

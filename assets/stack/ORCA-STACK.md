@@ -77,7 +77,7 @@ rubric or question; candidates use the worker's effort unless the note says
 otherwise. Run one round and do not retry: if every candidate drops out or the
 worker wants another round, continue the normal path and report that under
 `## Arena` or `## Swarm`. Publish results under that heading in the PR body.
-Codex, codex-cc, agy, and pi do not run arenas or swarms, even with a note.
+Codex, agy, and pi do not run arenas or swarms, even with a note.
 A bounce fan-out note requires a new human OK; a dispatch approval does not
 carry over.
 
@@ -145,7 +145,6 @@ terminal on Windows, which is PowerShell; in a POSIX shell the leading `& ` is d
   Nobody answers approval prompts in an unattended worker, so the approval and
   sandbox flags are required. Fast mode is off because it spends Codex credits
   faster and an unattended worker does not need the speed.
-- codex-cc: `$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME.piagentauth.json" | ConvertFrom-Json).commandcode.key; & "{{WRAPPER_CODEX}}" -c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses --model <model> -c model_reasoning_effort="<effort>" -c approval_policy="never" -c sandbox_mode="danger-full-access"`
   Use the review model and effort to review and the implementation ones to
   implement; the rest of the command does not change. The key is read inside
   the terminal, so it never appears in the command or in the brief. If Command

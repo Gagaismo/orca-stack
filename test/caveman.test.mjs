@@ -42,10 +42,9 @@ describe('caveman 3.2.0', () => {
 
   test('rule 3: despachar workers that get the stack markers are interactive; pi gets none', () => {
     const base = { mode: 'ticket', config: {}, win: false, home: '/h', briefPath: '/b.md', session: 's', skills: '/s' }
-    for (const agent of ['claude', 'agy', 'codex', 'codex-cc']) {
+    for (const agent of ['claude', 'agy', 'codex']) {
       const launcher = launcherFor({ ...base, agent })
       assert.ok(launcher.includes('-orca-stack.sh"'), `${agent} goes through its wrapper, which sets the markers`)
-      // From the wrapper on: codex-cc reads its key with `node -p` before it.
       const call = launcher.slice(launcher.indexOf('-orca-stack.sh"'))
       assert.doesNotMatch(call, /\s(-p|--print|exec)(\s|$)/, `${agent} is an interactive session, not headless`)
     }

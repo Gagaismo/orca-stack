@@ -290,6 +290,16 @@ describe('avisar', () => {
     assert.match(collaboration, /nunca lo arma con llamadas sueltas a `orca`/)
   })
 
+  test('Rule 3: orca-stack avisar keeps its line unchanged for a worker mid-turn', async () => {
+    const env = fakeIo()
+    assert.equal(await avisarCommand({}, '42', URL42, env.io), 0)
+    assert.equal(env.sends().length, 1)
+    const send = env.sends()[0]
+    const text = send[send.indexOf('--text') + 1]
+    assert.equal(text, `Message from main: ${URL42}`)
+    assert.equal(text.includes('per your brief'), false)
+  })
+
   test('Preserve: the CLI still routes the other commands and rejects an unknown one', async () => {
     const oldLog = console.log
     const oldError = console.error
