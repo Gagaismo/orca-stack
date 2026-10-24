@@ -20,7 +20,7 @@ const prMatchesIssue = (pr, issue, branches) =>
   branches.includes(pr.headRefName) ||
   new RegExp(`^\\s*Closes\\s+#${issue}\\b`, 'im').test(pr.body ?? '')
 
-const sendToPaused = (flags, n, url, target, io, markAttempt) => {
+const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt) => {
   const { handle } = target.terminal
   const screen = readScreen(io, handle)
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
@@ -32,7 +32,7 @@ const sendToPaused = (flags, n, url, target, io, markAttempt) => {
   const state = String(current?.state ?? current?.status ?? '').toLowerCase()
   if (state !== 'done') throw new Error(`El agente de ${handle} cambi\u{f3} a ${state || 'sin estado'} mientras lo revisaba: no reanudo.`)
 
-  const line = `Message from main: ${url} . Continue the ticket per your brief.`
+  const line = `Message from main: ${url} . Continue the ticket per your brief: ${briefPath}.`
   const argv = ['terminal', 'send', '--terminal', handle, '--text', line, '--enter', '--wait-submit', '10', '--json']
   if (flags.dryRun) {
     io.out(`[simulaci\u{f3}n] orca ${argv.map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
@@ -159,9 +159,11 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de relanzarlo. Si dijo que s\u{ed}, repet\u{ed} el comando con --confirmado.`)
   }
 
+  if (!io.exists(originalPath)) throw new Error(`No encuentro el brief original ${originalPath}; no relanzo sin \u{e9}l.`)
+
   if (target?.terminal && stateOf(target.record) === 'done' && agent !== 'pi') {
     target.worktree = row.path
-    const handled = sendToPaused(flags, n, url, target, io, markAttempt)
+    const handled = sendToPaused(flags, n, url, originalPath, target, io, markAttempt)
     if (handled) return 0
   }
 
@@ -169,7 +171,6 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${row.path}: ${detail(status)}`)
   if (status.stdout.trim() !== '') throw new Error(`El worktree ${row.path} est\u{e1} sucio; guard\u{e1} o descart\u{e1} sus cambios antes de relanzar.`)
 
-  if (!io.exists(originalPath)) throw new Error(`No encuentro el brief original ${originalPath}; no relanzo sin \u{e9}l.`)
   originalBrief ??= io.readFile(originalPath)
   const brief = `Message from main: ${url}\n\n${originalBrief}`
   const briefPath = path.join(io.home, 'orca', 'briefs', `${repo}-${n}-reanudar.md`)
