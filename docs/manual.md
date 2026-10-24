@@ -162,6 +162,8 @@ Agentes válidos: `claude`, `agy`, `codex`, `pi`. Orden de lo que hace:
 4. Imprime `Rama: <rama>` con el nombre que devolvió Orca.
 5. Lee la pantalla tres veces (pausas de 5 segundos, salvo con pi) y falla ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell.
 
+Pi se lanza como TUI interactiva, como los demás agentes, con el brief como primer mensaje: `pi --no-skills --skill <skills de gentle-pi> --session-id <id> --no-approve --exclude-tools ask_user_choice,ask_user_question "<brief>"`. Orca lo muestra en su tarjeta con los mismos estados que claude y codex, y un turno que espera una verificación en segundo plano sigue cuando esta termina. Nada espera a una persona: quedan afuera las herramientas de diálogo y `--no-approve` saltea el aviso de confianza del proyecto. En vez de leer la pantalla, el comando espera la sesión nueva de Pi en ese worktree y se niega si no aparece.
+
 Con `pi`, `--perfil-pi <nombre>` fija el perfil de modelos de gentle-pi para ese worktree (los perfiles viven en `~/.pi/gentle-ai/profiles.json`); la clave `agentes.pi.perfil` lo fija para todos los despachos a pi y el flag gana.
 
 #### `revisar`
@@ -206,7 +208,7 @@ Busca comentarios que empiecen con `Consulta:` hechos por la cuenta de GitHub de
 orca-stack avisar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecomment-123 --dry-run
 ```
 
-El timbre de Proactive: le escribe al worker una sola línea fija, `Message from main: <url>`, mientras su turno sigue en curso. Solo avisa a `claude`; se niega con pi, codex y agy, si el turno ya terminó, si la terminal muestra un shell o un diálogo, si hay más de un agente vivo, o si el comentario no es de la cuenta del stack o no empieza con `Respuesta de main:` o `Respuesta del humano:`. Nunca reintenta: sin recibo de entrega informa la falla.
+El timbre de Proactive: le escribe al worker una sola línea fija, `Message from main: <url>`, mientras su turno sigue en curso. Avisa a `claude` y a `pi` (reconoce el turno en curso por el spinner de Claude o por el marco del prompt de Gentle Shell con su fase, como `╭─ ❀ implementing…`); se niega con codex y agy, si el turno ya terminó, si la terminal muestra un shell o un diálogo, si hay más de un agente vivo, o si el comentario no es de la cuenta del stack o no empieza con `Respuesta de main:` o `Respuesta del humano:`. Nunca reintenta: sin recibo de entrega informa la falla.
 
 #### `reanudar`
 
@@ -214,7 +216,7 @@ El timbre de Proactive: le escribe al worker una sola línea fija, `Message from
 orca-stack reanudar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecomment-123 --dry-run
 ```
 
-Si Orca todavía muestra el turno en `done`, reanuda el TUI con una sola línea que apunta a la respuesta. Si el agente salió y Orca ya no lo lista ni hay terminal de worker, identifica el mismo agente desde la línea de implementador del brief original y lo relanza en el worktree existente con el brief y la URL al principio. Se niega si Orca informa un estado de agente desconocido o si queda una terminal de worker que no muestra un shell prompt mientras Orca no lista su agente (por ejemplo, Pi headless). También se niega sin enviar el brief si Codex muestra su menú de actualización: elegí una opción en la terminal y relanzá con la misma respuesta de `main`. Rechaza un PR abierto, un worktree sucio, más de un agente vivo o una respuesta que no sea un comentario real de la cuenta del stack o del humano. Si ya intentó usar el mismo comentario, informa la hora registrada y no reenvía ni relanza: comprobá primero el agente y su terminal; si el intento no llegó, publicá una nueva `Respuesta de main:` y usá su URL. `--confirmado` habilita relanzar agentes de `preguntarAntes` solo después del OK humano; `--dry-run` no escribe ni envía nada.
+Si Orca todavía muestra el turno en `done`, reanuda el TUI con una sola línea que apunta a la respuesta; con pi, solo si la pantalla muestra su prompt en reposo (`╭─ ✿ ───╮`). Si el agente salió y Orca ya no lo lista ni hay terminal de worker, identifica el mismo agente desde la línea de implementador del brief original y lo relanza en el worktree existente con el brief y la URL al principio. Se niega si Orca informa un estado de agente desconocido o si queda una terminal de worker que no muestra un shell prompt mientras Orca no lista su agente. También se niega sin enviar el brief si Codex muestra su menú de actualización: elegí una opción en la terminal y relanzá con la misma respuesta de `main`. Rechaza un PR abierto, un worktree sucio, más de un agente vivo o una respuesta que no sea un comentario real de la cuenta del stack o del humano. Si ya intentó usar el mismo comentario, informa la hora registrada y no reenvía ni relanza: comprobá primero el agente y su terminal; si el intento no llegó, publicá una nueva `Respuesta de main:` y usá su URL. `--confirmado` habilita relanzar agentes de `preguntarAntes` solo después del OK humano; `--dry-run` no escribe ni envía nada.
 
 #### `vigilar`
 
@@ -479,7 +481,7 @@ Tomados del código, los tests y el contrato. Cada fila dice qué pasa y qué ha
 | Monitor rearmado | Si el anterior sigue vivo, le roba los eventos al nuevo | Matá el anterior antes de rearmar. Con `vigilar`, rearmar con los mismos argumentos retoma sin repetir eventos |
 | `main` mergea y el Monitor devuelve su propio merge | Un merge de `main` se ve igual que uno del humano | Correr `vigilar --merge-de-main <n>` antes de cada `gh pr merge` y de nuevo tras `update-branch`; vale 30 minutos |
 | `vigilar` no puede leer GitHub | Emite `vigilar-ciego: <error>` tras tres vueltas fallidas, una vez por corte | Revisá `gh auth status` y la red; sigue vigilando solo. Un issue ilegible o un cursor que no se puede escribir no lo detienen |
-| `avisar` con un worker que ya terminó, con pi, codex o agy | Se niega; no hay timbre | La respuesta queda como comentario: pi relee los comentarios antes de su PR |
+| `avisar` con un worker que ya terminó, con codex o agy | Se niega; no hay timbre | La respuesta queda como comentario: el worker relee los comentarios antes de su PR |
 | Cuerpo de PR o review con acentos desde la consola de Windows | La consola rompe los acentos si el texto viaja por tubería | Mandalo siempre con `--body-file`, nunca por tubería |
 | Codex en Windows escribe cada letra acentuada como dos caracteres raros | PowerShell 5.1 lee UTF-8 sin BOM como cp1252 | `global` agrega la regla ASCII a `~/.codex/AGENTS.md`; sumá a mano la línea de `$PROFILE` (ver la [guía de setup](guia-setup.md#codex-en-windows-acentos-rotos)) |
 | `gentle-ai sync` reescribió el bloque de `~/.claude/CLAUDE.md` | El bloque vuelve completo y `doctor` lo avisa | Volvé a correr `orca-stack global` |

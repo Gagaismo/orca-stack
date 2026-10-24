@@ -303,6 +303,33 @@ describe('orca-stack reanudar (#214)', () => {
     assert.ok(exited.outputs.includes('Lanzador (codex): "/home/orca/stack/scripts/codex-orca-stack.sh" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"'))
   })
 
+  test('issue #277 Rule 4: a done pi TUI showing its idle prompt frame gets the resume line', async () => {
+    const idle = ['● PR opened.', '╭─ ✿ ────────────────────────────╮', '│ type, or / for commands        │', '╰────────────────────────────────╯', ' claude-opus-5-5 · high']
+    const h = harness({ agent: 'pi', screen: idle })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.sends().length, 1)
+    assert.deepEqual(h.sends()[0].args.slice(2), ['--terminal', 'term-1', '--text', LINE, '--enter', '--wait-submit', '10', '--json'])
+    assert.equal(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create'), false)
+  })
+
+  test('issue #277 Rule 4: a done pi TUI whose screen it does not recognize is refused without sending', async () => {
+    const working = ['╭─ ❀ implementing… ───────────────╮', '│                                │', '╰────────────────────────────────╯']
+    for (const screen of [working, ['\u{273b} Baked for 2m 5s']]) {
+      const h = harness({ agent: 'pi', screen })
+      await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /No veo a Pi en reposo/)
+      assert.equal(h.sends().length, 0)
+      assert.equal(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create'), false)
+    }
+  })
+
+  test('issue #277 Rule 3: relaunching an exited pi worker refuses when no new pi session appears', async () => {
+    const h = harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
+    h.io.gentleSkills = () => '/pi/skills'
+    h.io.listFiles = () => []
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+    assert.ok(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create' && call.args.some(arg => /; pi --no-skills /.test(arg))))
+  })
+
   test('Rule 7: terminal or Orca identity wins without consulting the original brief', async () => {
     const identified = harness({ state: 'done', agent: 'codex', brief: undefined })
     assert.equal(await reanudarCommand({}, ISSUE, URL, identified.io), 0)
