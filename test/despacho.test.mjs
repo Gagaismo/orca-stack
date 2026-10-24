@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync, readdirSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -104,6 +105,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
       written.push([file, text])
       write(file, text)
     },
+    rename: renameSync,
     gentleSkills: () => 'C:\\pi\\gentle-pi\\skills',
     sh: (cmd, args) => {
       calls.push([cmd, ...args])
@@ -402,10 +404,113 @@ describe('issue 196 brief hygiene', () => {
 
 describe('revisar: one worktree per reviewer', () => {
   const pr = over => fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }), ...over })
+  const reusable = ({ head = 'aaa111', prHead = 'bbb222', agents = [], status = '', mergeBase = 0, over = {} } = {}) => {
+    const reviewWorktree = path.join(path.dirname(root), 'revision-9-agy')
+    return {
+      worktree: reviewWorktree,
+      env: pr({
+        'gh pr': json({ headRefName: 'feat', headRefOid: prHead, body: 'Implementador: codex', number: 9 }),
+        'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD ${head}\nbranch refs/heads/revision-9-agy\n`),
+        'git status': okRes(status),
+        'git rev-parse HEAD': okRes(`${head}\n`),
+        'git merge-base': { status: mergeBase, stdout: '', stderr: '' },
+        'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents }] } }),
+        ...over,
+      }),
+    }
+  }
+
+  test('Rule 1: second review round reuses the clean worktree at the new PR head with the previous head as delta base', async () => {
+    const reviewWorktree = 'C:/x/revision-9-agy'
+    const env = pr({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
+      'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD aaa111\nbranch refs/heads/revision-9-agy\n`),
+      'git status': okRes(''),
+      'git rev-parse HEAD': okRes('aaa111\n'),
+      'git merge-base': okRes(''),
+      'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents: [] }] } }),
+    })
+
+    await run('review', { n: '9', agent: 'agy' }, env)
+
+    assert.ok(env.calls.some(call => call.join(' ') === 'git checkout --detach bbb222'))
+    assert.ok(env.written.some(([, brief]) => brief.includes('Previous review commit is `aaa111`')))
+  })
+
+  test('Rule 2: a live agent in the review worktree blocks reuse', async () => {
+    const { env, worktree } = reusable({ agents: [{ state: 'working' }] })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /agente vivo/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 3: a done review terminal blocks reuse and names the terminal to close', async () => {
+    const { env } = reusable({ agents: [{ state: 'done', paneKey: 'pane-review-9-agy' }] })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /terminal pane-review-9-agy .*sigue abierta en done; cerrala/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 4: the same PR head cannot be reviewed twice by one reviewer', async () => {
+    const { env } = reusable({ head: 'bbb222', prHead: 'bbb222' })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /Ya revisaste bbb222 con agy\./)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 5: dirty or unreachable review worktrees are refused without checkout', async () => {
+    const dirty = reusable({ status: '?? derived-test.mjs\n' }).env
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, dirty), /está sucio/)
+    const derived = reusable({ mergeBase: 1 }).env
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, derived), /no está alcanzable/)
+    for (const env of [dirty, derived]) assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 7: a Pi profile pin mismatch blocks review reuse', async () => {
+    const reviewWorktree = path.join(path.dirname(root), 'revision-9-pi')
+    write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ profiles: { requested: { orchestrator: { model: 'claude-opus' } } } }))
+    write(path.join(reviewWorktree, '.pi', 'gentle-ai', 'profile.json'), JSON.stringify({ profile: 'previous' }))
+    const env = fakeIo({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
+      'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD aaa111\nbranch refs/heads/revision-9-pi\n`),
+      'git status': okRes(''),
+      'git merge-base': okRes(''),
+      'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents: [] }] } }),
+    }, { config: { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { perfil: 'requested' } } } })
+    await assert.rejects(run('review', { n: '9', agent: 'pi' }, env), /fija el perfil de Pi "previous".*no se puede cambiar a "requested"/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 6: the old review file is archived by previous SHA before the new reviewer launches', async () => {
+    const { env } = reusable()
+    const current = path.join(home, 'orca', 'briefs', 'proj-revision-9-agy.review.md')
+    const archived = path.join(home, 'orca', 'briefs', 'proj-revision-9-agy.review.aaa111.md')
+    write(current, 'old review')
+
+    await run('review', { n: '9', agent: 'agy' }, env)
+
+    assert.equal(readFileSync(archived, 'utf8'), 'old review')
+    assert.equal(existsSync(current), false)
+    const brief = env.written.find(([file]) => file.endsWith('proj-revision-9-agy.md'))[1]
+    assert.ok(brief.includes(current))
+  })
+
+  test('Rule 8: dry-run reports reuse without changes and help plus manual describe second rounds', async () => {
+    const { env } = reusable()
+    await run('review', { n: '9', agent: 'agy', dryRun: true }, env)
+    assert.ok(env.out.some(line => line.includes('git checkout --detach bbb222')))
+    assert.deepEqual(env.written, [])
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+    const help = execFileSync(process.execPath, [path.join(PACKAGE_ROOT, 'bin/orca-stack.mjs'), 'revisar', '--help'], { encoding: 'utf8' })
+    const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs/manual.md'), 'utf8')
+    assert.match(help, /segunda ronda/i)
+    assert.match(manual, /segunda revisión|segunda ronda/i)
+  })
 
   test('a second reviewer of the same PR gets its own worktree, brief and session', async () => {
-    const taken = { 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/revision-9-agy\nbranch refs/heads/revision-9-agy\n`) }
-    await assert.rejects(run('review', { n: '9', agent: 'agy' }, pr(taken)), /Ya hay un worktree para revision-9-agy/)
+    const taken = {
+      'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/revision-9-agy\nHEAD abc123\nbranch refs/heads/revision-9-agy\n`),
+      'git status': okRes(''),
+      'orca worktree ps': json({ result: { worktrees: [{ path: 'C:/x/revision-9-agy', agents: [] }] } }),
+    }
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, pr(taken)), /Ya revisaste abc123 con agy/)
     const env = pr(taken)
     await run('review', { n: '9', agent: 'pi', dryRun: true }, env)
     const text = env.out.join('\n')
