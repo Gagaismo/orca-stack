@@ -64,7 +64,7 @@ Reglas que sostienen todo lo demás:
 | Un repo en GitHub con tickets que se pueden escribir con reglas verificables, trabajado con Orca | Es el caso para el que está hecho: `despachar`, `revisar`, `rebote` y `vigilar` necesitan `gh`, Orca y issues |
 | Varios tickets independientes en paralelo (una tanda) | Cada worker tiene su worktree y su brief; `vigilar` te resume la tanda con un solo Monitor |
 | Querés que lo escrito por un agente lo revise otro de otra familia de modelos | El contrato y `revisar` lo imponen; `puente-gentle` frena merges de rutas de `riesgo` sin esos reviews |
-| Trabajás con más de un agente (`claude`, `agy`, `codex`, `codex-cc`, `pi`) y necesitás controlar cuota y a quién se despacha | `agentes.usa`, `agentes.preguntarAntes` y `guardia.bloquear` |
+| Trabajás con más de un agente (`claude`, `agy`, `codex`, `pi`) y necesitás controlar cuota y a quién se despacha | `agentes.usa`, `agentes.preguntarAntes` y `guardia.bloquear` |
 | Trabajás solo con un agente pero querés el mismo método (ODD, tickets con `## Reglas`, review de contexto limpio) | Modo `un-agente` |
 | Querés que un cambio de proceso quede en un PR y no en la cabeza de alguien | El contrato viaja en `AGENTS.md` y lo lee cualquier agente |
 
@@ -149,12 +149,12 @@ Borra lo que `global` creó, restaura lo que había reemplazado, saca las entrad
 ```bash
 orca-stack despachar 12 agy --dry-run
 orca-stack despachar 12 agy
-orca-stack despachar 12 codex-cc --confirmado            # el humano dijo que sí
+orca-stack despachar 12 codex --dry-run
 orca-stack despachar 12 pi --perfil-pi opus-haiku
 orca-stack despachar 12 claude --nota "Leé docs/adr/0007 antes de tocar el parser."
 ```
 
-Agentes válidos: `claude`, `agy`, `codex`, `codex-cc`, `pi`. Orden de lo que hace:
+Agentes válidos: `claude`, `agy`, `codex`, `pi`. Orden de lo que hace:
 
 1. Se niega si estás en un worktree, si el setup está pendiente, si `modo` es `un-agente`, si el agente no está en `agentes.usa`, si tiene una regla `guardia.bloquear` vigente, si está en `agentes.preguntarAntes` sin `--confirmado`, si el issue está cerrado o ya tiene assignee, o si ya hay un worktree o un agente vivo para ese ticket.
 2. Hace `git fetch origin` y comprueba que **cada ruta que cita el brief exista** en `origin/<ramaBase>` y no esté ignorada por git. Si falta una, aborta sin asignar ni crear nada.
@@ -360,8 +360,8 @@ Antes, una vez y a mano, siguiendo el [Get started del launcher](https://github.
 
 Bordes:
 
-- La familia sale del último tramo del slug: `chatgpt-web/gpt-6-sol` es `gpt`. Codex sigue sin poder revisar un PR de codex, ni uno de codex-cc si codex-cc corre un GPT.
-- Según su arquitectura, el launcher enruta por su daemon local (`openai_base_url`) todas las llamadas de Codex, también las de los modelos nativos. Si el daemon no corre, fallan también los workers de codex. `codex-cc` fija su propio proveedor (`-c model_provider=cc`), así que probablemente siga andando (inferido, sin probar).
+- La familia sale del último tramo del slug: `chatgpt-web/gpt-6-sol` es `gpt`. Codex no puede revisar un PR de codex si ambos usan modelos de la familia GPT.
+- Según su arquitectura, el launcher enruta por su daemon local (`openai_base_url`) todas las llamadas de Codex, también las de los modelos nativos. Si el daemon no corre, fallan también los workers de codex.
 - El daemon guarda tu sesión de ChatGPT y le manda el código del repo a ChatGPT Web. Automatizar la web de ChatGPT probablemente va contra los términos de uso de OpenAI (inferido). Pensalo dos veces antes de usarlo con código de un cliente.
 - Es automatización no oficial de la web de ChatGPT. Si la web cambia, falla de forma explícita; nunca cambia de modelo por su cuenta. Un pedido de aprobación inesperado del lado de ChatGPT falla cerrado, y un revisor desatendido no puede contestarlo.
 
@@ -394,7 +394,7 @@ En `un-agente`, `main` ejecuta `brief-revision <pr> --modelo <modelo>`, le da al
 
 ### 4.8 Review, rebote y merge
 
-**Quién revisa.** Por defecto, agy; si agy escribió el PR, codex (o codex-cc si codex no está disponible); si lo escribió codex o codex-cc, agy. Un revisor nunca corre un modelo de la misma familia que el autor. Pi es la excepción (corre sobre Claude y aporta otra metodología) y hace de segundo review en los PRs que tocan `riesgo`. Si el PR lo escribió pi, los dos reviews van a dos familias distintas que no sean la de pi.
+**Quién revisa.** Por defecto, agy; si agy escribió el PR, codex. Si codex está bloqueado o no tiene cuota, el PR espera a que codex vuelva. Si lo escribió codex, revisa agy. Un revisor nunca corre un modelo de la misma familia que el autor. Pi es la excepción (corre sobre Claude y aporta otra metodología) y hace de segundo review en los PRs que tocan `riesgo`. Si el PR lo escribió pi, los dos reviews van a dos familias distintas que no sean la de pi.
 
 **Formato del review** (marcas fijas, no se traducen):
 

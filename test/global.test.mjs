@@ -21,6 +21,17 @@ const settingsPath = () => path.join(home, '.claude', 'settings.json')
 const claudeMdPath = () => path.join(home, '.claude', 'CLAUDE.md')
 
 describe('global', () => {
+  test('issue 283 Rule 7: setup docs offer only supported agents', () => {
+    const documents = ['README.md', 'docs/manual.md', 'docs/guia-setup.md', 'assets/skills/orca-setup/SKILL.md']
+    for (const file of documents) {
+      const text = read(path.join(ROOT, file))
+      assert.doesNotMatch(text, /codex-cc|Command Code|commandcode/, file)
+    }
+    const setup = read(path.join(ROOT, 'assets/skills/orca-setup/SKILL.md'))
+    assert.match(setup, /agents? of the contract|agentes de la tabla del contrato/i)
+    assert.match(setup, /claude, agy, codex y pi/)
+  })
+
   test('installs an offline command that reports the version global ran', () => {
     const commandDir = path.join(home, 'path-bin')
     write(path.join(commandDir, '.probe'), '')
