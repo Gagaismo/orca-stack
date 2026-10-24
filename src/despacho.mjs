@@ -643,16 +643,19 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   // whose folder is gone (`orca worktree rm` leaves one until `git worktree prune`): it does not count.
   const listed = ok(io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root }), 'git worktree list').stdout
   const entries = listed.split(/\r?\n\s*\r?\n/).filter(entry => !/^prunable\b/m.test(entry))
-  const pathMatchesName = value => value.replace(/\\/g, '/').split('/').pop() === name
+  const worktreeName = value => String(value).replace(/\\/g, '/').split('/').pop()
+  const pathMatchesName = value => worktreeName(value) === name
   const existing = entries.find(entry => [...entry.matchAll(/^worktree (.+)$/gm)].some(([, value]) => pathMatchesName(value)))
-  if (existing && !review) throw new Error(`Ya hay un worktree para ${name}. No despacho dos veces: revisalo con \`orca worktree ps\`.`)
+  const conflict = entries.find(entry => [...entry.matchAll(/^(?:worktree |branch refs\/heads\/)(.+)$/gm)].some(([, value]) => pathMatchesName(value)))
+  if (conflict && !review) throw new Error(`Ya hay un worktree para ${name}. No despacho dos veces: revisalo con \`orca worktree ps\`.`)
+  if (conflict && review && !existing) throw new Error(`Ya hay un worktree o rama para ${name}, pero no pude identificar su ruta para reutilizarlo.`)
   const existingPath = existing ? [...existing.matchAll(/^worktree (.+)$/gm)].map(([, value]) => value).find(pathMatchesName) : undefined
   const previousHead = existing ? /^HEAD (.+)$/m.exec(existing)?.[1] : undefined
   if (existing && !previousHead) throw new Error(`No pude leer HEAD del worktree ${existingPath}; no voy a reutilizarlo.`)
   const ps = io.sh('orca', ['worktree', 'ps', '--json'])
   if (ps.status === 0) {
     const live = (parseJson(ps, 'orca worktree ps').result?.worktrees ?? []).find(
-      w => String(w.path ?? '').replace(/\\/g, '/').split('/').pop() === name || (!review && w.repo === repo && w.linkedIssue === Number(n)),
+      w => worktreeName(w.path ?? '') === name || (!review && w.repo === repo && w.linkedIssue === Number(n)),
     )
     if (live && (!review || !existing)) throw new Error(`Orca ya tiene un worktree para ${name}${(live.agents ?? []).length > 0 ? ' con un agente vivo' : ''}: ${live.path}.`)
     if (existing && live) {
@@ -690,9 +693,9 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     VERIFICATION: verificationBlock(config),
     CUERPO_PR: config.verificacion?.cuerpoPR,
     HAS_CODING_STANDARDS: hasCodingStandards,
-    ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer, DELTA_BASE: previousHead } : { ISSUE: String(n) }),
+    ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
     ...(review ? {
-      DELTA_INSTRUCTIONS: previousHead ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : '',
+      DELTA_INSTRUCTIONS: previousHead ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : 'This is the first review round; review the full PR.',
       PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
       PUBLISH_COMMAND: `gh pr review ${n} --comment --body-file ${reviewPath}`,
     } : {}),
@@ -711,7 +714,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   if (existing) {
     const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: existingPath })
     if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${existingPath}: ${(status.stderr || status.stdout).trim()}`)
-    if (status.stdout.trim() !== '') throw new Error(`El worktree ${existingPath} está sucio; guardá o descartá sus cambios antes de revisar de nuevo.`)
+    if (status.stdout.trim() !== '') throw new Error(`El worktree ${existingPath} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de revisar de nuevo.`)
     if (previousHead === sha) throw new Error(`Ya revisaste ${sha} con ${agent}.`)
     if (agent === 'pi') {
       const pinned = readJson(path.join(existingPath, '.pi', 'gentle-ai', 'profile.json'), io)?.profile
@@ -719,11 +722,11 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     }
     if (!dryRun) {
       const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
-      if (fetched.status !== 0) throw new Error(`git fetch origin falló, no cambié el worktree: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
+      if (fetched.status !== 0) throw new Error(`git fetch origin fall\u00F3, no cambi\u00E9 el worktree: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
       fetchedOrigin = true
     }
-    const reachable = io.sh('git', ['merge-base', '--is-ancestor', 'HEAD', sha], { cwd: existingPath })
-    if (reachable.status !== 0) throw new Error(`El HEAD del worktree ${existingPath} (${previousHead}) no está alcanzable desde el head del PR ${sha}; no cambié nada.`)
+    const reachable = io.sh('git', ['for-each-ref', '--contains=HEAD', '--format=%(refname)', 'refs/remotes/origin'], { cwd: existingPath })
+    if (reachable.status !== 0 || reachable.stdout.trim() === '') throw new Error(`El HEAD del worktree ${existingPath} (${previousHead}) no est\u00E1 alcanzable desde origin; no cambi\u00E9 nada.`)
   }
   if (!dryRun && !fetchedOrigin) {
     const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })

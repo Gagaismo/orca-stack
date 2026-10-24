@@ -175,6 +175,8 @@ describe('despachar: refusals', () => {
   test('existing worktree (git) and live agent (orca)', async () => {
     const git = fakeIo({ 'git worktree': okRes(`worktree ${root}\nworktree C:/x/proj-7\nbranch refs/heads/proj-7\n`) })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, git), /Ya hay un worktree para proj-7/)
+    const branchTaken = fakeIo({ 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/renamed-path\nHEAD abc\nbranch refs/heads/proj-7\n`) })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, branchTaken), /Ya hay un worktree para proj-7/)
     // `orca worktree rm` leaves the entry as prunable until `git worktree prune`: it is not taken.
     const pruned = fakeIo({ 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/proj-7\nHEAD abc\nbranch refs/heads/proj-7\nprunable gitdir file points to non-existent location\n`) })
     await run('ticket', { n: '7', agent: 'agy', dryRun: true }, pruned)
@@ -404,7 +406,7 @@ describe('issue 196 brief hygiene', () => {
 
 describe('revisar: one worktree per reviewer', () => {
   const pr = over => fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }), ...over })
-  const reusable = ({ head = 'aaa111', prHead = 'bbb222', agents = [], status = '', mergeBase = 0, over = {} } = {}) => {
+  const reusable = ({ head = 'aaa111', prHead = 'bbb222', agents = [], status = '', over = {} } = {}) => {
     const reviewWorktree = path.join(path.dirname(root), 'revision-9-agy')
     return {
       worktree: reviewWorktree,
@@ -413,7 +415,7 @@ describe('revisar: one worktree per reviewer', () => {
         'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD ${head}\nbranch refs/heads/revision-9-agy\n`),
         'git status': okRes(status),
         'git rev-parse HEAD': okRes(`${head}\n`),
-        'git merge-base': { status: mergeBase, stdout: '', stderr: '' },
+        'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
         'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents }] } }),
         ...over,
       }),
@@ -427,7 +429,7 @@ describe('revisar: one worktree per reviewer', () => {
       'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD aaa111\nbranch refs/heads/revision-9-agy\n`),
       'git status': okRes(''),
       'git rev-parse HEAD': okRes('aaa111\n'),
-      'git merge-base': okRes(''),
+      'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
       'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents: [] }] } }),
     })
 
@@ -457,10 +459,18 @@ describe('revisar: one worktree per reviewer', () => {
 
   test('Rule 5: dirty or unreachable review worktrees are refused without checkout', async () => {
     const dirty = reusable({ status: '?? derived-test.mjs\n' }).env
-    await assert.rejects(run('review', { n: '9', agent: 'agy' }, dirty), /está sucio/)
-    const derived = reusable({ mergeBase: 1 }).env
-    await assert.rejects(run('review', { n: '9', agent: 'agy' }, derived), /no está alcanzable/)
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, dirty), /est\u00E1 sucio/)
+    const derived = reusable({ over: { 'git for-each-ref --contains=HEAD': okRes('') } }).env
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, derived), /no est\u00E1 alcanzable/)
     for (const env of [dirty, derived]) assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+
+    const otherOriginBranch = reusable({ over: { 'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/main\n') } }).env
+    await run('review', { n: '9', agent: 'agy' }, otherOriginBranch)
+    assert.ok(otherOriginBranch.calls.some(call => call.join(' ') === 'git checkout --detach bbb222'))
+
+    const otherRemoteBranch = reusable({ over: { 'git for-each-ref --contains=HEAD': args => args.includes('refs/remotes/origin') ? okRes('') : okRes('refs/remotes/upstream/main\n') } }).env
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, otherRemoteBranch), /no est\u00E1 alcanzable/)
+    assert.ok(!otherRemoteBranch.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
   })
 
   test('Rule 7: a Pi profile pin mismatch blocks review reuse', async () => {
@@ -471,7 +481,7 @@ describe('revisar: one worktree per reviewer', () => {
       'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
       'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD aaa111\nbranch refs/heads/revision-9-pi\n`),
       'git status': okRes(''),
-      'git merge-base': okRes(''),
+      'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
       'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents: [] }] } }),
     }, { config: { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { perfil: 'requested' } } } })
     await assert.rejects(run('review', { n: '9', agent: 'pi' }, env), /fija el perfil de Pi "previous".*no se puede cambiar a "requested"/)
