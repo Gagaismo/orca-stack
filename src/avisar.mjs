@@ -3,17 +3,23 @@ import { AGENTS, defaultIo, getRemoteOrigin, shellPrompt } from './despacho.mjs'
 import { samePath } from './util.mjs'
 
 // Agents whose TUI takes a line typed during a running turn. codex and agy join once their mid-turn Enter test passes
-// (#166, UNKNOWN / MUST VERIFY); Pi runs headless (`pi -p`) and has no TUI to ring.
-export const AVISAR_AGENTS = ['claude']
+// (#166, UNKNOWN / MUST VERIFY). Pi runs as a TUI since #277: a line typed mid-turn waits as a queued message.
+export const AVISAR_AGENTS = ['claude', 'pi']
 
 export const doorbellLine = url => `Message from main: ${url}`
 
 const COMMENT_URL = /^https:\/\/[^/\s]+\/([^/\s]+\/[^/\s]+)\/(?:issues|pull)\/(\d+)#issuecomment-(\d+)$/
 // Orca's agent states: working, or blocked/waiting (a permission or question dialog), or done.
 const LIVE = ['working', 'blocked', 'waiting']
+// Positive signals, per agent: if a release changes one, avisar refuses instead of typing into an unknown screen.
 // Claude's spinner while a turn runs ("✢ Churning… (1m 2s · ↓ 3k tokens)"); a settled turn reads "✻ Baked for 2m 5s".
-// A positive signal: if a Claude release changes it, avisar refuses instead of typing into an unknown screen.
-const TURN_RUNNING = /^\s*[·✢✳✶✻✽]\s+\S[^\n]*…\s*\(\d+[smh]/mu
+// Pi's Gentle Shell prompt frame while it works ("╭─ ❀ implementing… ──╮": a spinning petal and the ODD phase, or
+// "working…"); idle, the petal stands alone ("╭─ ✿ ─────╮").
+const TURN_RUNNING = {
+  claude: /^\s*[·✢✳✶✻✽]\s+\S[^\n]*…\s*\(\d+[smh]/mu,
+  pi: /^\s*╭─ [✿❀❁✾] [a-z]+… /mu,
+}
+export const PI_IDLE = /^\s*╭─ ✿ ─+╮\s*$/mu
 const DIALOG = /trust this folder\?|Do you want to proceed\?|Esc to cancel/i
 // The spinner and dialogs render at the bottom; the transcript above them may quote the same words.
 const SPINNER_LINES = 25
@@ -136,10 +142,6 @@ export const avisarCommand = async (flags = {}, item, url, io = defaultIo()) => 
   const live = workers.filter(worker => LIVE.includes(worker.record?.state))
   if (live.length > 1) throw new Error(`Hay ${live.length} terminales con un agente vivo en #${n} (${live.map(worker => worker.terminal.handle).join(', ')}): no adivino a cuál avisar.`)
   const target = live[0]
-  // Headless Pi may have no live Orca record, so without a live target any Pi terminal of the worktree decides.
-  if (target ? target.identity === 'pi' : workers.some(worker => worker.identity === 'pi')) {
-    throw new Error(`El worker de #${n} es Pi, que corre sin TUI (pi -p): no hay terminal donde avisar. Pi relee los comentarios antes de abrir su PR.`)
-  }
   const unsupported = target ? (AVISAR_AGENTS.includes(target.identity) ? undefined : target.identity ?? '(agente desconocido)') : workers.find(worker => worker.identity && !AVISAR_AGENTS.includes(worker.identity))?.identity
   if (unsupported) {
     throw new Error(`avisar todavía no toca la terminal de ${unsupported}: falta su prueba de Enter a mitad de turno. Por ahora solo avisa a ${AVISAR_AGENTS.join(', ')}.`)
@@ -157,7 +159,7 @@ export const avisarCommand = async (flags = {}, item, url, io = defaultIo()) => 
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
   if (shellPrompt(lastLine)) throw new Error(`La terminal ${handle} de #${n} muestra un shell prompt: el worker ya no está en su TUI. No aviso.`)
   if (isDialog(screen)) throw new Error(`La terminal ${handle} de #${n} muestra un diálogo: no aviso encima.`)
-  if (!TURN_RUNNING.test(screen.slice(-SPINNER_LINES).join('\n'))) throw new Error(`No veo el turno en curso en la pantalla de ${handle} (#${n}): pudo haber terminado. No aviso.`)
+  if (!TURN_RUNNING[target.identity].test(screen.slice(-SPINNER_LINES).join('\n'))) throw new Error(`No veo el turno en curso en la pantalla de ${handle} (#${n}): pudo haber terminado. No aviso.`)
   // Read the state again right before sending: it shrinks the window in which the turn settles or a dialog opens.
   const now = paneAgents(rowAt(worktreeRows(io), worktree.path)).get(paneKey(target.terminal))?.state
   if (now !== 'working') throw new Error(`El agente de ${handle} cambió a ${now ?? 'sin estado'} mientras lo revisaba: no aviso.`)

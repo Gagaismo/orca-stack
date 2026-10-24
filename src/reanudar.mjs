@@ -1,7 +1,7 @@
 import path from 'node:path'
 
 import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, shellPrompt } from './despacho.mjs'
-import { identityOf, isDialog, paneAgents, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
+import { identityOf, isDialog, paneAgents, PI_IDLE, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
 const LIVE = ['working', 'running', 'active', 'blocked', 'waiting']
@@ -26,6 +26,8 @@ const sendToPaused = (flags, n, url, target, io, markAttempt) => {
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
   if (shellPrompt(lastLine)) return false
   if (isDialog(screen)) throw new Error(`La terminal ${handle} de #${n} muestra un di\u{e1}logo: no reanudo encima.`)
+  // A positive signal for Pi (#277): its prompt frame at rest, with nothing running or queued.
+  if (target.identity === 'pi' && !PI_IDLE.test(screen.slice(-25).join('\n'))) throw new Error(`No veo a Pi en reposo en la pantalla de ${handle} (#${n}): no reanudo.`)
 
   const row = rowAt(worktreeRows(io), target.worktree)
   const current = paneAgents(row).get(target.record.paneKey)
@@ -134,7 +136,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
       const screen = readScreen(io, terminal.handle)
       const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
       if (!shellPrompt(lastLine)) {
-        throw new Error(`La terminal ${terminal.handle} de #${n} no muestra un shell prompt y Orca no lista su agente: puede haber un worker corriendo sin registro (como Pi headless). No relanzo.`)
+        throw new Error(`La terminal ${terminal.handle} de #${n} no muestra un shell prompt y Orca no lista su agente: puede haber un worker corriendo sin registro. No relanzo.`)
       }
     }
   }
@@ -159,7 +161,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de relanzarlo. Si dijo que s\u{ed}, repet\u{ed} el comando con --confirmado.`)
   }
 
-  if (target?.terminal && stateOf(target.record) === 'done' && agent !== 'pi') {
+  if (target?.terminal && stateOf(target.record) === 'done') {
     target.worktree = row.path
     const handled = sendToPaused(flags, n, url, target, io, markAttempt)
     if (handled) return 0
