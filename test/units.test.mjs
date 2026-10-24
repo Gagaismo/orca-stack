@@ -17,7 +17,7 @@ test('revisar help describes same-family refusal and the pi/claude exception', (
   const help = execFileSync(process.execPath, [path.join(ROOT, 'bin', 'orca-stack.mjs'), 'revisar', '--help'], { encoding: 'utf8' })
   assert.match(help, /misma familia/)
   assert.match(help, /pi y claude pueden revisarse entre s\u00ed/)
-  assert.doesNotMatch(help, /codex y codex-cc se revisan entre s\u00ed/)
+  assert.doesNotMatch(help, /codex-cc/)
 })
 
 describe('marker blocks', () => {

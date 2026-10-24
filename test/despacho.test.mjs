@@ -1814,7 +1814,7 @@ describe('rebote', () => {
           bounce.io.now = () => 100
           bounce.io.modifiedAt = () => 101
         }
-        await reboteCommand(agent === 'codex-cc' ? { confirmado: true } : {}, '12', bounce.io)
+        await reboteCommand({}, '12', bounce.io)
         const bounceBrief = bounce.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
         assert.ok(bounceBrief.includes(`${fanoutLine(agent, true)}\n- Work only in this existing worktree`), `${agent} bounce fan-out line`)
         assert.doesNotMatch(bounceBrief, /session's (?:own )?subagents|AGENTS\.md is already/, agent)

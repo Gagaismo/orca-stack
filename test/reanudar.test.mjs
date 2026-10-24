@@ -249,7 +249,7 @@ describe('orca-stack reanudar (#214)', () => {
     await assert.rejects(() => reanudarCommand({}, ISSUE, URL, dirty.io), /sucio/)
     assert.equal(dirty.sends().length, 0)
     const needsConfirmation = harness({ state: null, agent: 'codex-cc', screen: ['PS C:\\wt\\orca-stack-212>'], dryRun: true })
-    await assert.rejects(() => reanudarCommand({ dryRun: true }, ISSUE, URL, needsConfirmation.io), /preguntarAntes/)
+    await assert.rejects(() => reanudarCommand({ dryRun: true }, ISSUE, URL, needsConfirmation.io), /agente conocido/)
 
     const launch = harness({ state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
     assert.equal(await reanudarCommand({}, ISSUE, URL, launch.io), 0)
