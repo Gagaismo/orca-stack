@@ -415,7 +415,7 @@ test('reviewsOf wants Revisor and the head commit among the first lines of one b
 test('implementerOf reads the line the way revisar does', () => {
   expect(implementerOf('x\nImplementador: agy\n')).toBe('agy')
   expect(implementerOf('Implementador:   AGY  \n')).toBe('agy')
-  expect(implementerOf('implementador: Codex-CC')).toBe('codex-cc')
+  expect(implementerOf('implementador: CODEX')).toBe('codex')
   expect(implementerOf('sin línea')).toBeUndefined()
 })
 
@@ -489,29 +489,28 @@ const PREFIX = 'PR #7 toca una ruta de riesgo (package-lock.json) y lo escribió
 
 test('riesgo: a PR pi wrote needs clean reviews from two model families other than claude', async ($, on) => {
   let reviews: { body: string }[] = []
-  const usa = ['claude', 'agy', 'codex', 'codex-cc', 'pi']
+  const usa = ['claude', 'agy', 'codex', 'pi']
   setup(on, piPr(() => reviews), {}, { files: riskFiles({ agentes: { usa, modelos: { codex: { revisar: { modelo: 'deepseek-v4' } } } } }) })
   await boot($)
   const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
-  // codex reviews on an unknown model and codex-cc has none: only agy is a known family besides pi's.
+  // With Codex configured to an unknown family, only agy is a known family besides pi's.
   expect(await merge()).toBe(`${PREFIX} Hay 0. Con los agentes disponibles (agentes.usa, sin bloqueos) no alcanzan las familias: decidilo con el humano.`)
-  reviews = [clean('claude'), clean('agy'), clean('codex'), clean('codex-cc'), clean('gemini-cli')]
+  reviews = [clean('claude'), clean('agy'), clean('codex'), clean('gemini-cli')]
   expect(await merge()).toBe(
     `${PREFIX} Hay 1 (gemini). No cuento codex: su modelo deepseek-v4 no tiene una familia reconocida (agregá su patrón en FAMILIES); ` +
-      'codex-cc: no tiene modelo para revisar en agentes.modelos, así que no sé su familia; gemini-cli: no es un agente del stack. ' +
+      'gemini-cli: no es un agente del stack. ' +
       'Con los agentes disponibles (agentes.usa, sin bloqueos) no alcanzan las familias: decidilo con el humano.',
   )
 })
 
 test('riesgo: with default models a PR pi wrote is cleared by agy and codex, and claude does not count', async ($, on) => {
   let reviews: { body: string }[] = []
-  setup(on, piPr(() => reviews), {}, { files: riskFiles({ agentes: { usa: ['claude', 'agy', 'codex', 'codex-cc', 'pi'], preguntarAntes: ['codex'], modelos: { 'codex-cc': 'gpt-6-luna' } } }) })
+  setup(on, piPr(() => reviews), {}, { files: riskFiles({ agentes: { usa: ['claude', 'agy', 'codex', 'pi'], preguntarAntes: [] } }) })
   await boot($)
   const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
-  // codex and codex-cc are both gpt here: the one that needs no OK is suggested.
-  expect(await merge()).toBe(`${PREFIX} Hay 0. Corré \`orca-stack revisar 7 agy\` y \`orca-stack revisar 7 codex-cc\`.`)
+  expect(await merge()).toBe(`${PREFIX} Hay 0. Corré \`orca-stack revisar 7 agy\` y \`orca-stack revisar 7 codex\`.`)
   reviews = [clean('claude'), clean('agy')]
-  expect(await merge()).toBe(`${PREFIX} Hay 1 (gemini). Corré \`orca-stack revisar 7 codex-cc\`.`)
+  expect(await merge()).toBe(`${PREFIX} Hay 1 (gemini). Corré \`orca-stack revisar 7 codex\`.`)
   reviews = [clean('agy'), clean('codex')]
   expect(await merge()).toBeUndefined()
 })
@@ -519,17 +518,15 @@ test('riesgo: with default models a PR pi wrote is cleared by agy and codex, and
 test('riesgo: families follow agentes.modelos; blocked agents and preguntarAntes shape the advice', async ($, on) => {
   let reviews: { body: string }[] = [clean('agy')]
   const config = {
-    agentes: { usa: ['claude', 'agy', 'codex', 'codex-cc', 'pi'], preguntarAntes: ['codex-cc'], modelos: { 'codex-cc': { revisar: { modelo: 'z-ai/glm-5.3-flash' } } } },
+    agentes: { usa: ['claude', 'agy', 'codex', 'pi'], preguntarAntes: [] },
     guardia: { bloquear: [{ agente: 'codex', hasta: '2099-01-01', motivo: 'sin cuota' }] },
   }
   setup(on, piPr(() => reviews), {}, { files: riskFiles(config) })
   await boot($)
   const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
-  expect(await merge()).toBe(
-    `${PREFIX} Hay 1 (gemini). Corré \`orca-stack revisar 7 codex-cc\`. codex-cc está en preguntarAntes: pedile el OK al humano y agregá --confirmado.`,
-  )
-  reviews = [clean('agy'), clean('codex-cc')]
-  expect(await merge()).toBeUndefined()
+  const denied = await merge()
+  expect(denied).toContain('Esper\u00E1 a que codex vuelva.')
+  expect(denied).not.toContain('codex-cc')
 })
 
 test('riesgo: when the agents in use cannot reach two families, the deny says so', async ($, on) => {
@@ -576,7 +573,7 @@ test('riesgo: a missing or unknown Implementador stops the merge with what to ad
   await boot($)
   const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
   const expected =
-    'PR #7 toca una ruta de riesgo (package-lock.json) y su body no tiene una línea "Implementador: <agente>" con uno de claude, agy, codex, codex-cc, pi: ' +
+    'PR #7 toca una ruta de riesgo (package-lock.json) y su body no tiene una línea "Implementador: <agente>" con uno de claude, agy, codex, pi: ' +
     'sin ella no sé quién puede revisarlo. Agregala con `gh pr edit 7 --body-file <archivo>`.'
   expect(await merge()).toBe(expected)
   body = 'Implementador: gpt'

@@ -151,6 +151,16 @@ const agentsUsed = (...layers) => {
   return Array.isArray(used) ? used.map(agent => String(agent).toLowerCase()) : []
 }
 
+const retiredAgentKeys = config => {
+  const agentes = config?.agentes
+  if (!agentes || typeof agentes !== 'object') return []
+  const keys = []
+  if (Array.isArray(agentes.usa) && agentes.usa.includes('codex-cc')) keys.push('agentes.usa')
+  if (Array.isArray(agentes.preguntarAntes) && agentes.preguntarAntes.includes('codex-cc')) keys.push('agentes.preguntarAntes')
+  if (agentes.modelos && typeof agentes.modelos === 'object' && Object.hasOwn(agentes.modelos, 'codex-cc')) keys.push('agentes.modelos')
+  return keys
+}
+
 export const checkCodemode = (add, { L, flags = {} } = {}) => {
   if (flags.skipPi) {
     add('warn', 'Pi', 'omitido por --skip-pi')
@@ -462,7 +472,7 @@ export const doctorCommand = async flags => {
   if (root) {
     committed = checkJson(path.join(root, PROJECT_CONFIG), PROJECT_CONFIG)
     local = checkJson(path.join(root, PROJECT_LOCAL_CONFIG), PROJECT_LOCAL_CONFIG)
-    if (agentsUsed(personal, committed, local).some(agent => ['codex', 'codex-cc'].includes(agent))) {
+    if (agentsUsed(personal, committed, local).includes('codex')) {
       const trust = codexTrustStatus(root, path.join(L.codexDir, 'config.toml'))
       add(trust.level, 'codex repo root trust', trust.detail)
     }
@@ -491,10 +501,20 @@ export const doctorCommand = async flags => {
     }
   }
 
+  const retiredLayers = [
+    ['~/.orca-stack/config.json', personal],
+    ...(root ? [[PROJECT_CONFIG, committed], [PROJECT_LOCAL_CONFIG, local]] : []),
+  ]
+  for (const [file, config] of retiredLayers) {
+    for (const key of retiredAgentKeys(config)) {
+      add('warn', 'agente retirado', `codex-cc ya no existe: sacalo de ${file} (${key}).`)
+    }
+  }
+
   // codex on Windows reads files through PowerShell 5.1 (#58). Off Windows or without codex, not even the title prints.
   const codexChecks = codexWindowsChecks({
     windows: isWindows(),
-    codex: agentsUsed(personal, committed, local).some(agent => ['codex', 'codex-cc'].includes(agent)),
+    codex: agentsUsed(personal, committed, local).includes('codex'),
     agentsMd: codexAgentsMd(L.codexDir),
   })
   if (codexChecks.length > 0) {
