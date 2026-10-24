@@ -14,7 +14,7 @@ import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from '.
 // shared/familias.json against both sides.
 // BEGIN FAMILIES
 export const FAMILIES = {
-  "agents": ["claude", "agy", "codex", "codex-cc", "pi"],
+  "agents": ["claude", "agy", "codex", "pi"],
   "fixed": { "pi": "claude" },
   "defaults": { "claude": "claude", "codex": "gpt", "agy": "gemini" },
   "patterns": [
@@ -26,6 +26,7 @@ export const FAMILIES = {
 }
 // END FAMILIES
 export const AGENTS = FAMILIES.agents
+const CODEX_CC_REMOVED = 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00F3 el 2026-10-24); us\u00E1 codex.'
 
 // Source of truth: mods/puente-gentle/hooks/puente.ts (ORCA_VARS_CLEARED, engramDir). Duplicated because the mod is TypeScript
 // that can only import its own folder; the pi consult and this launcher must clear and set the same things.
@@ -133,18 +134,10 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   const wrapper = P.join(home, ...SCRIPTS_REL, wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
   const bin = (win ? '& ' : '') + `"${wrapper}"`
   if (agent === 'claude' || agent === 'agy') return `${bin} --dangerously-skip-permissions${model ? ` --model ${model}` : ''}`
-  if (agent === 'codex' || agent === 'codex-cc') {
-    // Fast mode spends codex credits faster and an unattended worker does not need the speed; codex-cc bills through
-    // Command Code, so it keeps its flags.
-    const fast = agent === 'codex' ? ' -c features.fast_mode=false' : ''
-    const flags = `${model ? ` --model ${model}` : ''}${effort ? ` -c model_reasoning_effort="${effort}"` : ''}${fast} -c approval_policy="never" -c sandbox_mode="danger-full-access"`
-    if (agent === 'codex') return `${bin}${flags}`
-    const provider = '-c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses'
-    const key = win
-      ? '$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME\\.pi\\agent\\auth.json" | ConvertFrom-Json).commandcode.key'
-      : `export CMD_API_KEY="$(node -p "require(process.env.HOME + '/.pi/agent/auth.json').commandcode.key")"`
-
-    return `${key}; ${bin} ${provider}${flags}`
+  if (agent === 'codex') {
+    // Fast mode spends codex credits faster and an unattended worker does not need the speed.
+    const flags = `${model ? ` --model ${model}` : ''}${effort ? ` -c model_reasoning_effort="${effort}"` : ''} -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"`
+    return `${bin}${flags}`
   }
   // pi: headless, no TUI. The brief rides in the prompt; the Orca and stack variables are cleared so Orca does not
   // take this pane for a second agent and the stack markers do not leak into Gentle Shell.
@@ -245,7 +238,7 @@ const fanoutInstructions = (agent, nota, bounce = false) => {
 }
 
 // claude imports AGENTS.md through CLAUDE.md (`orca-stack init`), and codex and pi load it on their own. Nobody checked
-// agy and codex-cc, so they keep reading it.
+// agy keeps reading it.
 const LOADS_AGENTS_MD = ['claude', 'codex', 'pi']
 const projectInstructions = agent => LOADS_AGENTS_MD.includes(agent)
   ? 'AGENTS.md is already in your context: do not read it again. Read GLOSSARY.md or CONTEXT.md and docs/adr when they exist.'
@@ -584,6 +577,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const review = kind === 'review'
   const say = io.out
   if (!/^\d+$/.test(String(n ?? ''))) throw new Error(`Falta el número de ${review ? 'PR' : 'issue'}. Uso: orca-stack ${review ? 'revisar <pr>' : 'despachar <issue>'} <agente>.`)
+  if (agent === 'codex-cc') throw new Error(CODEX_CC_REMOVED)
   if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido: ${agent ?? '(ninguno)'}. Los agentes son: ${AGENTS.join(', ')}.`)
 
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
@@ -822,6 +816,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (String(pr.state).toUpperCase() !== 'OPEN') throw new Error(`El PR #${n} est\u00E1 ${String(pr.state).toLowerCase()}; no se puede rebotar.`)
   const agent = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim().toLowerCase()
   if (!agent) throw new Error(`El PR #${n} no tiene la l\u00EDnea "Implementador: <agente>".`)
+  if (agent === 'codex-cc') throw new Error(CODEX_CC_REMOVED)
   if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido en Implementador: ${agent}.`)
   if (!(config.agentes?.usa ?? []).includes(agent)) throw new Error(`${agent} no est\u00E1 en agentes.usa de este repo (${(config.agentes?.usa ?? []).join(', ') || 'vac\u00EDo'}).`)
   const blocked = blockOf(config, agent, (io.now ?? Date.now)())

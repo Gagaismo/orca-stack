@@ -97,7 +97,7 @@ Sirve de entrada para \`/retro\`.
 `,
   despachar: `orca-stack despachar <issue> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 
-Desde el checkout principal del repo (agentes: claude, agy, codex, codex-cc, pi). Se niega si el setup está pendiente, si el
+Desde el checkout principal del repo (agentes: claude, agy, codex, pi). Se niega si el setup está pendiente, si el
 agente no está en agentes.usa, si está en agentes.preguntarAntes sin --confirmado, si el issue está cerrado o asignado, o si ya hay
 un worktree o un agente vivo para ese ticket. Asigna el issue, crea el worktree con \`orca worktree create\`, escribe el brief en
 ~/orca/briefs, comprueba que cada ruta que cita exista en el worktree, lanza el agente en una terminal de Orca y le manda el brief.
