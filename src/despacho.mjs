@@ -931,6 +931,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
   const brief = render(readAsset('stack', 'brief-rebote.md'), {
     PR: String(n), SHA: sha,
+    AGENT: agent,
     ISSUE: issue,
     REMOTE_HOST: remote.host,
     REMOTE_REPO: remote.ownerRepo,
