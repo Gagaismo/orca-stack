@@ -22,7 +22,7 @@ const TURN_RUNNING = {
 export const PI_IDLE = /^\s*╭─ ✿ ─+╮\s*$/mu
 const DIALOG = /trust this folder\?|Do you want to proceed\?|Esc to cancel/i
 // The spinner and dialogs render at the bottom; the transcript above them may quote the same words.
-const SPINNER_LINES = 25
+export const SPINNER_LINES = 25
 const DIALOG_LINES = 15
 
 const parse = res => {

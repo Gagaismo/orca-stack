@@ -1,7 +1,7 @@
 import path from 'node:path'
 
 import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, shellPrompt } from './despacho.mjs'
-import { identityOf, isDialog, paneAgents, PI_IDLE, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
+import { identityOf, isDialog, paneAgents, PI_IDLE, readScreen, SPINNER_LINES, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
 const LIVE = ['working', 'running', 'active', 'blocked', 'waiting']
@@ -27,7 +27,7 @@ const sendToPaused = (flags, n, url, target, io, markAttempt) => {
   if (shellPrompt(lastLine)) return false
   if (isDialog(screen)) throw new Error(`La terminal ${handle} de #${n} muestra un di\u{e1}logo: no reanudo encima.`)
   // A positive signal for Pi (#277): its prompt frame at rest, with nothing running or queued.
-  if (target.identity === 'pi' && !PI_IDLE.test(screen.slice(-25).join('\n'))) throw new Error(`No veo a Pi en reposo en la pantalla de ${handle} (#${n}): no reanudo.`)
+  if (target.identity === 'pi' && !PI_IDLE.test(screen.slice(-SPINNER_LINES).join('\n'))) throw new Error(`No veo a Pi en reposo en la pantalla de ${handle} (#${n}): no reanudo.`)
 
   const row = rowAt(worktreeRows(io), target.worktree)
   const current = paneAgents(row).get(target.record.paneKey)
@@ -181,7 +181,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     markAttempt()
   }
   const session = `${repo}-${n}-reanudar-${(io.now ?? Date.now)()}`
-  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, repositoryRoot: root, io, dryRun: flags.dryRun })
+  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0 })
 
   return 0
 }

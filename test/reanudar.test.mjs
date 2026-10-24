@@ -321,6 +321,14 @@ describe('orca-stack reanudar (#214)', () => {
     }
   })
 
+  test('issue #277 Rule 3: relaunching an exited pi worker refuses when no new pi session appears', async () => {
+    const h = harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
+    h.io.gentleSkills = () => '/pi/skills'
+    h.io.listFiles = () => []
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+    assert.ok(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create' && call.args.some(arg => /; pi --no-skills /.test(arg))))
+  })
+
   test('Rule 7: terminal or Orca identity wins without consulting the original brief', async () => {
     const identified = harness({ state: 'done', agent: 'codex', brief: undefined })
     assert.equal(await reanudarCommand({}, ISSUE, URL, identified.io), 0)
