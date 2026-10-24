@@ -5,6 +5,7 @@ import path from 'node:path'
 import { after, describe, test } from 'node:test'
 
 import { alive, parentToWatch } from '../src/parent-watch.mjs'
+import { CURSOR_REL } from '../src/vigilar.mjs'
 import { BIN, cleanup, tempDir } from './helpers.mjs'
 
 const WIN = process.platform === 'win32'
@@ -12,10 +13,14 @@ const SHA = 'abc1234aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 
 // gh answers like GitHub for issue 7 with one open PR #70 whose CI is pending; with FAKE_GH_SLOW it hangs, as a gh poll
 // that is still running when the Monitor stops, and records the pid vigilar spawned (on Windows the cmd.exe of gh.cmd,
-// standing in for gh.exe) and its own. orca always fails (no worktrees).
+// standing in for gh.exe) and its own. The slow one leaves the temp dir first: on Windows it is a grandchild of
+// vigilar, outside the libuv job, so it outlives vigilar until the after hook kills it, and its cwd would keep the dir
+// locked. orca always fails (no worktrees).
 const FAKE_GH = `import { writeFileSync } from 'node:fs'
+import os from 'node:os'
 const args = process.argv.slice(2)
 if (process.env.FAKE_GH_SLOW) {
+  process.chdir(os.tmpdir())
   writeFileSync(process.env.FAKE_GH_SLOW, ${WIN ? '`${process.ppid} ${process.pid}`' : '`${process.pid} ${process.pid}`'})
   setTimeout(() => {}, 120000)
 } else if (args[0] === 'pr' && args[1] === 'list') {
@@ -118,6 +123,10 @@ describe('vigilar ends with its parent (#281)', () => {
     const vigilar = await waitFor('vigilar pid', () => pidOf(lines), 15000)
     stray.push(vigilar)
     await waitFor('pr-abierto', () => lines.includes('pr-abierto #7 PR #70 abc1234'), 15000)
+    // vigilar prints a poll's lines before it writes the cursor (a crash re-emits them rather than losing them), so the
+    // parent dies only once the cursor holds #7; dying in between is that designed re-emit, not a resume.
+    const cursorFile = path.join(ctx.repo, '.git', ...CURSOR_REL)
+    await waitFor('the cursor', () => existsSync(cursorFile) && JSON.parse(readFileSync(cursorFile, 'utf8'))['7'], 15000)
 
     parent.kill('SIGKILL')
     await waitFor('vigilar to exit', () => !alive(vigilar), 5000)
