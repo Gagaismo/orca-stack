@@ -23,7 +23,8 @@ const modelOf = (agent: unknown): string | undefined =>
   isPlain(agent) && typeof agent.model === 'string' && agent.model.trim() !== '' ? agent.model.trim() : undefined
 
 // Every profile of the store (`{ profiles: { <name>: { orchestrator: { model }, <agent>: { model } } } }`) the CLI would
-// launch, in store order: a safe name, an orchestrator model, and every model on an allowed provider.
+// launch, in store order: a safe name other than "global" (the CLI refuses it as ambiguous), an orchestrator model, and
+// every model on an allowed provider.
 export const launchableProfiles = (store: unknown): ProfileOption[] => {
   const profiles = isPlain(store) ? store.profiles : undefined
   if (!isPlain(profiles)) {
@@ -33,7 +34,7 @@ export const launchableProfiles = (store: unknown): ProfileOption[] => {
   return Object.entries(profiles).flatMap(([name, profile]) => {
     const orchestrator = isPlain(profile) ? modelOf(profile.orchestrator) : undefined
     const models = isPlain(profile) ? Object.values(profile).map(modelOf).filter(model => model !== undefined) : []
-    if (!SAFE_NAME.test(name) || orchestrator === undefined || !models.every(model => PROVIDERS.some(provider => model.startsWith(provider)))) {
+    if (!SAFE_NAME.test(name) || name.toLowerCase() === 'global' || orchestrator === undefined || !models.every(model => PROVIDERS.some(provider => model.startsWith(provider)))) {
       return []
     }
 

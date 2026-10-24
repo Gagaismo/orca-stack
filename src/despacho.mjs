@@ -511,7 +511,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
 }
 
 // The only model providers a pi launch may use: Claude through the bridge or pi's Anthropic login, and OpenAI.
-const PI_PROVIDERS = ['claude-bridge/', 'anthropic/', 'openai/']
+export const PI_PROVIDERS = ['claude-bridge/', 'anthropic/', 'openai/']
 // The agents of a gentle-pi profile (orchestrator included) whose model is outside PI_PROVIDERS, as "agent (model)".
 export const disallowedModels = profile => Object.entries(isPlain(profile) ? profile : {})
   .filter(([, agent]) => isPlain(agent) && typeof agent.model === 'string' && !PI_PROVIDERS.some(provider => agent.model.trim().startsWith(provider)))
@@ -526,10 +526,10 @@ const checkProviders = (name, profile) => {
 // any side effect, so a launch never falls back to the global profile by accident.
 export const piProfileFor = ({ flag, pin, config, home, commonDir, io }) => {
   const configured = config.agentes?.pi?.perfil
-  const given = value => typeof value === 'string' && value.trim() !== ''
-  const [wanted, source] = given(flag) ? [flag.trim(), 'flag']
-    : given(pin) ? [pin.trim(), 'pin']
-      : given(configured) && configured.trim().toLowerCase() !== 'preguntar' ? [configured.trim(), 'config'] : ['', undefined]
+  const nonBlank = value => typeof value === 'string' && value.trim() !== ''
+  const [wanted, source] = nonBlank(flag) ? [flag.trim(), 'flag']
+    : nonBlank(pin) ? [pin.trim(), 'pin']
+      : nonBlank(configured) && configured.trim().toLowerCase() !== 'preguntar' ? [configured.trim(), 'config'] : ['', undefined]
   const store = path.join(home, '.pi', 'gentle-ai', 'profiles.json')
   const data = readJson(store, io)
   const profiles = isPlain(data?.profiles) ? data.profiles : undefined
@@ -539,8 +539,12 @@ export const piProfileFor = ({ flag, pin, config, home, commonDir, io }) => {
     if (profiles && Object.keys(profiles).some(name => name.toLowerCase() === 'global')) {
       throw new Error(`"global" es ambiguo: ${store} tiene un perfil llamado así. Renombralo o pasá --perfil-pi con otro nombre.`)
     }
-    const active = typeof data?.active === 'string' && data.active.trim() !== '' ? data.active.trim() : undefined
-    if (active && profiles && isPlain(profiles[active])) checkProviders(active, profiles[active])
+    // No active profile (or one missing from the store) leaves nothing to check the providers against: fail closed.
+    const active = nonBlank(data?.active) ? data.active.trim() : undefined
+    if (!active || !profiles || !isPlain(profiles[active])) {
+      throw new Error(`"global" pide el perfil activo global, pero ${store} no tiene uno${active ? ` (activo: "${active}", que no existe)` : ''}. Activá uno con /gentle:profiles en Pi o pasá --perfil-pi <nombre>.`)
+    }
+    checkProviders(active, profiles[active])
 
     return { name: 'global', global: true, active, source: 'global' }
   }
@@ -571,9 +575,11 @@ export const piProfileFor = ({ flag, pin, config, home, commonDir, io }) => {
 
 // What every pi launch prints and its brief records, so an unexplained profile can be traced.
 export const piProfileLines = profile => [
-  ...(profile.global ? [`perfil de Pi: global (activo: ${profile.active ?? 'ninguno'})`] : []),
-  `perfil de Pi: ${profile.global ? profile.active ?? 'global' : profile.name} (fuente: ${profile.source})`,
+  ...(profile.global ? [`perfil de Pi: global (activo: ${profile.active})`] : []),
+  `perfil de Pi: ${profile.global ? profile.active : profile.name} (fuente: ${profile.source})`,
 ]
+// A bounce or a resume that chose a named profile without the worktree pin writes the pin, so the subagents follow it too.
+export const needsPin = profile => profile !== undefined && !profile.global && profile.source !== 'pin'
 const withProfileLines = (brief, profile) => profile ? `${brief.replace(/\s*$/, '\n')}\n${piProfileLines(profile).join('\n')}\n` : brief
 
 // Writes the worktree pin gentle-pi reads at every subagent launch, and keeps it out of git: info/exclude is per clone,
@@ -751,8 +757,9 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     if (status.stdout.trim() !== '') throw new Error(`El worktree ${existingPath} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de revisar de nuevo.`)
     if (previousHead === sha) throw new Error(`Ya revisaste ${sha} con ${agent}.`)
     if (agent === 'pi') {
-      const pinned = readJson(path.join(existingPath, '.pi', 'gentle-ai', 'profile.json'), io)?.profile
-      if (profile && pinned !== profile.name) throw new Error(`El worktree fija el perfil de Pi "${pinned ?? '(ninguno)'}"; no se puede cambiar a "${profile.name}" en una segunda revisión.`)
+      const pinned = readPin(io, existingPath)
+      // "global" writes no pin, so it matches a worktree without one.
+      if (profile && pinned !== (profile.global ? undefined : profile.name)) throw new Error(`El worktree fija el perfil de Pi "${pinned ?? '(ninguno)'}"; no se puede cambiar a "${profile.name}" en una segunda revisión.`)
     }
     if (!dryRun) {
       const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
@@ -1019,8 +1026,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corr\u00E9 `orca-stack global`.')
   if (profile) for (const line of piProfileLines(profile)) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}${line}`)
-  // A worktree with no pin gets one now, so its subagents follow the same profile as the orchestrator.
-  if (profile && !profile.global && profile.source !== 'pin' && !dryRun) writePin(io, worktree, commonDir, profile.name)
+  if (needsPin(profile) && !dryRun) writePin(io, worktree, commonDir, profile.name)
   const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
   const brief = withProfileLines(render(readAsset('stack', 'brief-rebote.md'), {
     PR: String(n), SHA: sha,

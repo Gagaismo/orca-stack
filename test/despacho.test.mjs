@@ -76,6 +76,8 @@ beforeEach(() => {
   worktree = path.join(tempDir('despacho-wt'), 'proj-7')
   write(path.join(root, 'x'), '')
   write(path.join(worktree, 'src', 'app.ts'), '')
+  // PROJECT sends pi to the active global profile, which has to exist and pass the provider rule.
+  write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ active: 'default', profiles: { default: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' } } } }))
 })
 afterEach(() => {
   for (const dir of [home, path.dirname(root), path.dirname(worktree)]) cleanup(dir)
@@ -487,6 +489,20 @@ describe('revisar: one worktree per reviewer', () => {
     const otherRemoteBranch = reusable({ over: { 'git for-each-ref --contains=HEAD': args => args.includes('refs/remotes/origin') ? okRes('') : okRes('refs/remotes/upstream/main\n') } }).env
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, otherRemoteBranch), /no est\u00E1 alcanzable/)
     assert.ok(!otherRemoteBranch.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('issue 276 Rule 2: a second pi review with "global" reuses a worktree that has no pin', async () => {
+    const reviewWorktree = path.join(path.dirname(root), 'revision-9-pi')
+    write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ active: 'requested', profiles: { requested: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' } } } }))
+    const env = fakeIo({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
+      'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD aaa111\nbranch refs/heads/revision-9-pi\n`),
+      'git status': okRes(''),
+      'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+      'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents: [] }] } }),
+    })
+    await run('review', { n: '9', agent: 'pi', dryRun: true }, env)
+    assert.ok(env.out.includes('[simulación] perfil de Pi: global (activo: requested)'), env.out.join('\n'))
   })
 
   test('Rule 7: a Pi profile pin mismatch blocks review reuse', async () => {
@@ -1125,6 +1141,8 @@ describe('pi: --perfil-pi', () => {
     const env = fakeIo({}, { config: withPerfil(undefined) })
     await assert.rejects(run('ticket', { n: '13', agent: 'pi', dryRun: true }, env), NO_PROFILE)
     assert.deepEqual(env.writes(), [])
+    const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) }, { config: withPerfil(undefined) })
+    await assert.rejects(run('review', { n: '9', agent: 'pi', dryRun: true }, review), NO_PROFILE)
   })
 
   test('issue 276 Rule 2: "global" launches on the active global profile and says so; a profile named global is ambiguous', async () => {
@@ -1136,6 +1154,13 @@ describe('pi: --perfil-pi', () => {
     const ambiguous = fakeIo({}, { config: withPerfil('global') })
     await assert.rejects(run('ticket', { n: '13', agent: 'pi' }, ambiguous), /"global" es ambiguo/)
     assert.deepEqual(ambiguous.writes(), [])
+    // No active profile, or one missing from the store, leaves nothing to check: it fails closed.
+    for (const active of [undefined, 'gone']) {
+      write(store(), JSON.stringify({ ...PROFILES, active }))
+      const none = fakeIo({}, { config: withPerfil('global') })
+      await assert.rejects(run('ticket', { n: '13', agent: 'pi' }, none), /"global" pide el perfil activo global, pero .* no tiene uno/)
+      assert.deepEqual(none.writes(), [])
+    }
   })
 
   test('issue 276 Rule 9: only claude-bridge, anthropic and openai models launch; the error names each offender', async () => {
@@ -1151,6 +1176,12 @@ describe('pi: --perfil-pi', () => {
       await run('ticket', { n: '13', agent: 'pi', perfilPi: name }, ok)
       assert.equal(JSON.parse(read(pinFile())).profile, name)
     }
+    // OpenAI models launch too.
+    write(store(), JSON.stringify({ ...PROFILES, profiles: { ...PROFILES.profiles, gpt: { orchestrator: { model: 'openai/gpt-5.2' }, 'gentle-ai-worker': { model: 'openai/gpt-5-mini' } } } }))
+    cleanup(path.dirname(pinFile()))
+    const openai = fakeIo()
+    await run('ticket', { n: '13', agent: 'pi', perfilPi: 'gpt' }, openai)
+    assert.ok(launcher(openai).includes("--model 'openai/gpt-5.2'"), launcher(openai))
     // "global" checks the active profile too.
     write(store(), JSON.stringify({ ...PROFILES, active: 'samu-balanceado' }))
     await assert.rejects(run('ticket', { n: '13', agent: 'pi' }, fakeIo({}, { config: withPerfil('global') })), /"samu-balanceado" usa modelos de proveedores no permitidos/)
@@ -1479,9 +1510,9 @@ describe('rebote', () => {
     } }))
     const pinFile = path.join(worktree, '.pi', 'gentle-ai', 'profile.json')
     const noProfile = { ...PROJECT, agentes: { ...PROJECT.agentes, pi: {} } }
-    const piEnv = () => {
-      const env = bounceEnv(pr({ body: 'Implementador: pi' }), {}, noProfile)
-      env.io.gentleSkills = () => 'C:\pi\skills'
+    const piEnv = (config = noProfile) => {
+      const env = bounceEnv(pr({ body: 'Implementador: pi' }), {}, config)
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
       env.io.now = () => 100
       env.io.modifiedAt = () => 101
       return env
@@ -1491,6 +1522,9 @@ describe('rebote', () => {
     await assert.rejects(reboteCommand({}, '12', none.io), /Falta el perfil de Pi: pasá --perfil-pi <nombre> \(hay: opus-sonnet, OpusFull\)/)
     assert.ok(!launched(none) && !none.calls.some(call => call[0] === 'gh' && call[2] === 'comment'))
     assert.ok(!none.written.some(([file]) => file.endsWith('proj-pr-12-rebote.md')))
+    const ask = piEnv({ ...PROJECT, agentes: { ...PROJECT.agentes, pi: { perfil: 'preguntar' } } })
+    await assert.rejects(reboteCommand({}, '12', ask.io), /Falta el perfil de Pi/)
+    assert.ok(!launched(ask))
 
     write(pinFile, JSON.stringify({ kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile: 'opus-sonnet' }))
     const pinned = piEnv()

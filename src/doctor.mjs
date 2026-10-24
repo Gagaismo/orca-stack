@@ -7,7 +7,7 @@ import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { codexAgentsMd, codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
-import { disallowedModels } from './despacho.mjs'
+import { PI_PROVIDERS, disallowedModels } from './despacho.mjs'
 import { compareVersions, driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
 import { knownSddLeftovers } from './sdd-cleanup.mjs'
@@ -201,7 +201,7 @@ export const piProfileWarnings = home => {
   return Object.entries(profiles)
     .map(([name, profile]) => ({ name, bad: disallowedModels(profile) }))
     .filter(({ bad }) => bad.length > 0)
-    .map(({ name, bad }) => ({ name, detail: `usa modelos de proveedores no permitidos (solo claude-bridge/, anthropic/, openai/), así que un despacho a pi con él se rechaza: ${bad.join(', ')}` }))
+    .map(({ name, bad }) => ({ name, detail: `usa modelos de proveedores no permitidos (solo ${PI_PROVIDERS.join(', ')}), así que un despacho a pi con él se rechaza: ${bad.join(', ')}` }))
 }
 
 export const doctorCommand = async flags => {

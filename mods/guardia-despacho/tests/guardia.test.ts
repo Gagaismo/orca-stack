@@ -744,8 +744,9 @@ test('issue 276 Rules 6 and 9: the profiles come from the store in its order, la
     { name: 'opus-sonnet', label: 'opus-sonnet: orquesta claude-bridge/claude-opus-5-5' },
     { name: 'OpusFull', label: 'OpusFull: orquesta claude-bridge/claude-opus-5-5' },
   ])
-  // OpenAI models are allowed; an unsafe name or a profile with no orchestrator model is not offered.
-  const other = { profiles: { 'a b': { orchestrator: bridge('x') }, 'no-orchestrator': { 'gentle-ai-worker': bridge('x') }, gpt: { orchestrator: { model: 'openai/gpt-5.2' } } } }
+  // OpenAI models are allowed; an unsafe name, a profile with no orchestrator model or one named global (the CLI
+  // refuses it as ambiguous) is not offered.
+  const other = { profiles: { 'a b': { orchestrator: bridge('x') }, 'no-orchestrator': { 'gentle-ai-worker': bridge('x') }, gpt: { orchestrator: { model: 'openai/gpt-5.2' } }, global: { orchestrator: bridge('x') } } }
   expect(launchableProfiles(other).map(profile => profile.name)).toEqual(['gpt'])
   expect(launchableProfiles(undefined)).toEqual([])
   // A label picks its profile; so does the name of a launchable profile typed under "Other"; anything else picks nothing.

@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, piProfileFor, piProfileLines, readPin, shellPrompt, writePin } from './despacho.mjs'
+import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, readPin, shellPrompt, writePin } from './despacho.mjs'
 import { identityOf, isDialog, paneAgents, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
@@ -186,7 +186,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
 
   originalBrief ??= io.readFile(originalPath)
   if (profile) for (const line of piProfileLines(profile)) io.out(`${flags.dryRun ? '[simulaci\u{f3}n] ' : ''}${line}`)
-  if (profile && !profile.global && profile.source !== 'pin' && !flags.dryRun) writePin(io, row.path, commonDir, profile.name)
+  if (needsPin(profile) && !flags.dryRun) writePin(io, row.path, commonDir, profile.name)
   const brief = `Message from main: ${url}\n\n${originalBrief}${profile ? `\n${piProfileLines(profile).join('\n')}\n` : ''}`
   const briefPath = path.join(io.home, 'orca', 'briefs', `${repo}-${n}-reanudar.md`)
   if (!flags.dryRun) {
