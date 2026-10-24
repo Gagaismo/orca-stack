@@ -14,7 +14,8 @@ import { PACKAGE_ROOT } from '../src/util.mjs'
 
 const ISSUE = '212'
 const URL = 'https://github.com/Gagaismo/orca-stack/issues/212#issuecomment-6205678817'
-const LINE = `Message from main: ${URL} . Continue the ticket per your brief.`
+const BRIEF_PATH = path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')
+const LINE = `Message from main: ${URL} . Continue the ticket per your brief: ${BRIEF_PATH}.`
 const ROOT = process.cwd()
 const WT = path.join(path.dirname(ROOT), 'orca-stack-212')
 const sendReceipt = { status: 0, stdout: JSON.stringify({ ok: true, result: { send: { accepted: true, prompt: { requestId: 'request-1', stages: ['input_accepted'], observation: 'supported' } } } }), stderr: '' }
@@ -249,7 +250,7 @@ describe('orca-stack reanudar (#214)', () => {
     await assert.rejects(() => reanudarCommand({}, ISSUE, URL, dirty.io), /sucio/)
     assert.equal(dirty.sends().length, 0)
     const needsConfirmation = harness({ state: null, agent: 'codex-cc', screen: ['PS C:\\wt\\orca-stack-212>'], dryRun: true })
-    await assert.rejects(() => reanudarCommand({ dryRun: true }, ISSUE, URL, needsConfirmation.io), /preguntarAntes/)
+    await assert.rejects(() => reanudarCommand({ dryRun: true }, ISSUE, URL, needsConfirmation.io), /agente conocido/)
 
     const launch = harness({ state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
     assert.equal(await reanudarCommand({}, ISSUE, URL, launch.io), 0)
@@ -300,6 +301,33 @@ describe('orca-stack reanudar (#214)', () => {
     const exited = harness({ agents: [], terminals: [], brief, dryRun: true })
     assert.equal(await reanudarCommand({ dryRun: true }, ISSUE, URL, exited.io), 0)
     assert.ok(exited.outputs.includes('Lanzador (codex): "/home/orca/stack/scripts/codex-orca-stack.sh" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"'))
+  })
+
+  test('issue #277 Rule 4: a done pi TUI showing its idle prompt frame gets the resume line', async () => {
+    const idle = ['● PR opened.', '╭─ ✿ ────────────────────────────╮', '│ type, or / for commands        │', '╰────────────────────────────────╯', ' claude-opus-5-5 · high']
+    const h = harness({ agent: 'pi', screen: idle })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.sends().length, 1)
+    assert.deepEqual(h.sends()[0].args.slice(2), ['--terminal', 'term-1', '--text', LINE, '--enter', '--wait-submit', '10', '--json'])
+    assert.equal(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create'), false)
+  })
+
+  test('issue #277 Rule 4: a done pi TUI whose screen it does not recognize is refused without sending', async () => {
+    const working = ['╭─ ❀ implementing… ───────────────╮', '│                                │', '╰────────────────────────────────╯']
+    for (const screen of [working, ['\u{273b} Baked for 2m 5s']]) {
+      const h = harness({ agent: 'pi', screen })
+      await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /No veo a Pi en reposo/)
+      assert.equal(h.sends().length, 0)
+      assert.equal(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create'), false)
+    }
+  })
+
+  test('issue #277 Rule 3: relaunching an exited pi worker refuses when no new pi session appears', async () => {
+    const h = harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
+    h.io.gentleSkills = () => '/pi/skills'
+    h.io.listFiles = () => []
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+    assert.ok(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create' && call.args.some(arg => /; pi --no-skills /.test(arg))))
   })
 
   test('Rule 7: terminal or Orca identity wins without consulting the original brief', async () => {
@@ -383,5 +411,79 @@ describe('orca-stack reanudar (#214)', () => {
     assert.ok(agents.includes('worker-en-pausa #<n> <agente>'))
     const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
     assert.equal(upsertBlock(agents, block), agents, 'init rendered the current managed contract block')
+  })
+
+  test('Rule 1: reanudar sends line naming the absolute brief path to a paused worker', async () => {
+    const briefPath = path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')
+    const expectedLine = `Message from main: ${URL} . Continue the ticket per your brief: ${briefPath}.`
+    const h = harness()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.sends().length, 1)
+    const send = h.sends()[0]
+    const text = send.args[send.args.indexOf('--text') + 1]
+    assert.equal(text, expectedLine)
+    assert.ok(h.outputs.some(line => line.includes(expectedLine)))
+
+    const trasladoIssue = '11'
+    const trasladoUrl = 'https://github.com/Gagaismo/traslado-programado-sys/issues/11#issuecomment-9999999999'
+    const trasladoBriefPath = path.join('/home', 'orca', 'briefs', 'traslado-programado-sys-11.md')
+    const trasladoExpectedLine = `Message from main: ${trasladoUrl} . Continue the ticket per your brief: ${trasladoBriefPath}.`
+    const trasladoWt = path.join(path.dirname(ROOT), 'traslado-programado-sys-11')
+    const trasladoH = harness({ brief: 'Original brief for traslado #11\n' })
+    trasladoH.files[trasladoBriefPath] = 'Original brief for traslado #11\n'
+    const origSh = trasladoH.io.sh
+    trasladoH.io.sh = (cmd, args, opts) => {
+      if (cmd === 'git' && args[0] === 'remote') return ok('https://github.com/Gagaismo/traslado-programado-sys.git\n')
+      if (cmd === 'git' && args[0] === 'worktree' && args[1] === 'list') return ok(`worktree ${ROOT}\nHEAD 1\nbranch refs/heads/main\n\nworktree ${trasladoWt}\nHEAD 2\nbranch refs/heads/Gagaismo/traslado-programado-sys-11\n`)
+      if (cmd === 'gh' && args[0] === 'api' && args[1] !== 'user') return json({ user: { login: 'stack-bot' }, body: 'Respuesta de main: continue.', html_url: trasladoUrl })
+      if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'ps') return json({ result: { worktrees: [{ path: trasladoWt, repo: 'traslado-programado-sys', linkedIssue: 11, agents: [{ paneKey: 'tab-1:leaf-1', state: 'done', agentType: 'codex' }] }] } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: [{ handle: 'term-1', tabId: 'tab-1', leafId: 'leaf-1', title: 'codex', agentIdentity: 'codex', worktreePath: trasladoWt }] } })
+      return origSh(cmd, args, opts)
+    }
+    assert.equal(await reanudarCommand({}, trasladoIssue, trasladoUrl, trasladoH.io), 0)
+    assert.equal(trasladoH.sends().length, 1)
+    const trasladoText = trasladoH.sends()[0].args[trasladoH.sends()[0].args.indexOf('--text') + 1]
+    assert.equal(trasladoText, trasladoExpectedLine)
+  })
+
+  test('Rule 2: reanudar refuses before sending anything if the brief file does not exist', async () => {
+    const briefPath = path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')
+    const h = harness({ brief: false })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error => {
+      assert.match(error.message, /No encuentro el brief original/)
+      assert.match(error.message, /no relanzo sin \u00E9l/)
+      assert.ok(error.message.includes(briefPath))
+      return true
+    })
+    assert.equal(h.sends().length, 0)
+    assert.equal(h.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'send').length, 0)
+  })
+
+  test('Rule 4: the reanudar line stays one line with no newline so --wait-submit submits it', async () => {
+    const h = harness()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.sends().length, 1)
+    const sendArgs = h.sends()[0].args
+    const textIndex = sendArgs.indexOf('--text')
+    const line = sendArgs[textIndex + 1]
+    assert.ok(!line.includes('\n'), 'line must not contain newline')
+    assert.ok(!line.includes('\r'), 'line must not contain carriage return')
+    const waitSubmitIndex = sendArgs.indexOf('--wait-submit')
+    assert.ok(waitSubmitIndex !== -1, '--wait-submit must be present')
+    assert.equal(sendArgs[waitSubmitIndex + 1], '10')
+  })
+
+  test('Preserve: reanudarCommand preserves paused send and relaunch handling for existing workflows', async () => {
+    const h = harness()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.sends().length, 1)
+    const sendArgs = h.sends()[0].args
+    assert.equal(sendArgs[sendArgs.indexOf('--enter')], '--enter')
+    assert.ok(h.outputs.some(out => out.includes('Reanudaci\u{f3}n enviada a term-1 (#212):')))
+
+    const dry = harness({ dryRun: true })
+    assert.equal(await reanudarCommand({ dryRun: true }, ISSUE, URL, dry.io), 0)
+    assert.equal(dry.sends().length, 0)
+    assert.ok(dry.outputs.some(out => out.includes('[simulaci\u{f3}n] orca terminal send')))
   })
 })

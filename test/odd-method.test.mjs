@@ -17,7 +17,7 @@ const PROJECT = {
   setup: 'completo',
   modo: 'multiagente',
   ramaBase: 'main',
-  agentes: { usa: ['claude', 'agy', 'codex', 'codex-cc', 'pi'], preguntarAntes: ['codex-cc'] },
+  agentes: { usa: ['claude', 'agy', 'codex', 'pi'], preguntarAntes: [] },
   verificacion: { suite: 'npm test -- --run', typecheck: 'npm run typecheck' },
 }
 
@@ -101,7 +101,7 @@ describe('Reglas 1-8', () => {
     assert.ok(out.includes('issue-7'), 'includes feature name issue-7')
     assert.ok(out.includes("Never commit `odd/`.") || out.includes('never commit `odd/`'), 'includes never commit odd/')
     assert.ok(out.includes('Delivery strategy is always a single PR (`single-pr`), never ask.'), 'includes single-pr delivery strategy')
-    assert.ok(out.includes('If the diff passes about 700 lines, say so in the issue and keep going.'), 'includes 700 lines warning')
+    assert.ok(out.includes('If the diff will pass 700 lines, post a `Consulta: agy` comment on the issue saying so, then keep going with the ticket.'), 'includes 700 lines warning')
     assert.ok(out.includes('push the branch and open the PR'), 'includes push and open PR line')
     assert.ok(out.includes('Before opening the PR, run the `code-review` skill on the diff'), 'includes code-review before PR')
   })

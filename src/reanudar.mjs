@@ -1,7 +1,7 @@
 import path from 'node:path'
 
 import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, shellPrompt } from './despacho.mjs'
-import { identityOf, isDialog, paneAgents, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
+import { identityOf, isDialog, paneAgents, PI_IDLE, readScreen, SPINNER_LINES, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
 const LIVE = ['working', 'running', 'active', 'blocked', 'waiting']
@@ -20,19 +20,21 @@ const prMatchesIssue = (pr, issue, branches) =>
   branches.includes(pr.headRefName) ||
   new RegExp(`^\\s*Closes\\s+#${issue}\\b`, 'im').test(pr.body ?? '')
 
-const sendToPaused = (flags, n, url, target, io, markAttempt) => {
+const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt) => {
   const { handle } = target.terminal
   const screen = readScreen(io, handle)
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
   if (shellPrompt(lastLine)) return false
   if (isDialog(screen)) throw new Error(`La terminal ${handle} de #${n} muestra un di\u{e1}logo: no reanudo encima.`)
+  // A positive signal for Pi (#277): its prompt frame at rest, with nothing running or queued.
+  if (target.identity === 'pi' && !PI_IDLE.test(screen.slice(-SPINNER_LINES).join('\n'))) throw new Error(`No veo a Pi en reposo en la pantalla de ${handle} (#${n}): no reanudo.`)
 
   const row = rowAt(worktreeRows(io), target.worktree)
   const current = paneAgents(row).get(target.record.paneKey)
   const state = String(current?.state ?? current?.status ?? '').toLowerCase()
   if (state !== 'done') throw new Error(`El agente de ${handle} cambi\u{f3} a ${state || 'sin estado'} mientras lo revisaba: no reanudo.`)
 
-  const line = `Message from main: ${url} . Continue the ticket per your brief.`
+  const line = `Message from main: ${url} . Continue the ticket per your brief: ${briefPath}.`
   const argv = ['terminal', 'send', '--terminal', handle, '--text', line, '--enter', '--wait-submit', '10', '--json']
   if (flags.dryRun) {
     io.out(`[simulaci\u{f3}n] orca ${argv.map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
@@ -134,7 +136,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
       const screen = readScreen(io, terminal.handle)
       const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
       if (!shellPrompt(lastLine)) {
-        throw new Error(`La terminal ${terminal.handle} de #${n} no muestra un shell prompt y Orca no lista su agente: puede haber un worker corriendo sin registro (como Pi headless). No relanzo.`)
+        throw new Error(`La terminal ${terminal.handle} de #${n} no muestra un shell prompt y Orca no lista su agente: puede haber un worker corriendo sin registro. No relanzo.`)
       }
     }
   }
@@ -159,9 +161,11 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de relanzarlo. Si dijo que s\u{ed}, repet\u{ed} el comando con --confirmado.`)
   }
 
-  if (target?.terminal && stateOf(target.record) === 'done' && agent !== 'pi') {
+  if (!io.exists(originalPath)) throw new Error(`No encuentro el brief original ${originalPath}; no relanzo sin \u{e9}l.`)
+
+  if (target?.terminal && stateOf(target.record) === 'done') {
     target.worktree = row.path
-    const handled = sendToPaused(flags, n, url, target, io, markAttempt)
+    const handled = sendToPaused(flags, n, url, originalPath, target, io, markAttempt)
     if (handled) return 0
   }
 
@@ -169,7 +173,6 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${row.path}: ${detail(status)}`)
   if (status.stdout.trim() !== '') throw new Error(`El worktree ${row.path} est\u{e1} sucio; guard\u{e1} o descart\u{e1} sus cambios antes de relanzar.`)
 
-  if (!io.exists(originalPath)) throw new Error(`No encuentro el brief original ${originalPath}; no relanzo sin \u{e9}l.`)
   originalBrief ??= io.readFile(originalPath)
   const brief = `Message from main: ${url}\n\n${originalBrief}`
   const briefPath = path.join(io.home, 'orca', 'briefs', `${repo}-${n}-reanudar.md`)
@@ -179,7 +182,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     markAttempt()
   }
   const session = `${repo}-${n}-reanudar-${(io.now ?? Date.now)()}`
-  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, repositoryRoot: root, io, dryRun: flags.dryRun })
+  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0 })
 
   return 0
 }
