@@ -32,6 +32,20 @@ describe('global', () => {
     assert.match(setup, /claude, agy, codex y pi/)
   })
 
+  test('issue 283 Rule 4: this repo config uses only supported agents', () => {
+    const config = JSON.parse(read(path.join(ROOT, '.orca-stack.json')))
+    assert.deepEqual(config.agentes.usa, ['claude', 'agy', 'codex', 'pi'])
+    assert.deepEqual(config.agentes.preguntarAntes, [])
+  })
+
+  test('issue 283 Rule 5: AGENTS and contract share the codex reviewer fallback', () => {
+    const contract = read(path.join(ROOT, 'assets/stack/CONTRATO.md'))
+    const agents = read(path.join(ROOT, 'AGENTS.md'))
+    const fallback = text => text.split(/\r?\n/).find(line => line.startsWith('Revisa agy,'))
+    assert.ok(fallback(contract)?.includes('Si codex est\u00E1 bloqueado o no tiene cuota, el PR espera a que codex vuelva.'))
+    assert.equal(fallback(agents), fallback(contract))
+  })
+
   test('installs an offline command that reports the version global ran', () => {
     const commandDir = path.join(home, 'path-bin')
     write(path.join(commandDir, '.probe'), '')
