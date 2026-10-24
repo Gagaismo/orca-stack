@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync, readdirSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
+import { isConsultaComment } from '../src/consultas.mjs'
 import { layout } from '../src/util.mjs'
 import { cleanup, read, tempDir, write } from './helpers.mjs'
 
@@ -104,6 +106,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
       written.push([file, text])
       write(file, text)
     },
+    rename: renameSync,
     gentleSkills: () => 'C:\\pi\\gentle-pi\\skills',
     sh: (cmd, args) => {
       calls.push([cmd, ...args])
@@ -192,6 +195,8 @@ describe('despachar: refusals', () => {
   test('existing worktree (git) and live agent (orca)', async () => {
     const git = fakeIo({ 'git worktree': okRes(`worktree ${root}\nworktree C:/x/proj-7\nbranch refs/heads/proj-7\n`) })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, git), /Ya hay un worktree para proj-7/)
+    const branchTaken = fakeIo({ 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/renamed-path\nHEAD abc\nbranch refs/heads/proj-7\n`) })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, branchTaken), /Ya hay un worktree para proj-7/)
     // `orca worktree rm` leaves the entry as prunable until `git worktree prune`: it is not taken.
     const pruned = fakeIo({ 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/proj-7\nHEAD abc\nbranch refs/heads/proj-7\nprunable gitdir file points to non-existent location\n`) })
     await run('ticket', { n: '7', agent: 'agy', dryRun: true }, pruned)
@@ -417,10 +422,121 @@ describe('issue 196 brief hygiene', () => {
 
 describe('revisar: one worktree per reviewer', () => {
   const pr = over => fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }), ...over })
+  const reusable = ({ head = 'aaa111', prHead = 'bbb222', agents = [], status = '', over = {} } = {}) => {
+    const reviewWorktree = path.join(path.dirname(root), 'revision-9-agy')
+    return {
+      worktree: reviewWorktree,
+      env: pr({
+        'gh pr': json({ headRefName: 'feat', headRefOid: prHead, body: 'Implementador: codex', number: 9 }),
+        'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD ${head}\nbranch refs/heads/revision-9-agy\n`),
+        'git status': okRes(status),
+        'git rev-parse HEAD': okRes(`${head}\n`),
+        'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+        'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents }] } }),
+        ...over,
+      }),
+    }
+  }
+
+  test('Rule 1: second review round reuses the clean worktree at the new PR head with the previous head as delta base', async () => {
+    const reviewWorktree = 'C:/x/revision-9-agy'
+    const env = pr({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
+      'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD aaa111\nbranch refs/heads/revision-9-agy\n`),
+      'git status': okRes(''),
+      'git rev-parse HEAD': okRes('aaa111\n'),
+      'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+      'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents: [] }] } }),
+    })
+
+    await run('review', { n: '9', agent: 'agy' }, env)
+
+    assert.ok(env.calls.some(call => call.join(' ') === 'git checkout --detach bbb222'))
+    assert.ok(env.written.some(([, brief]) => brief.includes('Previous review commit is `aaa111`')))
+  })
+
+  test('Rule 2: a live agent in the review worktree blocks reuse', async () => {
+    const { env, worktree } = reusable({ agents: [{ state: 'working' }] })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /agente vivo/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 3: a done review terminal blocks reuse and names the terminal to close', async () => {
+    const { env } = reusable({ agents: [{ state: 'done', paneKey: 'pane-review-9-agy' }] })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /terminal pane-review-9-agy .*sigue abierta en done; cerrala/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 4: the same PR head cannot be reviewed twice by one reviewer', async () => {
+    const { env } = reusable({ head: 'bbb222', prHead: 'bbb222' })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /Ya revisaste bbb222 con agy\./)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 5: dirty or unreachable review worktrees are refused without checkout', async () => {
+    const dirty = reusable({ status: '?? derived-test.mjs\n' }).env
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, dirty), /est\u00E1 sucio/)
+    const derived = reusable({ over: { 'git for-each-ref --contains=HEAD': okRes('') } }).env
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, derived), /no est\u00E1 alcanzable/)
+    for (const env of [dirty, derived]) assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+
+    const otherOriginBranch = reusable({ over: { 'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/main\n') } }).env
+    await run('review', { n: '9', agent: 'agy' }, otherOriginBranch)
+    assert.ok(otherOriginBranch.calls.some(call => call.join(' ') === 'git checkout --detach bbb222'))
+
+    const otherRemoteBranch = reusable({ over: { 'git for-each-ref --contains=HEAD': args => args.includes('refs/remotes/origin') ? okRes('') : okRes('refs/remotes/upstream/main\n') } }).env
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, otherRemoteBranch), /no est\u00E1 alcanzable/)
+    assert.ok(!otherRemoteBranch.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 7: a Pi profile pin mismatch blocks review reuse', async () => {
+    const reviewWorktree = path.join(path.dirname(root), 'revision-9-pi')
+    write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ profiles: { requested: { orchestrator: { model: 'claude-opus' } } } }))
+    write(path.join(reviewWorktree, '.pi', 'gentle-ai', 'profile.json'), JSON.stringify({ profile: 'previous' }))
+    const env = fakeIo({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
+      'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD aaa111\nbranch refs/heads/revision-9-pi\n`),
+      'git status': okRes(''),
+      'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+      'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents: [] }] } }),
+    }, { config: { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { perfil: 'requested' } } } })
+    await assert.rejects(run('review', { n: '9', agent: 'pi' }, env), /fija el perfil de Pi "previous".*no se puede cambiar a "requested"/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 6: the old review file is archived by previous SHA before the new reviewer launches', async () => {
+    const { env } = reusable()
+    const current = path.join(home, 'orca', 'briefs', 'proj-revision-9-agy.review.md')
+    const archived = path.join(home, 'orca', 'briefs', 'proj-revision-9-agy.review.aaa111.md')
+    write(current, 'old review')
+
+    await run('review', { n: '9', agent: 'agy' }, env)
+
+    assert.equal(readFileSync(archived, 'utf8'), 'old review')
+    assert.equal(existsSync(current), false)
+    const brief = env.written.find(([file]) => file.endsWith('proj-revision-9-agy.md'))[1]
+    assert.ok(brief.includes(current))
+  })
+
+  test('Rule 8: dry-run reports reuse without changes and help plus manual describe second rounds', async () => {
+    const { env } = reusable()
+    await run('review', { n: '9', agent: 'agy', dryRun: true }, env)
+    assert.ok(env.out.some(line => line.includes('git checkout --detach bbb222')))
+    assert.deepEqual(env.written, [])
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+    const help = execFileSync(process.execPath, [path.join(PACKAGE_ROOT, 'bin/orca-stack.mjs'), 'revisar', '--help'], { encoding: 'utf8' })
+    const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs/manual.md'), 'utf8')
+    assert.match(help, /segunda ronda/i)
+    assert.match(manual, /segunda revisión|segunda ronda/i)
+  })
 
   test('a second reviewer of the same PR gets its own worktree, brief and session', async () => {
-    const taken = { 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/revision-9-agy\nbranch refs/heads/revision-9-agy\n`) }
-    await assert.rejects(run('review', { n: '9', agent: 'agy' }, pr(taken)), /Ya hay un worktree para revision-9-agy/)
+    const taken = {
+      'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/revision-9-agy\nHEAD abc123\nbranch refs/heads/revision-9-agy\n`),
+      'git status': okRes(''),
+      'orca worktree ps': json({ result: { worktrees: [{ path: 'C:/x/revision-9-agy', agents: [] }] } }),
+    }
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, pr(taken)), /Ya revisaste abc123 con agy/)
     const env = pr(taken)
     await run('review', { n: '9', agent: 'pi', dryRun: true }, env)
     const text = env.out.join('\n')
@@ -2206,6 +2322,105 @@ describe('rebote', () => {
       const confBrief = briefOf(conflictEnv)
       assert.ok(confBrief.includes('## Merge conflict'))
       assert.ok(confBrief.includes('`git fetch origin` (the base branch `main`)'))
+    })
+  })
+
+  describe('issue #278: every notice to main starts with Consulta:, and one 700-line rule', () => {
+    const briefOf = env => env.written.find(([file]) => file.endsWith('-rebote.md'))?.[1]
+
+    test('Rule 1: The 700-line rule appears once in brief-ticket.md: "If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket."', () => {
+      const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
+      const targetRule = 'If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket.'
+      assert.ok(ticket.includes(targetRule), 'brief-ticket.md must contain the exact 700-line rule with Consulta: {{AGENT}}')
+      const occurrences = (ticket.match(/700\s+lines/g) || []).length
+      assert.equal(occurrences, 1, '700 lines rule must appear exactly once in brief-ticket.md')
+
+      // Rendered for pi (like client report finding 3, traslado #11)
+      const briefPi = renderBrief('ticket', { AGENT: 'pi', ISSUE: '11', REPO: 'traslado', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(briefPi.includes('If the diff will pass 700 lines, post a `Consulta: pi` comment on the issue saying so, then keep going with the ticket.'))
+      const renderedOccurrences = (briefPi.match(/700\s+lines/g) || []).length
+      assert.equal(renderedOccurrences, 1, '700 lines rule must appear exactly once in rendered brief')
+    })
+
+    test('Rule 2: The brief\'s general rule covers every notice, not only questions, including caps set in --nota', () => {
+      const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
+      const generalNoticeRule = 'Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`.'
+      assert.ok(ticket.includes(generalNoticeRule), 'brief-ticket.md must carry the general notice rule covering questions, caps, and deviations')
+      assert.ok(!ticket.includes('Questions start with `Consulta: {{AGENT}}`.'), 'brief-ticket.md must not limit Consulta: to questions only')
+
+      for (const agent of AGENTS) {
+        const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '278', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' }, 'cap diff at 1000 lines')
+        assert.ok(brief.includes(`Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with \`Consulta: ${agent}\`.`), `${agent} brief must render general notice rule`)
+        assert.ok(brief.includes('cap diff at 1000 lines'), `${agent} brief must carry the --nota cap`)
+      }
+    })
+
+    test('Rule 3: brief-rebote.md says the same for its PR comments and reboteCommand passes AGENT', async () => {
+      const bounceBrief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-rebote.md'), 'utf8')
+      assert.ok(bounceBrief.includes('Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`.'), 'brief-rebote.md must carry the general notice rule with {{AGENT}}')
+
+      const env = bounceEnv(pr({ body: 'Implementador: pi' }))
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      env.io.now = () => 100
+      env.io.modifiedAt = () => 101
+      await reboteCommand({}, '12', env.io)
+      const brief = briefOf(env)
+      assert.ok(brief, 'rebote brief must be written')
+      assert.ok(brief.includes('Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: pi`.'), 'reboteCommand must replace {{AGENT}} with the author (pi)')
+      assert.ok(!brief.includes('{{AGENT}}'), 'rendered rebote brief must have no unrendered {{AGENT}}')
+    })
+
+    test('Rule 4: Negative: orca-stack consultas keeps matching only the literal Consulta: prefix', () => {
+      const stackAccount = 'stack-account'
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Consulta: pi — diff is 1673 lines against ~1000' }, stackAccount), true)
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Warning: diff is 1673 lines against ~1000 without Consulta prefix' }, stackAccount), false)
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'pi: I exceeded the 700 lines limit' }, stackAccount), false)
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Note: 700 lines cap exceeded' }, stackAccount), false)
+    })
+
+    test('Rule 5: A test reads the rendered ticket brief and fails if the 700-line line lacks Consulta: or if the brief contains both "stop and say so" and "keep going" for that rule', () => {
+      const brief = renderBrief('ticket', { AGENT: 'agy', ISSUE: '278', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      const lines = brief.split('\n')
+      const rule700Lines = lines.filter(line => line.includes('700 lines'))
+      assert.equal(rule700Lines.length, 1, 'must have exactly one line mentioning 700 lines')
+      assert.ok(rule700Lines[0].includes('Consulta:'), '700-line line must contain Consulta:')
+      assert.ok(rule700Lines[0].includes('keep going'), '700-line line must say keep going')
+      assert.ok(!brief.includes('stop and say so on the issue before going on'), 'brief must not contain stop and say so')
+
+      const validateBrief = text => {
+        const hasStop = text.includes('stop and say so')
+        const hasKeepGoing = text.includes('keep going')
+        if (hasStop && hasKeepGoing) throw new Error('brief contains both "stop and say so" and "keep going" for that rule')
+        if (hasStop) throw new Error('brief contains "stop and say so"')
+        const matchingLines = text.split('\n').filter(l => l.includes('700 lines'))
+        if (matchingLines.length === 0) throw new Error('missing 700 lines rule')
+        for (const l of matchingLines) {
+          if (!l.includes('Consulta:')) throw new Error('700-line line lacks Consulta:')
+        }
+      }
+
+      assert.doesNotThrow(() => validateBrief(brief))
+      assert.throws(() => validateBrief('If the diff will pass 700 lines, say so on the issue and keep going.'), /lacks Consulta:/)
+      assert.throws(() => validateBrief('If the diff will pass 700 lines, stop and say so.\nIf the diff passes about 700 lines, post a Consulta: agy and keep going.'), /contains both "stop and say so" and "keep going"/)
+    })
+
+    test('Preserve touched public entries in despacho: renderBrief and reboteCommand maintain public contracts with Consulta: updates', async () => {
+      // renderBrief for ticket
+      const ticket = renderBrief('ticket', { AGENT: 'codex', ISSUE: '99', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(ticket.startsWith('# Ticket brief: issue #99 (orca-stack)'))
+      assert.ok(ticket.includes('Consulta: codex'))
+
+      // renderBrief for revision remains untouched
+      const rev = renderBrief('review', { AGENT: 'codex', PR: '99', REPO: 'orca-stack', BASE: 'main', SHA: 'def456', IMPLEMENTER: 'agy' })
+      assert.ok(rev.startsWith('# Review brief: PR #99 (orca-stack)'))
+      assert.ok(!rev.includes('Consulta:'))
+
+      // reboteCommand preserves review, CI and conflict bounce flows with AGENT substitution
+      const env = bounceEnv(pr({ body: 'Implementador: codex' }))
+      await reboteCommand({}, '12', env.io)
+      const bounce = briefOf(env)
+      assert.ok(bounce.includes('Consulta: codex'))
+      assert.ok(env.out.some(l => l.includes('Rebote: abc123')))
     })
   })
 })
