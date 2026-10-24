@@ -150,7 +150,7 @@ Borra lo que `global` creó, restaura lo que había reemplazado, saca las entrad
 orca-stack despachar 12 agy --dry-run
 orca-stack despachar 12 agy
 orca-stack despachar 12 codex-cc --confirmado            # el humano dijo que sí
-orca-stack despachar 12 pi --perfil-pi opus-haiku
+orca-stack despachar 12 pi --perfil-pi opus-sonnet       # sin perfil (flag o agentes.pi.perfil), pi se niega
 orca-stack despachar 12 claude --nota "Leé docs/adr/0007 antes de tocar el parser."
 ```
 
