@@ -7,6 +7,7 @@ import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { codexAgentsMd, codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
+import { disallowedModels } from './despacho.mjs'
 import { compareVersions, driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
 import { knownSddLeftovers } from './sdd-cleanup.mjs'
@@ -174,6 +175,23 @@ export const checkCodemode = (add, { L, flags = {} } = {}) => {
   }
 
   add('ok', 'Claude Code', 'no aplicable (sin soporte de codemode)')
+}
+
+// Every stored gentle-pi profile with a model outside the allowed providers: a pi launch with it is refused.
+export const piProfileWarnings = home => {
+  let store
+  try {
+    store = JSON.parse(readFileSync(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), 'utf8').replace(/^﻿/, ''))
+  } catch {
+    return []
+  }
+  const profiles = store?.profiles
+  if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) return []
+
+  return Object.entries(profiles)
+    .map(([name, profile]) => ({ name, bad: disallowedModels(profile) }))
+    .filter(({ bad }) => bad.length > 0)
+    .map(({ name, bad }) => ({ name, detail: `usa modelos de proveedores no permitidos (solo claude-bridge/, anthropic/, openai/), así que un despacho a pi con él se rechaza: ${bad.join(', ')}` }))
 }
 
 export const doctorCommand = async flags => {
@@ -349,6 +367,9 @@ export const doctorCommand = async flags => {
         add('warn', 'login de Pi', `sondeo sin respuesta clara (salida ${probe.status}): ${text.trim().split('\n')[0]?.slice(0, 120)}`)
       }
     }
+  }
+  if (!flags.skipPi) {
+    for (const { name, detail } of piProfileWarnings(home)) add('warn', `perfil de Pi ${name}`, detail)
   }
 
   // Codemode
