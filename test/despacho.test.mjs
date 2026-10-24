@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
+import { isConsultaComment } from '../src/consultas.mjs'
 import { layout } from '../src/util.mjs'
 import { cleanup, read, tempDir, write } from './helpers.mjs'
 
@@ -2303,6 +2304,105 @@ describe('rebote', () => {
       const confBrief = briefOf(conflictEnv)
       assert.ok(confBrief.includes('## Merge conflict'))
       assert.ok(confBrief.includes('`git fetch origin` (the base branch `main`)'))
+    })
+  })
+
+  describe('issue #278: every notice to main starts with Consulta:, and one 700-line rule', () => {
+    const briefOf = env => env.written.find(([file]) => file.endsWith('-rebote.md'))?.[1]
+
+    test('Rule 1: The 700-line rule appears once in brief-ticket.md: "If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket."', () => {
+      const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
+      const targetRule = 'If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket.'
+      assert.ok(ticket.includes(targetRule), 'brief-ticket.md must contain the exact 700-line rule with Consulta: {{AGENT}}')
+      const occurrences = (ticket.match(/700\s+lines/g) || []).length
+      assert.equal(occurrences, 1, '700 lines rule must appear exactly once in brief-ticket.md')
+
+      // Rendered for pi (like client report finding 3, traslado #11)
+      const briefPi = renderBrief('ticket', { AGENT: 'pi', ISSUE: '11', REPO: 'traslado', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(briefPi.includes('If the diff will pass 700 lines, post a `Consulta: pi` comment on the issue saying so, then keep going with the ticket.'))
+      const renderedOccurrences = (briefPi.match(/700\s+lines/g) || []).length
+      assert.equal(renderedOccurrences, 1, '700 lines rule must appear exactly once in rendered brief')
+    })
+
+    test('Rule 2: The brief\'s general rule covers every notice, not only questions, including caps set in --nota', () => {
+      const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
+      const generalNoticeRule = 'Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`.'
+      assert.ok(ticket.includes(generalNoticeRule), 'brief-ticket.md must carry the general notice rule covering questions, caps, and deviations')
+      assert.ok(!ticket.includes('Questions start with `Consulta: {{AGENT}}`.'), 'brief-ticket.md must not limit Consulta: to questions only')
+
+      for (const agent of AGENTS) {
+        const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '278', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' }, 'cap diff at 1000 lines')
+        assert.ok(brief.includes(`Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with \`Consulta: ${agent}\`.`), `${agent} brief must render general notice rule`)
+        assert.ok(brief.includes('cap diff at 1000 lines'), `${agent} brief must carry the --nota cap`)
+      }
+    })
+
+    test('Rule 3: brief-rebote.md says the same for its PR comments and reboteCommand passes AGENT', async () => {
+      const bounceBrief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-rebote.md'), 'utf8')
+      assert.ok(bounceBrief.includes('Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`.'), 'brief-rebote.md must carry the general notice rule with {{AGENT}}')
+
+      const env = bounceEnv(pr({ body: 'Implementador: pi' }))
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      env.io.now = () => 100
+      env.io.modifiedAt = () => 101
+      await reboteCommand({}, '12', env.io)
+      const brief = briefOf(env)
+      assert.ok(brief, 'rebote brief must be written')
+      assert.ok(brief.includes('Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: pi`.'), 'reboteCommand must replace {{AGENT}} with the author (pi)')
+      assert.ok(!brief.includes('{{AGENT}}'), 'rendered rebote brief must have no unrendered {{AGENT}}')
+    })
+
+    test('Rule 4: Negative: orca-stack consultas keeps matching only the literal Consulta: prefix', () => {
+      const stackAccount = 'stack-account'
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Consulta: pi — diff is 1673 lines against ~1000' }, stackAccount), true)
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Warning: diff is 1673 lines against ~1000 without Consulta prefix' }, stackAccount), false)
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'pi: I exceeded the 700 lines limit' }, stackAccount), false)
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Note: 700 lines cap exceeded' }, stackAccount), false)
+    })
+
+    test('Rule 5: A test reads the rendered ticket brief and fails if the 700-line line lacks Consulta: or if the brief contains both "stop and say so" and "keep going" for that rule', () => {
+      const brief = renderBrief('ticket', { AGENT: 'agy', ISSUE: '278', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      const lines = brief.split('\n')
+      const rule700Lines = lines.filter(line => line.includes('700 lines'))
+      assert.equal(rule700Lines.length, 1, 'must have exactly one line mentioning 700 lines')
+      assert.ok(rule700Lines[0].includes('Consulta:'), '700-line line must contain Consulta:')
+      assert.ok(rule700Lines[0].includes('keep going'), '700-line line must say keep going')
+      assert.ok(!brief.includes('stop and say so on the issue before going on'), 'brief must not contain stop and say so')
+
+      const validateBrief = text => {
+        const hasStop = text.includes('stop and say so')
+        const hasKeepGoing = text.includes('keep going')
+        if (hasStop && hasKeepGoing) throw new Error('brief contains both "stop and say so" and "keep going" for that rule')
+        if (hasStop) throw new Error('brief contains "stop and say so"')
+        const matchingLines = text.split('\n').filter(l => l.includes('700 lines'))
+        if (matchingLines.length === 0) throw new Error('missing 700 lines rule')
+        for (const l of matchingLines) {
+          if (!l.includes('Consulta:')) throw new Error('700-line line lacks Consulta:')
+        }
+      }
+
+      assert.doesNotThrow(() => validateBrief(brief))
+      assert.throws(() => validateBrief('If the diff will pass 700 lines, say so on the issue and keep going.'), /lacks Consulta:/)
+      assert.throws(() => validateBrief('If the diff will pass 700 lines, stop and say so.\nIf the diff passes about 700 lines, post a Consulta: agy and keep going.'), /contains both "stop and say so" and "keep going"/)
+    })
+
+    test('Preserve touched public entries in despacho: renderBrief and reboteCommand maintain public contracts with Consulta: updates', async () => {
+      // renderBrief for ticket
+      const ticket = renderBrief('ticket', { AGENT: 'codex', ISSUE: '99', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(ticket.startsWith('# Ticket brief: issue #99 (orca-stack)'))
+      assert.ok(ticket.includes('Consulta: codex'))
+
+      // renderBrief for revision remains untouched
+      const rev = renderBrief('review', { AGENT: 'codex', PR: '99', REPO: 'orca-stack', BASE: 'main', SHA: 'def456', IMPLEMENTER: 'agy' })
+      assert.ok(rev.startsWith('# Review brief: PR #99 (orca-stack)'))
+      assert.ok(!rev.includes('Consulta:'))
+
+      // reboteCommand preserves review, CI and conflict bounce flows with AGENT substitution
+      const env = bounceEnv(pr({ body: 'Implementador: codex' }))
+      await reboteCommand({}, '12', env.io)
+      const bounce = briefOf(env)
+      assert.ok(bounce.includes('Consulta: codex'))
+      assert.ok(env.out.some(l => l.includes('Rebote: abc123')))
     })
   })
 })
