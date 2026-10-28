@@ -4,7 +4,7 @@ import { currentConfig, homeOf, parseJson } from './orca-config'
 import type { Host, StackConfig } from './orca-config'
 import { buildRules, checkLiveMerges, checkRemovals, inspect } from './inspect'
 import type { Shell } from './inspect'
-import { chosenProfile, configuredProfile, piDispatchSlots, profileNames, profileOptions, withProfile } from './perfil-pi'
+import { MAX_OPTIONS, chosenProfile, configuredProfile, launchableProfiles, piDispatchSlots, withProfile } from './perfil-pi'
 
 // The engine's `$` cannot cross an import: the config module gets these closures instead.
 const hostOf = ($: EngineInterface): Host => ({
@@ -20,35 +20,38 @@ let noted = false
 
 type Judgement = { deny: string } | { command: string } | undefined
 
+const NO_PROFILE = 'guardia-despacho: no hay perfil de Pi elegido; preguntale al humano y repetí con --perfil-pi <nombre>.'
+
 // A pi dispatch made with the orca-stack CLI and no --perfil-pi: ask which gentle-pi profile the worktree gets and put
-// the flag in the command, right after the agent. Anything that goes wrong (no store, dismissed, `-p`) leaves the command as is.
-// With agentes.pi.perfil set to a name nobody is asked, and nothing is rewritten: the CLI reads that config itself.
-const askProfile = async ($: EngineInterface, command: string, config: StackConfig): Promise<string> => {
+// the flag in the command, right after the agent. When no profile gets chosen (no store, fewer than two launchable
+// profiles, dismissed, `-p`, an error) the call is denied, so it never runs on the global profile by accident.
+// With agentes.pi.perfil set to a name or "global" nobody is asked, and nothing is rewritten: the CLI reads that config itself.
+const askProfile = async ($: EngineInterface, command: string, config: StackConfig): Promise<{ command: string } | { deny: string }> => {
   const slots = piDispatchSlots(command)
   if (slots.length === 0 || configuredProfile(config.agentes?.pi?.perfil)) {
-    return command
+    return { command }
   }
   try {
     const host = hostOf($)
     const home = await homeOf(host)
     const store = home === undefined ? undefined : `${home}/.pi/gentle-ai/profiles.json`
     if (store === undefined || !(await $.fs.exists(store))) {
-      return command
+      return { deny: NO_PROFILE }
     }
-    const names = profileNames(parseJson(await $.fs.read(store)))
-    const options = profileOptions(names)
+    const profiles = launchableProfiles(parseJson(await $.fs.read(store)))
+    const options = profiles.slice(0, MAX_OPTIONS)
     if (options.length < 2) {
-      return command
+      return { deny: NO_PROFILE }
     }
     const answer = await $.ui.ask('¿Qué perfil de modelos de gentle-pi uso para este despacho a Pi?', {
       options: options.map(option => option.label),
       header: 'Perfil Pi',
     })
-    const name = chosenProfile(answer, options, names)
+    const name = chosenProfile(answer, profiles)
 
-    return name === undefined ? command : withProfile(command, slots, name)
+    return name === undefined ? { deny: NO_PROFILE } : { command: withProfile(command, slots, name) }
   } catch {
-    return command
+    return { deny: NO_PROFILE }
   }
 }
 
@@ -81,7 +84,11 @@ const judge = async ($: EngineInterface, command: string, shell: Shell): Promise
     }
   }
   // Last, so a denied dispatch never asks anything.
-  current = await askProfile($, current, config)
+  const profile = await askProfile($, current, config)
+  if ('deny' in profile) {
+    return profile
+  }
+  current = profile.command
 
   return current === command ? undefined : { command: current }
 }

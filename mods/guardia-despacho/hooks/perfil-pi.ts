@@ -10,45 +10,46 @@ const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 
 const unquote = (token: string): string => token.replace(/^['"]|['"]$/g, '')
 
-// Short descriptions of the profiles the stack ships; any other profile is listed by name alone.
-const DESCRIPTIONS: Record<string, string> = {
-  'opus-haiku': 'Opus orquesta, todos los subagentes en Haiku 5.5',
-  'samu-balanceado': 'perfil multi-modelo actual',
-}
-const FIRST = ['opus-haiku', 'samu-balanceado']
+// The only model providers a pi launch may use (the CLI refuses any other): Claude through the bridge or pi's
+// Anthropic login, and OpenAI.
+const PROVIDERS = ['claude-bridge/', 'anthropic/', 'openai/']
 // AskUserQuestion takes 2-4 options.
-const MAX_OPTIONS = 4
+export const MAX_OPTIONS = 4
 
 export type ProfileOption = { label: string; name: string }
 
-// Names out of the profiles store (`{ profiles: { <name>: ... } }`), safe ones only.
-export const profileNames = (store: unknown): string[] => {
-  const profiles = typeof store === 'object' && store !== null ? (store as { profiles?: unknown }).profiles : undefined
-  if (typeof profiles !== 'object' || profiles === null || Array.isArray(profiles)) {
+const isPlain = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+const modelOf = (agent: unknown): string | undefined =>
+  isPlain(agent) && typeof agent.model === 'string' && agent.model.trim() !== '' ? agent.model.trim() : undefined
+
+// Every profile of the store (`{ profiles: { <name>: { orchestrator: { model }, <agent>: { model } } } }`) the CLI would
+// launch, in store order: a safe name other than "global" (the CLI refuses it as ambiguous), an orchestrator model, and
+// every model on an allowed provider.
+export const launchableProfiles = (store: unknown): ProfileOption[] => {
+  const profiles = isPlain(store) ? store.profiles : undefined
+  if (!isPlain(profiles)) {
     return []
   }
 
-  return Object.keys(profiles).filter(name => SAFE_NAME.test(name))
+  return Object.entries(profiles).flatMap(([name, profile]) => {
+    const orchestrator = isPlain(profile) ? modelOf(profile.orchestrator) : undefined
+    const models = isPlain(profile) ? Object.values(profile).map(modelOf).filter(model => model !== undefined) : []
+    if (!SAFE_NAME.test(name) || name.toLowerCase() === 'global' || orchestrator === undefined || !models.every(model => PROVIDERS.some(provider => model.startsWith(provider)))) {
+      return []
+    }
+
+    return [{ name, label: `${name}: orquesta ${orchestrator}` }]
+  })
 }
 
-// opus-haiku first, samu-balanceado second (when present), then the rest in store order, at most four.
-export const profileOptions = (names: readonly string[]): ProfileOption[] => {
-  const ordered = [...FIRST.filter(name => names.includes(name)), ...names.filter(name => !FIRST.includes(name))]
-
-  return ordered.slice(0, MAX_OPTIONS).map(name => ({
-    name,
-    label: DESCRIPTIONS[name] === undefined ? name : `${name}: ${DESCRIPTIONS[name]}`,
-  }))
-}
-
-// The option an answer picks: its label, or (typed under "Other") a profile name as it is.
-export const chosenProfile = (answer: string, options: readonly ProfileOption[], names: readonly string[]): string | undefined => {
+// The profile an answer picks: a label, or (typed under "Other") the name of a launchable profile as it is.
+export const chosenProfile = (answer: string, profiles: readonly ProfileOption[]): string | undefined => {
   const trimmed = answer.trim()
 
-  return options.find(option => option.label === trimmed)?.name ?? names.find(name => name === trimmed)
+  return profiles.find(profile => profile.label === trimmed || profile.name === trimmed)?.name
 }
 
-// The config says which profile to use (a name, not "preguntar"): the CLI reads it, so nobody asks.
+// The config says which profile to use (a name or "global", not "preguntar"): the CLI reads it, so nobody asks.
 export const configuredProfile = (value: unknown): boolean =>
   typeof value === 'string' && value.trim() !== '' && value.trim().toLowerCase() !== 'preguntar'
 

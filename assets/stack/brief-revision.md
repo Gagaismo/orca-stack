@@ -6,6 +6,7 @@ You are the reviewer ({{AGENT}}) of PR #{{PR}}. You work alone in this worktree 
 
 - {{WORKTREE_INSTRUCTIONS}}
 - The PR targets {{BASE}}.
+- {{DELTA_INSTRUCTIONS}}
 - Read the PR and the ticket it closes: gh pr view {{PR}} --json title,body,comments,reviews, gh pr diff {{PR}}
 - Read {{REVIEW_STANDARDS}} and the vocabulary of GLOSSARY.md when it exists.
 - If the repo has no CI, run the full suite in this worktree:

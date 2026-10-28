@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync, readdirSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
+import { isConsultaComment } from '../src/consultas.mjs'
 import { layout } from '../src/util.mjs'
 import { cleanup, read, tempDir, write } from './helpers.mjs'
 
@@ -15,7 +17,7 @@ const PROJECT = {
   setup: 'completo',
   modo: 'multiagente',
   ramaBase: 'main',
-  agentes: { usa: ['claude', 'agy', 'codex', 'codex-cc', 'pi'], preguntarAntes: ['codex-cc'] },
+  agentes: { usa: ['claude', 'agy', 'codex', 'pi'], preguntarAntes: [], pi: { perfil: 'global' } },
   verificacion: { suite: 'npm test -- --run', typecheck: 'npm run typecheck' },
 }
 
@@ -74,12 +76,15 @@ beforeEach(() => {
   worktree = path.join(tempDir('despacho-wt'), 'proj-7')
   write(path.join(root, 'x'), '')
   write(path.join(worktree, 'src', 'app.ts'), '')
+  // PROJECT sends pi to the active global profile, which has to exist and pass the provider rule.
+  write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ active: 'default', profiles: { default: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' } } } }))
 })
 afterEach(() => {
   for (const dir of [home, path.dirname(root), path.dirname(worktree)]) cleanup(dir)
 })
 
 // A scripted environment: every external call is recorded; `over` answers specific ones ("cmd arg0 [arg1]").
+// piTools 'missing': the pi launch leaves no session, as when pi never started.
 const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => {
   write(path.join(root, '.orca-stack.json'), JSON.stringify(config))
   const calls = []
@@ -90,10 +95,12 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
   const sessionDir = path.join(sessionRoot, 'project')
   const sessionFile = path.join(sessionDir, '2026-10-09T00-00-00-000Z_session.jsonl')
   const files = new Map()
+  const modified = new Map()
   const io = {
     home,
     cwd: root,
     win: true,
+    modifiedAt: file => modified.get(file) ?? 0,
     out: line => out.push(line),
     sleep: async ms => { sleeps.push(ms) },
     exists: existsSync,
@@ -104,6 +111,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
       written.push([file, text])
       write(file, text)
     },
+    rename: renameSync,
     gentleSkills: () => 'C:\\pi\\gentle-pi\\skills',
     sh: (cmd, args) => {
       calls.push([cmd, ...args])
@@ -119,12 +127,13 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
       if (args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })
       if (args.join(' ').startsWith('worktree create')) return json({ result: { worktree: { path: worktree, branch: 'refs/heads/proj-7' } } })
       if (args[0] === 'terminal' && args[1] === 'create') {
-        if (String(args[args.indexOf('--command') + 1] ?? '').includes('pi -p')) {
+        if (/(^|; )pi /.test(String(args[args.indexOf('--command') + 1] ?? '')) && piTools !== 'missing') {
           const text = piTools === 'none' ? '<tools>\n(none)' : '<tools>\n- read: Read file contents\n- bash: Execute commands'
           files.set(sessionFile, [
             JSON.stringify({ type: 'session', cwd: worktree }),
             '{}', '{}', '{}', JSON.stringify({ type: 'message', message: { role: 'system', content: '', sections: { tools: text } } }),
           ].join('\n'))
+          modified.set(sessionFile, Date.now() + 1)
         }
         return json({ result: { terminal: { handle: 'term_1' } } })
       }
@@ -157,9 +166,28 @@ describe('despachar: refusals', () => {
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), /no está en agentes\.usa/)
   })
 
-  test('preguntarAntes needs --confirmado', async () => {
-    await assert.rejects(run('ticket', { n: '7', agent: 'codex-cc' }, fakeIo()), /preguntarle al humano[\s\S]*--confirmado/)
-    await run('ticket', { n: '7', agent: 'codex-cc', confirmado: true, dryRun: true }, fakeIo())
+  test('Rule 1: codex-cc refuses despachar, revisar and rebote without side effects', async () => {
+    const expected = 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00f3 el 2026-10-24); us\u00e1 codex.'
+    const ticket = fakeIo()
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex-cc' }, ticket), error => error.message === expected)
+    assert.deepEqual(ticket.writes(), [])
+    assert.equal(ticket.calls.length, 0)
+
+    const review = fakeIo()
+    await assert.rejects(run('review', { n: '9', agent: 'codex-cc' }, review), error => error.message === expected)
+    assert.deepEqual(review.writes(), [])
+    assert.equal(review.calls.length, 0)
+
+  })
+
+  test('Rule 3: legacy codex-cc config values do not block a Codex dispatch', async () => {
+    const config = {
+      ...PROJECT,
+      agentes: { usa: ['codex-cc', 'codex'], preguntarAntes: ['codex-cc'], modelos: { 'codex-cc': 'gpt-6-luna' } },
+    }
+    const env = fakeIo({}, { config })
+    await run('ticket', { n: '7', agent: 'codex', dryRun: true }, env)
+    assert.ok(env.out.includes(`Lanzador (codex): ${codexLauncher()}`))
   })
 
   test('assigned and closed issues', async () => {
@@ -173,6 +201,8 @@ describe('despachar: refusals', () => {
   test('existing worktree (git) and live agent (orca)', async () => {
     const git = fakeIo({ 'git worktree': okRes(`worktree ${root}\nworktree C:/x/proj-7\nbranch refs/heads/proj-7\n`) })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, git), /Ya hay un worktree para proj-7/)
+    const branchTaken = fakeIo({ 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/renamed-path\nHEAD abc\nbranch refs/heads/proj-7\n`) })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, branchTaken), /Ya hay un worktree para proj-7/)
     // `orca worktree rm` leaves the entry as prunable until `git worktree prune`: it is not taken.
     const pruned = fakeIo({ 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/proj-7\nHEAD abc\nbranch refs/heads/proj-7\nprunable gitdir file points to non-existent location\n`) })
     await run('ticket', { n: '7', agent: 'agy', dryRun: true }, pruned)
@@ -184,15 +214,11 @@ describe('despachar: refusals', () => {
   test('review: reviewer is the implementer, same model family, missing line', async () => {
     const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('x\nImplementador: agy\n'))), /nadie revisa su propio PR/)
-    await assert.rejects(run('review', { n: '9', agent: 'codex-cc', confirmado: true }, fakeIo(pr('Implementador: codex\n'), { config: withModels({ 'codex-cc': 'gpt-6-luna' }) })), /familia gpt, comparten modelo/)
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('sin línea'))), /no tiene la línea "Implementador/)
   })
 
   test('review: the family comes from the configured model, and pi may review a Claude agent', async () => {
     const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
-    // codex-cc on GLM reviews codex (gpt); with no model it proves nothing and is not stopped either.
-    await run('review', { n: '9', agent: 'codex-cc', confirmado: true, dryRun: true }, fakeIo(pr('Implementador: codex'), { config: withModels({ 'codex-cc': { revisar: { modelo: 'z-ai/glm-5.3-flash' } } }) }))
-    await run('review', { n: '9', agent: 'codex-cc', confirmado: true, dryRun: true }, fakeIo(pr('Implementador: codex')))
     // agy on a Claude model does not review claude; pi does, and claude reviews pi.
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('Implementador: claude'), { config: withModels({ agy: 'claude-sonnet-5-5' }) })), /familia claude/)
     await run('review', { n: '9', agent: 'pi', dryRun: true }, fakeIo(pr('Implementador: claude')))
@@ -202,10 +228,10 @@ describe('despachar: refusals', () => {
   test('a guardia.bloquear rule stops despachar and revisar, from any layer', async () => {
     const until = new Date(Date.now() + 86_400_000 * 3)
     const hasta = `${until.getFullYear()}-${String(until.getMonth() + 1).padStart(2, '0')}-${String(until.getDate()).padStart(2, '0')}`
-    write(layout(home).config, JSON.stringify({ guardia: { bloquear: [{ agente: 'codex', hasta, motivo: 'codex no tiene cuota: usá codex-cc.' }] } }))
+    write(layout(home).config, JSON.stringify({ guardia: { bloquear: [{ agente: 'codex', hasta, motivo: 'codex no tiene cuota.' }] } }))
     // The project layer has its own list: the personal block still applies.
     const env = fakeIo({}, { config: { ...PROJECT, guardia: { bloquear: [{ agente: 'agy', hasta: '2020-01-01' }] } } })
-    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), /No despacho a codex: codex no tiene cuota: usá codex-cc\./)
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), /No despacho a codex: codex no tiene cuota\./)
     assert.deepEqual(env.writes(), [])
     await run('ticket', { n: '7', agent: 'agy', dryRun: true }, env) // an expired rule does nothing
     const pr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }) }
@@ -402,10 +428,135 @@ describe('issue 196 brief hygiene', () => {
 
 describe('revisar: one worktree per reviewer', () => {
   const pr = over => fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }), ...over })
+  const reusable = ({ head = 'aaa111', prHead = 'bbb222', agents = [], status = '', over = {} } = {}) => {
+    const reviewWorktree = path.join(path.dirname(root), 'revision-9-agy')
+    return {
+      worktree: reviewWorktree,
+      env: pr({
+        'gh pr': json({ headRefName: 'feat', headRefOid: prHead, body: 'Implementador: codex', number: 9 }),
+        'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD ${head}\nbranch refs/heads/revision-9-agy\n`),
+        'git status': okRes(status),
+        'git rev-parse HEAD': okRes(`${head}\n`),
+        'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+        'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents }] } }),
+        ...over,
+      }),
+    }
+  }
+
+  test('Rule 1: second review round reuses the clean worktree at the new PR head with the previous head as delta base', async () => {
+    const reviewWorktree = 'C:/x/revision-9-agy'
+    const env = pr({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
+      'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD aaa111\nbranch refs/heads/revision-9-agy\n`),
+      'git status': okRes(''),
+      'git rev-parse HEAD': okRes('aaa111\n'),
+      'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+      'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents: [] }] } }),
+    })
+
+    await run('review', { n: '9', agent: 'agy' }, env)
+
+    assert.ok(env.calls.some(call => call.join(' ') === 'git checkout --detach bbb222'))
+    assert.ok(env.written.some(([, brief]) => brief.includes('Previous review commit is `aaa111`')))
+  })
+
+  test('Rule 2: a live agent in the review worktree blocks reuse', async () => {
+    const { env, worktree } = reusable({ agents: [{ state: 'working' }] })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /agente vivo/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 3: a done review terminal blocks reuse and names the terminal to close', async () => {
+    const { env } = reusable({ agents: [{ state: 'done', paneKey: 'pane-review-9-agy' }] })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /terminal pane-review-9-agy .*sigue abierta en done; cerrala/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 4: the same PR head cannot be reviewed twice by one reviewer', async () => {
+    const { env } = reusable({ head: 'bbb222', prHead: 'bbb222' })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /Ya revisaste bbb222 con agy\./)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 5: dirty or unreachable review worktrees are refused without checkout', async () => {
+    const dirty = reusable({ status: '?? derived-test.mjs\n' }).env
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, dirty), /est\u00E1 sucio/)
+    const derived = reusable({ over: { 'git for-each-ref --contains=HEAD': okRes('') } }).env
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, derived), /no est\u00E1 alcanzable/)
+    for (const env of [dirty, derived]) assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+
+    const otherOriginBranch = reusable({ over: { 'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/main\n') } }).env
+    await run('review', { n: '9', agent: 'agy' }, otherOriginBranch)
+    assert.ok(otherOriginBranch.calls.some(call => call.join(' ') === 'git checkout --detach bbb222'))
+
+    const otherRemoteBranch = reusable({ over: { 'git for-each-ref --contains=HEAD': args => args.includes('refs/remotes/origin') ? okRes('') : okRes('refs/remotes/upstream/main\n') } }).env
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, otherRemoteBranch), /no est\u00E1 alcanzable/)
+    assert.ok(!otherRemoteBranch.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('issue 276 Rule 2: a second pi review with "global" reuses a worktree that has no pin', async () => {
+    const reviewWorktree = path.join(path.dirname(root), 'revision-9-pi')
+    write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ active: 'requested', profiles: { requested: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' } } } }))
+    const env = fakeIo({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
+      'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD aaa111\nbranch refs/heads/revision-9-pi\n`),
+      'git status': okRes(''),
+      'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+      'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents: [] }] } }),
+    })
+    await run('review', { n: '9', agent: 'pi', dryRun: true }, env)
+    assert.ok(env.out.includes('[simulación] perfil de Pi: global (activo: requested)'), env.out.join('\n'))
+  })
+
+  test('Rule 7: a Pi profile pin mismatch blocks review reuse', async () => {
+    const reviewWorktree = path.join(path.dirname(root), 'revision-9-pi')
+    write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ profiles: { requested: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' } } } }))
+    write(path.join(reviewWorktree, '.pi', 'gentle-ai', 'profile.json'), JSON.stringify({ profile: 'previous' }))
+    const env = fakeIo({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
+      'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${reviewWorktree}\nHEAD aaa111\nbranch refs/heads/revision-9-pi\n`),
+      'git status': okRes(''),
+      'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+      'orca worktree ps': json({ result: { worktrees: [{ path: reviewWorktree, agents: [] }] } }),
+    }, { config: { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { perfil: 'requested' } } } })
+    await assert.rejects(run('review', { n: '9', agent: 'pi' }, env), /fija el perfil de Pi "previous".*no se puede cambiar a "requested"/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('Rule 6: the old review file is archived by previous SHA before the new reviewer launches', async () => {
+    const { env } = reusable()
+    const current = path.join(home, 'orca', 'briefs', 'proj-revision-9-agy.review.md')
+    const archived = path.join(home, 'orca', 'briefs', 'proj-revision-9-agy.review.aaa111.md')
+    write(current, 'old review')
+
+    await run('review', { n: '9', agent: 'agy' }, env)
+
+    assert.equal(readFileSync(archived, 'utf8'), 'old review')
+    assert.equal(existsSync(current), false)
+    const brief = env.written.find(([file]) => file.endsWith('proj-revision-9-agy.md'))[1]
+    assert.ok(brief.includes(current))
+  })
+
+  test('Rule 8: dry-run reports reuse without changes and help plus manual describe second rounds', async () => {
+    const { env } = reusable()
+    await run('review', { n: '9', agent: 'agy', dryRun: true }, env)
+    assert.ok(env.out.some(line => line.includes('git checkout --detach bbb222')))
+    assert.deepEqual(env.written, [])
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+    const help = execFileSync(process.execPath, [path.join(PACKAGE_ROOT, 'bin/orca-stack.mjs'), 'revisar', '--help'], { encoding: 'utf8' })
+    const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs/manual.md'), 'utf8')
+    assert.match(help, /segunda ronda/i)
+    assert.match(manual, /segunda revisión|segunda ronda/i)
+  })
 
   test('a second reviewer of the same PR gets its own worktree, brief and session', async () => {
-    const taken = { 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/revision-9-agy\nbranch refs/heads/revision-9-agy\n`) }
-    await assert.rejects(run('review', { n: '9', agent: 'agy' }, pr(taken)), /Ya hay un worktree para revision-9-agy/)
+    const taken = {
+      'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/revision-9-agy\nHEAD abc123\nbranch refs/heads/revision-9-agy\n`),
+      'git status': okRes(''),
+      'orca worktree ps': json({ result: { worktrees: [{ path: 'C:/x/revision-9-agy', agents: [] }] } }),
+    }
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, pr(taken)), /Ya revisaste abc123 con agy/)
     const env = pr(taken)
     await run('review', { n: '9', agent: 'pi', dryRun: true }, env)
     const text = env.out.join('\n')
@@ -543,7 +694,7 @@ describe('despachar: failures along the way', () => {
   test('the implementer line is compared case-insensitively and trimmed', async () => {
     const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('Implementador:   AGY  \n'))), /nadie revisa su propio PR/)
-    await assert.rejects(run('review', { n: '9', agent: 'codex', confirmado: true }, fakeIo(pr('implementador: Codex-CC'), { config: withModels({ 'codex-cc': 'gpt-6-luna' }) })), /comparten modelo/)
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('implementador: Codex'), { config: withModels({ agy: 'gpt-6-luna' }) })), /comparten modelo/)
   })
 })
 
@@ -580,7 +731,7 @@ describe('briefs', () => {
   })
 
   test('Rule 4: non-claude ticket briefs reject arena and swarm even with a note', () => {
-    for (const agent of ['codex', 'codex-cc', 'agy', 'pi']) {
+    for (const agent of ['codex', 'agy', 'pi']) {
       const brief = renderBrief('ticket', { AGENT: agent }, fanoutNote)
       assert.match(brief, new RegExp(`Arena and swarm are not supported for ${agent}, even when the note includes authorization`))
       assert.doesNotMatch(brief, /Do not spawn subagents/i)
@@ -784,17 +935,14 @@ describe('launchers', () => {
     const posix = { ...base, win: false, home: '/home/me', briefPath: '/b.md', skills: '/s' }
     assert.equal(launcherFor({ ...posix, agent: 'claude' }), '"/home/me/orca/stack/scripts/claude-orca-stack.sh" --dangerously-skip-permissions')
     assert.ok(launcherFor({ ...posix, agent: 'codex' }).startsWith('"/home/me/orca/stack/scripts/codex-orca-stack.sh" '))
-    assert.ok(launcherFor({ ...posix, agent: 'codex-cc' }).startsWith('export CMD_API_KEY='))
     assert.ok(launcherFor({ ...posix, agent: 'pi' }).includes("ENGRAM_DATA_DIR='/home/me/.gentle-shell/engram'"))
     assert.equal(launcherFor({ ...base, agent: 'claude' }), '& "C:\\Users\\me\\orca\\stack\\scripts\\claude-orca-stack.cmd" --dangerously-skip-permissions')
   })
 
-  test('codex and codex-cc use implement or review model and effort', () => {
+  test('codex uses implement or review model and effort', () => {
     const config = { agentes: { modelos: { codex: { implementar: { modelo: 'a', esfuerzo: 'high' }, revisar: { modelo: 'b', esfuerzo: 'low' } } } } }
     assert.match(launcherFor({ ...base, agent: 'codex', config }), /--model a -c model_reasoning_effort="high" -c features\.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"$/)
     assert.match(launcherFor({ ...base, agent: 'codex', config, mode: 'review' }), /--model b -c model_reasoning_effort="low"/)
-    const cc = launcherFor({ ...base, agent: 'codex-cc' })
-    assert.ok(cc.startsWith('$env:CMD_API_KEY = (Get-Content') && cc.includes('model_providers.cc.env_key=CMD_API_KEY') && !cc.includes('--model'))
   })
 
   // despachar uses mode 'ticket' and revisar mode 'review'; rebote and reanudar relaunch with mode 'ticket'.
@@ -812,13 +960,12 @@ describe('launchers', () => {
     }
   })
 
-  test('issue 236 Rule 3: the claude, codex-cc, agy and pi launchers do not change', () => {
-    const config = { agentes: { modelos: { claude: 'opus-x', agy: 'gemini-x', 'codex-cc': { modelo: 'glm-x', esfuerzo: 'high' } } } }
+  test('issue 236 Rule 3: the claude, agy and pi launchers do not change', () => {
+    const config = { agentes: { modelos: { claude: 'opus-x', agy: 'gemini-x' } } }
     const scripts = 'C:\\Users\\me\\orca\\stack\\scripts'
     assert.equal(launcherFor({ ...base, agent: 'claude', config }), `& "${scripts}\\claude-orca-stack.cmd" --dangerously-skip-permissions --model opus-x`)
     assert.equal(launcherFor({ ...base, agent: 'agy', config }), `& "${scripts}\\agy-orca-stack.cmd" --dangerously-skip-permissions --model gemini-x`)
-    assert.equal(launcherFor({ ...base, agent: 'codex-cc', config }), `$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME\\.pi\\agent\\auth.json" | ConvertFrom-Json).commandcode.key; & "${scripts}\\codex-orca-stack.cmd" -c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses --model glm-x -c model_reasoning_effort="high" -c approval_policy="never" -c sandbox_mode="danger-full-access"`)
-    for (const agent of ['claude', 'codex-cc', 'agy', 'pi']) {
+    for (const agent of ['claude', 'agy', 'pi']) {
       for (const win of [true, false]) assert.ok(!launcherFor({ ...base, agent, config, win }).includes('fast_mode'), `${agent} (win: ${win})`)
     }
   })
@@ -842,23 +989,23 @@ describe('launchers', () => {
     }
   })
 
-  test('pi: headless, clears the Orca variables, sets engram, autonomy and the Claude account', () => {
+  test('pi: clears the stack markers, sets engram, autonomy and the Claude account', () => {
     const config = { piClaudeConfigDir: 'C:\\Users\\me\\.claude-pi' }
     const ps = launcherFor({ ...base, agent: 'pi', config })
-    assert.ok(ps.startsWith('Remove-Item Env:ORCA_AGENT_HOOK_ENDPOINT, Env:ORCA_AGENT_HOOK_PORT'))
+    assert.ok(ps.startsWith('Remove-Item Env:ORCA_STACK_AGENT, Env:ORCA_STACK_MODE'))
     assert.ok(ps.includes('Env:ORCA_STACK_CAVEMAN_LEVEL -ErrorAction SilentlyContinue'))
     assert.ok(ps.includes("$env:ENGRAM_DATA_DIR = 'C:\\Users\\me\\.gentle-shell\\engram'"))
     assert.ok(ps.includes("$env:GENTLE_PI_AUTONOMOUS_MODE = '1'") && ps.includes("$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\me\\.claude-pi'"))
-    assert.ok(ps.endsWith("pi -p --no-skills --skill 'C:\\skills' --session-id proj-7 'Read and carry out the brief in C:\\b.md. Non-interactive: never wait for user input.'"))
+    assert.ok(ps.endsWith("pi --no-skills --skill 'C:\\skills' --session-id proj-7 --no-approve --exclude-tools 'ask_user_choice,ask_user_question' 'Read and carry out the brief in C:\\b.md. Unattended: never wait for user input.'"))
     assert.ok(!ps.includes('--tools'), "a ticket keeps all of pi's tools: subagents, SDD, engram")
     const sh = launcherFor({ ...base, agent: 'pi', win: false, mode: 'review', home: '/h', briefPath: '/b.md', skills: '/s' })
-    assert.ok(sh.startsWith('unset ORCA_AGENT_HOOK_ENDPOINT ') && sh.includes("export ENGRAM_DATA_DIR='/h/.gentle-shell/engram' GENTLE_PI_AUTONOMOUS_MODE='1';"))
+    assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && sh.includes("export ENGRAM_DATA_DIR='/h/.gentle-shell/engram' GENTLE_PI_AUTONOMOUS_MODE='1';"))
     assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode'") && !sh.includes('CLAUDE_CONFIG_DIR'))
   })
 
   test('the Claude account of pi comes from the personal layer only', async () => {
     write(layout(home).config, JSON.stringify({ agentes: { pi: { claudeConfigDir: '~/.claude-pi' } } }))
-    const env = fakeIo({}, { config: { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { claudeConfigDir: 'C:\\evil' } } } })
+    const env = fakeIo({}, { config: { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { perfil: 'global', claudeConfigDir: 'C:\\evil' } } } })
     await run('ticket', { n: '7', agent: 'pi', dryRun: true }, env)
     const launcher = env.out.find(l => l.startsWith('Lanzador'))
     assert.ok(launcher.includes(path.join(home, '.claude-pi')) && !launcher.includes('evil'))
@@ -866,14 +1013,80 @@ describe('launchers', () => {
   })
 })
 
+describe('issue #277: pi workers run as an interactive TUI', () => {
+  const base = { mode: 'ticket', config: {}, home: 'C:\\Users\\me', briefPath: 'C:\\b.md', session: 'proj-7', skills: 'C:\\skills', agent: 'pi' }
+  // Orca's managed pi extension (~/.pi/agent/extensions/orca-agent-status.ts) reports pi's state through these.
+  const ORCA_PANE_VARS = ['ORCA_AGENT_HOOK_ENDPOINT', 'ORCA_AGENT_HOOK_PORT', 'ORCA_AGENT_HOOK_TOKEN', 'ORCA_AGENT_LAUNCH_TOKEN', 'ORCA_PANE_KEY', 'ORCA_TAB_ID', 'ORCA_WORKTREE_ID']
+  const launched = env => {
+    const create = env.calls.find(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    return create[create.indexOf('--command') + 1]
+  }
+
+  test("Rule 0: the pi launcher keeps Orca's pane variables, so Orca's pi extension reports it on the card", () => {
+    for (const win of [true, false]) {
+      for (const mode of ['ticket', 'review']) {
+        const launcher = launcherFor({ ...base, win, mode })
+        for (const name of ORCA_PANE_VARS) assert.ok(!launcher.includes(name), `${name} stays set (win: ${win}, ${mode})`)
+        assert.match(launcher, /ORCA_STACK_CAVEMAN_LEVEL/, 'the stack markers are still cleared')
+      }
+    }
+  })
+
+  test('Rule 1: despachar and revisar launch pi as a TUI with the brief as its first message', async () => {
+    const ticket = fakeIo()
+    await run('ticket', { n: '7', agent: 'pi' }, ticket)
+    const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) })
+    await run('review', { n: '9', agent: 'pi' }, review)
+    for (const env of [ticket, review]) {
+      const command = launched(env)
+      assert.match(command, /; pi --no-skills /)
+      assert.doesNotMatch(command, /\spi\s+(-p|--print)\b/)
+      assert.match(command, /'Read and carry out the brief in [^']+\.md\. Unattended: never wait for user input\.'$/)
+      assert.ok(env.out.some(line => line.includes('\u2714 pi despachado')))
+    }
+  })
+
+  test('Rule 2: the pi launcher has no print mode and nothing it runs can wait on a person', () => {
+    for (const win of [true, false]) {
+      const launcher = launcherFor({ ...base, win })
+      // Print mode ends the process with the turn, before a background verify reports; the TUI stays.
+      assert.doesNotMatch(launcher, /\s(-p|--print)(\s|$)/)
+      // The two dialog tools would wait in a TUI, and --no-approve skips the project-trust prompt.
+      assert.match(launcher, / --no-approve --exclude-tools '?ask_user_choice,ask_user_question'? /)
+      assert.ok(launcher.includes("GENTLE_PI_AUTONOMOUS_MODE"))
+    }
+  })
+
+  test('Rule 3: despachar refuses when no new pi session appears after the launch', async () => {
+    const env = fakeIo({}, { piTools: 'missing' })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+    assert.ok(!env.out.some(line => line.includes('pi despachado')))
+  })
+
+  test('Rule 5: README and the manual describe how pi is launched, as an interactive TUI', () => {
+    for (const file of ['README.md', path.join('docs', 'manual.md')]) {
+      const text = readFileSync(path.join(PACKAGE_ROOT, file), 'utf8').replace(/\s+/g, ' ')
+      assert.match(text, /Pi se lanza como TUI interactiva/, file)
+      assert.ok(text.includes('pi --no-skills --skill <skills de gentle-pi> --session-id <id> --no-approve --exclude-tools ask_user_choice,ask_user_question'), file)
+      assert.doesNotMatch(text, /Pi corre sin TUI|Pi headless/, file)
+    }
+  })
+})
+
 describe('pi: --perfil-pi', () => {
   const PROFILES = {
     kind: 'gentle-pi.agent_model_profiles',
     version: 1,
-    active: 'samu-balanceado',
+    active: 'OpusFull',
     profiles: {
-      'opus-haiku': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' }, 'gentle-ai-worker': { model: 'claude-bridge/claude-haiku-5-5', thinking: 'high' } },
-      'samu-balanceado': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },
+      'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' }, 'gentle-ai-worker': { model: 'claude-bridge/claude-sonnet-5-5', thinking: 'high' } },
+      'OpusFull': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' }, 'gentle-ai-worker': { model: 'anthropic/claude-opus-5-5' } },
+      'samu-balanceado': {
+        orchestrator: { model: 'claude-bridge/claude-opus-5-5' },
+        'gentle-ai-explore': { model: 'commandcode/deepseek/deepseek-v4.1-flash' },
+        'jd-judge-a': { model: 'commandcode/glm-5.1' },
+        'review-risk': { model: 'openai/gpt-5.2' },
+      },
     },
   }
   const store = () => path.join(home, '.pi', 'gentle-ai', 'profiles.json')
@@ -895,8 +1108,8 @@ describe('pi: --perfil-pi', () => {
 
   test('writes the worktree pin, excludes it once, and launches pi with the profile orchestrator', async () => {
     const env = fakeIo(notIgnored)
-    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, env)
-    assert.deepEqual(JSON.parse(read(pinFile())), { kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile: 'opus-haiku' })
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, env)
+    assert.deepEqual(JSON.parse(read(pinFile())), { kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile: 'opus-sonnet' })
     assert.equal(read(exclude()), '/.pi/gentle-ai/profile.json\n')
     assert.ok(launcher(env).includes("--model 'claude-bridge/claude-opus-5-5' --thinking high"), launcher(env))
     // The pin exists before pi starts.
@@ -906,40 +1119,40 @@ describe('pi: --perfil-pi', () => {
 
   test('the exclude entry is appended once and keeps what was there', async () => {
     write(exclude(), '# mine')
-    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo(notIgnored))
-    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo(notIgnored))
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, fakeIo(notIgnored))
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, fakeIo(notIgnored))
     assert.equal(read(exclude()), '# mine\n/.pi/gentle-ai/profile.json\n')
   })
 
   test('an already ignored pin touches no exclude file', async () => {
-    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo())
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, fakeIo())
     assert.ok(existsSync(pinFile()) && !existsSync(exclude()))
   })
 
   test('a tracked pin that declares the same profile is left untouched', async () => {
-    trackedPin('opus-haiku')
+    trackedPin('opus-sonnet')
     const env = fakeIo(tracked)
-    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, env)
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, env)
     assert.equal(env.written.filter(([file]) => file === pinFile()).length, 0)
     assert.ok(!existsSync(exclude()))
     assert.ok(launcher(env).includes('--model'))
   })
 
   test('a tracked pin that declares another profile (or is unreadable) fails without writing', async () => {
-    trackedPin('samu-balanceado')
+    trackedPin('OpusFull')
     const env = fakeIo(tracked)
-    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, env), /versionado.*declara el perfil "samu-balanceado".*--perfil-pi samu-balanceado/)
-    assert.equal(JSON.parse(read(pinFile())).profile, 'samu-balanceado')
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, env), /versionado.*declara el perfil "OpusFull".*--perfil-pi OpusFull/)
+    assert.equal(JSON.parse(read(pinFile())).profile, 'OpusFull')
     assert.ok(env.out.join('\n').includes('El despacho quedó a medias'))
     assert.ok(!env.calls.some(c => c[1] === 'terminal' && c[2] === 'create'))
     write(pinFile(), '{ not json')
-    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo(tracked)), /versionado.*no se puede leer/)
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, fakeIo(tracked)), /versionado.*no se puede leer/)
     assert.equal(read(pinFile()), '{ not json')
   })
 
   test('a pin that a .gitignore negation keeps visible fails instead of writing; the exclude entry is added once', async () => {
     for (let i = 0; i < 2; i += 1) {
-      await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo(negated)), /git no ignora \.pi\/gentle-ai\/profile\.json.*gana sobre info\/exclude/)
+      await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, fakeIo(negated)), /git no ignora \.pi\/gentle-ai\/profile\.json.*gana sobre info\/exclude/)
     }
     assert.ok(!existsSync(pinFile()))
     assert.equal(read(exclude()), '/.pi/gentle-ai/profile.json\n')
@@ -947,66 +1160,138 @@ describe('pi: --perfil-pi', () => {
 
   test('a clone-local pin on another profile fails before any write; the same one is fine', async () => {
     const pin = profile => write(path.join(root, '.git', 'gentle-ai', 'profile-pin.json'), JSON.stringify({ kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile }))
-    pin('samu-balanceado')
+    pin('OpusFull')
     const env = fakeIo()
-    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, env), /fija el perfil de Pi "samu-balanceado"/)
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, env), /fija el perfil de Pi "OpusFull"/)
     assert.deepEqual(env.writes(), [])
-    pin('opus-haiku')
-    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku', dryRun: true }, fakeIo())
+    pin('opus-sonnet')
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet', dryRun: true }, fakeIo())
   })
 
   test('an unknown profile fails before any write and lists the existing ones', async () => {
     const env = fakeIo()
-    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'nope' }, env), /No existe el perfil de Pi "nope".*opus-haiku, samu-balanceado/)
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'nope' }, env), /No existe el perfil de Pi "nope".*opus-sonnet, OpusFull/)
     assert.deepEqual(env.writes(), [])
     await assert.rejects(run('ticket', { n: '7', agent: 'pi', perfilPi: 'a b; rm' }, fakeIo()), /no es un nombre válido/)
-    await assert.rejects(run('ticket', { n: '7', agent: 'agy', perfilPi: 'opus-haiku' }, fakeIo()), /solo vale para el agente pi/)
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy', perfilPi: 'opus-sonnet' }, fakeIo()), /solo vale para el agente pi/)
   })
 
-  test('agentes.pi.perfil applies, the flag wins, and "preguntar" or nothing changes nothing', async () => {
-    const withPerfil = perfil => ({ ...PROJECT, agentes: { ...PROJECT.agentes, pi: { perfil } } })
-    await run('ticket', { n: '7', agent: 'pi' }, fakeIo({}, { config: withPerfil('samu-balanceado') }))
-    assert.equal(JSON.parse(read(pinFile())).profile, 'samu-balanceado')
-    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, fakeIo({}, { config: withPerfil('samu-balanceado') }))
-    assert.equal(JSON.parse(read(pinFile())).profile, 'opus-haiku')
-    for (const config of [withPerfil('preguntar'), withPerfil(' Preguntar '), PROJECT]) {
-      cleanup(path.dirname(pinFile()))
-      const env = fakeIo({}, { config })
-      await run('ticket', { n: '7', agent: 'pi' }, env)
-      assert.ok(!existsSync(pinFile()) && !launcher(env).includes('--model') && !launcher(env).includes('--thinking'))
+  const withPerfil = perfil => ({ ...PROJECT, agentes: { ...PROJECT.agentes, pi: perfil === undefined ? {} : { perfil } } })
+  const NO_PROFILE = /Falta el perfil de Pi: pasá --perfil-pi <nombre> \(hay: opus-sonnet, OpusFull, samu-balanceado\) o poné agentes\.pi\.perfil en la config \("global" usa el perfil activo global a propósito\)\.$/
+
+  test('agentes.pi.perfil applies and the flag wins', async () => {
+    await run('ticket', { n: '7', agent: 'pi' }, fakeIo({}, { config: withPerfil('OpusFull') }))
+    assert.equal(JSON.parse(read(pinFile())).profile, 'OpusFull')
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, fakeIo({}, { config: withPerfil('OpusFull') }))
+    assert.equal(JSON.parse(read(pinFile())).profile, 'opus-sonnet')
+  })
+
+  test('issue 276 Rule 1: a pi dispatch or review with no profile refuses before assigning or creating anything', async () => {
+    for (const config of [withPerfil(undefined), withPerfil('preguntar'), withPerfil(' Preguntar ')]) {
+      for (const [kind, n] of [['ticket', '13'], ['review', '9']]) {
+        const env = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) }, { config })
+        await assert.rejects(run(kind, { n, agent: 'pi' }, env), NO_PROFILE)
+        assert.deepEqual(env.writes(), [])
+        assert.ok(!env.calls.some(c => c[0] === 'gh' && c[2] === 'edit'), 'no assignee')
+        assert.ok(!existsSync(pinFile()))
+      }
     }
-    // No profiles store is needed when no profile is asked for.
+    // With no store the message still names what to do.
     cleanup(store())
-    await run('ticket', { n: '7', agent: 'pi', dryRun: true }, fakeIo())
+    await assert.rejects(run('ticket', { n: '13', agent: 'pi' }, fakeIo({}, { config: withPerfil(undefined) })), /Falta el perfil de Pi: pasá --perfil-pi <nombre> \(hay: ninguno\)/)
+  })
+
+  test('issue 276 Rule 3: --dry-run with no profile prints the same error and fails', async () => {
+    const env = fakeIo({}, { config: withPerfil(undefined) })
+    await assert.rejects(run('ticket', { n: '13', agent: 'pi', dryRun: true }, env), NO_PROFILE)
+    assert.deepEqual(env.writes(), [])
+    const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) }, { config: withPerfil(undefined) })
+    await assert.rejects(run('review', { n: '9', agent: 'pi', dryRun: true }, review), NO_PROFILE)
+  })
+
+  test('issue 276 Rule 2: "global" launches on the active global profile and says so; a profile named global is ambiguous', async () => {
+    const env = fakeIo({}, { config: withPerfil('global') })
+    await run('ticket', { n: '13', agent: 'pi' }, env)
+    assert.ok(env.out.includes('perfil de Pi: global (activo: OpusFull)'), env.out.join('\n'))
+    assert.ok(!existsSync(pinFile()) && !launcher(env).includes('--model') && !launcher(env).includes('--thinking'))
+    write(store(), JSON.stringify({ ...PROFILES, profiles: { ...PROFILES.profiles, global: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' } } } }))
+    const ambiguous = fakeIo({}, { config: withPerfil('global') })
+    await assert.rejects(run('ticket', { n: '13', agent: 'pi' }, ambiguous), /"global" es ambiguo/)
+    assert.deepEqual(ambiguous.writes(), [])
+    // No active profile, or one missing from the store, leaves nothing to check: it fails closed.
+    for (const active of [undefined, 'gone']) {
+      write(store(), JSON.stringify({ ...PROFILES, active }))
+      const none = fakeIo({}, { config: withPerfil('global') })
+      await assert.rejects(run('ticket', { n: '13', agent: 'pi' }, none), /"global" pide el perfil activo global, pero .* no tiene uno/)
+      assert.deepEqual(none.writes(), [])
+    }
+  })
+
+  test('issue 276 Rule 9: only claude-bridge, anthropic and openai models launch; the error names each offender', async () => {
+    const env = fakeIo()
+    await assert.rejects(
+      run('ticket', { n: '13', agent: 'pi', perfilPi: 'samu-balanceado' }, env),
+      /El perfil de Pi "samu-balanceado" usa modelos de proveedores no permitidos \(solo claude-bridge\/, anthropic\/, openai\/\): gentle-ai-explore \(commandcode\/deepseek\/deepseek-v4\.1-flash\), jd-judge-a \(commandcode\/glm-5\.1\)\.$/,
+    )
+    assert.deepEqual(env.writes(), [])
+    for (const name of ['opus-sonnet', 'OpusFull']) {
+      cleanup(path.dirname(pinFile()))
+      const ok = fakeIo()
+      await run('ticket', { n: '13', agent: 'pi', perfilPi: name }, ok)
+      assert.equal(JSON.parse(read(pinFile())).profile, name)
+    }
+    // OpenAI models launch too.
+    write(store(), JSON.stringify({ ...PROFILES, profiles: { ...PROFILES.profiles, gpt: { orchestrator: { model: 'openai/gpt-5.2' }, 'gentle-ai-worker': { model: 'openai/gpt-5-mini' } } } }))
+    cleanup(path.dirname(pinFile()))
+    const openai = fakeIo()
+    await run('ticket', { n: '13', agent: 'pi', perfilPi: 'gpt' }, openai)
+    assert.ok(launcher(openai).includes("--model 'openai/gpt-5.2'"), launcher(openai))
+    // "global" checks the active profile too.
+    write(store(), JSON.stringify({ ...PROFILES, active: 'samu-balanceado' }))
+    await assert.rejects(run('ticket', { n: '13', agent: 'pi' }, fakeIo({}, { config: withPerfil('global') })), /"samu-balanceado" usa modelos de proveedores no permitidos/)
+  })
+
+  test('issue 276 Rule 7: every launch prints its profile and source, and the brief records the same line', async () => {
+    const briefOf = env => env.written.find(([file]) => file.endsWith('proj-13.md'))?.[1] ?? ''
+    for (const [flags, config, line] of [
+      [{ perfilPi: 'opus-sonnet' }, withPerfil('OpusFull'), 'perfil de Pi: opus-sonnet (fuente: flag)'],
+      [{}, withPerfil('OpusFull'), 'perfil de Pi: OpusFull (fuente: config)'],
+      [{}, withPerfil('global'), 'perfil de Pi: OpusFull (fuente: global)'],
+    ]) {
+      const env = fakeIo({}, { config })
+      await run('ticket', { n: '13', agent: 'pi', ...flags }, env)
+      assert.ok(env.out.includes(line), env.out.join('\n'))
+      assert.ok(briefOf(env).split(/\r?\n/).includes(line), line)
+    }
   })
 
   test('an invalid thinking in the profile is warned about and not passed to pi', async () => {
-    write(store(), JSON.stringify({ ...PROFILES, profiles: { 'opus-haiku': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'turbo' } } } }))
+    write(store(), JSON.stringify({ ...PROFILES, profiles: { 'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'turbo' } } } }))
     const env = fakeIo()
-    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku' }, env)
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet' }, env)
     assert.match(env.out.join('\n'), /thinking "turbo", que no es válido.*se ignora/)
     assert.ok(launcher(env).includes('--model') && !launcher(env).includes('--thinking'))
     const dry = fakeIo()
-    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku', dryRun: true }, dry)
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet', dryRun: true }, dry)
     assert.ok(!dry.out.join('\n').includes('(turbo)'))
   })
 
   test('--dry-run narrates the pin and the model and writes nothing', async () => {
     const env = fakeIo()
-    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-haiku', dryRun: true }, env)
+    await run('ticket', { n: '7', agent: 'pi', perfilPi: 'opus-sonnet', dryRun: true }, env)
     const text = env.out.join('\n')
-    for (const part of ['[simulación] perfil de Pi "opus-haiku"', 'profile.json', 'exclude', "--model 'claude-bridge/claude-opus-5-5'"]) assert.ok(text.includes(part), part)
+    for (const part of ['[simulación] perfil de Pi "opus-sonnet"', 'profile.json', 'exclude', "--model 'claude-bridge/claude-opus-5-5'"]) assert.ok(text.includes(part), part)
     assert.ok(!existsSync(pinFile()) && !existsSync(exclude()))
     assert.deepEqual(env.writes(), [])
     const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) })
-    await run('review', { n: '9', agent: 'pi', perfilPi: 'opus-haiku', dryRun: true }, review)
-    assert.ok(review.out.join('\n').includes('perfil de Pi "opus-haiku"'))
+    await run('review', { n: '9', agent: 'pi', perfilPi: 'opus-sonnet', dryRun: true }, review)
+    assert.ok(review.out.join('\n').includes('perfil de Pi "opus-sonnet"'))
   })
 
   test('launcherFor adds --model only when given, in PowerShell and POSIX', () => {
     const base = { mode: 'ticket', config: {}, home: '/h', briefPath: '/b.md', session: 's', skills: '/s', agent: 'pi' }
     assert.ok(!launcherFor({ ...base, win: false }).includes('--model'))
-    assert.ok(launcherFor({ ...base, win: false, piModel: 'p/m' }).includes("--session-id s --model 'p/m' 'Read"))
+    assert.ok(launcherFor({ ...base, win: false, piModel: 'p/m' }).includes("--exclude-tools 'ask_user_choice,ask_user_question' --model 'p/m' 'Read"))
     assert.ok(launcherFor({ ...base, win: true, piModel: 'p/m', piThinking: 'bogus' }).includes("--model 'p/m' 'Read"))
   })
 })
@@ -1108,6 +1393,13 @@ describe('rebote', () => {
     }
     return env
   }
+
+  test('Rule 1: codex-cc refuses rebote without side effects', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: codex-cc' }))
+    await assert.rejects(reboteCommand({}, '12', env.io), error => error.message === 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00F3 el 2026-10-24); us\u00E1 codex.')
+    assert.deepEqual(env.writes(), [])
+    assert.equal(env.calls.filter(call => call[0] === 'orca').length, 0)
+  })
 
   test('Rule 3: rebote does not print a branch line', async () => {
     const env = bounceEnv(pr(), {}, PROJECT)
@@ -1246,7 +1538,7 @@ describe('rebote', () => {
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'Implementador: claude' }), {}, { ...PROJECT, agentes: { usa: ['agy'] } }).io), /no est\u00E1 en agentes\.usa/)
     const blocked = { ...PROJECT, guardia: { bloquear: [{ agente: 'agy', hasta: '2999-01-01', motivo: 'paused' }] } }
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(), {}, blocked).io), /paused/)
-    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'Implementador: codex-cc' })).io), /preguntarle al humano/)
+    await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'Implementador: codex-cc' })).io), /codex-cc ya no existe/)
   })
 
   test('issue 236 Rules 1 and 5: rebote relaunches a codex author with only the Fast mode flag added', async () => {
@@ -1275,15 +1567,65 @@ describe('rebote', () => {
     assert.ok(!stale.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
   })
 
+  test('issue 276 Rules 1 and 7: a pi bounce honors the pin, traces it, and refuses with no pin and no profile', async () => {
+    write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ active: 'OpusFull', profiles: {
+      'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },
+      OpusFull: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' }, 'gentle-ai-worker': { model: 'anthropic/claude-opus-5-5' } },
+    } }))
+    const pinFile = path.join(worktree, '.pi', 'gentle-ai', 'profile.json')
+    const noProfile = { ...PROJECT, agentes: { ...PROJECT.agentes, pi: {} } }
+    const piEnv = (config = noProfile) => {
+      const env = bounceEnv(pr({ body: 'Implementador: pi' }), {}, config)
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      env.io.now = () => 100
+      env.io.modifiedAt = () => 101
+      return env
+    }
+    const launched = env => env.calls.find(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    const none = piEnv()
+    await assert.rejects(reboteCommand({}, '12', none.io), /Falta el perfil de Pi: pasá --perfil-pi <nombre> \(hay: opus-sonnet, OpusFull\)/)
+    assert.ok(!launched(none) && !none.calls.some(call => call[0] === 'gh' && call[2] === 'comment'))
+    assert.ok(!none.written.some(([file]) => file.endsWith('proj-pr-12-rebote.md')))
+    const ask = piEnv({ ...PROJECT, agentes: { ...PROJECT.agentes, pi: { perfil: 'preguntar' } } })
+    await assert.rejects(reboteCommand({}, '12', ask.io), /Falta el perfil de Pi/)
+    assert.ok(!launched(ask))
+
+    write(pinFile, JSON.stringify({ kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile: 'opus-sonnet' }))
+    const pinned = piEnv()
+    await reboteCommand({}, '12', pinned.io)
+    assert.ok(pinned.out.includes('perfil de Pi: opus-sonnet (fuente: pin)'), pinned.out.join('\n'))
+    assert.ok(launched(pinned)[launched(pinned).indexOf('--command') + 1].includes("--model 'claude-bridge/claude-opus-5-5' --thinking high"))
+    assert.ok(pinned.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))[1].includes('perfil de Pi: opus-sonnet (fuente: pin)'))
+
+    cleanup(path.dirname(pinFile))
+    const flagged = piEnv()
+    await reboteCommand({ perfilPi: 'OpusFull' }, '12', flagged.io)
+    assert.ok(flagged.out.includes('perfil de Pi: OpusFull (fuente: flag)'))
+    assert.equal(JSON.parse(read(pinFile)).profile, 'OpusFull')
+  })
+
+  test('issue #277 Rule 1: rebote relaunches a pi author as a TUI with the brief as its first message', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: pi' }))
+    env.io.gentleSkills = () => 'C:\\pi\\skills'
+    env.io.now = () => 100
+    env.io.modifiedAt = () => 101
+    await reboteCommand({}, '12', env.io)
+    const launch = env.calls.find(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    const command = launch[launch.indexOf('--command') + 1]
+    assert.match(command, /; pi --no-skills /)
+    assert.doesNotMatch(command, /\spi\s+(-p|--print)\b/)
+    assert.match(command, /'Read and carry out the brief in [^']+\.md\. Unattended: never wait for user input\.'$/)
+  })
+
   test('Rule 5: bounce briefs restrict arena/swarm, not the agent\'s own subagents', async () => {
-    for (const agent of ['claude', 'codex', 'codex-cc', 'agy', 'pi']) {
+    for (const agent of ['claude', 'codex', 'agy', 'pi']) {
       const env = bounceEnv(pr({ body: `Implementador: ${agent}` }))
       if (agent === 'pi') {
         env.io.gentleSkills = () => 'C:\\pi\\skills'
         env.io.now = () => 100
         env.io.modifiedAt = () => 101
       }
-      await reboteCommand(agent === 'codex-cc' ? { confirmado: true } : {}, '12', env.io)
+      await reboteCommand({}, '12', env.io)
       const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
       assert.ok(brief, `${agent} bounce brief was written`)
       assert.doesNotMatch(brief, /Do not spawn subagents/i)
@@ -1766,7 +2108,7 @@ describe('rebote', () => {
       assert.ok(verification.includes('Do not use `git archive` (it leaves no git index, and tests that need one fail without a defect) or `git worktree add` (it adds a worktree that Orca lists and someone has to remove).'))
     })
 
-    test("Rule 6: claude, codex and pi are told AGENTS.md is already loaded; agy and codex-cc keep today's line", () => {
+    test("Rule 6: claude, codex and pi are told AGENTS.md is already loaded; agy keeps today's line", () => {
       const today = '- Read the project instructions (AGENTS.md, and GLOSSARY.md or CONTEXT.md and docs/adr when they exist).'
       const loaded = '- AGENTS.md is already in your context: do not read it again. Read GLOSSARY.md or CONTEXT.md and docs/adr when they exist.'
       for (const agent of AGENTS) {
@@ -1784,7 +2126,7 @@ describe('rebote', () => {
     test('Rule 8: despachar renders a ticket brief for every agent; the rebote and revisar briefs change only in the fanoutInstructions sentence', async () => {
       for (const agent of AGENTS) {
         const env = fakeIo()
-        await run('ticket', { n: '300', agent, dryRun: true, ...(agent === 'codex-cc' ? { confirmado: true } : {}) }, env)
+        await run('ticket', { n: '300', agent, dryRun: true }, env)
         const out = env.out.join('\n')
         assert.ok(out.includes('# Ticket brief: issue #300'), `${agent} ticket brief`)
         assert.ok(out.includes("- Subagents: "), `${agent} subagents line`)
@@ -1796,7 +2138,7 @@ describe('rebote', () => {
           bounce.io.now = () => 100
           bounce.io.modifiedAt = () => 101
         }
-        await reboteCommand(agent === 'codex-cc' ? { confirmado: true } : {}, '12', bounce.io)
+        await reboteCommand({}, '12', bounce.io)
         const bounceBrief = bounce.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
         assert.ok(bounceBrief.includes(`${fanoutLine(agent, true)}\n- Work only in this existing worktree`), `${agent} bounce fan-out line`)
         assert.doesNotMatch(bounceBrief, /session's (?:own )?subagents|AGENTS\.md is already/, agent)
@@ -2188,6 +2530,105 @@ describe('rebote', () => {
       const confBrief = briefOf(conflictEnv)
       assert.ok(confBrief.includes('## Merge conflict'))
       assert.ok(confBrief.includes('`git fetch origin` (the base branch `main`)'))
+    })
+  })
+
+  describe('issue #278: every notice to main starts with Consulta:, and one 700-line rule', () => {
+    const briefOf = env => env.written.find(([file]) => file.endsWith('-rebote.md'))?.[1]
+
+    test('Rule 1: The 700-line rule appears once in brief-ticket.md: "If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket."', () => {
+      const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
+      const targetRule = 'If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket.'
+      assert.ok(ticket.includes(targetRule), 'brief-ticket.md must contain the exact 700-line rule with Consulta: {{AGENT}}')
+      const occurrences = (ticket.match(/700\s+lines/g) || []).length
+      assert.equal(occurrences, 1, '700 lines rule must appear exactly once in brief-ticket.md')
+
+      // Rendered for pi (like client report finding 3, traslado #11)
+      const briefPi = renderBrief('ticket', { AGENT: 'pi', ISSUE: '11', REPO: 'traslado', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(briefPi.includes('If the diff will pass 700 lines, post a `Consulta: pi` comment on the issue saying so, then keep going with the ticket.'))
+      const renderedOccurrences = (briefPi.match(/700\s+lines/g) || []).length
+      assert.equal(renderedOccurrences, 1, '700 lines rule must appear exactly once in rendered brief')
+    })
+
+    test('Rule 2: The brief\'s general rule covers every notice, not only questions, including caps set in --nota', () => {
+      const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
+      const generalNoticeRule = 'Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`.'
+      assert.ok(ticket.includes(generalNoticeRule), 'brief-ticket.md must carry the general notice rule covering questions, caps, and deviations')
+      assert.ok(!ticket.includes('Questions start with `Consulta: {{AGENT}}`.'), 'brief-ticket.md must not limit Consulta: to questions only')
+
+      for (const agent of AGENTS) {
+        const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '278', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' }, 'cap diff at 1000 lines')
+        assert.ok(brief.includes(`Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with \`Consulta: ${agent}\`.`), `${agent} brief must render general notice rule`)
+        assert.ok(brief.includes('cap diff at 1000 lines'), `${agent} brief must carry the --nota cap`)
+      }
+    })
+
+    test('Rule 3: brief-rebote.md says the same for its PR comments and reboteCommand passes AGENT', async () => {
+      const bounceBrief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-rebote.md'), 'utf8')
+      assert.ok(bounceBrief.includes('Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`.'), 'brief-rebote.md must carry the general notice rule with {{AGENT}}')
+
+      const env = bounceEnv(pr({ body: 'Implementador: pi' }))
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      env.io.now = () => 100
+      env.io.modifiedAt = () => 101
+      await reboteCommand({}, '12', env.io)
+      const brief = briefOf(env)
+      assert.ok(brief, 'rebote brief must be written')
+      assert.ok(brief.includes('Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: pi`.'), 'reboteCommand must replace {{AGENT}} with the author (pi)')
+      assert.ok(!brief.includes('{{AGENT}}'), 'rendered rebote brief must have no unrendered {{AGENT}}')
+    })
+
+    test('Rule 4: Negative: orca-stack consultas keeps matching only the literal Consulta: prefix', () => {
+      const stackAccount = 'stack-account'
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Consulta: pi — diff is 1673 lines against ~1000' }, stackAccount), true)
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Warning: diff is 1673 lines against ~1000 without Consulta prefix' }, stackAccount), false)
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'pi: I exceeded the 700 lines limit' }, stackAccount), false)
+      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Note: 700 lines cap exceeded' }, stackAccount), false)
+    })
+
+    test('Rule 5: A test reads the rendered ticket brief and fails if the 700-line line lacks Consulta: or if the brief contains both "stop and say so" and "keep going" for that rule', () => {
+      const brief = renderBrief('ticket', { AGENT: 'agy', ISSUE: '278', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      const lines = brief.split('\n')
+      const rule700Lines = lines.filter(line => line.includes('700 lines'))
+      assert.equal(rule700Lines.length, 1, 'must have exactly one line mentioning 700 lines')
+      assert.ok(rule700Lines[0].includes('Consulta:'), '700-line line must contain Consulta:')
+      assert.ok(rule700Lines[0].includes('keep going'), '700-line line must say keep going')
+      assert.ok(!brief.includes('stop and say so on the issue before going on'), 'brief must not contain stop and say so')
+
+      const validateBrief = text => {
+        const hasStop = text.includes('stop and say so')
+        const hasKeepGoing = text.includes('keep going')
+        if (hasStop && hasKeepGoing) throw new Error('brief contains both "stop and say so" and "keep going" for that rule')
+        if (hasStop) throw new Error('brief contains "stop and say so"')
+        const matchingLines = text.split('\n').filter(l => l.includes('700 lines'))
+        if (matchingLines.length === 0) throw new Error('missing 700 lines rule')
+        for (const l of matchingLines) {
+          if (!l.includes('Consulta:')) throw new Error('700-line line lacks Consulta:')
+        }
+      }
+
+      assert.doesNotThrow(() => validateBrief(brief))
+      assert.throws(() => validateBrief('If the diff will pass 700 lines, say so on the issue and keep going.'), /lacks Consulta:/)
+      assert.throws(() => validateBrief('If the diff will pass 700 lines, stop and say so.\nIf the diff passes about 700 lines, post a Consulta: agy and keep going.'), /contains both "stop and say so" and "keep going"/)
+    })
+
+    test('Preserve touched public entries in despacho: renderBrief and reboteCommand maintain public contracts with Consulta: updates', async () => {
+      // renderBrief for ticket
+      const ticket = renderBrief('ticket', { AGENT: 'codex', ISSUE: '99', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(ticket.startsWith('# Ticket brief: issue #99 (orca-stack)'))
+      assert.ok(ticket.includes('Consulta: codex'))
+
+      // renderBrief for revision remains untouched
+      const rev = renderBrief('review', { AGENT: 'codex', PR: '99', REPO: 'orca-stack', BASE: 'main', SHA: 'def456', IMPLEMENTER: 'agy' })
+      assert.ok(rev.startsWith('# Review brief: PR #99 (orca-stack)'))
+      assert.ok(!rev.includes('Consulta:'))
+
+      // reboteCommand preserves review, CI and conflict bounce flows with AGENT substitution
+      const env = bounceEnv(pr({ body: 'Implementador: codex' }))
+      await reboteCommand({}, '12', env.io)
+      const bounce = briefOf(env)
+      assert.ok(bounce.includes('Consulta: codex'))
+      assert.ok(env.out.some(l => l.includes('Rebote: abc123')))
     })
   })
 })

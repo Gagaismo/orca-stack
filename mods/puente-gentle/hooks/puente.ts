@@ -599,9 +599,12 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
   const notCounted = skipped.length === 0 ? '' : ` No cuento ${skipped.join('; ')}.`
   const missing = 2 - covered.size
   const picks = [...options.values()].slice(0, missing)
+  const codexBlocked = usa.includes('codex') && blockOf(config, 'codex', now) !== undefined
   const next =
     picks.length < missing
-      ? ` Con los agentes disponibles (agentes.usa, sin bloqueos) no alcanzan las familias: decidilo con el humano.`
+      ? codexBlocked
+        ? ' Esper\u00E1 a que codex vuelva.'
+        : ` Con los agentes disponibles (agentes.usa, sin bloqueos) no alcanzan las familias: decidilo con el humano.`
       : ` Corré ${picks.map(agent => `\`orca-stack revisar ${n} ${agent}\``).join(' y ')}.` +
         picks.filter(agent => ask.includes(agent)).map(agent => ` ${agent} está en preguntarAntes: pedile el OK al humano y agregá --confirmado.`).join('')
 
