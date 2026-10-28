@@ -131,6 +131,39 @@ describe('#269: global raises codex project_doc_max_bytes', () => {
     assert.equal(readFileSync(path.join(home, ...saved[0].split('/')), 'utf8'), original)
   })
 
+  test('rules 2 and 3: a line starting with `[` inside a multiline array or string is not a table header', () => {
+    const home = temp('doc-bytes-array-home')
+    const codexDir = temp('doc-bytes-array-codex')
+    const config = path.join(codexDir, 'config.toml')
+    const original = [
+      'model = "gpt"',
+      'notify = [',
+      '  ["say", "done"],',
+      ']',
+      'instructions = """',
+      '[not.a.table]',
+      'project_doc_max_bytes = 1',
+      '"""',
+      'project_doc_max_bytes = 65536',
+      '',
+      '[profiles.x]',
+      'a = 1',
+      '',
+    ].join('\n')
+    write(config, original)
+
+    const first = runGlobal(home, codexDir)
+    assert.equal(first.status, 0, first.out)
+    const raised = original.replace('project_doc_max_bytes = 65536', 'project_doc_max_bytes = 131072')
+    assert.equal(read(config), raised)
+    assert.match(first.out, /project_doc_max_bytes = 131072; antes 65536/)
+
+    const second = runGlobal(home, codexDir)
+    assert.equal(second.status, 0, second.out)
+    assert.equal(read(config), raised)
+    assert.match(second.out, /project_doc_max_bytes ya es 131072/)
+  })
+
   test('preserve: without codex\'s home global skips the step and creates nothing there', () => {
     const home = temp('doc-bytes-nocodex-home')
     const codexDir = path.join(temp('doc-bytes-nocodex'), 'missing')
@@ -171,6 +204,9 @@ describe('#269: doctor checks codex project_doc_max_bytes', () => {
 
     const low = setup('project_doc_max_bytes = 40000\n')
     assert.ok(low.out.includes('⚠ codex project_doc_max_bytes - 40000 (config.toml) es menos que los 42369 bytes de AGENTS.md'), low.out)
+
+    const afterArray = setup('notify = [\n  ["say", "done"],\n]\nproject_doc_max_bytes = 40000\n')
+    assert.ok(afterArray.out.includes('⚠ codex project_doc_max_bytes - 40000 (config.toml) es menos que los 42369 bytes de AGENTS.md'), afterArray.out)
   })
 
   test('rule 4 negative: no warning when the value covers the repo AGENTS.md', () => {

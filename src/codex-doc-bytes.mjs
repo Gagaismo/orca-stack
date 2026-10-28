@@ -15,19 +15,57 @@ export const codexDocBytesFor = blockBytes => {
 
 const KEY = /^(\s*project_doc_max_bytes\s*=\s*)([^#\r\n]*?)(\s*(?:#.*)?)$/
 
-// Lines before the first table header are the top-level keys, where the setting lives.
+// The top-level keys, where the setting lives, are the lines before the first table header. A line inside a
+// multiline array or string is not a statement even when it starts with `[` or names the key, so the scan
+// tracks open brackets and multiline strings, skipping one-line strings and comments.
 const topLevel = text => {
   const lines = text.split('\n')
-  const end = lines.findIndex(line => /^\s*\[/.test(line))
+  const root = []
+  let depth = 0
+  let quote = null
+  for (const [i, line] of lines.entries()) {
+    if (depth === 0 && quote === null) {
+      if (/^\s*\[/.test(line)) break
+      root.push(i)
+    }
+    let j = 0
+    while (j < line.length) {
+      if (quote !== null) {
+        if (quote === '"""' && line[j] === '\\') {
+          j += 2
+        } else if (line.startsWith(quote, j)) {
+          j += 3
+          while (line[j] === quote[0]) j += 1
+          quote = null
+        } else {
+          j += 1
+        }
+      } else if (line[j] === '#') {
+        break
+      } else if (line.startsWith('"""', j) || line.startsWith("'''", j)) {
+        quote = line.slice(j, j + 3)
+        j += 3
+      } else if (line[j] === '"' || line[j] === "'") {
+        const close = line[j]
+        j += 1
+        while (j < line.length && line[j] !== close) j += close === '"' && line[j] === '\\' ? 2 : 1
+        j += 1
+      } else {
+        if (line[j] === '[') depth += 1
+        if (line[j] === ']') depth -= 1
+        j += 1
+      }
+    }
+  }
 
-  return { lines, end: end === -1 ? lines.length : end }
+  return { lines, root }
 }
 
 // { value: number | null } when the key is an integer or absent; { invalid: '<raw>' } otherwise.
 export const readCodexDocBytes = text => {
-  const { lines, end } = topLevel(text)
-  for (const line of lines.slice(0, end)) {
-    const match = KEY.exec(line.replace(/\r$/, ''))
+  const { lines, root } = topLevel(text)
+  for (const i of root) {
+    const match = KEY.exec(lines[i].replace(/\r$/, ''))
     if (match) {
       const raw = match[2].trim()
 
@@ -40,8 +78,8 @@ export const readCodexDocBytes = text => {
 
 // Sets the top-level key, touching only its value, or adds it as the first line. The rest stays byte for byte.
 export const withCodexDocBytes = (text, value) => {
-  const { lines, end } = topLevel(text)
-  for (let i = 0; i < end; i += 1) {
+  const { lines, root } = topLevel(text)
+  for (const i of root) {
     const cr = lines[i].endsWith('\r') ? '\r' : ''
     const match = KEY.exec(lines[i].slice(0, lines[i].length - cr.length))
     if (match) {
