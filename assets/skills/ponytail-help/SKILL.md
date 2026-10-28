@@ -40,6 +40,12 @@ slash-command forms above (OpenCode ships all six as slash commands).
 Say "stop ponytail" or "normal mode". Resume anytime with `/ponytail`.
 `/ponytail off` also works.
 
+## Band (Claude Code)
+
+`/ponytail band` hides the band above the prompt, the same command brings it back.
+`/ponytail band on` and `/ponytail band off` set it directly. The level stays.
+`/ponytail band import` adds your past Claude Code sessions (cost, agent time, tokens) to the board.
+
 ## Configure Default Mode
 
 Default mode = `full`, auto-active every session. Change it:
@@ -76,6 +82,7 @@ conflict.
 
 - The level comes from `ORCA_STACK_PONYTAIL_LEVEL`, which the Orca launch sets;
   `/ponytail <level>` still changes it for the session.
-- `PONYTAIL_DEFAULT_MODE`, the ponytail `config.json`, `/ponytail-gain` and the
-  `/plugin` updates above do not apply in Orca: Orca ships these skills itself.
+- `PONYTAIL_DEFAULT_MODE`, the ponytail `config.json`, `/ponytail-gain`,
+  `/ponytail band` and the `/plugin` updates above do not apply in Orca: Orca
+  ships these skills itself.
 - Update them with `orca-stack global`.

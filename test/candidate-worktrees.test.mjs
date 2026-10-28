@@ -11,7 +11,7 @@ const PROJECT = {
   setup: 'completo',
   modo: 'multiagente',
   ramaBase: 'main',
-  agentes: { usa: ['claude', 'agy', 'codex', 'codex-cc', 'pi'], preguntarAntes: [] },
+  agentes: { usa: ['claude', 'agy', 'codex', 'pi'], preguntarAntes: [] },
   verificacion: { suite: 'npm test', typecheck: 'ninguno' },
 }
 
