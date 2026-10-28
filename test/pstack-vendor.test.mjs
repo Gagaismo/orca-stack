@@ -13,18 +13,18 @@ const sha256 = text => createHash('sha256').update(text.replace(/\r\n/g, '\n'), 
 const provenance = JSON.parse(readSkill(SKILLS, 'pstack-upstream.json'))
 const skill = name => readSkill(SKILLS, name, 'SKILL.md')
 
-describe('vendored pstack principles (upstream v0.15.31)', () => {
+describe('vendored pstack principles (upstream v0.15.36)', () => {
   test('rule 1: every vendored SKILL.md matches upstream at the pinned commit, changing one byte makes the hash test fail, naming the skill', () => {
     const unadapted = Object.entries(provenance.skills).filter(([, e]) => !e.adapted)
     const vendored = readdirSync(SKILLS).filter(name => name.startsWith('principle-') && statSync(path.join(SKILLS, name)).isDirectory())
     assert.deepEqual(vendored.sort(), unadapted.map(([k]) => k).sort())
     for (const [name, entry] of unadapted) {
       assert.equal(entry.adapted, false, `${name} must not be adapted`)
-      assert.equal(sha256(skill(name)), entry.upstreamSha256, `${name} differs from upstream v0.15.31`)
+      assert.equal(sha256(skill(name)), entry.upstreamSha256, `${name} differs from upstream v0.15.36`)
       // Corrupting one byte must fail naming the skill
       const corrupted = skill(name) + ' '
       assert.throws(() => {
-        assert.equal(sha256(corrupted), entry.upstreamSha256, `${name} differs from upstream v0.15.31`)
+        assert.equal(sha256(corrupted), entry.upstreamSha256, `${name} differs from upstream v0.15.36`)
       }, new RegExp(name))
     }
   })
@@ -119,11 +119,11 @@ describe('vendored pstack principles (upstream v0.15.31)', () => {
 
   test('provenance manifest and README credit row match', () => {
     assert.equal(provenance.repo, 'https://github.com/cursor/plugins')
-    assert.equal(provenance.version, '0.15.31')
+    assert.equal(provenance.version, '0.15.36')
     assert.match(provenance.commit, /^[0-9a-f]{40}$/)
     const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
     assert.ok(row, 'README has no pstack row in "Origen y licencias"')
-    assert.ok(row.includes('0.15.31') && row.includes(provenance.commit.slice(0, 7)), row)
+    assert.ok(row.includes('0.15.36') && row.includes(provenance.commit.slice(0, 7)), row)
     assert.ok(row.includes('assets/skills/pstack-upstream.json'), row)
     assert.ok(row.includes('Lauren Tan'), row)
   })
@@ -140,7 +140,7 @@ describe('vendored pstack principles (upstream v0.15.31)', () => {
   })
 })
 
-describe('#168 adapted arena and swarm skills (upstream v0.15.31)', () => {
+describe('#168 adapted arena and swarm skills (upstream v0.15.36)', () => {
   test('rule 1: the manifest lists arena and swarm with adapted: true, and changing a byte of a shipped copy fails the hash test', () => {
     for (const name of ['arena', 'swarm']) {
       const entry = provenance.skills[name]
@@ -203,16 +203,19 @@ describe('#168 adapted arena and swarm skills (upstream v0.15.31)', () => {
   })
 })
 
-describe('#265 re-vendor pstack principles and swarm from 0.15.31', () => {
-  test('rule 1: provenance manifest says 0.15.31 and commit 642289e6b1eb01c25b02ea041dccaf7b5864e131, upstreamSha256 hashes match, and README line 249 says 0.15.31 (commit 642289e)', () => {
-    assert.equal(provenance.version, '0.15.31')
-    assert.equal(provenance.commit, '642289e6b1eb01c25b02ea041dccaf7b5864e131')
-    assert.equal(provenance.skills['arena'].upstreamSha256, 'ed72f6c132b1ce3974d949581d0adc5dade424fe20793ac3b4c4fae22ecb9354')
-    assert.equal(provenance.skills['swarm'].upstreamSha256, '031657cb81e490f9aed5c75d6ff2a4fda35ccafbaf72be604e59481cc4080cdc')
+describe('#265 re-vendor pstack principles and swarm from 0.15.36', () => {
+  test('rule 1: provenance manifest says 0.15.36 and commit c742dd61706fbacc1b95f1a20b7b988cf096ce6c, upstreamSha256 hashes match, and README line names 0.15.36 (commit c742dd6)', () => {
+    assert.equal(provenance.version, '0.15.36')
+    assert.equal(provenance.commit, 'c742dd61706fbacc1b95f1a20b7b988cf096ce6c')
+    assert.equal(provenance.skills['principle-make-operations-idempotent'].upstreamSha256, '7aa9327cf1f1aa057e95d47a0a78bd88a8f9d556b608866fee939d455a53a019')
+    assert.equal(provenance.skills['principle-attack-the-premise'].upstreamSha256, '6a932884daad4aa189e9b5d1665226bbc75621d4d2a398fd4003bebd382f4599')
+    assert.equal(provenance.skills['principle-explain-the-number'].upstreamSha256, '3c84fbf9a7d9842abcfcd134010782b32092ac3d3fb4aaf9ed5732dca83aa58c')
+    assert.equal(provenance.skills['arena'].upstreamSha256, 'd0adeca6c9b19d43d90ed8f0484f0ddd362f05006d628b8f4cc6c9b55fa4d2b3')
+    assert.equal(provenance.skills['swarm'].upstreamSha256, 'fea6bfbbf21e067a4e2d2ebab034bc3af508118e9df1abc9d2ba040d58a6df3a')
     const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
     assert.ok(row, 'README has no pstack row in "Origen y licencias"')
-    assert.ok(row.includes('0.15.31'), 'README must name 0.15.31')
-    assert.ok(row.includes('642289e'), 'README must name 642289e')
+    assert.ok(row.includes('0.15.36'), 'README must name 0.15.36')
+    assert.ok(row.includes('c742dd6'), 'README must name c742dd6')
   })
 
   test('rule 2: principle-attack-the-premise and principle-make-operations-idempotent match upstream byte for byte with disable-model-invocation: true, negative: no shipped file says Take a census', () => {
@@ -231,36 +234,51 @@ describe('#265 re-vendor pstack principles and swarm from 0.15.31', () => {
     }
   })
 
-  test('rule 3: principle-explain-the-number and arena stay byte-identical to what ships today and their hashes do not change', () => {
-    assert.equal(provenance.skills['principle-explain-the-number'].upstreamSha256, 'cd5a25f9e7cf023627ccb470dc5faa97542f29b4319496a32b839a8e1e988047')
-    assert.equal(sha256(skill('principle-explain-the-number')), provenance.skills['principle-explain-the-number'].upstreamSha256)
-    assert.equal(sha256(skill('arena')), provenance.skills['arena'].shippedSha256)
+  test('rule 3: principle-explain-the-number is a byte-for-byte copy of upstream at commit c742dd6, negative: 0.15.31 description no longer ships', () => {
+    const text = skill('principle-explain-the-number')
+    assert.equal(sha256(text), provenance.skills['principle-explain-the-number'].upstreamSha256)
+    assert.match(text, /^disable-model-invocation:\s*true$/m)
+    assert.match(text, /description:\s*"Apply before you measure, and before you trust, report, or act on a number you measured/)
+    assert.match(text, /\*\*Write the decision before you run\.\*\*/)
+    assert.doesNotMatch(text, /description:\s*"Apply before you trust, report, or act on a number you measured/)
   })
 
-  test('rule 4: swarm drops the three removed upstream sentences unless carrying Orca text, and shippedSha256 is updated', () => {
+  test('rule 4: arena is re-based on upstream 0.15.36 keeping Orca adaptations, and shippedSha256 is updated', () => {
+    const text = skill('arena')
+    assert.equal(sha256(text), provenance.skills['arena'].shippedSha256)
+    assert.match(text, /same model family as the candidates/i)
+    assert.match(text, /weaker than pstack's cross-family judge/i)
+    assert.match(text, /In-process subagents only/)
+  })
+
+  test('rule 5: swarm drops removed sentences, renumbers Phase A steps 3 and 4, negative: no shipped line refers to a step 4 model, and shippedSha256 is updated', () => {
     const text = skill('swarm')
     assert.doesNotMatch(text, /Fan out N parallel in-process workers/)
     assert.doesNotMatch(text, /Fan out N parallel cloud workers/)
-    assert.doesNotMatch(text, /3\.\s+Set N from the user/)
+    assert.doesNotMatch(text, /Set N from the user/)
     assert.doesNotMatch(text, /Keep a compact result table,\s+one-line evidenced issues/)
     assert.match(text, /The swarm report is not a review and replaces neither CI nor `Verificado por main`\./)
+    assert.match(text, /3\.\s+Pick the worker models for the job/)
+    assert.match(text, /4\.\s+Swarm work is read work only/)
+    assert.doesNotMatch(text, /5\.\s+Swarm work is read work only/)
+    assert.doesNotMatch(text, /step 4 model/i)
     assert.equal(sha256(text), provenance.skills['swarm'].shippedSha256)
   })
 
-  test('rule 5: the adaptation note on line 13 of arena/SKILL.md and under Adaptation Note in swarm/SKILL.md says 0.15.31', () => {
+  test('rule 6: adaptation note on line 13 of arena/SKILL.md and swarm/SKILL.md says 0.15.36, version strings in test say 0.15.36, and corrupting one byte fails the hash test naming the skill', () => {
     for (const name of ['arena', 'swarm']) {
       const text = skill(name)
-      assert.match(text, /Adapted from pstack \(`cursor\/plugins`, version 0\.15\.31\)/, `${name} adaptation note must say version 0.15.31`)
+      assert.match(text, /Adapted from pstack \(`cursor\/plugins`, version 0\.15\.36\)/, `${name} adaptation note must say version 0.15.36`)
+      assert.doesNotMatch(text, /0\.15\.31/, `${name} must not say 0.15.31`)
       assert.doesNotMatch(text, /0\.15\.24/, `${name} must not say 0.15.24`)
     }
-  })
 
-  test('rule 6: version strings in test/pstack-vendor.test.mjs say 0.15.31 and corrupting one byte fails the hash test naming the skill', () => {
     const self = read(path.join(ROOT, 'test', 'pstack-vendor.test.mjs'))
     assert.doesNotMatch(self, /upstream v0\.15\.24/)
-    assert.equal(provenance.version, '0.15.31')
+    assert.doesNotMatch(self, /upstream v0\.15\.31/)
+    assert.equal(provenance.version, '0.15.36')
     const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
-    assert.ok(row.includes('0.15.31'))
+    assert.ok(row.includes('0.15.36'))
 
     for (const [name, entry] of Object.entries(provenance.skills)) {
       const targetHash = entry.shippedSha256 ?? entry.upstreamSha256

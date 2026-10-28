@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 ## Adaptation Note
 
-Adapted from pstack (`cursor/plugins`, version 0.15.31). Dropped references to pstack's router, cloud workers (`environment: "cloud"`, `subagent_type: generalPurpose`), model configuration files (`~/.cursor/rules/pstack-models.mdc`), and `poteto-mode`.
+Adapted from pstack (`cursor/plugins`, version 0.15.36). Dropped references to pstack's router, cloud workers (`environment: "cloud"`, `subagent_type: generalPurpose`), model configuration files (`~/.cursor/rules/pstack-models.mdc`), and `poteto-mode`.
 
 In orca-stack, swarm runs in-process only: subagents of the task owner (Agent tool, or Workflow when the human authorized it). Never route workers through `despachar` or `revisar`.
 
@@ -29,8 +29,8 @@ Open a todolist with one entry per phase before launching anything.
 
 1. State the done predicate and the report the swarm must return.
 2. Choose the shape. Partition into read slices, race N workers on identical read briefs, or mix both. For a race or mixed shape, declare `first pass`, `rank all`, or `best-of` before spawning.
-4. Pick the worker models for the job. In-process subagents run on the parent model or chosen models. For a model race, name each arm's model up front.
-5. Swarm work is read work only. When workers run a suite or build in parallel (which writes artifacts and caches), give each worker an isolated worktree. Measuring against external APIs is a remote operation and requires its own remote authorization. When workers verify or measure commits, each brief names the exact SHAs. A measurement brief also names the method (sample count, what one sample is, order). The worker records both in its result.
+3. Pick the worker models for the job. In-process subagents run on the parent model or chosen models. For a model race, name each arm's model up front.
+4. Swarm work is read work only. When workers run a suite or build in parallel (which writes artifacts and caches), give each worker an isolated worktree. Measuring against external APIs is a remote operation and requires its own remote authorization. When workers verify or measure commits, each brief names the exact SHAs. A measurement brief also names the method (sample count, what one sample is, order). The worker records both in its result.
 
 ## Phase B: Fan out
 
