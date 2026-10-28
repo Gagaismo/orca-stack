@@ -131,7 +131,7 @@ describe('#269: global raises codex project_doc_max_bytes', () => {
     assert.equal(readFileSync(path.join(home, ...saved[0].split('/')), 'utf8'), original)
   })
 
-  test('rules 2 and 3: a line starting with `[` inside a multiline array or string is not a table header', () => {
+  test('rules 2 and 3: a line starting with a bracket inside a multiline array or string is not a table header', () => {
     const home = temp('doc-bytes-array-home')
     const codexDir = temp('doc-bytes-array-codex')
     const config = path.join(codexDir, 'config.toml')
