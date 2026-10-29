@@ -123,7 +123,9 @@ Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, s
   rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 
 Relanza al autor indicado por \`Implementador:\` en el worktree existente de la rama del PR. Exige un review bloqueante
-vigente o checks fallidos sobre el head, worktree limpio y detenido en ese commit; los hallazgos de interpretaci\u00F3n solo bloquean el rebote por review.
+vigente o checks fallidos sobre el head, worktree limpio y detenido en ese commit; los hallazgos de interpretaci\u00F3n solo bloquean el rebote por review,
+salvo que despu\u00E9s del review haya un comentario \`Respuesta del humano:\` en el PR o en un issue que cierra (\`Closes #<n>\`): entonces van al autor con el enlace a esa respuesta.
+Un rebote solo de CI o de conflicto no gasta el rebote por review, as\u00ED que un \`Rebote: <sha>\` de un head anterior no lo frena.
 Un worktree limpio que solo est\u00E1 atr\u00E1s del head (por ejemplo, tras \`gh pr update-branch\`) se adelanta con \`git merge --ff-only <sha>\`.
 Para CI roja agrega los checks fallidos al brief y publica \`Rebote CI: <sha>\`; publica \`Rebote: <sha>\` solo con bloqueos de review.
 Un PR en conflicto con la base (mergeable CONFLICTING) rebota aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente:

@@ -89,7 +89,7 @@ do not wait for Orca receipts that will not come.
 
 ## Methodology contract
 
-Planning follows Matt's skills (`grilling`, `to-spec`, `to-tickets`, triggered
+Planning follows Matt's skills (`grill-with-docs`, `to-spec`, `to-tickets`, triggered
 by the human) and implementation follows gentle-ai ODD for Claude, Codex and
 Antigravity sessions; Pi follows its own methodology (it may use ODD). Ponytail
 may reduce the
