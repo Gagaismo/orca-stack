@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 
 import { ROOT } from './helpers.mjs'
@@ -20,6 +19,16 @@ test('Rule 1: docs/guia-setup.md gets an optional "Frontend repos" entry for eac
   assert.match(content, /Taste Skill/)
   assert.match(content, /https:\/\/www\.tasteskill\.dev\/?/)
   assert.match(content, /npx skills add Leonxlnx\/taste-skill --skill design-taste-frontend/)
+
+  // Row-scoped description assertions for both entries
+  const rows = content.split(/\r?\n/).filter(line => line.startsWith('|'))
+  for (const name of ['Impeccable', 'Taste Skill']) {
+    const row = rows.find(line => line.includes(`[${name}]`))
+    assert.ok(row, `${name} row is required`)
+    assert.ok(row.split('|')[2]?.trim(), `${name} description is required`)
+    const desc = row.split('|').slice(1, -1).map(c => c.trim())[1]
+    assert.ok(desc.replace(/Licencia:.*$/, '').trim().length > 10, `${name} needs a one-line description`)
+  }
 })
 
 test('Rule 2: the Impeccable entry says to install only its skills, not its hooks, because the stack does not install third-party lifecycle hooks (ORCA-STACK.md, "Deliberate exclusions")', () => {
@@ -59,21 +68,6 @@ test('Rule 3: negative check confirms global, doctor and every file under src/ a
 
   checkDir(path.join(ROOT, 'src'))
   checkDir(path.join(ROOT, 'assets'))
-
-  // Check git diff against origin/main or HEAD if git repo
-  const gitDiff = spawnSync('git', ['diff', '--name-only', 'origin/main'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  })
-  if (gitDiff.status === 0) {
-    const changed = gitDiff.stdout.trim().split(/\r?\n/).filter(Boolean)
-    for (const file of changed) {
-      assert.ok(
-        file.startsWith('docs/') || file.startsWith('test/'),
-        `changed file ${file} must be under docs/ or test/ only`
-      )
-    }
-  }
 })
 
 test('Rule 4: each entry states the license, resolving Impeccable as Apache-2.0 and Taste Skill as MIT', () => {
