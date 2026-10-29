@@ -25,6 +25,8 @@ Versión de referencia: `orca-stack v0.16.1` (octubre de 2026). Si sale una vers
 | Engram | Memoria entre sesiones (no planifica ni decide) | Instalador propio de Engram |
 | gentle-ai | Context7, permisos de Claude Code y skills extra | Instalador propio de gentle-ai |
 | Caveman | Comprime la prosa larga para ahorrar tokens | Solo las skills: `npx skills add JuliusBrussee/caveman -g` (verificado con la 3.2.0). Si tenés el plugin de Claude Code, desactivalo en las sesiones de Orca: `claude plugin disable caveman@caveman` |
+| [Impeccable](https://impeccable.style/) (Frontend repos, opcional) | Vocabulario de diseño para agentes (polish, audit, critique, typeset, distill) y detector con 61 checks para defaults de diseño en IA. Licencia: Apache-2.0 | Solo las skills: `npx skills add pbakaus/impeccable`. Instalar solo sus skills, no sus hooks, porque el stack no instala hooks de ciclo de vida de terceros (`ORCA-STACK.md`, "Deliberate exclusions") |
+| [Taste Skill](https://www.tasteskill.dev/) (Frontend repos, opcional) | Reglas de diseño frontend para agentes (tipografía, espaciado, color, layout y motion). Licencia: MIT | Solo las skills: `npx skills add Leonxlnx/taste-skill --skill design-taste-frontend` |
 
 Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con su propio criterio. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
 
