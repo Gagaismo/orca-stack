@@ -61,7 +61,7 @@ describe('init', () => {
     assert.ok(text.includes('## BLOQUEA'))
     assert.ok(text.includes('### Política del stack'))
     assert.ok(text.includes('implementación con gentle-ai ODD (main corre ODD para su trabajo de orquestación, nunca implementa tickets)'))
-    assert.ok(text.includes('Planificación con las skills de Matt Pocock (grilling, to-spec, to-tickets, disparadas por el humano), e implementación con gentle-ai ODD en todo el stack'))
+    assert.ok(text.includes('Planificación con las skills de Matt Pocock (grill-with-docs, to-spec, to-tickets, disparadas por el humano), e implementación con gentle-ai ODD en todo el stack'))
     assert.doesNotMatch(text, /sdd/i, 'v4 has no SDD anywhere')
     assert.doesNotMatch(text, /gpt-6|2026-10/)
     assert.ok(text.includes('Commit: <sha>') && text.includes('Verificado por main:'))
@@ -210,3 +210,44 @@ describe('orca-setup: branch protection on ramaBase', () => {
     assert.match(step10(), /Si `ramaBase` ya tiene protección \(`gh api repos\/<owner>\/<repo>\/branches\/<ramaBase>\/protection`\), mostrá lo que está puesto y proponé solo lo que falta/)
   })
 })
+
+describe('orca-setup: riesgo globs for single files and match listing (issue #282)', () => {
+  const setup = () => read(path.join(process.cwd(), 'assets', 'skills', 'orca-setup', 'SKILL.md'))
+  const step9 = () => setup().split('\n').find(line => line.startsWith('9. '))
+  const written = () => setup().split('## 3. Escribí lo decidido')[1]
+
+  test('Regla 1: Step 9 of orca-setup says to search for both directories and single files, including a file glob like **/auth.* next to **/auth/**', () => {
+    const s9 = step9()
+    assert.ok(s9, 'step 9 must exist')
+    assert.match(s9, /directorios como archivos individuales/i)
+    assert.match(s9, /auth\//)
+    assert.match(s9, /auth\.ts/)
+    assert.match(s9, /session\.ts/)
+    assert.match(s9, /middleware\.ts/)
+    assert.match(s9, /\*\.sql/)
+    assert.match(s9, /Dockerfile/)
+    assert.match(s9, /workflow/)
+    assert.match(s9, /`\*\*\/auth\.\*`/)
+    assert.match(s9, /`\*\*\/auth\/\*\*`/)
+  })
+
+  test('Regla 2: setup lists matching files for every proposed glob with git ls-files, flags unmatched globs as no matchea nada hoy, with the traslado example', () => {
+    const s9 = step9()
+    assert.ok(s9, 'step 9 must exist')
+    assert.match(s9, /`git ls-files`/)
+    assert.match(s9, /"no matchea nada hoy"/)
+    assert.match(s9, /traslado/)
+    assert.match(s9, /`\*\*\/auth\/\*\*` muestra "no matchea nada hoy"/)
+    assert.match(s9, /`\*\*\/auth\.\*` muestra `packages\/api\/src\/auth\.ts`/)
+  })
+
+  test('Regla 3: setup does not add unaccepted globs and does not touch existing riesgo when rerun unless the human asks', () => {
+    const s9 = step9()
+    const w = written()
+    assert.ok(s9, 'step 9 must exist')
+    assert.match(s9, /No agregues ningún glob que el humano no haya aceptado/i)
+    assert.match(s9, /no toques un `riesgo` existente al (?:volver a correr|rehacer) el setup (?:a menos|salvo) que el humano lo pida/i)
+    assert.match(w, /no toques un `riesgo` existente al (?:volver a correr|reejecutar|rehacer)/i)
+  })
+})
+

@@ -7,6 +7,7 @@ import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { codexAgentsMd, codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
+import { PI_PROVIDERS, disallowedModels } from './despacho.mjs'
 import { compareVersions, driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
 import { knownSddLeftovers } from './sdd-cleanup.mjs'
@@ -150,6 +151,16 @@ const agentsUsed = (...layers) => {
   return Array.isArray(used) ? used.map(agent => String(agent).toLowerCase()) : []
 }
 
+const retiredAgentKeys = config => {
+  const agentes = config?.agentes
+  if (!agentes || typeof agentes !== 'object') return []
+  const keys = []
+  if (Array.isArray(agentes.usa) && agentes.usa.includes('codex-cc')) keys.push('agentes.usa')
+  if (Array.isArray(agentes.preguntarAntes) && agentes.preguntarAntes.includes('codex-cc')) keys.push('agentes.preguntarAntes')
+  if (agentes.modelos && typeof agentes.modelos === 'object' && Object.hasOwn(agentes.modelos, 'codex-cc')) keys.push('agentes.modelos')
+  return keys
+}
+
 export const checkCodemode = (add, { L, flags = {} } = {}) => {
   if (flags.skipPi) {
     add('warn', 'Pi', 'omitido por --skip-pi')
@@ -174,6 +185,23 @@ export const checkCodemode = (add, { L, flags = {} } = {}) => {
   }
 
   add('ok', 'Claude Code', 'no aplicable (sin soporte de codemode)')
+}
+
+// Every stored gentle-pi profile with a model outside the allowed providers: a pi launch with it is refused.
+export const piProfileWarnings = home => {
+  let store
+  try {
+    store = JSON.parse(readFileSync(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), 'utf8').replace(/^﻿/, ''))
+  } catch {
+    return []
+  }
+  const profiles = store?.profiles
+  if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) return []
+
+  return Object.entries(profiles)
+    .map(([name, profile]) => ({ name, bad: disallowedModels(profile) }))
+    .filter(({ bad }) => bad.length > 0)
+    .map(({ name, bad }) => ({ name, detail: `usa modelos de proveedores no permitidos (solo ${PI_PROVIDERS.join(', ')}), así que un despacho a pi con él se rechaza: ${bad.join(', ')}` }))
 }
 
 export const doctorCommand = async flags => {
@@ -350,6 +378,9 @@ export const doctorCommand = async flags => {
       }
     }
   }
+  if (!flags.skipPi) {
+    for (const { name, detail } of piProfileWarnings(home)) add('warn', `perfil de Pi ${name}`, detail)
+  }
 
   // Codemode
   section('Codemode')
@@ -441,7 +472,7 @@ export const doctorCommand = async flags => {
   if (root) {
     committed = checkJson(path.join(root, PROJECT_CONFIG), PROJECT_CONFIG)
     local = checkJson(path.join(root, PROJECT_LOCAL_CONFIG), PROJECT_LOCAL_CONFIG)
-    if (agentsUsed(personal, committed, local).some(agent => ['codex', 'codex-cc'].includes(agent))) {
+    if (agentsUsed(personal, committed, local).includes('codex')) {
       const trust = codexTrustStatus(root, path.join(L.codexDir, 'config.toml'))
       add(trust.level, 'codex repo root trust', trust.detail)
     }
@@ -470,10 +501,20 @@ export const doctorCommand = async flags => {
     }
   }
 
+  const retiredLayers = [
+    ['~/.orca-stack/config.json', personal],
+    ...(root ? [[PROJECT_CONFIG, committed], [PROJECT_LOCAL_CONFIG, local]] : []),
+  ]
+  for (const [file, config] of retiredLayers) {
+    for (const key of retiredAgentKeys(config)) {
+      add('warn', 'agente retirado', `codex-cc ya no existe: sacalo de ${file} (${key}).`)
+    }
+  }
+
   // codex on Windows reads files through PowerShell 5.1 (#58). Off Windows or without codex, not even the title prints.
   const codexChecks = codexWindowsChecks({
     windows: isWindows(),
-    codex: agentsUsed(personal, committed, local).some(agent => ['codex', 'codex-cc'].includes(agent)),
+    codex: agentsUsed(personal, committed, local).includes('codex'),
     agentsMd: codexAgentsMd(L.codexDir),
   })
   if (codexChecks.length > 0) {

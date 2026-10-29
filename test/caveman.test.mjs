@@ -40,26 +40,25 @@ describe('caveman 3.2.0', () => {
     assert.match(caveman.replace(/\s+/g, ' '), /the wrappers set `caveman`/)
   })
 
-  test('rule 3: despachar workers that get the stack markers are interactive; pi, the headless one, gets none', () => {
+  test('rule 3: despachar workers that get the stack markers are interactive; pi gets none', () => {
     const base = { mode: 'ticket', config: {}, win: false, home: '/h', briefPath: '/b.md', session: 's', skills: '/s' }
-    for (const agent of ['claude', 'agy', 'codex', 'codex-cc']) {
+    for (const agent of ['claude', 'agy', 'codex']) {
       const launcher = launcherFor({ ...base, agent })
       assert.ok(launcher.includes('-orca-stack.sh"'), `${agent} goes through its wrapper, which sets the markers`)
-      // From the wrapper on: codex-cc reads its key with `node -p` before it.
       const call = launcher.slice(launcher.indexOf('-orca-stack.sh"'))
       assert.doesNotMatch(call, /\s(-p|--print|exec)(\s|$)/, `${agent} is an interactive session, not headless`)
     }
     const pi = launcherFor({ ...base, agent: 'pi' })
     assert.match(pi, /^unset [^;]*\bORCA_STACK_CAVEMAN_LEVEL\b/)
-    assert.match(pi, /; pi -p /)
+    assert.match(pi, /; pi --no-skills /)
     // The consult clears the same markers before its own `pi -p`.
     const puente = read('mods', 'puente-gentle', 'hooks', 'puente.ts')
     assert.match(/export const ORCA_VARS_CLEARED = \[([\s\S]*?)\] as const/.exec(puente)[1], /'ORCA_STACK_CAVEMAN_LEVEL'/)
     assert.match(puente, /export const buildArgs = [^\n]*\n {2}'-p',/)
     // ORCA-STACK.md already says so: Gentle Shell gets none of the stack markers.
     const policy = read('assets', 'stack', 'ORCA-STACK.md').replace(/\s+/g, ' ')
-    assert.match(policy, /pi \(Gentle Shell\): headless, no TUI/)
-    assert.match(policy, /clears the Orca and `ORCA_STACK_\*` variables \(the same list the pi consult bridge clears\)/)
+    assert.match(policy, /pi \(Gentle Shell\): an interactive TUI/)
+    assert.match(policy, /clears the `ORCA_STACK_\*` variables \(the stack markers the pi consult bridge also clears\)/)
   })
 
   test('rule 4: the policy files keep Auto/Off and communication-only, and name no caveman level 3.2.0 dropped', () => {

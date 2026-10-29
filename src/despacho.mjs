@@ -14,7 +14,7 @@ import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from '.
 // shared/familias.json against both sides.
 // BEGIN FAMILIES
 export const FAMILIES = {
-  "agents": ["claude", "agy", "codex", "codex-cc", "pi"],
+  "agents": ["claude", "agy", "codex", "pi"],
   "fixed": { "pi": "claude" },
   "defaults": { "claude": "claude", "codex": "gpt", "agy": "gemini" },
   "patterns": [
@@ -26,16 +26,18 @@ export const FAMILIES = {
 }
 // END FAMILIES
 export const AGENTS = FAMILIES.agents
+const CODEX_CC_REMOVED = 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00F3 el 2026-10-24); us\u00E1 codex.'
 
 // Source of truth: mods/puente-gentle/hooks/puente.ts (ORCA_VARS_CLEARED, engramDir). Duplicated because the mod is TypeScript
-// that can only import its own folder; the pi consult and this launcher must clear and set the same things.
-const ORCA_VARS_CLEARED = [
-  'ORCA_AGENT_HOOK_ENDPOINT', 'ORCA_AGENT_HOOK_PORT', 'ORCA_AGENT_HOOK_TOKEN', 'ORCA_AGENT_HOOK_ENV',
-  'ORCA_AGENT_HOOK_VERSION', 'ORCA_AGENT_HOOK_TRANSPORT', 'ORCA_AGENT_LAUNCH', 'ORCA_AGENT_LAUNCH_TOKEN',
-  'ORCA_AGENT_PANE', 'ORCA_PANE_KEY', 'ORCA_TAB_ID', 'ORCA_WORKTREE_ID', 'ORCA_TERMINAL_HANDLE',
+// that can only import its own folder. The launcher clears only the stack markers of that list: Orca's managed pi
+// extension (orca-agent-status.ts) reports pi's card state through the Orca pane variables, so a worker keeps them,
+// while the consult clears them too because it runs inside claude's pane (#277).
+const STACK_VARS_CLEARED = [
   'ORCA_STACK_AGENT', 'ORCA_STACK_MODE', 'ORCA_STACK_POLICY_PATH', 'ORCA_STACK_PONYTAIL_LEVEL',
   'ORCA_STACK_CAVEMAN_LEVEL',
 ]
+// gentle-pi tools that open a TUI dialog: nobody answers one in an unattended worker (under `pi -p` they failed).
+const PI_DIALOG_TOOLS = 'ask_user_choice,ask_user_question'
 // Only a review closes pi's tools (read-only). A ticket gets all of them: an allowlist would also drop gentle-pi's
 // subagents, ODD and engram tools.
 export const PI_TOOLS = { review: 'read,bash,grep,find,ls,codemode' }
@@ -133,33 +135,27 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   const wrapper = P.join(home, ...SCRIPTS_REL, wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
   const bin = (win ? '& ' : '') + `"${wrapper}"`
   if (agent === 'claude' || agent === 'agy') return `${bin} --dangerously-skip-permissions${model ? ` --model ${model}` : ''}`
-  if (agent === 'codex' || agent === 'codex-cc') {
-    // Fast mode spends codex credits faster and an unattended worker does not need the speed; codex-cc bills through
-    // Command Code, so it keeps its flags.
-    const fast = agent === 'codex' ? ' -c features.fast_mode=false' : ''
-    const flags = `${model ? ` --model ${model}` : ''}${effort ? ` -c model_reasoning_effort="${effort}"` : ''}${fast} -c approval_policy="never" -c sandbox_mode="danger-full-access"`
-    if (agent === 'codex') return `${bin}${flags}`
-    const provider = '-c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses'
-    const key = win
-      ? '$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME\\.pi\\agent\\auth.json" | ConvertFrom-Json).commandcode.key'
-      : `export CMD_API_KEY="$(node -p "require(process.env.HOME + '/.pi/agent/auth.json').commandcode.key")"`
-
-    return `${key}; ${bin} ${provider}${flags}`
+  if (agent === 'codex') {
+    // Fast mode spends codex credits faster and an unattended worker does not need the speed.
+    const flags = `${model ? ` --model ${model}` : ''}${effort ? ` -c model_reasoning_effort="${effort}"` : ''} -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"`
+    return `${bin}${flags}`
   }
-  // pi: headless, no TUI. The brief rides in the prompt; the Orca and stack variables are cleared so Orca does not
-  // take this pane for a second agent and the stack markers do not leak into Gentle Shell.
+  // pi: an interactive TUI like the other workers, so Orca shows it on its card and a turn that waits on a background
+  // verify resumes when it reports (`pi -p` ended with the turn, #277). The brief rides in the first message. Nothing
+  // may wait on a person: the dialog tools are left out and --no-approve skips the project-trust prompt (untrusted, as
+  // `pi -p` left it). The stack markers are cleared so they do not leak into Gentle Shell.
   const q = win ? psQuote : shQuote
-  const prompt = `Read and carry out the brief in ${briefPath}. Non-interactive: never wait for user input.`
+  const prompt = `Read and carry out the brief in ${briefPath}. Unattended: never wait for user input.`
   const tools = PI_TOOLS[mode] ? ` --tools ${q(PI_TOOLS[mode])}` : ''
   // With a profile the orchestrator is the profile's own, not whatever the global settings.json says (a pin never moves it).
   const piFlags = piModel ? ` --model ${q(piModel)}${PI_THINKING.includes(piThinking) ? ` --thinking ${piThinking}` : ''}` : ''
-  const cmd = `pi -p --no-skills --skill ${q(skills)} --session-id ${session}${piFlags}${tools} ${q(prompt)}`
+  const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve --exclude-tools ${q(PI_DIALOG_TOOLS)}${piFlags}${tools} ${q(prompt)}`
   const set = [['ENGRAM_DATA_DIR', P.join(home, '.gentle-shell', 'engram')], ['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
   if (win) {
-    return [`Remove-Item ${ORCA_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
+    return [`Remove-Item ${STACK_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
   }
 
-  return [`unset ${ORCA_VARS_CLEARED.join(' ')}`, `export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`, cmd].join('; ')
+  return [`unset ${STACK_VARS_CLEARED.join(' ')}`, `export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`, cmd].join('; ')
 }
 
 // Repo-relative paths a brief cites in inline backticks: contains a slash or ends in a known extension, no spaces, not a
@@ -245,7 +241,7 @@ const fanoutInstructions = (agent, nota, bounce = false) => {
 }
 
 // claude imports AGENTS.md through CLAUDE.md (`orca-stack init`), and codex and pi load it on their own. Nobody checked
-// agy and codex-cc, so they keep reading it.
+// agy keeps reading it.
 const LOADS_AGENTS_MD = ['claude', 'codex', 'pi']
 const projectInstructions = agent => LOADS_AGENTS_MD.includes(agent)
   ? 'AGENTS.md is already in your context: do not read it again. Read GLOSSARY.md or CONTEXT.md and docs/adr when they exist.'
@@ -284,6 +280,7 @@ export const renderBrief = (kind, vars, nota) => {
     PUBLISH_INSTRUCTIONS: vars.PUBLISH_INSTRUCTIONS ?? 'Write the review in a UTF-8 file and publish it with a body file, never through a pipe:',
     PUBLISH_COMMAND: vars.PUBLISH_COMMAND ?? `gh pr review ${vars.PR} --comment --body-file <file>`,
     REVIEWER_LINE: vars.REVIEWER_LINE ?? vars.AGENT,
+    DELTA_INSTRUCTIONS: vars.DELTA_INSTRUCTIONS ?? '',
     PROJECT_INSTRUCTIONS: projectInstructions(vars.AGENT),
     SUBAGENTS_INSTRUCTION: subagentsInstruction(vars.AGENT),
     BODY_PRECHECK_STEP: vars.BODY_PRECHECK_STEP ?? bodyPrecheckStep(vars.CUERPO_PR),
@@ -453,8 +450,9 @@ const piSessionTools = (io, home, worktree, after = 0) => {
   return undefined
 }
 
+// Up to 30 s: the TUI draws its screen before it takes the first message, so it can start slower than `pi -p` did.
 const waitForPiSession = async (io, home, worktree, after = 0) => {
-  for (let i = 0; i < 25; i += 1) {
+  for (let i = 0; i < 150; i += 1) {
     const tools = piSessionTools(io, home, worktree, after)
     if (tools !== undefined) return tools
     await io.sleep(200)
@@ -509,25 +507,56 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
   } else {
     const tools = await waitForPiSession(io, home, worktree, piSessionAfter)
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
-    if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el rebote por iniciado.`)
+    if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
   }
   say(`\u2714 ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
 
   return 0
 }
 
-// The gentle-pi profile a pi dispatch is pinned to: --perfil-pi wins over agentes.pi.perfil; absent or "preguntar" means
-// the globally active profile (today's behavior). Fails before any side effect when it cannot be honored.
-export const piProfileFor = ({ flag, config, home, commonDir, io }) => {
+// The only model providers a pi launch may use: Claude through the bridge or pi's Anthropic login, and OpenAI.
+export const PI_PROVIDERS = ['claude-bridge/', 'anthropic/', 'openai/']
+// The agents of a gentle-pi profile (orchestrator included) whose model is outside PI_PROVIDERS, as "agent (model)".
+export const disallowedModels = profile => Object.entries(isPlain(profile) ? profile : {})
+  .filter(([, agent]) => isPlain(agent) && typeof agent.model === 'string' && !PI_PROVIDERS.some(provider => agent.model.trim().startsWith(provider)))
+  .map(([name, agent]) => `${name} (${agent.model.trim()})`)
+const checkProviders = (name, profile) => {
+  const bad = disallowedModels(profile)
+  if (bad.length > 0) throw new Error(`El perfil de Pi "${name}" usa modelos de proveedores no permitidos (solo ${PI_PROVIDERS.join(', ')}): ${bad.join(', ')}.`)
+}
+
+// The gentle-pi profile a pi launch uses and where that came from: --perfil-pi, then the worktree pin, then
+// agentes.pi.perfil. "global" is the globally active profile, on purpose. Nothing (or "preguntar") fails closed, before
+// any side effect, so a launch never falls back to the global profile by accident.
+export const piProfileFor = ({ flag, pin, config, home, commonDir, io }) => {
   const configured = config.agentes?.pi?.perfil
-  const wanted = typeof flag === 'string' ? flag.trim() : typeof configured === 'string' && configured.trim().toLowerCase() !== 'preguntar' ? configured.trim() : ''
-  if (wanted === '') return undefined
-  if (!PROFILE_NAME.test(wanted)) throw new Error(`El perfil de Pi "${wanted}" no es un nombre válido (letras, números, . _ -; hasta 64 caracteres).`)
+  const nonBlank = value => typeof value === 'string' && value.trim() !== ''
+  const [wanted, source] = nonBlank(flag) ? [flag.trim(), 'flag']
+    : nonBlank(pin) ? [pin.trim(), 'pin']
+      : nonBlank(configured) && configured.trim().toLowerCase() !== 'preguntar' ? [configured.trim(), 'config'] : ['', undefined]
   const store = path.join(home, '.pi', 'gentle-ai', 'profiles.json')
-  const profiles = readJson(store, io)?.profiles
-  if (!isPlain(profiles) || !isPlain(profiles[wanted])) {
-    throw new Error(`No existe el perfil de Pi "${wanted}" en ${store}${isPlain(profiles) ? ` (hay: ${Object.keys(profiles).join(', ') || 'ninguno'})` : ''}. Crealo con /gentle:profiles en Pi.`)
+  const data = readJson(store, io)
+  const profiles = isPlain(data?.profiles) ? data.profiles : undefined
+  const names = profiles ? Object.keys(profiles).join(', ') || 'ninguno' : 'ninguno'
+  if (wanted === '') throw new Error(`Falta el perfil de Pi: pasá --perfil-pi <nombre> (hay: ${names}) o poné agentes.pi.perfil en la config ("global" usa el perfil activo global a propósito).`)
+  if (wanted.toLowerCase() === 'global') {
+    if (profiles && Object.keys(profiles).some(name => name.toLowerCase() === 'global')) {
+      throw new Error(`"global" es ambiguo: ${store} tiene un perfil llamado así. Renombralo o pasá --perfil-pi con otro nombre.`)
+    }
+    // No active profile (or one missing from the store) leaves nothing to check the providers against: fail closed.
+    const active = nonBlank(data?.active) ? data.active.trim() : undefined
+    if (!active || !profiles || !isPlain(profiles[active])) {
+      throw new Error(`"global" pide el perfil activo global, pero ${store} no tiene uno${active ? ` (activo: "${active}", que no existe)` : ''}. Activá uno con /gentle:profiles en Pi o pasá --perfil-pi <nombre>.`)
+    }
+    checkProviders(active, profiles[active])
+
+    return { name: 'global', global: true, active, source: 'global' }
   }
+  if (!PROFILE_NAME.test(wanted)) throw new Error(`El perfil de Pi "${wanted}" no es un nombre válido (letras, números, . _ -; hasta 64 caracteres).`)
+  if (!profiles || !isPlain(profiles[wanted])) {
+    throw new Error(`No existe el perfil de Pi "${wanted}" en ${store}${profiles ? ` (hay: ${names})` : ''}. Crealo con /gentle:profiles en Pi.`)
+  }
+  checkProviders(wanted, profiles[wanted])
   const orchestrator = profiles[wanted].orchestrator
   if (!isPlain(orchestrator) || typeof orchestrator.model !== 'string' || orchestrator.model.trim() === '') {
     throw new Error(`El perfil de Pi "${wanted}" no define orchestrator.model: sin él, el orquestador dependería del settings.json global.`)
@@ -545,15 +574,30 @@ export const piProfileFor = ({ flag, config, home, commonDir, io }) => {
     else io.out(`⚠ El perfil de Pi "${wanted}" tiene thinking ${JSON.stringify(orchestrator.thinking)}, que no es válido (${PI_THINKING.join(', ')}): se ignora y Pi arranca sin --thinking.`)
   }
 
-  return { name: wanted, model: orchestrator.model.trim(), thinking }
+  return { name: wanted, model: orchestrator.model.trim(), thinking, source }
 }
+
+// What every pi launch prints and its brief records, so an unexplained profile can be traced.
+export const piProfileLines = profile => [
+  ...(profile.global ? [`perfil de Pi: global (activo: ${profile.active})`] : []),
+  `perfil de Pi: ${profile.global ? profile.active : profile.name} (fuente: ${profile.source})`,
+]
+// A bounce or a resume that chose a named profile without the worktree pin writes the pin, so the subagents follow it too.
+export const needsPin = profile => profile !== undefined && !profile.global && profile.source !== 'pin'
+const withProfileLines = (brief, profile) => profile ? `${brief.replace(/\s*$/, '\n')}\n${piProfileLines(profile).join('\n')}\n` : brief
 
 // Writes the worktree pin gentle-pi reads at every subagent launch, and keeps it out of git: info/exclude is per clone,
 // so nothing tracked changes. gentle-pi also documents this file as a team-committable declaration, so first: a tracked pin
 // is left alone when it declares the same profile and fails when it declares another one; and if git still does not ignore
 // the file after the exclude entry (a .gitignore negation wins over info/exclude), it fails instead of writing.
 const PIN_REL = '.pi/gentle-ai/profile.json'
-const writePin = (io, worktree, commonDir, name) => {
+// The profile name the worktree pin declares, if any.
+export const readPin = (io, worktree) => {
+  const profile = readJson(path.join(worktree, ...PIN_REL.split('/')), io)?.profile
+
+  return typeof profile === 'string' ? profile : undefined
+}
+export const writePin = (io, worktree, commonDir, name) => {
   const file = path.join(worktree, ...PIN_REL.split('/'))
   if (io.sh('git', ['ls-files', '--error-unmatch', PIN_REL], { cwd: worktree }).status === 0) {
     let declared
@@ -583,6 +627,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const review = kind === 'review'
   const say = io.out
   if (!/^\d+$/.test(String(n ?? ''))) throw new Error(`Falta el número de ${review ? 'PR' : 'issue'}. Uso: orca-stack ${review ? 'revisar <pr>' : 'despachar <issue>'} <agente>.`)
+  if (agent === 'codex-cc') throw new Error(CODEX_CC_REMOVED)
   if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido: ${agent ?? '(ninguno)'}. Los agentes son: ${AGENTS.join(', ')}.`)
 
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
@@ -635,19 +680,36 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const name = review ? `revision-${n}-${agent}` : `${repo}-${n}`
   const session = review ? `${repo}-${name}` : name
   const briefPath = path.join(io.home, 'orca', 'briefs', `${session}.md`)
+  const reviewPath = path.join(io.home, 'orca', 'briefs', `${session}.review.md`)
   const startRef = `origin/${review ? branchOfPr : base}`
 
   // Idempotence lock: an existing worktree for this branch/name, or a live agent in it. A prunable entry is a worktree
   // whose folder is gone (`orca worktree rm` leaves one until `git worktree prune`): it does not count.
   const listed = ok(io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root }), 'git worktree list').stdout
-  const taken = listed.split(/\r?\n\s*\r?\n/).filter(entry => !/^prunable\b/m.test(entry)).join('\n').split(/\r?\n/).filter(l => l.startsWith('worktree ') || l.startsWith('branch ')).map(l => l.replace(/^(worktree|branch) /, ''))
-  if (taken.some(t => t.replace(/\\/g, '/').split('/').pop() === name)) throw new Error(`Ya hay un worktree para ${name}. No despacho dos veces: revisalo con \`orca worktree ps\`.`)
+  const entries = listed.split(/\r?\n\s*\r?\n/).filter(entry => !/^prunable\b/m.test(entry))
+  const worktreeName = value => String(value).replace(/\\/g, '/').split('/').pop()
+  const pathMatchesName = value => worktreeName(value) === name
+  const existing = entries.find(entry => [...entry.matchAll(/^worktree (.+)$/gm)].some(([, value]) => pathMatchesName(value)))
+  const conflict = entries.find(entry => [...entry.matchAll(/^(?:worktree |branch refs\/heads\/)(.+)$/gm)].some(([, value]) => pathMatchesName(value)))
+  if (conflict && !review) throw new Error(`Ya hay un worktree para ${name}. No despacho dos veces: revisalo con \`orca worktree ps\`.`)
+  if (conflict && review && !existing) throw new Error(`Ya hay un worktree o rama para ${name}, pero no pude identificar su ruta para reutilizarlo.`)
+  const existingPath = existing ? [...existing.matchAll(/^worktree (.+)$/gm)].map(([, value]) => value).find(pathMatchesName) : undefined
+  const previousHead = existing ? /^HEAD (.+)$/m.exec(existing)?.[1] : undefined
+  if (existing && !previousHead) throw new Error(`No pude leer HEAD del worktree ${existingPath}; no voy a reutilizarlo.`)
   const ps = io.sh('orca', ['worktree', 'ps', '--json'])
   if (ps.status === 0) {
     const live = (parseJson(ps, 'orca worktree ps').result?.worktrees ?? []).find(
-      w => String(w.path ?? '').replace(/\\/g, '/').split('/').pop() === name || (!review && w.repo === repo && w.linkedIssue === Number(n)),
+      w => worktreeName(w.path ?? '') === name || (!review && w.repo === repo && w.linkedIssue === Number(n)),
     )
-    if (live) throw new Error(`Orca ya tiene un worktree para ${name}${(live.agents ?? []).length > 0 ? ' con un agente vivo' : ''}: ${live.path}.`)
+    if (live && (!review || !existing)) throw new Error(`Orca ya tiene un worktree para ${name}${(live.agents ?? []).length > 0 ? ' con un agente vivo' : ''}: ${live.path}.`)
+    if (existing && live) {
+      const agents = live.agents ?? []
+      const active = agents.find(item => /^(working|running|active)$/i.test(item.state ?? item.status ?? ''))
+      if (active) throw new Error(`Orca ya tiene un worktree para ${name} con un agente vivo: ${live.path}.`)
+      const done = agents.find(item => /^done$/i.test(item.state ?? item.status ?? ''))
+      if (done) throw new Error(`La terminal ${done.paneKey ?? done.agentType ?? agent} de ${live.path} sigue abierta en done; cerrala antes de revisar de nuevo.`)
+    }
+    if (existing && !live) throw new Error(`Orca no muestra ${existingPath}; no puedo comprobar que no haya una terminal abierta antes de reutilizarlo.`)
   } else if (!dryRun) {
     throw new Error(`Orca no contesta (orca worktree ps): ${(ps.stderr || ps.stdout).trim()}`)
   } else say('⚠ Orca no contesta: no pude comprobar si ya hay un agente vivo.')
@@ -663,10 +725,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     return dryRun ? { status: 0, stdout: '', stderr: '' } : ok(io.sh(cmd, argv, opts), `${cmd} ${argv[0]}`)
   }
 
-  if (!dryRun) {
-    const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
-    if (fetched.status !== 0) throw new Error(`git fetch origin falló, no asigné ni creé nada: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
-  }
+  let fetchedOrigin = false
   let hasCodingStandards = false
   const briefFor = branch => renderBrief(kind, {
     REPO: repo,
@@ -679,6 +738,11 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     CUERPO_PR: config.verificacion?.cuerpoPR,
     HAS_CODING_STANDARDS: hasCodingStandards,
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
+    ...(review ? {
+      DELTA_INSTRUCTIONS: previousHead ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : 'This is the first review round; review the full PR.',
+      PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
+      PUBLISH_COMMAND: `gh pr review ${n} --comment --body-file ${reviewPath}`,
+    } : {}),
   }, nota)
   // Validate the cited paths against the tree the worktree will be created from, before any side effect.
   const tree = io.sh('git', ['ls-tree', '-r', '--name-only', startRef], { cwd: root })
@@ -691,34 +755,69 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     }
   } else if (dryRun) say(`⚠ No pude listar ${startRef}: la validación de rutas del brief se hace al despachar.`)
   else throw new Error(`No pude listar ${startRef} para validar las rutas del brief: ${(tree.stderr || tree.stdout).trim()}`)
+  if (existing) {
+    const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: existingPath })
+    if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${existingPath}: ${(status.stderr || status.stdout).trim()}`)
+    if (status.stdout.trim() !== '') throw new Error(`El worktree ${existingPath} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de revisar de nuevo.`)
+    if (previousHead === sha) throw new Error(`Ya revisaste ${sha} con ${agent}.`)
+    if (agent === 'pi') {
+      const pinned = readPin(io, existingPath)
+      // "global" writes no pin, so it matches a worktree without one.
+      if (profile && pinned !== (profile.global ? undefined : profile.name)) throw new Error(`El worktree fija el perfil de Pi "${pinned ?? '(ninguno)'}"; no se puede cambiar a "${profile.name}" en una segunda revisión.`)
+    }
+    if (!dryRun) {
+      const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
+      if (fetched.status !== 0) throw new Error(`git fetch origin fall\u00F3, no cambi\u00E9 el worktree: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
+      fetchedOrigin = true
+    }
+    const reachable = io.sh('git', ['for-each-ref', '--contains=HEAD', '--format=%(refname)', 'refs/remotes/origin'], { cwd: existingPath })
+    if (reachable.status !== 0 || reachable.stdout.trim() === '') throw new Error(`El HEAD del worktree ${existingPath} (${previousHead}) no est\u00E1 alcanzable desde origin; no cambi\u00E9 nada.`)
+  }
+  if (!dryRun && !fetchedOrigin) {
+    const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
+    if (fetched.status !== 0) throw new Error(`git fetch origin falló, no asigné ni creé nada: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
+  }
   const left = { assigned: false, worktree: null, brief: null }
   if (!review) {
     act('gh', ['issue', 'edit', String(n), '--add-assignee', '@me'], { cwd: root })
     left.assigned = !dryRun
   }
   const createArgs = ['worktree', 'create', '--name', name, '--base-branch', startRef, '--no-parent', ...(review ? [] : ['--issue', String(n)]), '--json']
-  let worktree = '<worktree>'
+  let worktree = existingPath ?? '<worktree>'
   let branch = name
   try {
-    if (agent === 'claude') {
+    if (agent === 'claude' && !existing) {
       ensureCandidateWorktreesExclude({ root, commonDir, io, dryRun, say })
     }
-    const created = act('orca', createArgs)
-    if (!dryRun) {
-      const json = parseJson(created, 'orca worktree create')
-      worktree = deepFind(json.result ?? json, ['path', 'worktreePath'])
-      branch = (deepFind(json.result ?? json, ['branch']) ?? name).replace(/^refs\/heads\//, '')
-      if (!worktree) throw new Error('orca worktree create no devolvió la ruta del worktree.')
-      left.worktree = worktree
+    if (existing) {
+      say(`${dryRun ? '[simulación] ' : ''}Reutilizo ${worktree} desde ${previousHead} para revisar ${sha}.`)
+      act('git', ['checkout', '--detach', sha], { cwd: worktree })
+      branch = undefined
+    } else {
+      const created = act('orca', createArgs)
+      if (!dryRun) {
+        const json = parseJson(created, 'orca worktree create')
+        worktree = deepFind(json.result ?? json, ['path', 'worktreePath'])
+        branch = (deepFind(json.result ?? json, ['branch']) ?? name).replace(/^refs\/heads\//, '')
+        if (!worktree) throw new Error('orca worktree create no devolvió la ruta del worktree.')
+        left.worktree = worktree
+      }
     }
 
     if (!review) say(`${dryRun ? '[simulaci\u00f3n] ' : ''}Rama: ${dryRun ? `la define Orca al crear el worktree (se pidi\u00f3 --name ${name})` : branch}`)
 
-    if (profile) {
+    if (profile) for (const line of piProfileLines(profile)) say(`${dryRun ? '[simulación] ' : ''}${line}`)
+    if (profile && !profile.global) {
       say(`${dryRun ? '[simulación] ' : ''}perfil de Pi "${profile.name}": pin en ${path.join(worktree, ...PIN_REL.split('/'))} (si git no lo ignora, se agrega /${PIN_REL} a ${path.join(commonDir, 'info', 'exclude')}); orquestador ${profile.model}${profile.thinking ? ` (${profile.thinking})` : ''}`)
       if (!dryRun) writePin(io, worktree, commonDir, profile.name)
     }
-    const brief = briefFor(branch)
+    const brief = withProfileLines(briefFor(branch), profile)
+    if (existing && io.exists(reviewPath)) {
+      const archivedReviewPath = path.join(io.home, 'orca', 'briefs', `${session}.review.${previousHead}.md`)
+      if (io.exists(archivedReviewPath)) throw new Error(`Ya existe el review archivado ${archivedReviewPath}; no voy a sobrescribirlo.`)
+      say(`${dryRun ? '[simulación] ' : ''}review anterior -> ${archivedReviewPath}`)
+      if (!dryRun) io.rename(reviewPath, archivedReviewPath)
+    }
     say(`${dryRun ? '[simulación] ' : ''}brief -> ${briefPath}`)
     if (!dryRun) {
       io.mkdirp(path.dirname(briefPath))
@@ -728,6 +827,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     await launchInWorktree({
       agent, mode, worktree, briefPath, brief, session, config, win, home: io.home, skills,
       piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun,
+      piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0,
     })
 
     return 0
@@ -747,6 +847,22 @@ const blockingSection = body => /(?:^|\r?\n)##\s+BLOQUEA\s*(?:\r?\n|$)([\s\S]*?)
 const blockingBody = body => {
   const section = blockingSection(body)
   return section !== '' && !/^nada\s*$/i.test(section)
+}
+// An issue that cannot be read adds no answers, so its interpretation findings stay with the human.
+const humanAnswers = (io, root, pr) => {
+  const isAnswer = item => /^Respuesta del humano:/m.test(reviewBody(item))
+  const issues = [...new Set([...String(pr.body ?? '').matchAll(/\bCloses #(\d+)\b/gi)].map(match => match[1]))]
+  const fromIssues = issues.flatMap(issue => {
+    const res = io.sh('gh', ['issue', 'view', issue, '--json', 'comments'], { cwd: root })
+    if (res.status !== 0) return []
+    try {
+      const comments = JSON.parse(res.stdout).comments
+      return Array.isArray(comments) ? comments : []
+    } catch {
+      return []
+    }
+  })
+  return [...(pr.comments ?? []), ...fromIssues].filter(isAnswer)
 }
 
 export const reboteCommand = async (flags, n, io = defaultIo()) => {
@@ -769,6 +885,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (String(pr.state).toUpperCase() !== 'OPEN') throw new Error(`El PR #${n} est\u00E1 ${String(pr.state).toLowerCase()}; no se puede rebotar.`)
   const agent = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim().toLowerCase()
   if (!agent) throw new Error(`El PR #${n} no tiene la l\u00EDnea "Implementador: <agente>".`)
+  if (agent === 'codex-cc') throw new Error(CODEX_CC_REMOVED)
   if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido en Implementador: ${agent}.`)
   if (!(config.agentes?.usa ?? []).includes(agent)) throw new Error(`${agent} no est\u00E1 en agentes.usa de este repo (${(config.agentes?.usa ?? []).join(', ') || 'vac\u00EDo'}).`)
   const blocked = blockOf(config, agent, (io.now ?? Date.now)())
@@ -844,16 +961,24 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     const body = reviewBody(item)
     return blockingBody(body) && /^\s*Commit:\s*(\S+)/mi.exec(body)?.[1] === sha
   })
-  const interpretations = blockers.filter(item => /interpretaci[o\u00F3]n/i.test(blockingSection(reviewBody(item))))
+  const flagged = blockers.filter(item => /interpretaci[o\u00F3]n/i.test(blockingSection(reviewBody(item))))
+  // A Respuesta del humano posted after the review, on the PR or on an issue it closes, settles its interpretation findings.
+  const answers = flagged.length > 0 ? humanAnswers(io, root, pr) : []
+  const settledBy = new Map(flagged.map(item => {
+    const at = Date.parse(item.submittedAt ?? item.createdAt ?? '')
+    return [item, Number.isNaN(at) ? undefined : answers.find(answer => Date.parse(answer.createdAt ?? '') > at)]
+  }).filter(([, answer]) => answer))
+  const interpretations = flagged.filter(item => !settledBy.has(item))
   const reviewBlockers = blockers.filter(item => !interpretations.includes(item))
-  // A conflict-only bounce does not spend the review bounce, so an older Rebote: marker does not refuse it.
-  if (markers.some(marker => marker !== sha) && !(conflict && reviewBlockers.length === 0)) throw new Error(`El head del PR avanz\u00F3 desde el rebote (${markers.at(-1)} -> ${sha}); lo que siga en pie lo decide main con Decidido por main.`)
+  // A conflict-only or CI-only bounce does not spend the review bounce, so an older Rebote: marker does not refuse it.
+  if (markers.some(marker => marker !== sha) && !((conflict || failedChecks.length > 0) && reviewBlockers.length === 0)) throw new Error(`El head del PR avanz\u00F3 desde el rebote (${markers.at(-1)} -> ${sha}); lo que siga en pie lo decide main con Decidido por main.`)
   if (interpretations.length > 0 && failedChecks.length === 0 && !conflict) {
     const lines = interpretations.map(item => `${item.url ?? item.html_url ?? 'review'}: ${blockingSection(reviewBody(item)).split(/\r?\n/).filter(line => /interpretaci[o\u00F3]n/i.test(line)).join(' ')}`)
     throw new Error(`Los bloqueos de interpretaci\u00F3n van al humano, no al autor:\n${lines.join('\n')}`)
   }
   const findings = reviewBlockers.map(item => {
-    return `${item.url ?? item.html_url ?? 'Review'}\n${blockingSection(reviewBody(item))}`
+    const answer = settledBy.get(item)
+    return `${item.url ?? item.html_url ?? 'Review'}\n${blockingSection(reviewBody(item))}${answer ? `\nInterpretation settled by the human: ${answer.url ?? '(no link available)'}` : ''}`
   }).join('\n\n')
   if (reviewBlockers.length === 0 && failedChecks.length === 0 && !conflict) {
     const behind = String(pr.mergeStateStatus ?? '').toUpperCase() === 'BEHIND'
@@ -878,6 +1003,10 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     return branch === pr.headRefName && location ? location : undefined
   }).find(Boolean)
   if (!worktree) throw new Error(`No hay un worktree para la rama ${pr.headRefName} del PR #${n}.`)
+  // Before the worktree moves: a pi bounce with no profile fails closed. The pin wins; with none, the flag or the config.
+  const profilePin = agent === 'pi' ? readPin(io, worktree) : undefined
+  if (perfilPi !== undefined && profilePin !== undefined && perfilPi !== profilePin) throw new Error(`El worktree fija el perfil de Pi "${profilePin}"; no se puede cambiar a "${perfilPi}" en un rebote.`)
+  const profile = agent === 'pi' ? piProfileFor({ flag: profilePin === undefined ? perfilPi : undefined, pin: profilePin, config, home: io.home, commonDir, io }) : undefined
   const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: worktree })
   if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${worktree}: ${(status.stderr || status.stdout).trim()}`)
   if (status.stdout.trim() !== '') throw new Error(`El worktree ${worktree} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de relanzar.`)
@@ -923,14 +1052,14 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const name = `${repo}-pr-${n}-rebote`
   const session = `${name}-${(io.now ?? Date.now)()}`
   const briefPath = path.join(io.home, 'orca', 'briefs', `${name}.md`)
-  const profilePin = agent === 'pi' ? readJson(path.join(worktree, '.pi', 'gentle-ai', 'profile.json'), io)?.profile : undefined
-  if (perfilPi !== undefined && perfilPi !== profilePin) throw new Error(`El worktree fija el perfil de Pi "${profilePin ?? '(ninguno)'}"; no se puede cambiar a "${perfilPi}" en un rebote.`)
-  const profile = agent === 'pi' ? piProfileFor({ flag: profilePin ?? perfilPi, config, home: io.home, commonDir, io }) : undefined
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corr\u00E9 `orca-stack global`.')
+  if (profile) for (const line of piProfileLines(profile)) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}${line}`)
+  if (needsPin(profile) && !dryRun) writePin(io, worktree, commonDir, profile.name)
   const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
-  const brief = render(readAsset('stack', 'brief-rebote.md'), {
+  const brief = withProfileLines(render(readAsset('stack', 'brief-rebote.md'), {
     PR: String(n), SHA: sha,
+    AGENT: agent,
     ISSUE: issue,
     REMOTE_HOST: remote.host,
     REMOTE_REPO: remote.ownerRepo,
@@ -942,7 +1071,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     BODY_PRECHECK_STEP: reboteBodyPrecheckStep(config.verificacion?.cuerpoPR),
     FANOUT_INSTRUCTIONS: fanoutInstructions(agent, nota, true),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
-  })
+  }), profile)
   if (!dryRun) {
     io.mkdirp(path.dirname(briefPath))
     io.writeFile(briefPath, brief)

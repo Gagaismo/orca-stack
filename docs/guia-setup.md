@@ -129,11 +129,13 @@ gentle-pi guarda perfiles de modelos en `~/.pi/gentle-ai/profiles.json` (cada pe
 - Escribe `.pi/gentle-ai/profile.json` en el worktree (gentle-pi lo lee en cada lanzamiento de subagente, también en modo `-p`) y lo excluye de git con `<git-common-dir>/info/exclude`.
 - Lanza pi con `--model` y `--thinking` del `orchestrator` del perfil, porque un pin nunca mueve al orquestador.
 - Se niega si el perfil no existe o si el clon ya tiene un pin local (`<git-common-dir>/gentle-ai/profile-pin.json`) con otro perfil, porque ese gana sobre el del worktree.
+- Se niega si el orquestador o algún subagente del perfil usa un modelo que no es `claude-bridge/…`, `anthropic/…` (el login OAuth de Anthropic en pi) ni `openai/…`, y nombra cada agente y modelo. `orca-stack doctor` avisa de cada perfil guardado que rompe esta regla.
+- Imprime `perfil de Pi: <nombre> (fuente: flag | config | pin | global)` y el brief guarda la misma línea.
 - El perfil global activo no cambia, y las consultas a Gentle Shell (`/pi`, `consultar_gentle_shell`) no usan esto.
 
-Perfiles que conviene tener: `opus-haiku` (Opus 5.5 orquesta; los diez subagentes en Haiku 5.5, todos por `claude-bridge`) y `samu-balanceado` (el multi-modelo). Un perfil tiene que listar a **todos** los agentes: si omite uno, ese agente usa el modelo de su frontmatter. Para editarlos: `/gentle:profiles` dentro de Pi, o editar `profiles.json` a mano (copiá el archivo antes).
+Perfiles que conviene tener: `opus-sonnet` (Opus 5.5 orquesta; los diez subagentes en Sonnet 5.5, todos por `claude-bridge`) y `OpusFull` (Opus 5.5 orquesta por `claude-bridge` y los subagentes corren en Opus 5.5 por `anthropic`). Un perfil tiene que listar a **todos** los agentes: si omite uno, ese agente usa el modelo de su frontmatter. Para editarlos: `/gentle:profiles` dentro de Pi, o editar `profiles.json` a mano (copiá el archivo antes).
 
-Quién elige el perfil, en este orden: el flag `--perfil-pi`; `agentes.pi.perfil` con un nombre; y si falta o vale `"preguntar"`, el mod `guardia-despacho` te lo pregunta (diálogo "Perfil Pi") cuando Claude despacha a pi, y agrega el flag al comando. Si cierran el diálogo, el despacho sigue con el perfil activo global.
+Quién elige el perfil, en este orden: el flag `--perfil-pi`; en `rebote` y `reanudar`, el pin que ya tiene el worktree; `agentes.pi.perfil` con un nombre, o `"global"` para usar a propósito el perfil activo global; y si falta o vale `"preguntar"`, el mod `guardia-despacho` te lo pregunta (diálogo "Perfil Pi") cuando Claude despacha a pi, y agrega el flag al comando. Si no queda un perfil elegido (cierran el diálogo, `-p`, sin `profiles.json`), el mod niega el comando, y el CLI solo también se niega: un despacho a pi nunca cae al perfil activo global sin que la config lo diga.
 
 ### Si la máquina ya tenía una instalación anterior
 
@@ -217,7 +219,7 @@ Si no hay tiempo para todo, respondé A1, B1, C1, C3, C4 y F1. Con eso alcanza p
 **B4. ¿Qué tan claro está lo que hay que construir?** [Ambos]
 - Por qué importa: define con qué skill arranca el trabajo real. La escribe la persona, no el agente.
 - Opciones:
-  - Idea grande y difusa que no entra en una sesión: **`/wayfinder`** (arma un mapa de tickets de decisión).
+  - Idea grande y difusa que no entra en una sesión: **`/grill-with-docs`** primero; si la planificación se va de las manos, **`/wayfinder`** la convierte en un mapa de tickets de decisión. Nunca arranques con `/wayfinder`.
   - Idea clara pero sin los detalles decididos: **`/grill-with-docs`** (entrevista y deja `GLOSSARY.md` y ADRs).
   - Decidido, pero sin spec escrita: **`/to-spec`**.
   - Ya hay una spec acordada: **`/to-tickets`**.
@@ -332,7 +334,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 8. **Orquestación:** agregá `docs/agents/orchestration.md` y `orca-dag.md` (G).
 9. **Verificación:** hacé la Parte 5.
 10. **Commit:** `chore: set up agent stack`.
-11. **Arranque:** escribí el comando que salió de B4 (normalmente `/wayfinder` o `/grill-with-docs`).
+11. **Arranque:** escribí el comando que salió de B4 (normalmente `/grill-with-docs`).
 
 ### Recorrido B: proyecto ya empezado
 
