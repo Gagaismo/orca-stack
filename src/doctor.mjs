@@ -1,9 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
 import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
+import { CODEX_DOC_DEFAULT, readCodexDocBytes } from './codex-doc-bytes.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { codexAgentsMd, codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
@@ -112,6 +113,29 @@ export const codexTrustStatus = (root, file) => {
   return trust === 'trusted'
     ? { level: 'ok', detail: '' }
     : { level: 'warn', detail: codexTrustHint(root) }
+}
+
+// Whether codex's project_doc_max_bytes (32 KiB when unset) covers the repo's AGENTS.md; the global one does not count (#269).
+// null when the repo has no AGENTS.md.
+export const codexDocBytesStatus = (agentsMd, file) => {
+  if (!existsSync(agentsMd)) return null
+  const size = statSync(agentsMd).size
+  let contents
+  try {
+    contents = existsSync(file) ? readFileSync(file, 'utf8') : ''
+  } catch (error) {
+    return { level: 'warn', detail: `${file} no se pudo leer: ${error.message}` }
+  }
+  const current = readCodexDocBytes(contents)
+  if (current.invalid !== undefined) {
+    return { level: 'warn', detail: `project_doc_max_bytes = ${current.invalid} en ${file} no es un entero` }
+  }
+  const value = current.value ?? CODEX_DOC_DEFAULT
+  const source = current.value === null ? 'el default de codex, sin valor en config.toml' : 'config.toml'
+
+  return value < size
+    ? { level: 'warn', detail: `${value} (${source}) es menos que los ${size} bytes de AGENTS.md: codex corta el contrato. Corré \`orca-stack global\`` }
+    : { level: 'ok', detail: `${value} cubre los ${size} bytes de AGENTS.md` }
 }
 
 // Ids of an upstream plugin installed for Claude Code (`<name>@<marketplace>`), minus the ones
@@ -475,6 +499,10 @@ export const doctorCommand = async flags => {
     if (agentsUsed(personal, committed, local).includes('codex')) {
       const trust = codexTrustStatus(root, path.join(L.codexDir, 'config.toml'))
       add(trust.level, 'codex repo root trust', trust.detail)
+      const docBytes = codexDocBytesStatus(path.join(root, 'AGENTS.md'), path.join(L.codexDir, 'config.toml'))
+      if (docBytes) {
+        add(docBytes.level, 'codex project_doc_max_bytes', docBytes.detail)
+      }
     }
     // Same layering as the mods' mergeConfig: objects merge key by key, anything else (null included) replaces.
     const isPlain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
