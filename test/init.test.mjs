@@ -61,7 +61,7 @@ describe('init', () => {
     assert.ok(text.includes('## BLOQUEA'))
     assert.ok(text.includes('### Política del stack'))
     assert.ok(text.includes('implementación con gentle-ai ODD (main corre ODD para su trabajo de orquestación, nunca implementa tickets)'))
-    assert.ok(text.includes('Planificación con las skills de Matt Pocock (grilling, to-spec, to-tickets, disparadas por el humano), e implementación con gentle-ai ODD en todo el stack'))
+    assert.ok(text.includes('Planificación con las skills de Matt Pocock (grill-with-docs, to-spec, to-tickets, disparadas por el humano), e implementación con gentle-ai ODD en todo el stack'))
     assert.doesNotMatch(text, /sdd/i, 'v4 has no SDD anywhere')
     assert.doesNotMatch(text, /gpt-6|2026-10/)
     assert.ok(text.includes('Commit: <sha>') && text.includes('Verificado por main:'))

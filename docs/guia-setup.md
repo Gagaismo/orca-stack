@@ -217,7 +217,7 @@ Si no hay tiempo para todo, respondé A1, B1, C1, C3, C4 y F1. Con eso alcanza p
 **B4. ¿Qué tan claro está lo que hay que construir?** [Ambos]
 - Por qué importa: define con qué skill arranca el trabajo real. La escribe la persona, no el agente.
 - Opciones:
-  - Idea grande y difusa que no entra en una sesión: **`/wayfinder`** (arma un mapa de tickets de decisión).
+  - Idea grande y difusa que no entra en una sesión: **`/grill-with-docs`** primero; si la planificación se va de las manos, **`/wayfinder`** la convierte en un mapa de tickets de decisión. Nunca arranques con `/wayfinder`.
   - Idea clara pero sin los detalles decididos: **`/grill-with-docs`** (entrevista y deja `GLOSSARY.md` y ADRs).
   - Decidido, pero sin spec escrita: **`/to-spec`**.
   - Ya hay una spec acordada: **`/to-tickets`**.
@@ -332,7 +332,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 8. **Orquestación:** agregá `docs/agents/orchestration.md` y `orca-dag.md` (G).
 9. **Verificación:** hacé la Parte 5.
 10. **Commit:** `chore: set up agent stack`.
-11. **Arranque:** escribí el comando que salió de B4 (normalmente `/wayfinder` o `/grill-with-docs`).
+11. **Arranque:** escribí el comando que salió de B4 (normalmente `/grill-with-docs`).
 
 ### Recorrido B: proyecto ya empezado
 
