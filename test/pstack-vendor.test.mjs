@@ -297,7 +297,7 @@ describe('#265 re-vendor pstack principles and swarm from 0.15.36', () => {
     assert.match(ticketBrief, /The ticket touches a command, lifecycle step or loop that can run again after a crash, retry or rerun:\s*read `~\/\.claude\/skills\/principle-make-operations-idempotent\/SKILL\.md`\./)
     assert.match(ticketBrief, /Two fixes sharing one premise have failed the same check; apply it before a third:\s*read `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
     assert.match(bounceBrief, /The PR already bounced and the new failure shares the previous fix's premise:\s*read `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
-    assert.match(contract, /Antes de decidir qué sigue en pie después de la segunda ronda de review o de CI, o de pasárselo al humano:\s*leé `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
+    assert.match(contract, /Antes de decidir qu\u00e9 sigue en pie despu\u00e9s de la segunda ronda de review o de CI, o de pas\u00e1rselo al humano:\s*le\u00e9 `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
 
     for (const file of ['brief-ticket.md', 'brief-rebote.md', 'brief-revision.md', 'CONTRATO.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']) {
       const current = read(path.join(ROOT, 'assets', 'stack', file))
