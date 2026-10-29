@@ -68,7 +68,7 @@ Instala a nivel usuario:
      <!-- orca-stack:begin --> que haya dejado una versión anterior, con respaldo.
      Con el RDD de gentle-ai apagado, saca de ese archivo sus secciones de review (\`gentle-ai sync\` las restaura: volvé a correr \`global\`)
   6. Pi: gentle-pi y pi-claude-bridge con \`pi install\` + gentle-pi global (omitido con --skip-pi). Con un Pi anterior
-     a 1.2.0 no instala gentle-pi y falla: gentle-pi 4.2.0 no arranca con él
+     a 1.2.0 no instala gentle-pi y falla: gentle-pi 4.3.0 no arranca con él
   7. ~/.orca-stack/state.json (para \`remove\`) y ~/.orca-stack/config.json (capa personal)
 
 Es idempotente: una segunda corrida no cambia nada ni genera respaldos nuevos.

@@ -33,7 +33,7 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 | Skills propias: `orca-stack-policy`, `orca-setup`, `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | `~/.claude/skills/` y `~/.agents/skills/` |
 | Ocho mods de Claude Code (ver abajo) y sus rutas en `env.CLAUDE_CODE_PLUGIN_DIRS` | `~/.claude/mods/` y `~/.claude/settings.json` |
 | Nada de metodología en `~/.claude/CLAUDE.md`: si un `global` anterior dejó ahí el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->`, lo saca (con respaldo). También achica el bloque que gentle-ai escribe ahí (ver abajo) | `~/.claude/CLAUDE.md` |
-| Pi: `gentle-pi@4.2.0` y `pi-claude-bridge@0.9.2` con `pi install` (`pi install npm:gentle-pi@4.2.0`), más `npm i -g gentle-pi@4.2.0` (comando `gentle-shell`). Necesita Pi `1.2.0` o más nuevo: con un Pi anterior no instala gentle-pi y falla | `~/.pi/agent/` y npm global |
+| Pi: `gentle-pi@4.3.0` y `pi-claude-bridge@0.9.3` con `pi install` (`pi install npm:gentle-pi@4.3.0`), más `npm i -g gentle-pi@4.3.0` (comando `gentle-shell`). Necesita Pi `1.2.0` o más nuevo: con un Pi anterior no instala gentle-pi y falla | `~/.pi/agent/` y npm global |
 | Comando `orca-stack`, para usar desde cualquier repo sin npx ni red | Windows: prefijo global de npm si esta en `PATH`, con shims `.cmd` y sin extension para PowerShell y Git Bash. Otros sistemas: primer directorio escribible del `PATH`. La copia queda en `~/.orca-stack/cli/`; si falta el destino compartido, se usa `~/.orca-stack/bin/` y `global` imprime como agregarlo al `PATH` |
 | Registro de lo instalado, para `remove` | `~/.orca-stack/state.json` |
 | Capa personal de configuración | `~/.orca-stack/config.json` |
@@ -131,14 +131,14 @@ orca-stack vigilar --merge-de-main <pr>
 No se queda en "el archivo existe":
 
 - corre el `--orca-stack-self-test` de cada wrapper y comprueba que la ruta de la política exista;
-- compara la versión de Pi y de sus paquetes con las fijadas (Pi `1.2.0`, gentle-pi `4.2.0`, pi-claude-bridge `0.9.2`) y avisa si no coinciden; un Pi anterior a `1.2.0` es una falla, porque gentle-pi 4.2.0 no arranca con él;
+- compara la versión de Pi y de sus paquetes con las fijadas (Pi `1.2.0`, gentle-pi `4.3.0`, pi-claude-bridge `0.9.3`) y avisa si no coinciden; un Pi anterior a `1.2.0` es una falla, porque gentle-pi 4.3.0 no arranca con él;
 - sondea con un `pi -p` corto (con tiempo máximo) si falta el `/login` (se omite con `--offline`);
 - verifica que las skills de gentle-pi se resuelvan igual que lo hace `puente-gentle` en ejecución (primero la carpeta de Pi, después `npm root -g`);
 - comprueba que cada mod esté en `CLAUDE_CODE_PLUGIN_DIRS`;
 - avisa si los plugins `ponytail` o `caveman` de Claude Code están instalados y activos, con el comando que los desactiva;
 - combina las tres capas de configuración igual que los mods y avisa si un script de `despacho` no existe;
 - avisa de la deriva: el plugin `mattpocock-skills` por debajo de 1.3.1, skills que están en `~/.claude/skills` y también en el plugin (quedan dos veces en el contexto), `pr`, `implement-spec` o `retro` ausentes de `~/.agents/skills`, el bloque orca-stack viejo que sigue en `~/.claude/CLAUDE.md` (`orca-stack global` lo saca) el bloque de gentle-ai que la sync reescribió completo (o, en modo `full`, las secciones de review que siguen ahí con RDD apagado) y, como falla, un puntero lazy sin su copia. Son avisos, no fallas, y cada uno trae el comando que lo arregla;
-- detecta `engram` (y avisa si es anterior a 3.4.0: con un servidor más viejo, Gentle Shell 4.2.0 deja la memoria apagada), `gentle-ai`, `gh` y Orca, y **solo lee** `orca-data.json` de los perfiles de Orca para decirte si los overrides de los agentes apuntan a los wrappers. Nunca lo escribe.
+- detecta `engram` (y avisa si es anterior a 3.4.0: con un servidor más viejo, Gentle Shell 4.3.0 deja la memoria apagada), `gentle-ai`, `gh` y Orca, y **solo lee** `orca-data.json` de los perfiles de Orca para decirte si los overrides de los agentes apuntan a los wrappers. Nunca lo escribe.
 
 ## Configuración en tres capas
 
