@@ -263,7 +263,7 @@ Resumen del "Ciclo de `main`" del contrato, con el comando de cada paso:
 
 | # | Paso | Comando o regla |
 | --- | --- | --- |
-| 1 | Idea nueva o ambigua | Skills de Matt: `grilling`, `to-spec`, `to-tickets` (las dispara el humano; `main` propone cuál y espera) |
+| 1 | Idea nueva o ambigua | Straight shot o `grill-with-docs`, `to-spec`, `to-tickets` (las skills las dispara el humano; `main` propone cuál y espera) |
 | 2 | Cada ticket con criterios y `## Reglas` | Reglas numeradas con ejemplos, bordes y errores; cada valor esperado va como `cliente` o `inferido` |
 | 3 | Elegir la frontera | Issues abiertos, sin bloqueantes, sin assignee, sin `needs-info`, sin sub-issues. Leer con `gh issue view <n> --json title,body,comments` |
 | 4 | Despachar la tanda | `orca-stack despachar <n> <agente>`, un ticket por comando |
@@ -273,6 +273,8 @@ Resumen del "Ciclo de `main`" del contrato, con el comando de cada paso:
 | 8 | Rebote | `orca-stack rebote <pr>`; una sola vez por review |
 | 9 | Después del merge | Cerrar a mano el issue si la base no es la rama por defecto; integrar propuestas de `GLOSSARY.md` y ADR; desplegar solo si `despliegue` lo dice, y correr `despliegue.pruebaFuncional` |
 | 10 | Cerrar la tanda | Proponer `retro` y, si ya cerró una antes, `handoff` a una sesión nueva |
+
+**Dos caminos de planificación.** Un cambio chico según el test de ODD que no deja abierta ninguna decisión de producto es un **Straight shot**: se sabe qué y dónde cambiar, no toca `riesgo` ni una puerta de una vía y se podría retomar con el pedido y el `git diff`. `main` escribe el ticket sin grill, con `## Reglas` y sus ejemplos (al menos uno negativo), y el humano los confirma en un mensaje antes del despacho; por ejemplo, renombrar un flag de la CLI. Todo lo demás arranca con `grill-with-docs` (que deja `GLOSSARY.md` y ADRs) y sigue con `to-spec` y `to-tickets`, aunque el diff sea de pocas líneas: la cantidad de líneas nunca decide el camino. `wayfinder` llega solo cuando una sesión de `grill-with-docs` se va de las manos, y lo dispara el humano.
 
 ### 4.3 Los mods de Claude Code
 
@@ -306,7 +308,7 @@ Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `
 | `principle-explain-the-number` | Antes de confiar o actuar sobre un número medido: encontrar qué lo limita y descartar que mida otra cosa |
 | `principle-make-operations-idempotent` | Al diseñar comandos o loops que corren entre caídas y reintentos: converger al mismo estado final |
 
-No instala las skills de Matt Pocock ni Caveman: ver el [README](../README.md#qué-no-instala-y-por-qué). `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano; en Claude se escriben `/mattpocock-skills:<skill>`.
+No instala las skills de Matt Pocock ni Caveman: ver el [README](../README.md#qué-no-instala-y-por-qué). `grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano; en Claude se escriben `/mattpocock-skills:<skill>`.
 
 ### 4.5 Configuración en tres capas
 
@@ -379,7 +381,7 @@ La marcha fija cuánto explora, delega, consulta y narra `main`. Solo toca la li
 | --- | --- | --- |
 | **Lazy** | Solo queda trabajo ya especificado | Máximo `medium`. Un item que deja de estar especificado espera un cambio de marcha |
 | **Medium** | Por defecto; cada sesión nueva empieza acá | No lo reescribe |
-| **Proactive** | Planificación (grilling, `to-spec`, `to-tickets`) o una tanda que toca `riesgo` | Mínimo `xhigh`; `main` vigila los items en curso y contesta consultas |
+| **Proactive** | Planificación (`grill-with-docs`, `to-spec`, `to-tickets`) o una tanda que toca `riesgo` | Mínimo `xhigh`; `main` vigila los items en curso y contesta consultas |
 
 - **Solo el humano cambia la marcha**, con `/marcha <lazy|medium|proactive>`. `main` nunca ejecuta `/marcha`: sugiere el cambio en una línea (por ejemplo `Sugiero subir a Proactive para #42 (toca riesgo): /marcha proactive`), como mucho una vez por item y señal.
 - Sin un mensaje `Marcha:`, rige Medium. Al cerrar una tanda se propone volver a Medium.
