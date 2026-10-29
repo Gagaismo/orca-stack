@@ -77,7 +77,7 @@ rubric or question; candidates use the worker's effort unless the note says
 otherwise. Run one round and do not retry: if every candidate drops out or the
 worker wants another round, continue the normal path and report that under
 `## Arena` or `## Swarm`. Publish results under that heading in the PR body.
-Codex, codex-cc, agy, and pi do not run arenas or swarms, even with a note.
+Codex, agy, and pi do not run arenas or swarms, even with a note.
 A bounce fan-out note requires a new human OK; a dispatch approval does not
 carry over.
 
@@ -89,7 +89,7 @@ do not wait for Orca receipts that will not come.
 
 ## Methodology contract
 
-Planning follows Matt's skills (`grilling`, `to-spec`, `to-tickets`, triggered
+Planning follows Matt's skills (`grill-with-docs`, `to-spec`, `to-tickets`, triggered
 by the human) and implementation follows gentle-ai ODD for Claude, Codex and
 Antigravity sessions; Pi follows its own methodology (it may use ODD). Ponytail
 may reduce the
@@ -145,16 +145,18 @@ terminal on Windows, which is PowerShell; in a POSIX shell the leading `& ` is d
   Nobody answers approval prompts in an unattended worker, so the approval and
   sandbox flags are required. Fast mode is off because it spends Codex credits
   faster and an unattended worker does not need the speed.
-- codex-cc: `$env:CMD_API_KEY = (Get-Content -Raw -Encoding UTF8 -LiteralPath "$HOME.piagentauth.json" | ConvertFrom-Json).commandcode.key; & "{{WRAPPER_CODEX}}" -c model_provider=cc -c model_providers.cc.name=CommandCode -c model_providers.cc.base_url=https://api.commandcode.ai/provider/v1 -c model_providers.cc.env_key=CMD_API_KEY -c model_providers.cc.wire_api=responses --model <model> -c model_reasoning_effort="<effort>" -c approval_policy="never" -c sandbox_mode="danger-full-access"`
   Use the review model and effort to review and the implementation ones to
   implement; the rest of the command does not change. The key is read inside
   the terminal, so it never appears in the command or in the brief. If Command
   Code rejects the request (401, 403 `MODEL_NOT_IN_PLAN`, 429), it shows on
   the screen after the brief.
-- pi (Gentle Shell): headless, no TUI, so the brief goes in the prompt and nothing is sent afterwards. The command clears
-  the Orca and `ORCA_STACK_*` variables (the same list the pi consult bridge clears), sets `ENGRAM_DATA_DIR` to
-  Gentle Shell's own engram, `GENTLE_PI_AUTONOMOUS_MODE=1` and, when personal config sets it, `CLAUDE_CONFIG_DIR`
-  from `agentes.pi.claudeConfigDir`, then runs `pi -p --no-skills --skill <gentle-pi skills> --session-id <id> [--tools <tools>] "Read and carry out the brief in <path>. Non-interactive: never wait for user input."`
+- pi (Gentle Shell): an interactive TUI like the other workers, so Orca shows it on its card and a turn waiting on a
+  background verify resumes when it reports. The brief goes in the first message and nothing is sent afterwards. The
+  command clears the `ORCA_STACK_*` variables (the stack markers the pi consult bridge also clears) and keeps Orca's
+  pane variables, which Orca's pi extension reports through. It sets `ENGRAM_DATA_DIR` to Gentle Shell's own engram,
+  `GENTLE_PI_AUTONOMOUS_MODE=1` and, when personal config sets it, `CLAUDE_CONFIG_DIR` from
+  `agentes.pi.claudeConfigDir`, then runs `pi --no-skills --skill <gentle-pi skills> --session-id <id> --no-approve --exclude-tools ask_user_choice,ask_user_question [--tools <tools>] "Read and carry out the brief in <path>. Unattended: never wait for user input."`
+  Nothing waits on a person: the two dialog tools are left out and `--no-approve` skips the project-trust prompt.
   Tools: no `--tools` to implement, so gentle-pi keeps its subagents, ODD and engram tools; `read,bash,grep,find,ls` to
   review. Unlike the consult bridge, this one can run git, gh and the suite.
 

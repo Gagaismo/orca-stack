@@ -4,12 +4,8 @@ export default {
     { "config": {}, "agent": "claude", "mode": "review", "family": "claude" },
     { "config": {}, "agent": "codex", "mode": "ticket", "family": "gpt" },
     { "config": {}, "agent": "agy", "mode": "review", "family": "gemini" },
-    { "config": {}, "agent": "codex-cc", "mode": "review", "family": null },
     { "config": {}, "agent": "pi", "mode": "ticket", "family": "claude" },
     { "config": { "agentes": { "modelos": { "pi": "gpt-6-luna" } } }, "agent": "pi", "mode": "review", "family": "claude" },
-    { "config": { "agentes": { "modelos": { "codex-cc": { "implementar": { "modelo": "gpt-6-luna" }, "revisar": { "modelo": "z-ai/glm-5.3-flash" } } } } }, "agent": "codex-cc", "mode": "review", "family": "glm" },
-    { "config": { "agentes": { "modelos": { "codex-cc": { "implementar": { "modelo": "gpt-6-luna" }, "revisar": { "modelo": "z-ai/glm-5.3-flash" } } } } }, "agent": "codex-cc", "mode": "ticket", "family": "gpt" },
-    { "config": { "agentes": { "modelos": { "codex-cc": "commandcode/zai-org/GLM-5.3" } } }, "agent": "codex-cc", "mode": "ticket", "family": "glm" },
     { "config": { "agentes": { "modelos": { "codex": { "modelo": "o3-mini", "esfuerzo": "high" } } } }, "agent": "codex", "mode": "review", "family": "gpt" },
     { "config": { "agentes": { "modelos": { "codex": { "implementar": { "modelo": "gpt-6-luna" }, "revisar": { "modelo": "chatgpt-web/gpt-6-sol" } } } } }, "agent": "codex", "mode": "review", "family": "gpt" },
     { "config": { "agentes": { "modelos": { "agy": "claude-sonnet-5-5" } } }, "agent": "agy", "mode": "review", "family": "claude" },
@@ -17,14 +13,12 @@ export default {
     { "config": { "agentes": { "modelos": { "claude": "opus" } } }, "agent": "claude", "mode": "ticket", "family": "claude" },
     { "config": { "agentes": { "modelos": { "claude": "opusplan" } } }, "agent": "claude", "mode": "ticket", "family": "claude" },
     { "config": { "agentes": { "modelos": { "codex": { "implementar": null, "modelo": "gemini-x" } } } }, "agent": "codex", "mode": "ticket", "family": "gpt" },
-    { "config": { "agentes": { "modelos": { "codex-cc": "deepseek/deepseek-v4" } } }, "agent": "codex-cc", "mode": "review", "family": null },
     { "config": { "agentes": { "modelos": { "codex": "openai/oss-120b" } } }, "agent": "codex", "mode": "review", "family": null }
   ],
   "blockOf": [
     { "rules": [{ "agente": "codex", "hasta": "2026-10-29", "motivo": "sin cuota" }], "agent": "codex", "now": "2026-10-28T23:59", "result": "sin cuota" },
     { "rules": [{ "agente": "codex", "hasta": "2026-10-29", "motivo": "sin cuota" }], "agent": "codex", "now": "2026-10-29T00:00", "result": null },
     { "rules": [{ "agente": "Codex", "hasta": "2026-10-29" }], "agent": "codex", "now": "2026-10-01T10:00", "result": "codex está bloqueado hasta el 2026-10-29." },
-    { "rules": [{ "agente": "codex", "hasta": "2026-10-29" }], "agent": "codex-cc", "now": "2026-10-01T10:00", "result": null },
     { "rules": [{ "agente": "codex", "hasta": "2026-02-30" }], "agent": "codex", "now": "2026-10-01T10:00", "result": "La regla guardia.bloquear de codex tiene una fecha \"hasta\" que no es AAAA-MM-DD (2026-02-30): corregila antes de despacharlo." },
     { "rules": [{ "agente": "codex", "hasta": "29/10/2026" }], "agent": "codex", "now": "2030-01-01T10:00", "result": "La regla guardia.bloquear de codex tiene una fecha \"hasta\" que no es AAAA-MM-DD (29/10/2026): corregila antes de despacharlo." }
   ]

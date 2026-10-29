@@ -64,7 +64,7 @@ Reglas que sostienen todo lo demás:
 | Un repo en GitHub con tickets que se pueden escribir con reglas verificables, trabajado con Orca | Es el caso para el que está hecho: `despachar`, `revisar`, `rebote` y `vigilar` necesitan `gh`, Orca y issues |
 | Varios tickets independientes en paralelo (una tanda) | Cada worker tiene su worktree y su brief; `vigilar` te resume la tanda con un solo Monitor |
 | Querés que lo escrito por un agente lo revise otro de otra familia de modelos | El contrato y `revisar` lo imponen; `puente-gentle` frena merges de rutas de `riesgo` sin esos reviews |
-| Trabajás con más de un agente (`claude`, `agy`, `codex`, `codex-cc`, `pi`) y necesitás controlar cuota y a quién se despacha | `agentes.usa`, `agentes.preguntarAntes` y `guardia.bloquear` |
+| Trabajás con más de un agente (`claude`, `agy`, `codex`, `pi`) y necesitás controlar cuota y a quién se despacha | `agentes.usa`, `agentes.preguntarAntes` y `guardia.bloquear` |
 | Trabajás solo con un agente pero querés el mismo método (ODD, tickets con `## Reglas`, review de contexto limpio) | Modo `un-agente` |
 | Querés que un cambio de proceso quede en un PR y no en la cabeza de alguien | El contrato viaja en `AGENTS.md` y lo lee cualquier agente |
 
@@ -149,18 +149,20 @@ Borra lo que `global` creó, restaura lo que había reemplazado, saca las entrad
 ```bash
 orca-stack despachar 12 agy --dry-run
 orca-stack despachar 12 agy
-orca-stack despachar 12 codex-cc --confirmado            # el humano dijo que sí
-orca-stack despachar 12 pi --perfil-pi opus-haiku
+orca-stack despachar 12 codex --dry-run
+orca-stack despachar 12 pi --perfil-pi opus-sonnet       # sin perfil (flag o agentes.pi.perfil), pi se niega
 orca-stack despachar 12 claude --nota "Leé docs/adr/0007 antes de tocar el parser."
 ```
 
-Agentes válidos: `claude`, `agy`, `codex`, `codex-cc`, `pi`. Orden de lo que hace:
+Agentes válidos: `claude`, `agy`, `codex`, `pi`. Orden de lo que hace:
 
 1. Se niega si estás en un worktree, si el setup está pendiente, si `modo` es `un-agente`, si el agente no está en `agentes.usa`, si tiene una regla `guardia.bloquear` vigente, si está en `agentes.preguntarAntes` sin `--confirmado`, si el issue está cerrado o ya tiene assignee, o si ya hay un worktree o un agente vivo para ese ticket.
 2. Hace `git fetch origin` y comprueba que **cada ruta que cita el brief exista** en `origin/<ramaBase>` y no esté ignorada por git. Si falta una, aborta sin asignar ni crear nada.
 3. Asigna el issue (el assignee es el cerrojo: no lo asignes a mano), crea el worktree con `orca worktree create`, escribe el brief en `~/orca/briefs/`, lanza el agente en una terminal de Orca y le manda el brief.
 4. Imprime `Rama: <rama>` con el nombre que devolvió Orca.
 5. Lee la pantalla tres veces (pausas de 5 segundos, salvo con pi) y falla ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell.
+
+Pi se lanza como TUI interactiva, como los demás agentes, con el brief como primer mensaje: `pi --no-skills --skill <skills de gentle-pi> --session-id <id> --no-approve --exclude-tools ask_user_choice,ask_user_question "<brief>"`. Orca lo muestra en su tarjeta con los mismos estados que claude y codex, y un turno que espera una verificación en segundo plano sigue cuando esta termina. Nada espera a una persona: quedan afuera las herramientas de diálogo y `--no-approve` saltea el aviso de confianza del proyecto. En vez de leer la pantalla, el comando espera la sesión nueva de Pi en ese worktree y se niega si no aparece.
 
 Con `pi`, `--perfil-pi <nombre>` fija el perfil de modelos de gentle-pi para ese worktree (los perfiles viven en `~/.pi/gentle-ai/profiles.json`); la clave `agentes.pi.perfil` lo fija para todos los despachos a pi y el flag gana.
 
@@ -172,6 +174,8 @@ orca-stack revisar 15 agy --nota "Mirá con cuidado la migración."
 ```
 
 Igual que `despachar`, para un review: crea el worktree `revision-<pr>-<agente>` parado en la rama del PR. Se niega si el PR no trae la línea `Implementador: <agente>`, si el revisor es el implementador, o si los dos corren modelos de la misma familia (sale de `agentes.modelos`; pi y claude sí se revisan entre sí).
+
+Si ya existe ese worktree porque el PR rebotó, `revisar` lo reutiliza en una segunda ronda: exige que no haya agentes activos ni una terminal anterior en `done`, que el árbol esté limpio y que el HEAD anterior sea alcanzable desde el nuevo head del PR. Rechaza si ese revisor ya vio el mismo head, si el worktree tiene cambios o commits locales, o si el perfil de Pi no coincide. El brief fija el commit anterior como base para que el reviewer lea solo el delta; el review previo se archiva con ese SHA. `--dry-run` muestra el caso sin cambiar el worktree ni los archivos.
 
 #### `rebote`
 
@@ -204,7 +208,7 @@ Busca comentarios que empiecen con `Consulta:` hechos por la cuenta de GitHub de
 orca-stack avisar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecomment-123 --dry-run
 ```
 
-El timbre de Proactive: le escribe al worker una sola línea fija, `Message from main: <url>`, mientras su turno sigue en curso. Solo avisa a `claude`; se niega con pi, codex y agy, si el turno ya terminó, si la terminal muestra un shell o un diálogo, si hay más de un agente vivo, o si el comentario no es de la cuenta del stack o no empieza con `Respuesta de main:` o `Respuesta del humano:`. Nunca reintenta: sin recibo de entrega informa la falla.
+El timbre de Proactive: le escribe al worker una sola línea fija, `Message from main: <url>`, mientras su turno sigue en curso. Avisa a `claude` y a `pi` (reconoce el turno en curso por el spinner de Claude o por el marco del prompt de Gentle Shell con su fase, como `╭─ ❀ implementing…`); se niega con codex y agy, si el turno ya terminó, si la terminal muestra un shell o un diálogo, si hay más de un agente vivo, o si el comentario no es de la cuenta del stack o no empieza con `Respuesta de main:` o `Respuesta del humano:`. Nunca reintenta: sin recibo de entrega informa la falla.
 
 #### `reanudar`
 
@@ -212,7 +216,7 @@ El timbre de Proactive: le escribe al worker una sola línea fija, `Message from
 orca-stack reanudar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecomment-123 --dry-run
 ```
 
-Si Orca todavía muestra el turno en `done`, reanuda el TUI con una sola línea que apunta a la respuesta. Si el agente salió y Orca ya no lo lista ni hay terminal de worker, identifica el mismo agente desde la línea de implementador del brief original y lo relanza en el worktree existente con el brief y la URL al principio. Se niega si Orca informa un estado de agente desconocido o si queda una terminal de worker que no muestra un shell prompt mientras Orca no lista su agente (por ejemplo, Pi headless). También se niega sin enviar el brief si Codex muestra su menú de actualización: elegí una opción en la terminal y relanzá con la misma respuesta de `main`. Rechaza un PR abierto, un worktree sucio, más de un agente vivo o una respuesta que no sea un comentario real de la cuenta del stack o del humano. Si ya intentó usar el mismo comentario, informa la hora registrada y no reenvía ni relanza: comprobá primero el agente y su terminal; si el intento no llegó, publicá una nueva `Respuesta de main:` y usá su URL. `--confirmado` habilita relanzar agentes de `preguntarAntes` solo después del OK humano; `--dry-run` no escribe ni envía nada.
+Si Orca todavía muestra el turno en `done`, reanuda el TUI con una sola línea que apunta a la respuesta; con pi, solo si la pantalla muestra su prompt en reposo (`╭─ ✿ ───╮`). Si el agente salió y Orca ya no lo lista ni hay terminal de worker, identifica el mismo agente desde la línea de implementador del brief original y lo relanza en el worktree existente con el brief y la URL al principio. Se niega si Orca informa un estado de agente desconocido o si queda una terminal de worker que no muestra un shell prompt mientras Orca no lista su agente. También se niega sin enviar el brief si Codex muestra su menú de actualización: elegí una opción en la terminal y relanzá con la misma respuesta de `main`. Rechaza un PR abierto, un worktree sucio, más de un agente vivo o una respuesta que no sea un comentario real de la cuenta del stack o del humano. Si ya intentó usar el mismo comentario, informa la hora registrada y no reenvía ni relanza: comprobá primero el agente y su terminal; si el intento no llegó, publicá una nueva `Respuesta de main:` y usá su URL. `--confirmado` habilita relanzar agentes de `preguntarAntes` solo después del OK humano; `--dry-run` no escribe ni envía nada.
 
 #### `vigilar`
 
@@ -241,6 +245,8 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 
 Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue, o por una línea `Closes #<n>` en su cuerpo; nunca por adivinar el nombre de la rama. Con el PR abierto, `vigilar` sigue leyendo el worker del worktree enlazado al issue o, si no hay uno, el de la rama del PR. Un `ci-verde-retenido` mantiene visible que el autor todavía trabaja; el primer poll después de que termine emite `ci-verde`. Un issue cerrado sin PR cuenta como terminado. Lo emitido queda en `<git-common-dir>/orca-stack/vigilar.json`: si rearmás con los mismos argumentos, retoma sin repetir.
 
+Cuando el Monitor vence o lo parás, `vigilar` sale solo en menos de 5 segundos, con el `gh` o el `orca` que estuviera corriendo, y lo dice en stderr: vigila el proceso que lo lanzó (en Git Bash, el `bash` del Monitor, no el stub de `sh` que sobrevive). Un poll lento nunca lo hace salir.
+
 `--merge-de-main <pr>` existe porque todas las sesiones comparten la cuenta de `gh`: un merge de `main` se ve igual que uno del humano. `main` lo corre justo antes de cada `gh pr merge <pr>` (y otra vez tras `gh pr update-branch`); registra el head en `<git-common-dir>/orca-stack/vigilar-merges.json` y un merge de ese head visto dentro de los 30 minutos no emite `pr-mergeado`. Sale sin imprimir nada.
 
 #### `sesiones`
@@ -257,7 +263,7 @@ Resumen del "Ciclo de `main`" del contrato, con el comando de cada paso:
 
 | # | Paso | Comando o regla |
 | --- | --- | --- |
-| 1 | Idea nueva o ambigua | Skills de Matt: `grilling`, `to-spec`, `to-tickets` (las dispara el humano; `main` propone cuál y espera) |
+| 1 | Idea nueva o ambigua | Straight shot o `grill-with-docs`, `to-spec`, `to-tickets` (las skills las dispara el humano; `main` propone cuál y espera) |
 | 2 | Cada ticket con criterios y `## Reglas` | Reglas numeradas con ejemplos, bordes y errores; cada valor esperado va como `cliente` o `inferido` |
 | 3 | Elegir la frontera | Issues abiertos, sin bloqueantes, sin assignee, sin `needs-info`, sin sub-issues. Leer con `gh issue view <n> --json title,body,comments` |
 | 4 | Despachar la tanda | `orca-stack despachar <n> <agente>`, un ticket por comando |
@@ -267,6 +273,8 @@ Resumen del "Ciclo de `main`" del contrato, con el comando de cada paso:
 | 8 | Rebote | `orca-stack rebote <pr>`; una sola vez por review |
 | 9 | Después del merge | Cerrar a mano el issue si la base no es la rama por defecto; integrar propuestas de `GLOSSARY.md` y ADR; desplegar solo si `despliegue` lo dice, y correr `despliegue.pruebaFuncional` |
 | 10 | Cerrar la tanda | Proponer `retro` y, si ya cerró una antes, `handoff` a una sesión nueva |
+
+**Dos caminos de planificación.** Un cambio chico según el test de ODD que no deja abierta ninguna decisión de producto es un **Straight shot**: se sabe qué y dónde cambiar, no toca `riesgo` ni una puerta de una vía y se podría retomar con el pedido y el `git diff`. `main` escribe el ticket sin grill, con `## Reglas` y sus ejemplos (al menos uno negativo), y el humano los confirma en un mensaje antes del despacho; por ejemplo, renombrar un flag de la CLI. Todo lo demás arranca con `grill-with-docs` (que deja `GLOSSARY.md` y ADRs) y sigue con `to-spec` y `to-tickets`, aunque el diff sea de pocas líneas: la cantidad de líneas nunca decide el camino. `wayfinder` llega solo cuando una sesión de `grill-with-docs` se va de las manos, y lo dispara el humano.
 
 ### 4.3 Los mods de Claude Code
 
@@ -300,7 +308,7 @@ Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `
 | `principle-explain-the-number` | Antes de confiar o actuar sobre un número medido: encontrar qué lo limita y descartar que mida otra cosa |
 | `principle-make-operations-idempotent` | Al diseñar comandos o loops que corren entre caídas y reintentos: converger al mismo estado final |
 
-No instala las skills de Matt Pocock ni Caveman: ver el [README](../README.md#qué-no-instala-y-por-qué). `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano; en Claude se escriben `/mattpocock-skills:<skill>`.
+No instala las skills de Matt Pocock ni Caveman: ver el [README](../README.md#qué-no-instala-y-por-qué). `grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano; en Claude se escriben `/mattpocock-skills:<skill>`.
 
 ### 4.5 Configuración en tres capas
 
@@ -360,8 +368,8 @@ Antes, una vez y a mano, siguiendo el [Get started del launcher](https://github.
 
 Bordes:
 
-- La familia sale del último tramo del slug: `chatgpt-web/gpt-6-sol` es `gpt`. Codex sigue sin poder revisar un PR de codex, ni uno de codex-cc si codex-cc corre un GPT.
-- Según su arquitectura, el launcher enruta por su daemon local (`openai_base_url`) todas las llamadas de Codex, también las de los modelos nativos. Si el daemon no corre, fallan también los workers de codex. `codex-cc` fija su propio proveedor (`-c model_provider=cc`), así que probablemente siga andando (inferido, sin probar).
+- La familia sale del último tramo del slug: `chatgpt-web/gpt-6-sol` es `gpt`. Codex no puede revisar un PR de codex si ambos usan modelos de la familia GPT.
+- Según su arquitectura, el launcher enruta por su daemon local (`openai_base_url`) todas las llamadas de Codex, también las de los modelos nativos. Si el daemon no corre, fallan también los workers de codex.
 - El daemon guarda tu sesión de ChatGPT y le manda el código del repo a ChatGPT Web. Automatizar la web de ChatGPT probablemente va contra los términos de uso de OpenAI (inferido). Pensalo dos veces antes de usarlo con código de un cliente.
 - Es automatización no oficial de la web de ChatGPT. Si la web cambia, falla de forma explícita; nunca cambia de modelo por su cuenta. Un pedido de aprobación inesperado del lado de ChatGPT falla cerrado, y un revisor desatendido no puede contestarlo.
 
@@ -373,7 +381,7 @@ La marcha fija cuánto explora, delega, consulta y narra `main`. Solo toca la li
 | --- | --- | --- |
 | **Lazy** | Solo queda trabajo ya especificado | Máximo `medium`. Un item que deja de estar especificado espera un cambio de marcha |
 | **Medium** | Por defecto; cada sesión nueva empieza acá | No lo reescribe |
-| **Proactive** | Planificación (grilling, `to-spec`, `to-tickets`) o una tanda que toca `riesgo` | Mínimo `xhigh`; `main` vigila los items en curso y contesta consultas |
+| **Proactive** | Planificación (`grill-with-docs`, `to-spec`, `to-tickets`) o una tanda que toca `riesgo` | Mínimo `xhigh`; `main` vigila los items en curso y contesta consultas |
 
 - **Solo el humano cambia la marcha**, con `/marcha <lazy|medium|proactive>`. `main` nunca ejecuta `/marcha`: sugiere el cambio en una línea (por ejemplo `Sugiero subir a Proactive para #42 (toca riesgo): /marcha proactive`), como mucho una vez por item y señal.
 - Sin un mensaje `Marcha:`, rige Medium. Al cerrar una tanda se propone volver a Medium.
@@ -394,7 +402,7 @@ En `un-agente`, `main` ejecuta `brief-revision <pr> --modelo <modelo>`, le da al
 
 ### 4.8 Review, rebote y merge
 
-**Quién revisa.** Por defecto, agy; si agy escribió el PR, codex (o codex-cc si codex no está disponible); si lo escribió codex o codex-cc, agy. Un revisor nunca corre un modelo de la misma familia que el autor. Pi es la excepción (corre sobre Claude y aporta otra metodología) y hace de segundo review en los PRs que tocan `riesgo`. Si el PR lo escribió pi, los dos reviews van a dos familias distintas que no sean la de pi.
+**Quién revisa.** Por defecto, agy; si agy escribió el PR, codex. Si codex está bloqueado o no tiene cuota, el PR espera a que codex vuelva. Si lo escribió codex, revisa agy. Un revisor nunca corre un modelo de la misma familia que el autor. Pi es la excepción (corre sobre Claude y aporta otra metodología) y hace de segundo review en los PRs que tocan `riesgo`. Si el PR lo escribió pi, los dos reviews van a dos familias distintas que no sean la de pi.
 
 **Formato del review** (marcas fijas, no se traducen):
 
@@ -465,7 +473,7 @@ Tomados del código, los tests y el contrato. Cada fila dice qué pasa y qué ha
 | Codex pide confiar en la carpeta | Falla con una pista de cómo confiar y sin haber mandado el brief | Seguí la pista (`orca-stack doctor` también la avisa) |
 | Un worker que se detuvo sin abrir PR | No hay PR que `vigilar` detecte; el issue queda con assignee y worktree | Mirá el worktree en Orca; no despaches de nuevo (el cerrojo lo rechaza). Releé el brief y decidí con el humano |
 | Autor ya salió y hay bloqueos de review | `rebote <pr>` relanza en su worktree y publica `Rebote: <sha>` | Si el worktree no está limpio, o tiene commits que no están en el head del PR, `rebote` se niega; si solo está atrás del head, lo adelanta |
-| Hallazgo de `interpretación` | Solo bloquea el rebote por review: va al humano | Pasale las dos lecturas con sus razones; no uses `Decidido por main` |
+| Hallazgo de `interpretación` | Solo bloquea el rebote por review: va al humano | Pasale las dos lecturas con sus razones; no uses `Decidido por main`. Publicá su respuesta como `Respuesta del humano:` en el PR o en el issue que cierra: un comentario así posterior al review salda el hallazgo, y `rebote` lo manda al autor con el enlace |
 | CI con un check `CANCELLED` | Si ya hay una corrida más nueva, `rebote` se niega como pendiente; si no, lista los reruns | Esperá a la nueva corrida o, si no existe, corré `gh run rerun <run> --failed` |
 | CI con checks pendientes | `rebote` se niega | Esperá a que termine |
 | PR en conflicto con la base (`mergeable: CONFLICTING`) | `rebote <pr>` relanza al autor con la sección `## Merge conflict` y publica `Rebote conflicto: <sha>`, aunque no haya bloqueos y la CI esté verde, falte o siga pendiente; un segundo rebote por conflicto sobre el mismo head se niega. Con `UNKNOWN` se niega hasta que GitHub termine de calcular | Repetí si dijo `UNKNOWN`. Al volver, mergeá con un review nuevo sobre el head nuevo o, fuera de `riesgo`, con `Verificado por main` tras leer el diff de la resolución |
@@ -475,7 +483,7 @@ Tomados del código, los tests y el contrato. Cada fila dice qué pasa y qué ha
 | Monitor rearmado | Si el anterior sigue vivo, le roba los eventos al nuevo | Matá el anterior antes de rearmar. Con `vigilar`, rearmar con los mismos argumentos retoma sin repetir eventos |
 | `main` mergea y el Monitor devuelve su propio merge | Un merge de `main` se ve igual que uno del humano | Correr `vigilar --merge-de-main <n>` antes de cada `gh pr merge` y de nuevo tras `update-branch`; vale 30 minutos |
 | `vigilar` no puede leer GitHub | Emite `vigilar-ciego: <error>` tras tres vueltas fallidas, una vez por corte | Revisá `gh auth status` y la red; sigue vigilando solo. Un issue ilegible o un cursor que no se puede escribir no lo detienen |
-| `avisar` con un worker que ya terminó, con pi, codex o agy | Se niega; no hay timbre | La respuesta queda como comentario: pi relee los comentarios antes de su PR |
+| `avisar` con un worker que ya terminó, con codex o agy | Se niega; no hay timbre | La respuesta queda como comentario: el worker relee los comentarios antes de su PR |
 | Cuerpo de PR o review con acentos desde la consola de Windows | La consola rompe los acentos si el texto viaja por tubería | Mandalo siempre con `--body-file`, nunca por tubería |
 | Codex en Windows escribe cada letra acentuada como dos caracteres raros | PowerShell 5.1 lee UTF-8 sin BOM como cp1252 | `global` agrega la regla ASCII a `~/.codex/AGENTS.md`; sumá a mano la línea de `$PROFILE` (ver la [guía de setup](guia-setup.md#codex-en-windows-acentos-rotos)) |
 | `gentle-ai sync` reescribió el bloque de `~/.claude/CLAUDE.md` | El bloque vuelve completo y `doctor` lo avisa | Volvé a correr `orca-stack global` |

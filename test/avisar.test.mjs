@@ -168,10 +168,21 @@ describe('avisar', () => {
     }
   })
 
-  test('Rule 4: a Pi worker is refused, saying Pi re-reads the comments before its PR', async () => {
-    for (const pi of [terminal('term_pi', { identity: 'pi', title: 'pi' }), terminal('term_pi', { identity: null, title: 'pi' })]) {
-      const env = fakeIo({ terminals: [pi], agents: [], screens: {} })
-      await assert.rejects(() => avisarCommand({}, '42', URL42, env.io), /Pi relee los comentarios antes de abrir su PR/)
+  test('issue #277 Rule 4: a pi worker with a turn running gets the line, recognized by its working prompt frame', async () => {
+    for (const label of ['working…', 'implementing…']) {
+      const screen = ['● bash npm run verify', `╭─ ❀ ${label} ──────────────────╮`, '│                                │', '╰────────────────────────────────╯', ' claude-opus-5-5 · high']
+      const env = fakeIo({ terminals: [terminal('term_pi', { identity: 'pi', title: 'pi' })], agents: [agent('term_pi', 'working', 'pi')], screens: { term_pi: screen } })
+      assert.equal(await avisarCommand({}, '42', URL42, env.io), 0)
+      assert.equal(env.sends().length, 1)
+      assert.deepEqual(env.sends()[0].slice(3, 7), ['--terminal', 'term_pi', '--text', LINE42])
+    }
+  })
+
+  test('issue #277 Rule 4: on a pi screen it does not recognize, avisar refuses and sends nothing', async () => {
+    const idle = ['● Done.', '╭─ ✿ ────────────────────────────╮', '│ type, or / for commands        │', '╰────────────────────────────────╯']
+    for (const screen of [idle, ['Warning: No project session found with id \'x\'; creating a new session with that id.'], RUNNING]) {
+      const env = fakeIo({ terminals: [terminal('term_pi', { identity: 'pi', title: 'pi' })], agents: [agent('term_pi', 'working', 'pi')], screens: { term_pi: screen } })
+      await assert.rejects(() => avisarCommand({}, '42', URL42, env.io), /No veo el turno en curso/)
       assert.equal(env.sends().length, 0)
     }
   })
@@ -277,6 +288,16 @@ describe('avisar', () => {
     const collaboration = stack('CONTRATO.md').split(/\r?\n/).find(line => line.includes('Reglas de colaboración:'))
     assert.match(collaboration, /`orca-stack avisar <issue\|pr> <url-del-comentario>`/)
     assert.match(collaboration, /nunca lo arma con llamadas sueltas a `orca`/)
+  })
+
+  test('Rule 3: orca-stack avisar keeps its line unchanged for a worker mid-turn', async () => {
+    const env = fakeIo()
+    assert.equal(await avisarCommand({}, '42', URL42, env.io), 0)
+    assert.equal(env.sends().length, 1)
+    const send = env.sends()[0]
+    const text = send[send.indexOf('--text') + 1]
+    assert.equal(text, `Message from main: ${URL42}`)
+    assert.equal(text.includes('per your brief'), false)
   })
 
   test('Preserve: the CLI still routes the other commands and rejects an unknown one', async () => {
