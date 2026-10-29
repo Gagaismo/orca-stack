@@ -848,6 +848,22 @@ const blockingBody = body => {
   const section = blockingSection(body)
   return section !== '' && !/^nada\s*$/i.test(section)
 }
+// An issue that cannot be read adds no answers, so its interpretation findings stay with the human.
+const humanAnswers = (io, root, pr) => {
+  const isAnswer = item => /^Respuesta del humano:/m.test(reviewBody(item))
+  const issues = [...new Set([...String(pr.body ?? '').matchAll(/\bCloses #(\d+)\b/gi)].map(match => match[1]))]
+  const fromIssues = issues.flatMap(issue => {
+    const res = io.sh('gh', ['issue', 'view', issue, '--json', 'comments'], { cwd: root })
+    if (res.status !== 0) return []
+    try {
+      const comments = JSON.parse(res.stdout).comments
+      return Array.isArray(comments) ? comments : []
+    } catch {
+      return []
+    }
+  })
+  return [...(pr.comments ?? []), ...fromIssues].filter(isAnswer)
+}
 
 export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const { nota, confirmado = false, perfilPi, dryRun = false } = flags
@@ -945,16 +961,24 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     const body = reviewBody(item)
     return blockingBody(body) && /^\s*Commit:\s*(\S+)/mi.exec(body)?.[1] === sha
   })
-  const interpretations = blockers.filter(item => /interpretaci[o\u00F3]n/i.test(blockingSection(reviewBody(item))))
+  const flagged = blockers.filter(item => /interpretaci[o\u00F3]n/i.test(blockingSection(reviewBody(item))))
+  // A Respuesta del humano posted after the review, on the PR or on an issue it closes, settles its interpretation findings.
+  const answers = flagged.length > 0 ? humanAnswers(io, root, pr) : []
+  const settledBy = new Map(flagged.map(item => {
+    const at = Date.parse(item.submittedAt ?? item.createdAt ?? '')
+    return [item, Number.isNaN(at) ? undefined : answers.find(answer => Date.parse(answer.createdAt ?? '') > at)]
+  }).filter(([, answer]) => answer))
+  const interpretations = flagged.filter(item => !settledBy.has(item))
   const reviewBlockers = blockers.filter(item => !interpretations.includes(item))
-  // A conflict-only bounce does not spend the review bounce, so an older Rebote: marker does not refuse it.
-  if (markers.some(marker => marker !== sha) && !(conflict && reviewBlockers.length === 0)) throw new Error(`El head del PR avanz\u00F3 desde el rebote (${markers.at(-1)} -> ${sha}); lo que siga en pie lo decide main con Decidido por main.`)
+  // A conflict-only or CI-only bounce does not spend the review bounce, so an older Rebote: marker does not refuse it.
+  if (markers.some(marker => marker !== sha) && !((conflict || failedChecks.length > 0) && reviewBlockers.length === 0)) throw new Error(`El head del PR avanz\u00F3 desde el rebote (${markers.at(-1)} -> ${sha}); lo que siga en pie lo decide main con Decidido por main.`)
   if (interpretations.length > 0 && failedChecks.length === 0 && !conflict) {
     const lines = interpretations.map(item => `${item.url ?? item.html_url ?? 'review'}: ${blockingSection(reviewBody(item)).split(/\r?\n/).filter(line => /interpretaci[o\u00F3]n/i.test(line)).join(' ')}`)
     throw new Error(`Los bloqueos de interpretaci\u00F3n van al humano, no al autor:\n${lines.join('\n')}`)
   }
   const findings = reviewBlockers.map(item => {
-    return `${item.url ?? item.html_url ?? 'Review'}\n${blockingSection(reviewBody(item))}`
+    const answer = settledBy.get(item)
+    return `${item.url ?? item.html_url ?? 'Review'}\n${blockingSection(reviewBody(item))}${answer ? `\nInterpretation settled by the human: ${answer.url ?? '(no link available)'}` : ''}`
   }).join('\n\n')
   if (reviewBlockers.length === 0 && failedChecks.length === 0 && !conflict) {
     const behind = String(pr.mergeStateStatus ?? '').toUpperCase() === 'BEHIND'

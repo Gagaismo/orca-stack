@@ -1445,6 +1445,42 @@ describe('rebote', () => {
     assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
   })
 
+  test('a later Respuesta del humano on the PR settles an interpretation finding and relaunches the author', async () => {
+    const review = { body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/a.mjs:1` (introducido, concreta, implementación): fix it.\n2. `src/b.mjs:2` (introducido, concreta, interpretación): product disagreement', submittedAt: '2026-10-23T22:25:00Z', url: 'https://example.test/review/1' }
+    const answer = { body: 'Respuesta del humano: "tests allowed"', createdAt: '2026-10-23T23:30:00Z', url: 'https://example.test/comment/9' }
+    const env = bounceEnv(pr({ reviews: [review], comments: [answer] }))
+    await reboteCommand({}, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.match(brief, /fix it/)
+    assert.match(brief, /Interpretation settled by the human: https:\/\/example\.test\/comment\/9/)
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
+  })
+
+  test('a later Respuesta del humano on an issue the PR closes settles an interpretation finding', async () => {
+    const review = { body: 'Commit: abc123\n## BLOQUEA\n1. (inferida, interpretación): product disagreement', submittedAt: '2026-10-24T00:38:00Z' }
+    const issue = { comments: [{ body: '> triage\n\nRespuesta del humano: "re-scope"', createdAt: '2026-10-28T17:58:00Z', url: 'https://example.test/issues/266#c1' }] }
+    const env = bounceEnv(pr({ body: 'Implementador: agy\n\nCloses #266', reviews: [review] }), { 'gh issue': json(issue) })
+    await reboteCommand({ dryRun: true }, '12', env.io)
+    assert.ok(env.calls.some(call => call[0] === 'gh' && call[1] === 'issue' && call[2] === 'view' && call[3] === '266'))
+    assert.ok(env.out.some(line => line.includes('Interpretation settled by the human: https://example.test/issues/266#c1')))
+  })
+
+  test('an interpretation finding stays with the human when the answer predates the review or the review has no date', async () => {
+    const earlier = { body: 'Respuesta del humano: "old"', createdAt: '2026-10-23T21:00:00Z' }
+    const finding = 'Commit: abc123\n## BLOQUEA\n1. (inferida, interpretación): product disagreement'
+    for (const review of [{ body: finding, submittedAt: '2026-10-23T22:25:00Z' }, { body: finding }]) {
+      const env = bounceEnv(pr({ reviews: [review], comments: [earlier] }))
+      await assert.rejects(reboteCommand({}, '12', env.io), /van al humano[\s\S]*product disagreement/)
+      assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+    }
+  })
+
+  test('a CI-only bounce goes through after a review bounce on an older head', async () => {
+    const env = bounceEnv(pr({ headRefOid: 'def456', reviews: [{ body: 'Commit: abc123\n## BLOQUEA\n1. old finding' }], comments: [{ body: 'Rebote: abc123' }], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }] }))
+    await reboteCommand({}, '12', env.io)
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: def456\n')
+  })
+
   test('Rule 4: refuses absent current blocker and stale review commit', async () => {
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ reviews: [{ body: 'Commit: abc123\n## BLOQUEA\nnada' }] })).io), /no tiene un review bloqueante vigente/)
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ reviews: [{ body: 'Commit: oldsha\n## BLOQUEA\n1. finding' }] })).io), /no tiene un review bloqueante vigente/)
