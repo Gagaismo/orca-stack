@@ -790,7 +790,7 @@ describe('briefs', () => {
 
   test('step 7 (c): with CI, main needs no Suite: line of its own after a bounce', () => {
     const c = contractStep(7).split('(c)')[1].split('(d)')[0]
-    assert.match(c, /sin CI, el review dice que el revisor corrió la suite completa en verde y, tras un rebote, el comentario de `main` suma su propia línea `Suite: <comando> en verde`/)
+    assert.match(c, /solo en un repo sin CI, el review dice que el revisor corrió la suite completa en verde y, tras un rebote, el comentario de `main` suma su propia línea `Suite: <comando> en verde`/)
   })
 
   test('step 7 (c): without CI, main still adds Suite: on the bounced commit', () => {
@@ -814,7 +814,7 @@ describe('briefs', () => {
     const step = contractStep(7)
     assert.match(step, /siguen contando con el `Commit:` anterior solo si el head nuevo es un merge hecho por GitHub[^:]*: `gh api [^`]*` tiene que mostrar `web-flow`, `true` y el commit revisado primero en `parents`/)
     assert.ok(step.includes("`gh api repos/<owner>/<repo>/commits/<headRefOid> --jq '{committer: .committer.login, verified: .commit.verification.verified, parents: [.parents[].sha]}'`"))
-    assert.match(step, /el chequeo vale para github\.com/)
+    assert.match(step, /\(vale para github\.com\)/)
   })
 
   test('step 7 (b), rule 2: a hand-pushed merge on the reviewed commit needs a review on headRefOid', () => {
@@ -839,6 +839,7 @@ describe('briefs', () => {
   test('step 7 (b), rule 3: a riesgo PR still requests the step 6 reviews on the new head', () => {
     const step = contractStep(7)
     assert.match(step, /En un PR que toca `riesgo`, los reviews del paso 6 son siempre sobre el `headRefOid` y se repiten en cada head nuevo/)
+    assert.ok(step.indexOf('En un PR que toca `riesgo`') > step.indexOf('Los comentarios de (a) siguen contando'), 'the riesgo rule follows, and overrides, the web-flow carry-over')
   })
 
   test('step 9, rule 5: with a protected ramaBase, main integrates GLOSSARY and ADR proposals in its own orchestration PR', () => {
@@ -2354,7 +2355,7 @@ describe('rebote', () => {
       const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/CONTRATO.md'), 'utf8')
       const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
       const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs/manual.md'), 'utf8')
-      const rule = 'Después de un rebote por conflicto, el merge del autor es un push a mano (paso 7 (b)): main mergea con un review nuevo sobre el head nuevo o, fuera de `riesgo`, con `Verificado por main` escrito después de leer el diff de la resolución.'
+      const rule = 'Después de un rebote por conflicto, el merge del autor es un push a mano (paso 7 (b)): main mergea con un review nuevo sobre el head nuevo o, fuera de `riesgo`, con `Verificado por main` escrito tras leer el diff de la resolución.'
       const step8 = text => text.split(/\r?\n/).find(line => line.startsWith('8. Un PR rebota una sola vez por review.')) ?? ''
       assert.ok(step8(contract).includes(rule))
       assert.ok(step8(agents).includes(rule))
