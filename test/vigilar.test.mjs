@@ -645,7 +645,7 @@ describe('orca-stack vigilar (#206)', () => {
   test('Rule 5: CONTRATO step 7 says main still tries gh pr merge when --merge-de-main fails; the AGENTS.md block equals the asset', () => {
     const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
     const step7 = contract.split(/\r?\n/).find(line => line.startsWith('7. '))
-    assert.ok(step7.includes('Si `orca-stack vigilar --merge-de-main <n>` falla, igual intentás `gh pr merge <n>`, y si sale, el `pr-mergeado` de ese PR es tu propio merge: el registro solo evita ese ruido.'))
+    assert.ok(step7.includes('corré `orca-stack vigilar --merge-de-main <n>`, también después de `gh pr update-branch <n>` (el registro lleva el head); si falla, igual intentás el merge, y si sale, su `pr-mergeado` es tuyo.'))
 
     const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
     const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
