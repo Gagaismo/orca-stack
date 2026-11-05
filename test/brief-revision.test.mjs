@@ -70,6 +70,15 @@ describe('brief-revision', () => {
     assert.equal((brief.match(/What to review/g) ?? []).length, 1)
   })
 
+  test('issue 302 Preserve: brief-revision writes the blocker line with its evidence kind', async () => {
+    const env = setup()
+    await briefRevisionCommand({ n: '7', modelo: 'gpt-6' }, env.io)
+    const brief = readFileSync(env.briefPath, 'utf8')
+    assert.ok(brief.includes('1. `file:line` (introducido|empeorado, test|comando|regla escrita|regla sin test, implementación|interpretación):'))
+    assert.ok(brief.includes('(at most three, one line each; inferred findings first)'))
+    assert.ok(brief.includes('Revisor: subagente (gpt-6)'))
+  })
+
   test('Rule 2: leaves the main checkout tracked file byte-for-byte unchanged', async () => {
     const env = setup()
     const before = readFileSync(env.tracked)
