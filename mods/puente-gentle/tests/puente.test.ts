@@ -82,7 +82,7 @@ const consult = ($: any, input: Record<string, unknown>) =>
 
 const textOf = (out: any): string => out.result
 
-test('the command line carries every flag, the engram env, and runs node on the entry file', async ($, on) => {
+test('the command line carries every flag, the cleared Orca env, and runs node on the entry file', async ($, on) => {
   const w = setup(on, () => ok('Mi lectura'), {}, { project: true })
   await boot($)
   expect(w.tools).toEqual(['consultar_gentle_shell'])
@@ -97,13 +97,13 @@ test('the command line carries every flag, the engram env, and runs node on the 
     '-p', '--mode', 'json',
     '--no-skills', '--skill', SKILLS,
     '--session-id', 'gentle-pr-612',
-    '--tools', 'read,grep,find,ls,codemode', '--append-system-prompt',
+    '--tools', 'read,grep,find,ls,codemode,mem_current_project,mem_context,mem_search,mem_get_observation', '--append-system-prompt',
   ])
   expect(args).not.toContain('--model')
   expect(args[11]).toBe(MARCO)
   expect(args[12]).toBe('## Planteo\ncontexto\n\n## Pregunta\n¿riesgos?')
   expect(args).not.toContain('--link')
-  expect(call.init.env?.ENGRAM_DATA_DIR).toBe('C:\\Users\\tester\\.gentle-shell\\engram')
+  expect(call.init.env).not.toHaveProperty('ENGRAM_DATA_DIR')
   // Inherited Orca terminal and stack variables are blanked, so Pi does not report as this pane.
   expect(call.init.env?.ORCA_PANE_KEY).toBe('')
   expect(call.init.env?.ORCA_AGENT_HOOK_ENDPOINT).toBe('')
@@ -623,6 +623,19 @@ test('without that key the consult does not set CLAUDE_CONFIG_DIR', async ($, on
   expect(w.calls[0]!.init.env).not.toHaveProperty('CLAUDE_CONFIG_DIR')
 })
 
+// Without a Claude account the first test of this file asserts the same absence.
+test('issue 304 rule 4: the consult env never sets ENGRAM_DATA_DIR, also with a Claude account', async ($, on) => {
+  const file = ['C:', 'Users', 'tester', '.orca-stack', 'config.json'].join(BS)
+  const dir = ['C:', 'Users', 'tester', '.claude-pi'].join(BS)
+  const w = setup(on, () => ok('hola'), {}, { project: true, files: { [file]: JSON.stringify({ agentes: { pi: { claudeConfigDir: dir } } }) } })
+  await boot($)
+  await consult($, { tema: 'a', planteo: 'p', pregunta: 'q' })
+  const env = w.calls[0]!.init.env
+  expect(env).not.toHaveProperty('ENGRAM_DATA_DIR')
+  expect(env?.CLAUDE_CONFIG_DIR).toBe(dir)
+  expect(env?.ORCA_PANE_KEY).toBe('')
+})
+
 // ---- #226: the mod preloads an issue or a PR into files Pi reads ------------------------------------------
 
 // setup(..., { project: true }) answers every git call with C:/p/.git as the common dir.
@@ -814,8 +827,8 @@ test('Rule 8: with pr and issue Pi keeps its read-only tools; the mod runs gh, P
   await consult($, { tema: 'pr-218', planteo: 'p', pregunta: 'q', pr: 218, issue: 214 })
   const args = piCall(w)!.argv
   expect(args.filter(arg => arg === '--tools')).toHaveLength(1)
-  expect(args[args.indexOf('--tools') + 1]).toBe('read,grep,find,ls,codemode')
-  expect(READ_ONLY_TOOLS).toBe('read,grep,find,ls,codemode')
+  expect(args[args.indexOf('--tools') + 1]).toBe('read,grep,find,ls,codemode,mem_current_project,mem_context,mem_search,mem_get_observation')
+  expect(READ_ONLY_TOOLS).toBe('read,grep,find,ls,codemode,mem_current_project,mem_context,mem_search,mem_get_observation')
   expect(ghCalls(w).length).toBeGreaterThan(0)
 })
 

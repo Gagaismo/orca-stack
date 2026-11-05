@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
-import { INSTALL_HINTS, PINNED, PI_MIN_VERSION, PI_PACKAGES } from './constants.mjs'
+import { INSTALL_HINTS, PINNED, PI_MIN_VERSION, PI_NPM_PACKAGE, PI_PACKAGES } from './constants.mjs'
 import { compareVersions } from './drift.mjs'
 import { binaryVersion, isFile, run, which } from './util.mjs'
 
@@ -83,7 +83,75 @@ export const printInstallHint = (ctx, key, title) => {
   }
 }
 
-// Installs pi packages through Pi's own mechanism and gentle-pi globally (for the gentle-shell bin).
+const warnNewer = (ctx, version) => {
+  if (version && version !== PINNED.pi) {
+    ctx.say(`  aviso: Pi ${version} instalado; este stack se probó con ${PINNED.pi}.`)
+  }
+}
+
+// A Pi older than PINNED.pi is updated with `pi update --self`, which only goes to the latest Pi, so any version at or
+// above the pin passes; a newer one is never downgraded (#304 rules 2a and 2c). False when Pi is still too old.
+const pinnedPi = (ctx, bin) => {
+  const version = binaryVersion(bin)
+  if (version === null || compareVersions(version, PINNED.pi) >= 0) {
+    warnNewer(ctx, version)
+
+    return true
+  }
+  ctx.act('ejecuto: pi update --self')
+  if (ctx.dryRun) {
+    return true
+  }
+  const result = run(bin, ['update', '--self'], { timeout: 300_000 })
+  const updated = binaryVersion(bin)
+  if (updated !== null && compareVersions(updated, PINNED.pi) >= 0) {
+    warnNewer(ctx, updated)
+
+    return true
+  }
+  const why = piTooOld(updated) ?? `Pi ${updated ?? version} sigue siendo anterior a ${PINNED.pi} después de pi update --self`
+  ctx.fail(`${why}${result.status === 0 ? '' : ` (${failureReason(result)})`}: no instalo los paquetes de Pi. Actualizá Pi con el instalador oficial:`)
+  for (const line of INSTALL_HINTS.pi) {
+    ctx.say(`    ${line}`)
+  }
+  ctx.say('  Después de actualizarlo, volvé a correr este comando.')
+
+  return false
+}
+
+// A missing Pi is installed at PINNED.pi with npm, the exact version instead of the remote install script (#304 rule 2b).
+// Returns the Pi binary (just 'pi' under --dry-run), or null when it could not.
+const installPi = ctx => {
+  const npm = which('npm')
+  if (!npm) {
+    printInstallHint(ctx, 'pi', 'Pi')
+    ctx.say('  Después de instalarlo, volvé a correr este comando para sumar gentle-pi y pi-claude-bridge.')
+
+    return null
+  }
+  const spec = `${PI_NPM_PACKAGE}@${PINNED.pi}`
+  ctx.act(`ejecuto: npm install -g --ignore-scripts ${spec}`)
+  if (ctx.dryRun) {
+    return 'pi'
+  }
+  const result = run(npm, ['install', '-g', '--ignore-scripts', spec], { timeout: 300_000 })
+  if (result.status !== 0) {
+    ctx.fail(`falló npm install -g ${spec}: ${failureReason(result)}`)
+
+    return null
+  }
+  // Absent before this run, so it is ours to remove later.
+  ctx.state.pi.piInstalled = true
+  const bin = piBinary(ctx.L)
+  if (!bin) {
+    ctx.fail(`npm instaló ${spec}, pero pi no está en el PATH: sumá la carpeta de \`npm prefix -g\` al PATH y volvé a correr este comando.`)
+  }
+
+  return bin
+}
+
+// Installs Pi when it is missing or older than the pin, its packages through Pi's own mechanism and gentle-pi globally
+// (for the gentle-shell bin).
 export const setupPi = (ctx, { skipPi }) => {
   const L = ctx.L
   ctx.say('\nPi (Gentle Shell)')
@@ -92,26 +160,10 @@ export const setupPi = (ctx, { skipPi }) => {
 
     return
   }
-  const bin = piBinary(L)
+  const found = piBinary(L)
+  const bin = found ? (pinnedPi(ctx, found) ? found : null) : installPi(ctx)
   if (!bin) {
-    printInstallHint(ctx, 'pi', 'Pi')
-    ctx.say('  Después de instalarlo, volvé a correr este comando para sumar gentle-pi y pi-claude-bridge.')
-
     return
-  }
-  const version = binaryVersion(bin)
-  const tooOld = piTooOld(version)
-  if (tooOld) {
-    ctx.fail(`${tooOld}: no instalo gentle-pi. Actualizá Pi con el instalador oficial:`)
-    for (const line of INSTALL_HINTS.pi) {
-      ctx.say(`    ${line}`)
-    }
-    ctx.say('  Después de actualizarlo, volvé a correr este comando.')
-
-    return
-  }
-  if (version && version !== PINNED.pi) {
-    ctx.say(`  aviso: Pi ${version} instalado; este stack se probó con ${PINNED.pi}.`)
   }
   for (const pkg of PI_PACKAGES) {
     const have = installedPackageVersion(piModulesDir(L), pkg.name)

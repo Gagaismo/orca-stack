@@ -11,6 +11,9 @@ import {
   resolveDefaultTools,
 } from '../src/codemode.mjs'
 import { PI_TOOLS, launcherFor } from '../src/despacho.mjs'
+
+// The Engram read tools the consult and pi reviews also get, so they read the shared memory (#304).
+const ENGRAM_READ_TOOLS = ['mem_current_project', 'mem_context', 'mem_search', 'mem_get_observation']
 import { checkCodemode, doctorCommand } from '../src/doctor.mjs'
 import { globalCommand } from '../src/global.mjs'
 import { createCtx } from '../src/ctx.mjs'
@@ -321,7 +324,7 @@ describe('codemode rules 1-6', () => {
   test('Rule 7: Gentle Shell consult and pi reviews pass codemode in --tools, and consult cannot write', () => {
     // 1. Pi reviews pass codemode in PI_TOOLS.review
     assert.ok(PI_TOOLS.review.split(',').includes('codemode'), 'PI_TOOLS.review must include codemode')
-    assert.deepEqual(PI_TOOLS.review.split(','), ['read', 'bash', 'grep', 'find', 'ls', 'codemode'])
+    assert.deepEqual(PI_TOOLS.review.split(','), ['read', 'bash', 'grep', 'find', 'ls', 'codemode', ...ENGRAM_READ_TOOLS])
 
     // 2. Gentle Shell consult passes codemode in READ_ONLY_TOOLS
     const puentePath = path.join(ROOT, 'mods', 'puente-gentle', 'hooks', 'puente.ts')
@@ -333,7 +336,7 @@ describe('codemode rules 1-6', () => {
     assert.ok(!readOnlyTools.includes('write'), 'READ_ONLY_TOOLS must not include write')
     assert.ok(!readOnlyTools.includes('edit'), 'READ_ONLY_TOOLS must not include edit')
     assert.ok(!readOnlyTools.includes('bash'), 'READ_ONLY_TOOLS must not include bash')
-    assert.deepEqual(readOnlyTools, ['read', 'grep', 'find', 'ls', 'codemode'])
+    assert.deepEqual(readOnlyTools, ['read', 'grep', 'find', 'ls', 'codemode', ...ENGRAM_READ_TOOLS])
 
     // 3. Launcher passes --tools with codemode for review mode
     const sh = launcherFor({
@@ -346,7 +349,7 @@ describe('codemode rules 1-6', () => {
       session: 'sess-1',
       config: { agentes: {} },
     })
-    assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode'"))
+    assert.ok(sh.includes(`--tools 'read,bash,grep,find,ls,codemode,${ENGRAM_READ_TOOLS.join(',')}'`))
   })
 
   test('PRESERVE: globalCommand runs successfully and sets up codemode without crashing', async () => {
