@@ -790,7 +790,7 @@ describe('briefs', () => {
 
   test('step 7 (c): with CI, main needs no Suite: line of its own after a bounce', () => {
     const c = contractStep(7).split('(c)')[1].split('(d)')[0]
-    assert.match(c, /solo en un repo sin CI, después de un rebote, el comentario de `main` lleva también su propia línea `Suite: <comando> en verde`/)
+    assert.match(c, /solo en un repo sin CI, el review dice que el revisor corrió la suite completa en verde y, tras un rebote, el comentario de `main` suma su propia línea `Suite: <comando> en verde`/)
   })
 
   test('step 7 (c): without CI, main still adds Suite: on the bounced commit', () => {
@@ -800,31 +800,46 @@ describe('briefs', () => {
 
   test('step 8: the Commit: sha is the one main ran, taken before the run and never re-read from gh', () => {
     const step = contractStep(8)
-    assert.match(step, /ese `Commit:` es el `git rev-parse HEAD` del checkout donde la corriste, tomado antes de correrla con `git status --porcelain` vacío, y no lo volvés a leer de `gh` al escribir el comentario/)
+    assert.match(step, /su `Commit:` es el `git rev-parse HEAD` del checkout donde la corriste, tomado antes de correrla con `git status --porcelain` vacío, y no lo releés de `gh`/)
     assert.match(step, /si el autor pushea durante la corrida, el paso 7 \(b\) frena el merge/)
   })
 
   test('step 7, rule 6: a merge refused because the branch is behind ramaBase is update-branch, CI on the new head, merge', () => {
     const step = contractStep(7)
-    assert.match(step, /Si `gh pr merge` se niega porque la rama del PR está atrás de `ramaBase`[^.]*corré `gh pr update-branch <n>`, esperá la CI sobre el head nuevo y mergeá; no busques otra forma de rodearlo\./)
+    assert.match(step, /Si `gh pr merge` se niega porque la rama está atrás de `ramaBase`[^.]*corré `gh pr update-branch <n>`, esperá la CI sobre el head nuevo y mergeá; no busques otra forma de rodearlo\./)
     assert.match(step, /los merges de una tanda van de a uno/)
   })
 
   test('step 7 (b), rule 1: a GitHub-made update-branch merge (web-flow, verified, first parent reviewed) keeps the review', () => {
     const step = contractStep(7)
-    assert.match(step, /siguen contando con el `Commit:` del commit anterior solo si el head nuevo es un merge hecho por GitHub: su committer es `web-flow`, su firma está verificada y su primer padre es ese commit/)
+    assert.match(step, /siguen contando con el `Commit:` anterior solo si el head nuevo es un merge hecho por GitHub[^:]*: `gh api [^`]*` tiene que mostrar `web-flow`, `true` y el commit revisado primero en `parents`/)
     assert.ok(step.includes("`gh api repos/<owner>/<repo>/commits/<headRefOid> --jq '{committer: .committer.login, verified: .commit.verification.verified, parents: [.parents[].sha]}'`"))
-    assert.match(step, /el chequeo vale para github\.com/)
+    assert.match(step, /\(vale para github\.com\)/)
   })
 
   test('step 7 (b), rule 2: a hand-pushed merge on the reviewed commit needs a review on headRefOid', () => {
     const step = contractStep(7)
-    assert.match(step, /Un merge pusheado a mano no cuenta aunque su primer padre sea el commit revisado: el review tiene que ser sobre el `headRefOid`, como siempre\./)
+    assert.match(step, /solo si el head nuevo es un merge hecho por GitHub, no uno pusheado a mano aunque su primer padre sea el commit revisado/)
+    assert.match(step, /\(b\) esos comentarios llevan `Commit: <sha>` igual al `headRefOid`/)
+  })
+
+  test('issue 301 Rule 2: steps 7-8 keep every fixed protocol marker and command verbatim', () => {
+    const steps = contractStep(7) + '\n' + contractStep(8)
+    for (const literal of [
+      '`Verificado por main: hallazgos <n,…> corregidos en <sha>`', '`Decidido por main: <hallazgo> — <razón>`', '`Commit: <sha>`',
+      '`Rebote: <sha>`', '`Rebote CI: <sha>`', '`Rebote conflicto: <sha>`', '`Suite: <comando> en verde`', '`## BLOQUEA`', '`Revisor:`', '`Implementador:`',
+      '`gh pr merge <n>`', '`gh pr update-branch <n>`', '`orca-stack vigilar --merge-de-main <n>`', '`orca-stack rebote <pr>`',
+      '`gh run rerun <run> --failed`', '`gh run view --job <job> --log-failed`',
+      "`gh api repos/<owner>/<repo>/commits/<headRefOid> --jq '{committer: .committer.login, verified: .commit.verification.verified, parents: [.parents[].sha]}'`",
+      '`web-flow`, `true` y el commit revisado primero en `parents`',
+    ]) assert.ok(steps.includes(literal), literal)
+    assert.ok(!/Verified by main/.test(steps))
   })
 
   test('step 7 (b), rule 3: a riesgo PR still requests the step 6 reviews on the new head', () => {
     const step = contractStep(7)
-    assert.match(step, /En un PR que toca `riesgo`, los reviews del paso 6 se piden de nuevo sobre el head nuevo/)
+    assert.match(step, /En un PR que toca `riesgo`, los reviews del paso 6 son siempre sobre el `headRefOid` y se repiten en cada head nuevo/)
+    assert.ok(step.indexOf('En un PR que toca `riesgo`') > step.indexOf('Los comentarios de (a) siguen contando'), 'the riesgo rule follows, and overrides, the web-flow carry-over')
   })
 
   test('step 9, rule 5: with a protected ramaBase, main integrates GLOSSARY and ADR proposals in its own orchestration PR', () => {
@@ -2354,7 +2369,7 @@ describe('rebote', () => {
       const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/CONTRATO.md'), 'utf8')
       const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
       const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs/manual.md'), 'utf8')
-      const rule = 'Después de un rebote por conflicto, el merge commit del autor es un push a mano: las líneas `Commit:` anteriores dejan de contar (paso 7 (b)) y main mergea con un review nuevo sobre el head nuevo o, fuera de `riesgo`, con `Verificado por main` escrito después de leer el diff de la resolución; en un PR que toca `riesgo`, los reviews del paso 6 se piden de nuevo sobre el head nuevo.'
+      const rule = 'Después de un rebote por conflicto, el merge del autor es un push a mano (paso 7 (b)): main mergea con un review nuevo sobre el head nuevo o, fuera de `riesgo`, con `Verificado por main` escrito tras leer el diff de la resolución.'
       const step8 = text => text.split(/\r?\n/).find(line => line.startsWith('8. Un PR rebota una sola vez por review.')) ?? ''
       assert.ok(step8(contract).includes(rule))
       assert.ok(step8(agents).includes(rule))

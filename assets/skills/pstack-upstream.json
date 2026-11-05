@@ -15,6 +15,14 @@
       "adapted": false,
       "upstreamSha256": "3c84fbf9a7d9842abcfcd134010782b32092ac3d3fb4aaf9ed5732dca83aa58c"
     },
+    "create-formal-verification-skill": {
+      "adapted": false,
+      "upstreamSha256": "30ef0ac27612ecd16fdc081112113221d673053cef3f8603db11932193861211"
+    },
+    "maintain-formal-verification-skill": {
+      "adapted": false,
+      "upstreamSha256": "0c96f54293542d3818b68754562b338073958781a9684454611dca37592e2d2c"
+    },
     "arena": {
       "adapted": true,
       "upstreamSha256": "d0adeca6c9b19d43d90ed8f0484f0ddd362f05006d628b8f4cc6c9b55fa4d2b3",
