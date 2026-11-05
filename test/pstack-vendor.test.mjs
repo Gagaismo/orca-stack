@@ -536,6 +536,8 @@ describe('#305 vendored statechart with per-file hashes (upstream v0.15.36)', ()
       assert.match(text, /primera corrida descarga TLC y Java con mise/)
       assert.match(text, /red/)
       assert.match(text, /Windows nativo no corre/)
+      assert.match(text, /WSL/)
+      assert.match(text, /`TLA2TOOLS`.*`JAVA`.*se saltea mise/)
     }
   })
 
