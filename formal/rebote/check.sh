@@ -4,13 +4,16 @@
 # Usage: TLA2TOOLS=<path to tla2tools.jar 1.7.4> [JAVA=<java binary>] bash formal/rebote/check.sh [<cfg> <expected>]...
 # Without arguments it checks the list below.
 set -u
-cd "$(dirname "$0")"
 JAR="${TLA2TOOLS:-}"
 JAVA_BIN="${JAVA:-java}"
 if [ -z "$JAR" ] || [ ! -f "$JAR" ]; then
   echo "Set TLA2TOOLS to the path of tla2tools.jar 1.7.4 (got '${JAR}')." >&2
   exit 2
 fi
+# Relative paths are the caller's: resolve them before moving to the model's folder.
+JAR="$(cd "$(dirname "$JAR")" && pwd)/$(basename "$JAR")"
+case "$JAVA_BIN" in */*) JAVA_BIN="$(cd "$(dirname "$JAVA_BIN")" && pwd)/$(basename "$JAVA_BIN")" ;; esac
+cd "$(dirname "$0")"
 if [ "$#" -eq 0 ]; then
   set -- \
     rebote.cfg pass \

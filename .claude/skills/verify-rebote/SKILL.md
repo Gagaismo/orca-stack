@@ -13,7 +13,7 @@ Harm: an author loops on the same PR, burns quota and rewrites work while main b
 
 ## Coverage record
 
-- Sync commit: `02ebe8b` (the commit at which the model was last confirmed to describe the code).
+- Sync commit: `f85aa43` (the commit at which the model was last confirmed to describe the code).
 - Code covered: `reboteCommand` in `src/despacho.mjs` L874-L1117 (decision part L890-L1034, launch L1086, markers L1087-L1111: retry loop L1093-L1099 with `MARKER_ATTEMPTS = 3`, fail-loud exit L1100-L1111) and the helpers it calls for the CI view in `src/checks.mjs` (`latestChecks`, `analyzeChecks`, `isPending`) plus `blockingBody`, `blockingSection`, `humanAnswers` in `src/despacho.mjs` L849-L869.
 - Contract text: `assets/stack/CONTRATO.md` step 8.
 - Model: `formal/rebote/Rebote.tla`; every action carries the `file:line` it models in a comment.

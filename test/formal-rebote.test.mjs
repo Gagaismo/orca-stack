@@ -36,7 +36,7 @@ const stepRun = (block, name) => new RegExp(`- name: ${name}\\n\\s+run: (.+)`).e
 
 describe('formal/rebote (issue #311)', () => {
   test('Rule 1: the model describes the fixed rebote, with its comment retry and fail-loud exit', () => {
-    assert.match(model, /synced at commit 02ebe8b/)
+    assert.match(model, /synced at commit f85aa43/)
     // The fix of #310: 3 comment attempts after the launch, then a non-zero exit that main answers by posting the marker.
     assert.match(read(path.join('src', 'despacho.mjs')), /const MARKER_ATTEMPTS = 3\n/)
     assert.match(model, /CommentFail\s+\\\* TRUE: all 3 attempts of `gh pr comment`/)
@@ -67,6 +67,25 @@ describe('formal/rebote (issue #311)', () => {
     // A result that differs from the expected one makes the script exit non-zero.
     assert.match(checkSh, /if \[ "\$got" != "\$expected" \]; then\n\s+status=1/)
     assert.match(checkSh, /exit \$status\n$/)
+  })
+
+  test('Rule 2: check.sh exits 1 when a config result differs from its expected one', { skip: process.platform === 'win32' && 'bash on Windows may resolve to WSL; the ubuntu CI legs run it' }, () => {
+    const dir = tempDir('formal-check')
+    try {
+      // A stand-in for java that reports every config as passing, so only check.sh's comparison is under test.
+      const java = path.join(dir, 'java')
+      writeFileSync(java, '#!/usr/bin/env bash\necho "Model checking completed. No error has been found."\n', { mode: 0o755 })
+      writeFileSync(path.join(dir, 'tla2tools.jar'), '')
+      const run = (...args) => spawnSync('bash', [path.join(root, formal, 'check.sh'), ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, TLA2TOOLS: 'tla2tools.jar', JAVA: './java' } })
+      const same = run('rebote.cfg', 'pass')
+      assert.equal(same.status, 0, same.stdout + same.stderr)
+      assert.match(same.stdout, /^rebote\.cfg: pass \[expected pass\]$/m)
+      const differs = run('rebote.cfg', 'pass', 'broken-owed.cfg', 'ConflictBounceOncePerHead')
+      assert.equal(differs.status, 1, differs.stdout + differs.stderr)
+      assert.match(differs.stdout, /^broken-owed\.cfg: pass \[expected ConflictBounceOncePerHead\]$/m)
+    } finally {
+      cleanup(dir)
+    }
   })
 
   test('Rule 3: the replay tests pass under the node test runner with no Java on PATH', () => {
@@ -111,7 +130,7 @@ describe('formal/rebote (issue #311)', () => {
   test('Rule 5: the verify-rebote skill keeps its coverage record with the sync commit of the model', () => {
     assert.match(skill, /^name: verify-rebote$/m)
     assert.match(skill, /^## Coverage record$/m)
-    assert.match(skill, /^- Sync commit: `02ebe8b`/m)
+    assert.match(skill, /^- Sync commit: `f85aa43`/m)
     assert.match(skill, /^- Code covered: `reboteCommand` in `src\/despacho\.mjs`/m)
     assert.match(skill, /`latestChecks`, `analyzeChecks`, `isPending`/)
     assert.match(skill, /`blockingBody`, `blockingSection`, `humanAnswers`/)

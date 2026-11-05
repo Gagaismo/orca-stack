@@ -1,7 +1,7 @@
 ------------------------------ MODULE Rebote ------------------------------
 (***************************************************************************)
 (* Bounce limits of `orca-stack rebote <pr>` (src/despacho.mjs,            *)
-(* reboteCommand; synced at commit 02ebe8b). One PR, one author, one main  *)
+(* reboteCommand; synced at commit f85aa43). One PR, one author, one main  *)
 (* session.                                                                *)
 (*                                                                         *)
 (* One `rebote` run is ONE indivisible step here: it reads the PR once     *)

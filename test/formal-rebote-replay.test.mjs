@@ -165,7 +165,7 @@ describe('replay: counterexamples of formal/rebote/Rebote.tla on the fixed rebot
     assert.equal(launches(advanced), 0, 'a second review bounce on a different head was launched')
   })
 
-  // Control: with the marker posted by rebote itself, the same head advance is refused (the guard at L980 works).
+  // Control: with the marker posted by rebote itself, the same head advance is refused (the review-once guard, "El head del PR avanzó desde el rebote", works).
   test('control: with the marker posted, the second review bounce on a later head is refused', async () => {
     const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }], reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. still broken' }] }))
     await assert.rejects(reboteCommand({}, '12', advanced.io), /avanzó desde el rebote/)

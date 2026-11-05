@@ -133,8 +133,10 @@ jobs:
         run: TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" bash formal/rebote/check.sh
       - name: A result that differs from the expected one fails check.sh
         run: |
-          if TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" bash formal/rebote/check.sh rebote.cfg ReviewBounceOnce; then
-            echo "check.sh accepted a result that differs from the expected one"
+          rc=0
+          TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" bash formal/rebote/check.sh rebote.cfg ReviewBounceOnce || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "check.sh exited $rc on a result that differs from the expected one; expected 1"
             exit 1
           fi
 
