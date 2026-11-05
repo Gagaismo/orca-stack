@@ -2712,6 +2712,8 @@ describe('rebote', () => {
       const env = bounceEnv(conflicted(), commentAttempts([false, false, false]))
       const error = await reboteCommand({}, '12', env.io).then(() => assert.fail('rebote should fail'), err => err)
       assert.equal(commentCalls(env).length, 3)
+      assert.deepEqual(env.out.filter(line => /^gh pr comment falló \(intento \d de 3\)/.test(line)).map(line => /^.*\(intento \d de 3\)/.exec(line)[0]), ['gh pr comment falló (intento 1 de 3)', 'gh pr comment falló (intento 2 de 3)', 'gh pr comment falló (intento 3 de 3)'])
+      assert.deepEqual(env.sleeps.filter(ms => ms === 3000), [3000, 3000], 'one wait between each pair of attempts, none after the last')
       const [file, text] = markerFile(env)
       assert.equal(text, 'Rebote conflicto: abc123\n')
       const lines = error.message.split('\n')
