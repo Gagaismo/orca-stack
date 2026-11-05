@@ -412,17 +412,17 @@ Revisor: <agente>
 Commit: <sha>
 
 ## BLOQUEA
-1. `archivo:línea` (introducido|empeorado, concreta|inferida, implementación|interpretación): el problema. Cómo se reproduce o qué criterio incumple. El arreglo, en una línea.
+1. `archivo:línea` (introducido|empeorado, test|comando|regla escrita|regla sin test, implementación|interpretación): el problema. Su evidencia. El arreglo, en una línea.
 
 ## SUGERENCIAS
-(como mucho tres, una línea cada una)
+(como mucho tres, una línea cada una; lo inferido primero)
 ```
 
-Sin bloqueos, `## BLOQUEA` dice `nada`. Los bloqueos de **interpretación** van al humano; `main` no los resuelve con `Decidido por main`.
+Sin bloqueos, `## BLOQUEA` dice `nada`. Solo bloquea la evidencia concreta: `test` (un test del revisor que falla, con su código), `comando` (un comando y su salida), `regla escrita` (un `archivo:línea` que rompe una regla citada de `CODING_STANDARDS.md` o `AGENTS.md`) o `regla sin test` (la regla o criterio del ticket, nombrado, que el diff no cumple o no prueba). Lo inferido va a `## SUGERENCIAS` con qué correr para confirmarlo: "puede haber una race si corren dos `despachar`", sin reproducción, no bloquea. Los bloqueos de **interpretación** van al humano; `main` no los resuelve con `Decidido por main`.
 
 **Condición de merge** (la verifica `main` con `gh pr view <n> --json title,body,comments,reviews` y `gh pr checks <n>`):
 
-1. Hay un review con `## BLOQUEA` en `nada` y un `Revisor:` distinto del `Implementador:`; o, tras un rebote mecánico, un comentario de `main` con `Verificado por main: hallazgos <n,…> corregidos en <sha>`; o `Decidido por main: <hallazgo> — <razón>` por cada hallazgo que siga en pie tras la segunda ronda.
+1. Hay un review sin bloqueos con evidencia concreta (un bloqueo inferido cuenta como sugerencia) y un `Revisor:` distinto del `Implementador:`; o, tras un rebote mecánico, un comentario de `main` con `Verificado por main: hallazgos <n,…> corregidos en <sha>`; o `Decidido por main: <hallazgo> — <razón>` por cada hallazgo que siga en pie tras la segunda ronda.
 2. Esos comentarios llevan `Commit: <sha>` igual al `headRefOid`: un review limpio de un commit anterior no cuenta.
 3. CI en verde (o, sin CI, la suite completa en verde dicha por el revisor).
 4. Si hubo segundo review de pi, también está limpio.
@@ -432,7 +432,7 @@ En un PR que toca `riesgo`, los reviews son siempre sobre el `headRefOid`, y un 
 
 > **Regla de este repo** (`AGENTS.md` del propio orca-stack): hoy no se despachan reviews; `main` mergea con la CI verde y el `## Evidencia` en el cuerpo del PR. Un PR de más de 400 líneas igual requiere consulta a Gentle Shell. Esto es una excepción del repo, no del stack.
 
-**Rebote.** Un PR rebota una vez por review. Para CI roja, `rebote` se niega mientras haya checks pendientes (corrélo de nuevo cuando termine la CI). Los checks se comparan dentro de la corrida más nueva de cada workflow: las filas de una corrida anterior no cancelan ni justifican un rebote; si un check falta en la corrida más nueva, se considera pendiente. Ante un check `CANCELLED`, `rebote` consulta si ya hay una corrida más nueva de ese workflow: si existe, se niega como pendiente y espera; si no, muestra `gh run rerun <run> --failed` para que `main` la re-ejecute. Si la falla es de infraestructura, `main` re-ejecuta el job y no rebota al autor. Después del segundo rebote de CI, si vuelve a fallar, se lo pasa al humano. Después de un rebote por conflicto, el merge del autor es un push a mano (paso 7 (b)): main mergea con un review nuevo sobre el head nuevo o, fuera de `riesgo`, con `Verificado por main` escrito tras leer el diff de la resolución.
+**Rebote.** Un PR rebota una vez por review. Un bloqueo sin evidencia concreta cuenta como sugerencia: no rebota el PR ni frena el merge. Para CI roja, `rebote` se niega mientras haya checks pendientes (corrélo de nuevo cuando termine la CI). Los checks se comparan dentro de la corrida más nueva de cada workflow: las filas de una corrida anterior no cancelan ni justifican un rebote; si un check falta en la corrida más nueva, se considera pendiente. Ante un check `CANCELLED`, `rebote` consulta si ya hay una corrida más nueva de ese workflow: si existe, se niega como pendiente y espera; si no, muestra `gh run rerun <run> --failed` para que `main` la re-ejecute. Si la falla es de infraestructura, `main` re-ejecuta el job y no rebota al autor. Después del segundo rebote de CI, si vuelve a fallar, se lo pasa al humano. Después de un rebote por conflicto, el merge del autor es un push a mano (paso 7 (b)): main mergea con un review nuevo sobre el head nuevo o, fuera de `riesgo`, con `Verificado por main` escrito tras leer el diff de la resolución.
 
 **Cuerpo del PR.** Sigue la skill `pr`: `## Summary`, `## Evidencia` y `## Merge Danger`. Un PR de ticket lleva `Closes #<n>`, `Implementador: <agente>` y una fila de `## Evidencia` por cada regla y por cada entrada pública tocada, con el nombre exacto del test y la línea de la corrida en verde. Un PR de orquestación no lleva `Closes #`.
 

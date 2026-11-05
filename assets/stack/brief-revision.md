@@ -33,7 +33,7 @@ Act as a requirements verifier, not as a checker of the author's tests. Derive a
 
 The Evidencia table is verified, not believed: open each test in the table and check that it asserts what its criterion says. Then pick one of the new tests and check that it fails without the change: restore the code files of the diff (not the tests) to {{BASE}} with `git checkout origin/<base> -- <files>` (the base is {{BASE}}), run that test, check that it fails on an assertion and not on an import, and restore with `git checkout HEAD -- .`.
 
-What blocks: on Spec and Failure modes, a criterion or failure mode of the issue that the diff does not meet or does not test; on Standards, only a rule written in {{REVIEW_STANDARDS}}, and the finding cites file and line as in the reviewed commit. These do not block: code smells (they go to SUGERENCIAS), what other documents say, a mechanical rule that already has a CI check (a red CI already stops the merge), and a problem that was already there and the diff neither touches nor worsens. Each blocker says whether the diff introduces or worsens it, and whether its evidence is concrete (a line, a failing test) or inferred (then say what to run to confirm it).
+What blocks: only a finding with one of four kinds of concrete evidence. `test`: a verifier test that fails, with its code. `comando`: a command and its output. `regla escrita` (Standards): a `file:line` as in the reviewed commit that breaks a rule written in {{REVIEW_STANDARDS}}, quoting the rule. `regla sin test` (Spec and Failure modes): a numbered rule, acceptance criterion or failure mode of the issue that the diff does not meet or does not test, naming it. A finding without one of them is inferred and goes to SUGERENCIAS with the test or command that would confirm it; for example, "this may race when two dispatches run at once", with no reproduction, is a suggestion: `possible race in despachar when two run in parallel; confirm by running two despachar 301 claude at once`. These do not block either: code smells (they go to SUGERENCIAS), what other documents say, a mechanical rule that already has a CI check (a red CI already stops the merge), and a problem that was already there and the diff neither touches nor worsens. Each blocker says whether the diff introduces or worsens it, and its evidence kind.
 
 ## Format
 
@@ -48,10 +48,10 @@ Revisor: {{REVIEWER_LINE}}
 Commit: {{SHA}}
 
 ## BLOQUEA
-1. `file:line` (introducido|empeorado, concreta|inferida, implementación|interpretación): the problem in one sentence. How to reproduce it or which criterion it breaks. For a verifier test, include the test code. The fix, in one line.
+1. `file:line` (introducido|empeorado, test|comando|regla escrita|regla sin test, implementación|interpretación): the problem in one sentence. Its evidence; for a verifier test, include the test code. The fix, in one line.
 
 ## SUGERENCIAS
-(at most three, one line each)
+(at most three, one line each; inferred findings first)
 ```
 
 With no blockers, `## BLOQUEA` says `nada`. If the repo has no CI, add the line `Suite: <command> en verde` under `Revisor:` after running the suite. If the diff is a one-way door and the PR's `## Merge Danger` says otherwise, say so in SUGERENCIAS.
