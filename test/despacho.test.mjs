@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
+import { main } from '../src/cli.mjs'
 import { isConsultaComment } from '../src/consultas.mjs'
 import { layout } from '../src/util.mjs'
 import { ROOT, cleanup, cli, read, tempDir, write } from './helpers.mjs'
@@ -2722,11 +2723,70 @@ describe('rebote', () => {
         at(/autor ya está relanzado/),
         at(/^Rebote conflicto: abc123$/),
         lines.indexOf(`Archivo del marcador: ${file}`),
-        lines.indexOf(`gh pr comment 12 --body-file ${file}`),
+        lines.indexOf(`gh pr comment 12 --body-file '${file}'`),
         at(/antes de cualquier otro rebote o merge del PR #12/),
       ]
       assert.ok(order.every(index => index >= 0), `missing a line: ${error.message}`)
       assert.deepEqual(order, [...order].sort((a, b) => a - b), `wrong order: ${error.message}`)
+    })
+
+    // The real target shell splits the printed command: it must see 6 words, the last one the marker path unchanged.
+    const shellWords = (win, command) => {
+      if (win) {
+        const ps = `$t=$null; $e=$null; $ast=[System.Management.Automation.Language.Parser]::ParseInput('${command.replaceAll("'", "''")}', [ref]$t, [ref]$e); if ($e.Count) { exit 3 }; ConvertTo-Json -Compress @($ast.EndBlock.Statements[0].PipelineElements[0].CommandElements | ForEach-Object { if ($_.Value -ne $null) { $_.Value } else { $_.Extent.Text } })`
+        return spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8' })
+      }
+      return spawnSync('sh', ['-c', `gh() { printf '%s\\n' "$#" "$@"; }; ${command}`], { encoding: 'utf8' })
+    }
+
+    for (const win of [true, false]) {
+      test(`Rule 2: the recovery command quotes a marker path with spaces and metacharacters for ${win ? 'PowerShell' : 'POSIX sh'}`, async () => {
+        const base = tempDir('rebote-310-quote')
+        try {
+          const env = bounceEnv(conflicted(), commentAttempts([false, false, false]))
+          env.io.home = path.join(base, "home with space $HOME 'q' & x")
+          env.io.win = win
+          const error = await reboteCommand({}, '12', env.io).then(() => assert.fail('rebote should fail'), err => err)
+          const [file] = markerFile(env)
+          const command = error.message.split('\n').find(line => line.startsWith('gh pr comment 12 --body-file '))
+          assert.ok(command, error.message)
+          const parsed = shellWords(win, command)
+          if (parsed.error?.code === 'ENOENT') return // that shell is not on this runner; the other OS covers it
+          assert.equal(parsed.status, 0, parsed.stderr)
+          if (win) {
+            const words = JSON.parse(parsed.stdout)
+            assert.equal(words.length, 6, `words: ${parsed.stdout}`)
+            assert.equal(words[5], file)
+          } else {
+            const [count, ...words] = parsed.stdout.replace(/\n$/, '').split('\n')
+            assert.equal(count, '5', `words: ${parsed.stdout}`)
+            assert.equal(words[4], file)
+          }
+        } finally {
+          cleanup(base)
+        }
+      })
+    }
+
+    test('Rule 2: the orca-stack CLI exits 1 and prints the recovery output when all 3 attempts fail', async () => {
+      const env = bounceEnv(conflicted(), commentAttempts([false, false, false]))
+      const errors = []
+      const original = console.error
+      console.error = text => errors.push(String(text))
+      let code
+      try {
+        code = await main(['rebote', '12'], env.io)
+      } finally {
+        console.error = original
+      }
+      assert.equal(code, 1)
+      const [file] = markerFile(env)
+      const printed = errors.join('\n')
+      assert.match(printed, /^✖ El autor ya está relanzado/)
+      assert.match(printed, /^Rebote conflicto: abc123$/m)
+      assert.ok(printed.split('\n').includes(`gh pr comment 12 --body-file '${file}'`), printed)
+      assert.match(printed, /antes de cualquier otro rebote o merge del PR #12/)
+      assert.equal(commentCalls(env).length, 3)
     })
 
     test('Rule 3: the author is launched once, before any marker attempt, and a failed launch posts no marker', async () => {
@@ -2748,7 +2808,7 @@ describe('rebote', () => {
       await assert.rejects(reboteCommand({}, '12', env.io), error => {
         assert.match(error.message, /autor ya está relanzado/)
         assert.match(error.message, /^Rebote conflicto: abc123$/m)
-        assert.match(error.message, /^gh pr comment 12 --body-file .*proj-pr-12-rebote-comment\.md$/m)
+        assert.match(error.message, /^gh pr comment 12 --body-file '.*proj-pr-12-rebote-comment\.md'$/m)
         return true
       })
       assert.equal(launchCount(env), 1)

@@ -264,7 +264,8 @@ export const parseArgs = argv => {
   return { command: rest[0], flags, rest }
 }
 
-export const main = async argv => {
+// io reaches the commands that take one (rebote), so a test drives the same exit-code mapping as bin/orca-stack.mjs.
+export const main = async (argv, io) => {
   let parsed
   try {
     parsed = parseArgs(argv)
@@ -306,7 +307,7 @@ export const main = async argv => {
       case 'revisar':
         return await revisarCommand(flags, rest[1], rest[2])
       case 'rebote':
-        return await reboteCommand(flags, rest[1])
+        return await reboteCommand(flags, rest[1], io)
       case 'brief-revision':
         return await briefRevisionCommand({ ...flags, n: rest[1] })
       case 'consultas':

@@ -1101,7 +1101,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
         ...markersToPost,
         `Archivo del marcador: ${markerPath}`,
         'Publicalo con:',
-        `gh pr comment ${n} --body-file ${markerPath}`,
+        // Quoted for main's shell (PowerShell on Windows): a home with spaces or `$` must stay one argument.
+        `gh pr comment ${n} --body-file ${(io.win ? psQuote : shQuote)(markerPath)}`,
         `main tiene que publicarlo antes de cualquier otro rebote o merge del PR #${n}.`,
       ].join('\n'))
     }
