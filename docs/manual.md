@@ -421,7 +421,7 @@ Sin bloqueos, `## BLOQUEA` dice `nada`. Solo bloquea la evidencia concreta: `tes
 
 **Condición de merge** (la verifica `main` con `gh pr view <n> --json title,body,comments,reviews` y `gh pr checks <n>`):
 
-1. Hay un review con `## BLOQUEA` en `nada` y un `Revisor:` distinto del `Implementador:`; o, tras un rebote mecánico, un comentario de `main` con `Verificado por main: hallazgos <n,…> corregidos en <sha>`; o `Decidido por main: <hallazgo> — <razón>` por cada hallazgo que siga en pie tras la segunda ronda.
+1. Hay un review sin bloqueos con evidencia concreta (un bloqueo inferido cuenta como sugerencia) y un `Revisor:` distinto del `Implementador:`; o, tras un rebote mecánico, un comentario de `main` con `Verificado por main: hallazgos <n,…> corregidos en <sha>`; o `Decidido por main: <hallazgo> — <razón>` por cada hallazgo que siga en pie tras la segunda ronda.
 2. Esos comentarios llevan `Commit: <sha>` igual al `headRefOid`: un review limpio de un commit anterior no cuenta.
 3. CI en verde (o, sin CI, la suite completa en verde dicha por el revisor).
 4. Si hubo segundo review de pi, también está limpio.

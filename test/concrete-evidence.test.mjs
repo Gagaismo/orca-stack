@@ -57,6 +57,14 @@ describe('issue 302: only concrete evidence blocks a review', () => {
     assert.ok(manual.includes('Un bloqueo sin evidencia concreta cuenta como sugerencia: no rebota el PR ni frena el merge.'))
   })
 
+  test('Rule 4 negative: the merge gate accepts a review whose only blocker is inferred', () => {
+    const step7 = contract.split(/\r?\n/).find(line => line.startsWith('7. '))
+    assert.doesNotMatch(step7, /un review con `## BLOQUEA` en `nada`/, 'step 7 still demands BLOQUEA=nada even for an unsupported finding')
+    assert.ok(step7.includes('(a) un review sin bloqueos con evidencia concreta en `## BLOQUEA` (paso 8)'))
+    assert.doesNotMatch(manual, /Hay un review con `## BLOQUEA` en `nada`/, 'the manual merge condition still demands BLOQUEA=nada')
+    assert.ok(manual.includes('1. Hay un review sin bloqueos con evidencia concreta (un bloqueo inferido cuenta como sugerencia)'))
+  })
+
   test('Rule 5: SUGERENCIAS keeps its cap of three and lists inferred findings first', () => {
     assert.ok(reviewSection.includes('## SUGERENCIAS\n(como mucho tres, una línea cada una; lo inferido primero)\n```'))
     assert.ok(brief.includes('## SUGERENCIAS\n(at most three, one line each; inferred findings first)\n```'))
