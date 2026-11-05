@@ -142,6 +142,7 @@ describe('3. foreign files are not overwritten; backups live outside the filesâ€
 
 // Fake pi, npm and engram on PATH: each call is logged; versions come from FAKE_PI_VERSION and FAKE_ENGRAM_VERSION.
 // `pi update --self` moves Pi to FAKE_PI_UPDATE_TO; with `{ pi: false }` there is no pi until npm installs one (#304).
+// POSIX shims name tool.js by its absolute path: the restricted PATH of `{ pi: false }` has no `dirname`.
 const fakeBin = ({ pi = true } = {}) => {
   const bin = path.join(home, 'fake-bin')
   const win = process.platform === 'win32'
@@ -152,7 +153,7 @@ const fakeBin = ({ pi = true } = {}) => {
       "const [name, ...args] = process.argv.slice(2)",
       "fs.appendFileSync(process.env.FAKE_LOG, name + ' ' + args.join(' ') + '\\n')",
       "const versionFile = require('path').join(__dirname, 'pi-version')",
-      "const shim = n => process.platform === 'win32' ? [n + '.cmd', '@node \"%~dp0tool.js\" ' + n + ' %*\\r\\n'] : [n, '#!/bin/sh\\nexec node \"$(dirname \"$0\")/tool.js\" ' + n + ' \"$@\"\\n']",
+      "const shim = n => process.platform === 'win32' ? [n + '.cmd', '@node \"%~dp0tool.js\" ' + n + ' %*\\r\\n'] : [n, '#!/bin/sh\\nexec node \"' + __filename + '\" ' + n + ' \"$@\"\\n']",
       "if (name === 'pi' && args[0] === '--version') console.log(fs.existsSync(versionFile) ? fs.readFileSync(versionFile, 'utf8') : process.env.FAKE_PI_VERSION || '1.5.0')",
       "if (name === 'pi' && args[0] === 'update' && process.env.FAKE_PI_UPDATE_TO) fs.writeFileSync(versionFile, process.env.FAKE_PI_UPDATE_TO)",
       "if (name === 'npm' && args[0] === 'install' && args.some(a => a.startsWith('@earendil-works/pi-coding-agent@'))) { const [file, body] = shim('pi'); fs.writeFileSync(require('path').join(__dirname, file), body, { mode: 0o755 }); fs.writeFileSync(versionFile, args.at(-1).split('@').at(-1)) }",
@@ -167,7 +168,7 @@ const fakeBin = ({ pi = true } = {}) => {
       write(path.join(bin, `${name}.cmd`), `@node "%~dp0tool.js" ${name} %*\r\n`)
     } else {
       const file = path.join(bin, name)
-      write(file, `#!/bin/sh\nexec node "$(dirname "$0")/tool.js" ${name} "$@"\n`)
+      write(file, `#!/bin/sh\nexec node "${path.join(bin, 'tool.js')}" ${name} "$@"\n`)
       chmodSync(file, 0o755)
     }
   }
