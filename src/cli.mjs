@@ -130,6 +130,9 @@ Un worktree limpio que solo est\u00E1 atr\u00E1s del head (por ejemplo, tras \`g
 Para CI roja agrega los checks fallidos al brief y publica \`Rebote CI: <sha>\`; publica \`Rebote: <sha>\` solo con bloqueos de review.
 Un PR en conflicto con la base (mergeable CONFLICTING) rebota aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente:
 el brief suma \`## Merge conflict\` (git merge origin/<base>, nunca rebase) y publica \`Rebote conflicto: <sha>\`, con contador propio; repetirlo en el mismo head se niega.
+Publica el marcador después de lanzar al autor; si \`gh pr comment\` falla, lo reintenta hasta 3 intentos con unos segundos entre uno y otro.
+Si los 3 intentos fallan, sale con código 1 e imprime que el autor ya está relanzado, las líneas del marcador, su archivo y el comando
+\`gh pr comment <pr> --body-file <archivo>\`, que main tiene que correr antes de cualquier otro rebote o merge de ese PR.
 Con mergeable UNKNOWN se niega hasta que GitHub termine de calcular; un PR solo atrás (BEHIND) se niega y apunta a \`gh pr update-branch <n>\`.
 Con pi usa el perfil que fija el worktree (.pi/gentle-ai/profile.json; --perfil-pi no lo cambia). Sin pin, --perfil-pi o agentes.pi.perfil
 lo eligen y se escribe el pin; sin ninguno se niega como despachar, antes de mover el worktree.

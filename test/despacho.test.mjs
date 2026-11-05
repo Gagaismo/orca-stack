@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
 import { isConsultaComment } from '../src/consultas.mjs'
 import { layout } from '../src/util.mjs'
-import { cleanup, read, tempDir, write } from './helpers.mjs'
+import { ROOT, cleanup, cli, read, tempDir, write } from './helpers.mjs'
 
 const json = value => ({ status: 0, stdout: JSON.stringify(value), stderr: '' })
 const okRes = (stdout = '') => ({ status: 0, stdout, stderr: '' })
@@ -2680,6 +2680,119 @@ describe('rebote', () => {
       const bounce = briefOf(env)
       assert.ok(bounce.includes('Consulta: codex'))
       assert.ok(env.out.some(l => l.includes('Rebote: abc123')))
+    })
+  })
+
+  describe('issue 310: the marker comment is retried and fails loud', () => {
+    const conflicted = () => pr({ mergeable: 'CONFLICTING', reviews: [] })
+    const launchCount = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create').length
+    const commentCalls = env => env.calls.filter(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+    // Answers each `gh pr comment` attempt in order: true succeeds, false fails with an HTTP 502.
+    const commentAttempts = results => {
+      let attempt = 0
+      return { 'gh pr comment': () => results[attempt++] === true ? okRes('https://example.test/comment/9') : { status: 1, stdout: '', stderr: 'HTTP 502: Bad Gateway' } }
+    }
+    const markerFile = env => env.written.find(([file]) => file.endsWith('proj-pr-12-rebote-comment.md'))
+
+    test('Rule 1: a failed marker comment is retried and posted once, with one more output line per failed attempt', async () => {
+      const baseline = bounceEnv()
+      assert.equal(await reboteCommand({}, '12', baseline.io), 0)
+      const env = bounceEnv(pr(), commentAttempts([false, true]))
+      assert.equal(await reboteCommand({}, '12', env.io), 0)
+      assert.equal(commentCalls(env).length, 2)
+      const extra = env.out.filter(line => !baseline.out.includes(line))
+      assert.equal(extra.length, 1, `extra lines: ${JSON.stringify(extra)}`)
+      assert.match(extra[0], /gh pr comment falló \(intento 1 de 3\): HTTP 502/)
+      assert.deepEqual(env.out.filter(line => line !== extra[0]), baseline.out)
+      // One injected wait between the two attempts, a few seconds long; the test never sleeps.
+      assert.deepEqual(env.sleeps.slice(baseline.sleeps.length), [3000])
+    })
+
+    test('Rule 2: when all 3 attempts fail, rebote exits non-zero and tells main exactly what to post', async () => {
+      const env = bounceEnv(conflicted(), commentAttempts([false, false, false]))
+      const error = await reboteCommand({}, '12', env.io).then(() => assert.fail('rebote should fail'), err => err)
+      assert.equal(commentCalls(env).length, 3)
+      const [file, text] = markerFile(env)
+      assert.equal(text, 'Rebote conflicto: abc123\n')
+      const lines = error.message.split('\n')
+      const at = pattern => lines.findIndex(line => pattern.test(line))
+      const order = [
+        at(/autor ya está relanzado/),
+        at(/^Rebote conflicto: abc123$/),
+        lines.indexOf(`Archivo del marcador: ${file}`),
+        lines.indexOf(`gh pr comment 12 --body-file ${file}`),
+        at(/antes de cualquier otro rebote o merge del PR #12/),
+      ]
+      assert.ok(order.every(index => index >= 0), `missing a line: ${error.message}`)
+      assert.deepEqual(order, [...order].sort((a, b) => a - b), `wrong order: ${error.message}`)
+    })
+
+    test('Rule 3: the author is launched once, before any marker attempt, and a failed launch posts no marker', async () => {
+      const env = bounceEnv(pr(), commentAttempts([false, false, false]))
+      await assert.rejects(reboteCommand({}, '12', env.io))
+      assert.equal(launchCount(env), 1)
+      const launchAt = env.calls.findIndex(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+      const firstComment = env.calls.findIndex(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+      assert.ok(launchAt >= 0 && launchAt < firstComment, 'the marker was attempted before the launch')
+      const failedLaunch = bounceEnv()
+      const original = failedLaunch.io.sh
+      failedLaunch.io.sh = (cmd, args, opts) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create' ? { status: 1, stdout: '', stderr: 'launch failed' } : original(cmd, args, opts)
+      await assert.rejects(reboteCommand({}, '12', failedLaunch.io), /launch failed/)
+      assert.equal(commentCalls(failedLaunch).length, 0)
+    })
+
+    test('Rule 4a: replay - a conflict bounce whose 3 comment attempts all fail exits non-zero with the Rule 2 output', async () => {
+      const env = bounceEnv(conflicted(), commentAttempts([false, false, false]))
+      await assert.rejects(reboteCommand({}, '12', env.io), error => {
+        assert.match(error.message, /autor ya está relanzado/)
+        assert.match(error.message, /^Rebote conflicto: abc123$/m)
+        assert.match(error.message, /^gh pr comment 12 --body-file .*proj-pr-12-rebote-comment\.md$/m)
+        return true
+      })
+      assert.equal(launchCount(env), 1)
+    })
+
+    test('Rule 4b: replay - a review bounce whose first comment attempt fails leaves the marker, so a second review bounce on a later head is refused', async () => {
+      const first = bounceEnv(pr(), commentAttempts([false, true]))
+      assert.equal(await reboteCommand({}, '12', first.io), 0)
+      assert.equal(launchCount(first), 1)
+      const posted = markerFile(first)[1]
+      assert.equal(posted, 'Rebote: abc123\n')
+      const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: posted }], reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. still broken', url: 'https://example.test/review/2' }] }))
+      await assert.rejects(reboteCommand({}, '12', advanced.io), /avanzó desde el rebote/)
+      assert.equal(launchCount(advanced), 0)
+    })
+
+    test('Rule 4c: replay control - with the marker posted, the second review bounce on a later head is refused', async () => {
+      const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }], reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. still broken' }] }))
+      await assert.rejects(reboteCommand({}, '12', advanced.io), /avanzó desde el rebote/)
+      assert.equal(launchCount(advanced), 0)
+    })
+
+    test('Rule 5: the manual and rebote --help mention the retry and the failure output', () => {
+      const home = tempDir('rebote-310-help')
+      try {
+        const manual = readFileSync(path.join(ROOT, 'docs', 'manual.md'), 'utf8')
+        for (const text of [manual, cli(home, ['rebote', '--help']).out]) {
+          assert.match(text, /3 intentos/)
+          assert.match(text, /gh pr comment <pr> --body-file <archivo>/)
+          assert.match(text, /antes de cualquier otro rebote o merge/)
+        }
+      } finally {
+        cleanup(home)
+      }
+    })
+
+    test('Preserve: rebote with a working gh pr comment posts the marker once without waiting', async () => {
+      const env = bounceEnv()
+      const plain = bounceEnv(pr({ reviews: [], mergeable: 'CONFLICTING' }))
+      assert.equal(await reboteCommand({}, '12', env.io), 0)
+      assert.equal(commentCalls(env).length, 1)
+      assert.ok(!env.sleeps.includes(3000))
+      assert.ok(env.out.includes('Rebote: abc123'))
+      assert.equal(await reboteCommand({}, '12', plain.io), 0)
+      assert.equal(commentCalls(plain).length, 1)
+      assert.ok(plain.out.includes('Rebote conflicto: abc123'))
     })
   })
 })
