@@ -15,6 +15,7 @@ import { createCtx, loadState } from './ctx.mjs'
 import { isLazyBlock, migrateOrchestratorCopy, restoreBlock, sddBlock } from './gentle.mjs'
 import { CODEX_ASCII_MARKERS, codexBlock } from './codex-windows.mjs'
 import { removeAnyBlock, removeBlock } from './marker.mjs'
+import { PI_NPM_PACKAGE } from './constants.mjs'
 import { piBinary } from './pi.mjs'
 import { parseSettings, removePluginDirs, stringifySettings } from './settings.mjs'
 import { homeDir, run, sha256, which } from './util.mjs'
@@ -216,8 +217,16 @@ export const removeCommand = async flags => {
         run(which('npm'), ['rm', '-g', 'gentle-pi'], { timeout: 120_000 })
       }
     }
-  } else if (st.pi.packagesInstalled.length > 0 || st.pi.npmGlobalInstalled) {
-    ctx.say('  los paquetes de Pi y gentle-pi global se conservan (usá --with-pi para sacarlos)')
+    // Pi itself goes last: the package removals above run through it.
+    if (st.pi.piInstalled && which('npm')) {
+      ctx.act(`npm rm -g ${PI_NPM_PACKAGE}`)
+      if (!dryRun) {
+        run(which('npm'), ['rm', '-g', PI_NPM_PACKAGE], { timeout: 120_000 })
+      }
+    }
+  } else if (st.pi.packagesInstalled.length > 0 || st.pi.npmGlobalInstalled || st.pi.piInstalled) {
+    const pi = st.pi.piInstalled ? `, y Pi (${PI_NPM_PACKAGE}), que instaló orca-stack,` : ''
+    ctx.say(`  los paquetes de Pi y gentle-pi global${pi} se conservan (usá --with-pi para sacarlos)`)
   }
 
   // 7. Empty directories this installer created (after everything else is gone).

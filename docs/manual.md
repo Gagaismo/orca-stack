@@ -139,7 +139,7 @@ Sale con código 1 si hay una falla (`✖`); los avisos (`⚠`) no cambian el c�
 ```bash
 orca-stack remove --dry-run
 orca-stack remove            # deshace global
-orca-stack remove --with-pi  # además desinstala lo de Pi que instaló global
+orca-stack remove --with-pi  # además desinstala lo de Pi que instaló global (Pi incluido, si lo instaló global)
 ```
 
 Borra lo que `global` creó, restaura lo que había reemplazado, saca las entradas de `CLAUDE_CODE_PLUGIN_DIRS` y deja los respaldos. Sin `~/.orca-stack/state.json` dice que no hay nada que deshacer. Si editaste `~/.orca-stack/config.json`, se conserva.
@@ -307,6 +307,7 @@ Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `
 | `principle-attack-the-premise` | Cuando dos arreglos con la misma premisa fallaron en el mismo gate: cuestionar la premisa antes de escribir otro arreglo |
 | `principle-explain-the-number` | Antes de confiar o actuar sobre un número medido: encontrar qué lo limita y descartar que mida otra cosa |
 | `principle-make-operations-idempotent` | Al diseñar comandos o loops que corren entre caídas y reintentos: converger al mismo estado final |
+| `create-formal-verification-skill`, `maintain-formal-verification-skill` | Opcionales, se invocan a mano: generan en el proyecto una skill local de verificación formal (máquinas de estado, carreras e invariantes) y la vuelven a alinear con el código después de cambios. `/statechart`, que nombran para leer los resultados de TLA+, llega en el ticket siguiente (#305) |
 
 No instala las skills de Matt Pocock ni Caveman: ver el [README](../README.md#qué-no-instala-y-por-qué). `grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano; en Claude se escriben `/mattpocock-skills:<skill>`.
 
@@ -512,7 +513,7 @@ orca-stack sesiones                  # para /retro
 
 ### Cómo leer `doctor`
 
-`✖` es una falla (código 1), `⚠` un aviso (código 0) con el comando que lo arregla. Revisa: autodiagnóstico de cada wrapper (`--orca-stack-self-test`), versiones de Pi (`1.2.0` o más nueva) y paquetes (gentle-pi `4.2.0`, pi-claude-bridge `0.9.2`), login de Pi (se omite con `--offline`), mods en `CLAUDE_CODE_PLUGIN_DIRS`; avisa si están activos los plugins `ponytail` o `caveman` de Claude Code (sus hooks duplican el control de Orca); scripts de `despacho` que no existen, deriva (plugin de Matt por debajo de 1.3.1, skills duplicadas, bloque viejo de `CLAUDE.md`, bloque de gentle-ai reescrito), `engram` anterior a 3.4.0, y en Windows con `codex` en uso, la lectura de acentos. También avisa si falta `"setup": "completo"`. **Corrélo desde la raíz del proyecto**: algunas comprobaciones dependen de la config de ese repo.
+`✖` es una falla (código 1), `⚠` un aviso (código 0) con el comando que lo arregla. Revisa: autodiagnóstico de cada wrapper (`--orca-stack-self-test`), versiones de Pi (`1.2.0` o más nueva; probado con `1.5.0`) y paquetes (gentle-pi `4.6.0`, pi-claude-bridge `0.10.0`, gentle-engram `0.6.0`), login de Pi (se omite con `--offline`), mods en `CLAUDE_CODE_PLUGIN_DIRS`; avisa si están activos los plugins `ponytail` o `caveman` de Claude Code (sus hooks duplican el control de Orca); scripts de `despacho` que no existen, deriva (plugin de Matt por debajo de 1.3.1, skills duplicadas, bloque viejo de `CLAUDE.md`, bloque de gentle-ai reescrito), `engram` anterior a 3.4.0, y en Windows con `codex` en uso, la lectura de acentos. También avisa si falta `"setup": "completo"`. **Corrélo desde la raíz del proyecto**: algunas comprobaciones dependen de la config de ese repo.
 
 ### Dónde vive el estado
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
@@ -13,11 +13,22 @@ const sha256 = text => createHash('sha256').update(text.replace(/\r\n/g, '\n'), 
 const provenance = JSON.parse(readSkill(SKILLS, 'pstack-upstream.json'))
 const skill = name => readSkill(SKILLS, name, 'SKILL.md')
 
+// Skills shipped verbatim (adapted: false): every principle-* folder plus these two (#303).
+const FORMAL = ['create-formal-verification-skill', 'maintain-formal-verification-skill']
+const isVerbatimFolder = name => name.startsWith('principle-') || FORMAL.includes(name)
+const assertVerbatimSet = (skills, folders) => {
+  const unadapted = Object.entries(skills).filter(([, e]) => !e.adapted).map(([k]) => k).sort()
+  for (const name of unadapted) {
+    assert.ok(isVerbatimFolder(name), `${name} is unadapted but is neither a principle nor a formal-verification skill`)
+  }
+  assert.deepEqual(folders.filter(isVerbatimFolder).sort(), unadapted)
+}
+
 describe('vendored pstack principles (upstream v0.15.36)', () => {
   test('rule 1: every vendored SKILL.md matches upstream at the pinned commit, changing one byte makes the hash test fail, naming the skill', () => {
     const unadapted = Object.entries(provenance.skills).filter(([, e]) => !e.adapted)
-    const vendored = readdirSync(SKILLS).filter(name => name.startsWith('principle-') && statSync(path.join(SKILLS, name)).isDirectory())
-    assert.deepEqual(vendored.sort(), unadapted.map(([k]) => k).sort())
+    const folders = readdirSync(SKILLS).filter(name => statSync(path.join(SKILLS, name)).isDirectory())
+    assertVerbatimSet(provenance.skills, folders)
     for (const [name, entry] of unadapted) {
       assert.equal(entry.adapted, false, `${name} must not be adapted`)
       assert.equal(sha256(skill(name)), entry.upstreamSha256, `${name} differs from upstream v0.15.36`)
@@ -303,5 +314,87 @@ describe('#265 re-vendor pstack principles and swarm from 0.15.36', () => {
       const current = read(path.join(ROOT, 'assets', 'stack', file))
       assert.ok(current.length > 0, `${file} must exist`)
     }
+  })
+})
+
+describe('#303 vendored create- and maintain-formal-verification-skill (upstream v0.15.36)', () => {
+  const UPSTREAM = {
+    'create-formal-verification-skill': '30ef0ac27612ecd16fdc081112113221d673053cef3f8603db11932193861211',
+    'maintain-formal-verification-skill': '0c96f54293542d3818b68754562b338073958781a9684454611dca37592e2d2c',
+  }
+  const assertMatchesUpstream = (name, text) =>
+    assert.equal(sha256(text), provenance.skills[name].upstreamSha256, `${name} differs from upstream v0.15.36`)
+
+  test('rule 1: each SKILL.md is a verbatim copy of pstack/skills/<name>/SKILL.md at c742dd6 recorded as adapted: false, and changing one byte fails naming the skill', () => {
+    assert.equal(provenance.commit, 'c742dd61706fbacc1b95f1a20b7b988cf096ce6c')
+    for (const [name, hash] of Object.entries(UPSTREAM)) {
+      assert.deepEqual(provenance.skills[name], { adapted: false, upstreamSha256: hash })
+      assertMatchesUpstream(name, skill(name))
+      assert.throws(() => assertMatchesUpstream(name, skill(name).replace('formal', 'Formal')), new RegExp(name))
+    }
+  })
+
+  test('rule 2: both keep disable-model-invocation: true, negative: neither loads by name in a brief or in the contract', () => {
+    for (const name of FORMAL) {
+      assert.match(skill(name), /^disable-model-invocation:\s*true$/m, `${name} missing disable-model-invocation: true`)
+    }
+    for (const file of ['brief-ticket.md', 'brief-rebote.md', 'brief-revision.md', 'CONTRATO.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']) {
+      const content = read(path.join(ROOT, 'assets', 'stack', file))
+      for (const name of FORMAL) {
+        assert.ok(!content.includes(name), `${file} must not load ${name} by name`)
+      }
+    }
+  })
+
+  test('rule 3: each folder carries the LICENSE note and the README pstack credit row lists both skills', () => {
+    const reference = readSkill(SKILLS, 'principle-attack-the-premise', 'LICENSE')
+    for (const name of FORMAL) {
+      assert.equal(readSkill(SKILLS, name, 'LICENSE'), reference, `${name} LICENSE must match the other pstack folders`)
+    }
+    const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
+    assert.ok(row, 'README has no pstack row in "Origen y licencias"')
+    for (const name of FORMAL) {
+      assert.ok(row.includes(`\`${name}\``), `README pstack row must name ${name}`)
+    }
+  })
+
+  test('rule 4: the unadapted set is exactly the principles plus the two formal-verification skills, negative: an unknown unadapted folder still fails', () => {
+    const folders = readdirSync(SKILLS).filter(name => statSync(path.join(SKILLS, name)).isDirectory())
+    assertVerbatimSet(provenance.skills, folders)
+    const unknown = { ...provenance.skills, 'some-skill': { adapted: false, upstreamSha256: '0'.repeat(64) } }
+    assert.throws(() => assertVerbatimSet(unknown, [...folders, 'some-skill']), /some-skill/)
+    const missingFolder = folders.filter(name => name !== 'maintain-formal-verification-skill')
+    assert.throws(() => assertVerbatimSet(provenance.skills, missingFolder))
+  })
+
+  test('rule 5: global installs both under the Claude and agents skill roots byte-identical to the vendored copies, negative: an installed copy whose hash differs fails', () => {
+    const home = tempDir('pstack-formal')
+    try {
+      const result = cli(home, ['global', '--skip-pi'])
+      assert.equal(result.status, 0, result.out)
+      for (const root of ['.claude', '.agents']) {
+        for (const name of FORMAL) {
+          for (const file of ['SKILL.md', 'LICENSE']) {
+            const installed = readFileSync(path.join(home, root, 'skills', name, file))
+            assert.ok(installed.equals(readFileSync(path.join(SKILLS, name, file))), `${root}/skills/${name}/${file} differs from the vendored copy`)
+          }
+          const installed = path.join(home, root, 'skills', name, 'SKILL.md')
+          assertMatchesUpstream(name, readSkill(installed))
+          writeFileSync(installed, readSkill(installed).replace('---', '--- '))
+          assert.throws(() => assertMatchesUpstream(name, readSkill(installed)), new RegExp(name))
+        }
+      }
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test('rule 6: the skills table in docs/manual.md lists both as optional, says what they are for, and names /statechart as the follow-up ticket', () => {
+    const line = read(path.join(ROOT, 'docs', 'manual.md')).split('\n').find(l => l.startsWith('| `create-formal-verification-skill`'))
+    assert.ok(line, 'docs/manual.md has no row for the formal-verification skills')
+    assert.ok(line.includes('`maintain-formal-verification-skill`'), line)
+    assert.match(line, /Opcionales/)
+    assert.match(line, /verificación formal \(máquinas de estado, carreras e invariantes\)/)
+    assert.match(line, /`\/statechart`.*ticket siguiente \(#305\)/)
   })
 })

@@ -14,7 +14,6 @@ import {
   clock,
   consultEnv,
   diffUnavailable,
-  engramDir,
   firstLine,
   interpret,
   isPathAbsolute,
@@ -224,7 +223,7 @@ const consult = async (
     const skills = await gentleSkills($)
     const message = precarga === '' ? buildMessage(planteo, pregunta) : `${buildMessage(planteo, pregunta)}\n\n${precarga}`
     const run = await $.process.run([...prefix, ...buildArgs(tema, modelo, message, skills)], {
-      env: consultEnv(engramDir(await homeDir($)), await claudeConfigDir($)),
+      env: consultEnv(await claudeConfigDir($)),
       // Pi in print mode waits for stdin to close: an open stdin hangs it forever.
       stdin: '',
       timeoutMs: TIMEOUT_MS,

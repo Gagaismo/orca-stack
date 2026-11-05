@@ -28,7 +28,7 @@ export const FAMILIES = {
 export const AGENTS = FAMILIES.agents
 const CODEX_CC_REMOVED = 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00F3 el 2026-10-24); us\u00E1 codex.'
 
-// Source of truth: mods/puente-gentle/hooks/puente.ts (ORCA_VARS_CLEARED, engramDir). Duplicated because the mod is TypeScript
+// Source of truth: mods/puente-gentle/hooks/puente.ts (ORCA_VARS_CLEARED). Duplicated because the mod is TypeScript
 // that can only import its own folder. The launcher clears only the stack markers of that list: Orca's managed pi
 // extension (orca-agent-status.ts) reports pi's card state through the Orca pane variables, so a worker keeps them,
 // while the consult clears them too because it runs inside claude's pane (#277).
@@ -40,7 +40,8 @@ const STACK_VARS_CLEARED = [
 const PI_DIALOG_TOOLS = 'ask_user_choice,ask_user_question'
 // Only a review closes pi's tools (read-only). A ticket gets all of them: an allowlist would also drop gentle-pi's
 // subagents, ODD and engram tools.
-export const PI_TOOLS = { review: 'read,bash,grep,find,ls,codemode' }
+// The Engram read tools (gentle-engram) are in: a review reads the memory it shares with claude, and never writes it (#304).
+export const PI_TOOLS = { review: 'read,bash,grep,find,ls,codemode,mem_current_project,mem_context,mem_search,mem_get_observation' }
 const PI_THINKING = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 // gentle-pi profile names: 1-64 ASCII slug characters. Also keeps the name harmless inside a path or a command.
 const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
@@ -150,7 +151,9 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   // With a profile the orchestrator is the profile's own, not whatever the global settings.json says (a pin never moves it).
   const piFlags = piModel ? ` --model ${q(piModel)}${PI_THINKING.includes(piThinking) ? ` --thinking ${piThinking}` : ''}` : ''
   const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve --exclude-tools ${q(PI_DIALOG_TOOLS)}${piFlags}${tools} ${q(prompt)}`
-  const set = [['ENGRAM_DATA_DIR', P.join(home, '.gentle-shell', 'engram')], ['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
+  // No ENGRAM_DATA_DIR: since gentle-pi 4.4.0 any explicit Engram selection turns memory off; the worker shares the
+  // human's global Engram server instead (#304).
+  const set = [['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
   if (win) {
     return [`Remove-Item ${STACK_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
   }
