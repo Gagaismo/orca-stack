@@ -46,7 +46,7 @@ describe('issue 302: only concrete evidence blocks a review', () => {
     assert.ok(manual.includes('Lo inferido va a `## SUGERENCIAS` con qué correr para confirmarlo: "puede haber una race si corren dos `despachar`", sin reproducción, no bloquea.'))
   })
 
-  test('Rule 3: the blocker line names its evidence kind instead of concreta|inferida', () => {
+  test('Rule 3: the blocker line names its evidence kind instead of concreta or inferida', () => {
     assert.ok(reviewSection.includes(`1. \`archivo:línea\` ${FORMAT}:`))
     assert.ok(reviewSection.includes('Cada bloqueo dice si lo introduce o lo empeora y su tipo de evidencia.'))
     assert.ok(brief.includes(`1. \`file:line\` ${FORMAT}:`))
