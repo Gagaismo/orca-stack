@@ -78,7 +78,10 @@ secondary, but retain the inexpensive check that one author test fails without
 the change. Delete verifier test files after running them so the worktree stays
 clean. Report only what blocks (file:line, the problem, how to reproduce it or
 which criterion it breaks, the fix) and at most three suggestions; no lists of
-what is fine. Tag blockers `implementación` (code breaks a clear rule) or
+what is fine. Only concrete evidence blocks: a failing verifier test, a command
+and its output, a `file:line` breaking a quoted written rule, or a ticket rule
+the diff does not meet or test. An inferred finding goes first among the
+suggestions, with the test or command that would confirm it. Tag blockers `implementación` (code breaks a clear rule) or
 `interpretación` (author and reviewer read a rule differently); send
 `interpretación` blockers to the human, never settle them with `Decidido por
 main`. On a re-review, read only the delta since the last reviewed commit and
