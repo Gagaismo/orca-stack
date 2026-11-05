@@ -228,6 +228,30 @@ export const piProfileWarnings = home => {
     .map(({ name, bad }) => ({ name, detail: `usa modelos de proveedores no permitidos (solo ${PI_PROVIDERS.join(', ')}), así que un despacho a pi con él se rechaza: ${bad.join(', ')}` }))
 }
 
+// What upstream's `scripts/statechart` launcher accepts (pstack c742dd6): Node 22.18-22.x or 23.6+, Bun 1.1.5+, Deno 2.0+.
+const atLeast = (version, min) => version !== null && compareVersions(version, min) >= 0
+export const statechartRuntimeOk = ({ node = null, bun = null, deno = null }) =>
+  (atLeast(node, '22.18.0') && !atLeast(node, '23.0.0')) || atLeast(node, '23.6.0') || atLeast(bun, '1.1.5') || atLeast(deno, '2.0.0')
+
+// Warnings, never failures, for the installed `statechart` skill. `versions` holds the `--version` of node, bun and deno
+// on the PATH (null when missing).
+export const statechartWarnings = ({ installed, platform, versions, mise }) => {
+  if (!installed) return []
+  const warnings = []
+  const skipMise = 'con `TLA2TOOLS` (ruta a `tla2tools.jar`) y `JAVA` (un `java` 11 o más nuevo) se saltea mise'
+  if (platform === 'win32') {
+    warnings.push(`en Windows nativo no corre (arranca \`/bin/sh\`): usala desde WSL o un contenedor; ${skipMise}`)
+  }
+  if (!statechartRuntimeOk(versions)) {
+    warnings.push('necesita Node 22.18 a 22.x, Node 23.6 o más nuevo, Bun 1.1.5 o más nuevo, o Deno 2.0 o más nuevo en el PATH')
+  }
+  if (!mise) {
+    warnings.push(`\`mise\` no está en el PATH: la primera corrida instala TLC y Java con mise y necesita red; ${skipMise}`)
+  }
+
+  return warnings
+}
+
 export const doctorCommand = async flags => {
   const home = homeDir()
   const L = layout(home)
@@ -309,6 +333,15 @@ export const doctorCommand = async flags => {
     } else {
       add('fail', tilde(root, home), `faltan: ${missing.join(', ')}`)
     }
+  }
+  const statechart = statechartWarnings({
+    installed: [L.claudeSkills, L.agentsSkills].some(root => existsSync(path.join(root, 'statechart', 'SKILL.md'))),
+    platform: process.platform,
+    versions: Object.fromEntries(['node', 'bun', 'deno'].map(bin => [bin, which(bin) ? binaryVersion(bin) : null])),
+    mise: Boolean(which('mise')),
+  })
+  for (const detail of statechart) {
+    add('warn', 'skill statechart', detail)
   }
   for (const [name, why] of Object.entries(PLUGIN_WARNINGS)) {
     for (const id of pluginIds(home, name)) {
