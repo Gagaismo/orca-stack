@@ -49,6 +49,7 @@ Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el mét
 - [ ] En Windows, Go 1.25.10 o más nuevo en el `PATH` (el `postinstall` de gentle-pi compila con Go).
 - [ ] Orca, Engram, gentle-ai y Pi instalados. Si falta alguno, `global` lo detecta y te imprime el comando oficial.
 - [ ] Pi 1.2.0 o más nuevo (gentle-pi 4.6.0 no arranca con uno anterior; el stack se probó con Pi `1.5.0`) y Engram 3.4.0 o más nuevo (con uno anterior, Gentle Shell deja la memoria apagada).
+- [ ] Opcional, solo para la skill `statechart` (dibuja y verifica modelos TLA+): Node 22.18 a 22.x, Node 23.6 o más nuevo, Bun 1.1.5 o más nuevo, o Deno 2.0 o más nuevo, y `mise` en el `PATH`. La primera corrida descarga TLC y Java con mise y necesita red; con `TLA2TOOLS` (ruta a `tla2tools.jar`) y `JAVA` (un `java` 11 o más nuevo) se saltea mise. En Windows nativo no corre, porque arranca `/bin/sh`: usala desde WSL o un contenedor. `doctor` avisa (⚠, nunca ✖) si falta algo de esto.
 
 ### Instalar
 
