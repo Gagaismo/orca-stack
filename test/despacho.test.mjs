@@ -935,7 +935,7 @@ describe('launchers', () => {
     const posix = { ...base, win: false, home: '/home/me', briefPath: '/b.md', skills: '/s' }
     assert.equal(launcherFor({ ...posix, agent: 'claude' }), '"/home/me/orca/stack/scripts/claude-orca-stack.sh" --dangerously-skip-permissions')
     assert.ok(launcherFor({ ...posix, agent: 'codex' }).startsWith('"/home/me/orca/stack/scripts/codex-orca-stack.sh" '))
-    assert.ok(launcherFor({ ...posix, agent: 'pi' }).includes("ENGRAM_DATA_DIR='/home/me/.gentle-shell/engram'"))
+    assert.ok(launcherFor({ ...posix, agent: 'pi' }).startsWith('unset ORCA_STACK_AGENT '))
     assert.equal(launcherFor({ ...base, agent: 'claude' }), '& "C:\\Users\\me\\orca\\stack\\scripts\\claude-orca-stack.cmd" --dangerously-skip-permissions')
   })
 
@@ -989,18 +989,32 @@ describe('launchers', () => {
     }
   })
 
-  test('pi: clears the stack markers, sets engram, autonomy and the Claude account', () => {
+  test('pi: clears the stack markers, sets autonomy and the Claude account', () => {
     const config = { piClaudeConfigDir: 'C:\\Users\\me\\.claude-pi' }
     const ps = launcherFor({ ...base, agent: 'pi', config })
     assert.ok(ps.startsWith('Remove-Item Env:ORCA_STACK_AGENT, Env:ORCA_STACK_MODE'))
     assert.ok(ps.includes('Env:ORCA_STACK_CAVEMAN_LEVEL -ErrorAction SilentlyContinue'))
-    assert.ok(ps.includes("$env:ENGRAM_DATA_DIR = 'C:\\Users\\me\\.gentle-shell\\engram'"))
     assert.ok(ps.includes("$env:GENTLE_PI_AUTONOMOUS_MODE = '1'") && ps.includes("$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\me\\.claude-pi'"))
     assert.ok(ps.endsWith("pi --no-skills --skill 'C:\\skills' --session-id proj-7 --no-approve --exclude-tools 'ask_user_choice,ask_user_question' 'Read and carry out the brief in C:\\b.md. Unattended: never wait for user input.'"))
     assert.ok(!ps.includes('--tools'), "a ticket keeps all of pi's tools: subagents, SDD, engram")
     const sh = launcherFor({ ...base, agent: 'pi', win: false, mode: 'review', home: '/h', briefPath: '/b.md', skills: '/s' })
-    assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && sh.includes("export ENGRAM_DATA_DIR='/h/.gentle-shell/engram' GENTLE_PI_AUTONOMOUS_MODE='1';"))
+    assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && sh.includes("export GENTLE_PI_AUTONOMOUS_MODE='1';"))
     assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode'") && !sh.includes('CLAUDE_CONFIG_DIR'))
+  })
+
+  test('issue 304 rule 4: no pi worker launcher sets ENGRAM_DATA_DIR, in any mode or platform', () => {
+    const account = { piClaudeConfigDir: 'C:\\Users\\me\\.claude-pi' }
+    for (const mode of ['ticket', 'review']) {
+      for (const win of [true, false]) {
+        for (const config of [{}, account]) {
+          const launcher = launcherFor({ ...base, agent: 'pi', mode, win, config })
+          const label = `${mode} (win: ${win}, account: ${config === account})`
+          assert.ok(!launcher.includes('ENGRAM_DATA_DIR'), label)
+          assert.ok(launcher.includes('GENTLE_PI_AUTONOMOUS_MODE'), label)
+          assert.equal(launcher.includes('CLAUDE_CONFIG_DIR'), config === account, label)
+        }
+      }
+    }
   })
 
   test('the Claude account of pi comes from the personal layer only', async () => {

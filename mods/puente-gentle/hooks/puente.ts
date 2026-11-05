@@ -15,8 +15,9 @@ export const ORCA_VARS_CLEARED = [
 ] as const
 
 // claudeConfigDir: the Claude account Pi's provider (pi-claude-bridge) uses; unset = the host's own.
-export const consultEnv = (engramPath: string, claudeConfigDir?: string): Record<string, string> => ({
-  ENGRAM_DATA_DIR: engramPath,
+// No ENGRAM_DATA_DIR: since gentle-pi 4.4.0 any explicit Engram selection turns memory off, so the consult shares
+// the human's global Engram server (#304).
+export const consultEnv = (claudeConfigDir?: string): Record<string, string> => ({
   ...Object.fromEntries(ORCA_VARS_CLEARED.map(name => [name, ''])),
   ...(claudeConfigDir === undefined ? {} : { CLAUDE_CONFIG_DIR: claudeConfigDir }),
 })
@@ -59,7 +60,6 @@ export const joinPath = (base: string, ...parts: string[]): string => {
 export const isPathAbsolute = (path: string): boolean =>
   path.startsWith('/') || path.startsWith('\\') || /^[a-zA-Z]:[/\\]/.test(path)
 
-export const engramDir = (home: string): string => joinPath(home, '.gentle-shell', 'engram')
 export const launcherPath = (home: string): string => joinPath(home, '.pi', 'agent', 'bin', 'pi-launcher.js')
 
 // Gentle Shell's own skills (the only ones the consult loads: ~/.agents/skills holds our methodology,

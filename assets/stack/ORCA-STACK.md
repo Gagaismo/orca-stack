@@ -153,8 +153,7 @@ terminal on Windows, which is PowerShell; in a POSIX shell the leading `& ` is d
 - pi (Gentle Shell): an interactive TUI like the other workers, so Orca shows it on its card and a turn waiting on a
   background verify resumes when it reports. The brief goes in the first message and nothing is sent afterwards. The
   command clears the `ORCA_STACK_*` variables (the stack markers the pi consult bridge also clears) and keeps Orca's
-  pane variables, which Orca's pi extension reports through. It sets `ENGRAM_DATA_DIR` to Gentle Shell's own engram,
-  `GENTLE_PI_AUTONOMOUS_MODE=1` and, when personal config sets it, `CLAUDE_CONFIG_DIR` from
+  pane variables, which Orca's pi extension reports through. It sets `GENTLE_PI_AUTONOMOUS_MODE=1` and, when personal config sets it, `CLAUDE_CONFIG_DIR` from
   `agentes.pi.claudeConfigDir`, then runs `pi --no-skills --skill <gentle-pi skills> --session-id <id> --no-approve --exclude-tools ask_user_choice,ask_user_question [--tools <tools>] "Read and carry out the brief in <path>. Unattended: never wait for user input."`
   Nothing waits on a person: the two dialog tools are left out and `--no-approve` skips the project-trust prompt.
   Tools: no `--tools` to implement, so gentle-pi keeps its subagents, ODD and engram tools; `read,bash,grep,find,ls` to

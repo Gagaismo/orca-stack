@@ -1,9 +1,10 @@
 // Versions and names the installer pins. Everything else is discovered from the package contents.
 
 export const PINNED = {
-  pi: '1.2.0',
-  gentlePi: '4.2.0',
-  claudeBridge: '0.9.2',
+  pi: '1.5.0',
+  gentlePi: '4.6.0',
+  claudeBridge: '0.10.0',
+  gentleEngram: '0.6.0',
 }
 
 // Oldest Pi that gentle-pi PINNED.gentlePi runs on (its peer range): an older Pi makes gentle-shell exit.
@@ -12,10 +13,12 @@ export const PI_MIN_VERSION = '1.2.0'
 // Oldest global Engram server with which Gentle Shell (gentle-pi PINNED.gentlePi) keeps its memory on.
 export const ENGRAM_MIN_VERSION = '3.4.0'
 
-// Pi packages installed with `pi install npm:<name>@<version>`.
+// Pi packages installed with `pi install npm:<name>@<version>`. gentle-engram gives pi workers and the consult the
+// memory tools on the human's global Engram server (~/.engram), shared with claude.
 export const PI_PACKAGES = [
   { name: 'gentle-pi', version: PINNED.gentlePi },
   { name: 'pi-claude-bridge', version: PINNED.claudeBridge },
+  { name: 'gentle-engram', version: PINNED.gentleEngram },
 ]
 
 // Provider wrappers. Their names never match the real binary, so they cannot call themselves.
