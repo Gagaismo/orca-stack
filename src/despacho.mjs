@@ -868,6 +868,9 @@ const humanAnswers = (io, root, pr) => {
   return [...(pr.comments ?? []), ...fromIssues].filter(isAnswer)
 }
 
+const MARKER_ATTEMPTS = 3
+const MARKER_RETRY_WAIT_MS = 3000
+
 export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const { nota, confirmado = false, perfilPi, dryRun = false } = flags
   const say = io.out
@@ -1085,7 +1088,27 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     const markerPath = path.join(io.home, 'orca', 'briefs', `${name}-comment.md`)
     const markersToPost = [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null, conflict ? `Rebote conflicto: ${sha}` : null].filter(Boolean)
     io.writeFile(markerPath, `${markersToPost.join('\n')}\n`)
-    ok(io.sh('gh', ['pr', 'comment', String(n), '--body-file', markerPath], { cwd: root }), 'gh pr comment')
+    // The author is already running: a lost marker would let the next rebote bounce again, so retry and then fail loud.
+    // A retry after a comment that did post only duplicates the marker, which every counter reads as a set.
+    let posted = false
+    for (let attempt = 1; attempt <= MARKER_ATTEMPTS && !posted; attempt++) {
+      if (attempt > 1) await io.sleep(MARKER_RETRY_WAIT_MS)
+      const res = io.sh('gh', ['pr', 'comment', String(n), '--body-file', markerPath], { cwd: root })
+      posted = res.status === 0
+      if (!posted) say(`gh pr comment falló (intento ${attempt} de ${MARKER_ATTEMPTS}): ${(res.stderr || res.stdout || String(res.error)).trim().split(/\r?\n/)[0]}`)
+    }
+    if (!posted) {
+      throw new Error([
+        `El autor ya está relanzado en ${worktree}, pero no pude publicar el marcador del rebote en el PR #${n} tras ${MARKER_ATTEMPTS} intentos.`,
+        'Marcador:',
+        ...markersToPost,
+        `Archivo del marcador: ${markerPath}`,
+        'Publicalo con:',
+        // Quoted for main's shell (PowerShell on Windows): a home with spaces or `$` must stay one argument.
+        `gh pr comment ${n} --body-file ${(io.win ? psQuote : shQuote)(markerPath)}`,
+        `main tiene que publicarlo antes de cualquier otro rebote o merge del PR #${n}.`,
+      ].join('\n'))
+    }
   }
   if (reviewBlockers.length > 0) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote: ${sha}`)
   if (failedChecks.length > 0) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote CI: ${sha}`)
