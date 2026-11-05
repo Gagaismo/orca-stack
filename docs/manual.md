@@ -417,7 +417,7 @@ Commit: <sha>
 (como mucho tres, una línea cada una; lo inferido primero)
 ```
 
-Sin bloqueos, `## BLOQUEA` dice `nada`. Solo bloquea la evidencia concreta: `test` (un test del revisor que falla, con su código), `comando` (un comando y su salida), `regla escrita` (un `archivo:línea` que rompe una regla citada de `CODING_STANDARDS.md` o `AGENTS.md`) o `regla sin test` (una regla o criterio del ticket que el diff no cumple o no prueba). Lo inferido va a `## SUGERENCIAS` con qué correr para confirmarlo: "puede haber una race si corren dos `despachar`", sin reproducción, no bloquea. Los bloqueos de **interpretación** van al humano; `main` no los resuelve con `Decidido por main`.
+Sin bloqueos, `## BLOQUEA` dice `nada`. Solo bloquea la evidencia concreta: `test` (un test del revisor que falla, con su código), `comando` (un comando y su salida), `regla escrita` (un `archivo:línea` que rompe una regla citada de `CODING_STANDARDS.md` o `AGENTS.md`) o `regla sin test` (la regla o criterio del ticket, nombrado, que el diff no cumple o no prueba). Lo inferido va a `## SUGERENCIAS` con qué correr para confirmarlo: "puede haber una race si corren dos `despachar`", sin reproducción, no bloquea. Los bloqueos de **interpretación** van al humano; `main` no los resuelve con `Decidido por main`.
 
 **Condición de merge** (la verifica `main` con `gh pr view <n> --json title,body,comments,reviews` y `gh pr checks <n>`):
 

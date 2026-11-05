@@ -159,11 +159,11 @@ El review que cuenta es el cruzado: la skill `code-review` del brief y el review
 
 Los ejes, los tests derivados, la comprobación de que un test del autor falle sin el cambio y la limpieza de tests están en el brief de revisión que arman `orca-stack revisar` y `orca-stack brief-revision`.
 
-Bloquean solo cuatro tipos de evidencia concreta: `test` (un test del reviewer que falla), `comando` (un comando y su salida), `regla escrita` (un `archivo:línea` que rompe una regla citada de `CODING_STANDARDS.md` o `AGENTS.md`) y `regla sin test` (una regla o criterio del ticket que el diff no cumple o no prueba). No bloquean lo inferido, que va a `## SUGERENCIAS` con qué correr para confirmarlo ("puede haber una race si corren dos `despachar`", sin reproducción), los code smells, otros documentos, una regla mecánica que ya tiene chequeo en la CI, ni lo que el diff no toca ni empeora.
+Bloquean solo cuatro tipos de evidencia concreta: `test` (un test del reviewer que falla), `comando` (un comando y su salida), `regla escrita` (un `archivo:línea` que rompe una regla citada de `CODING_STANDARDS.md` o `AGENTS.md`) y `regla sin test` (la regla o criterio del ticket, nombrado, que el diff no cumple o no prueba). No bloquean lo inferido, que va a `## SUGERENCIAS` con qué correr para confirmarlo ("puede haber una race si corren dos `despachar`", sin reproducción), los code smells, otros documentos, una regla mecánica que ya tiene chequeo en la CI, ni lo que el diff no toca ni empeora.
 
 Cada bloqueo dice si lo introduce o lo empeora y su tipo de evidencia. Se etiqueta `implementación` si el código rompe una regla clara, o `interpretación` si autor y reviewer leen la regla distinto; esos van al humano y `main` no los salda con `Decidido por main`.
 
-El formato es este, sin listas de lo que está bien:
+El formato, sin listas de lo que está bien:
 
 ```
 Revisor: <agente>
