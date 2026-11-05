@@ -307,6 +307,7 @@ Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `
 | `principle-attack-the-premise` | Cuando dos arreglos con la misma premisa fallaron en el mismo gate: cuestionar la premisa antes de escribir otro arreglo |
 | `principle-explain-the-number` | Antes de confiar o actuar sobre un número medido: encontrar qué lo limita y descartar que mida otra cosa |
 | `principle-make-operations-idempotent` | Al diseñar comandos o loops que corren entre caídas y reintentos: converger al mismo estado final |
+| `create-formal-verification-skill`, `maintain-formal-verification-skill` | Opcionales, se invocan a mano: generan en el proyecto una skill local de verificación formal (máquinas de estado, carreras e invariantes) y la vuelven a alinear con el código después de cambios. `/statechart`, que nombran para leer los resultados de TLA+, llega en el ticket siguiente (#305) |
 
 No instala las skills de Matt Pocock ni Caveman: ver el [README](../README.md#qué-no-instala-y-por-qué). `grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano; en Claude se escriben `/mattpocock-skills:<skill>`.
 
