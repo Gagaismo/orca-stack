@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
 import { citedPaths, missingPaths, renderBrief } from '../src/despacho.mjs'
-import { ROOT, backups, cleanup, cli, read, snapshot, tempDir } from './helpers.mjs'
+import { statechartRuntimeOk, statechartWarnings } from '../src/doctor.mjs'
+import { listFiles } from '../src/templates.mjs'
+import { binaryVersion, which } from '../src/util.mjs'
+import { ROOT, backups, cleanup, cli, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const SKILLS = path.join(ROOT, 'assets', 'skills')
 const readSkill = (...parts) => readFileSync(path.join(...parts), 'utf8').replace(/\r\n/g, '\n')
@@ -13,13 +17,15 @@ const sha256 = text => createHash('sha256').update(text.replace(/\r\n/g, '\n'), 
 const provenance = JSON.parse(readSkill(SKILLS, 'pstack-upstream.json'))
 const skill = name => readSkill(SKILLS, name, 'SKILL.md')
 
-// Skills shipped verbatim (adapted: false): every principle-* folder plus these two (#303).
+// Skills shipped verbatim (adapted: false): every principle-* folder plus these two (#303) and statechart (#305).
 const FORMAL = ['create-formal-verification-skill', 'maintain-formal-verification-skill']
-const isVerbatimFolder = name => name.startsWith('principle-') || FORMAL.includes(name)
+const isVerbatimFolder = name => name.startsWith('principle-') || FORMAL.includes(name) || name === 'statechart'
+// The recorded hash of a skill's SKILL.md: statechart (#305) records one hash per file instead of upstreamSha256.
+const skillMdHash = entry => entry.shippedSha256 ?? entry.upstreamSha256 ?? entry.files?.['SKILL.md']
 const assertVerbatimSet = (skills, folders) => {
   const unadapted = Object.entries(skills).filter(([, e]) => !e.adapted).map(([k]) => k).sort()
   for (const name of unadapted) {
-    assert.ok(isVerbatimFolder(name), `${name} is unadapted but is neither a principle nor a formal-verification skill`)
+    assert.ok(isVerbatimFolder(name), `${name} is unadapted but is neither a principle, a formal-verification skill nor statechart`)
   }
   assert.deepEqual(folders.filter(isVerbatimFolder).sort(), unadapted)
 }
@@ -31,11 +37,11 @@ describe('vendored pstack principles (upstream v0.15.36)', () => {
     assertVerbatimSet(provenance.skills, folders)
     for (const [name, entry] of unadapted) {
       assert.equal(entry.adapted, false, `${name} must not be adapted`)
-      assert.equal(sha256(skill(name)), entry.upstreamSha256, `${name} differs from upstream v0.15.36`)
+      assert.equal(sha256(skill(name)), skillMdHash(entry), `${name} differs from upstream v0.15.36`)
       // Corrupting one byte must fail naming the skill
       const corrupted = skill(name) + ' '
       assert.throws(() => {
-        assert.equal(sha256(corrupted), entry.upstreamSha256, `${name} differs from upstream v0.15.36`)
+        assert.equal(sha256(corrupted), skillMdHash(entry), `${name} differs from upstream v0.15.36`)
       }, new RegExp(name))
     }
   })
@@ -292,7 +298,7 @@ describe('#265 re-vendor pstack principles and swarm from 0.15.36', () => {
     assert.ok(row.includes('0.15.36'))
 
     for (const [name, entry] of Object.entries(provenance.skills)) {
-      const targetHash = entry.shippedSha256 ?? entry.upstreamSha256
+      const targetHash = skillMdHash(entry)
       const corrupted = skill(name) + ' '
       assert.throws(() => {
         assert.equal(sha256(corrupted), targetHash, `${name} differs from manifest hash`)
@@ -396,5 +402,194 @@ describe('#303 vendored create- and maintain-formal-verification-skill (upstream
     assert.match(line, /Opcionales/)
     assert.match(line, /verificación formal \(máquinas de estado, carreras e invariantes\)/)
     assert.match(line, /`\/statechart`.*ticket siguiente \(#305\)/)
+  })
+})
+
+describe('#305 vendored statechart with per-file hashes (upstream v0.15.36)', () => {
+  const STATECHART = path.join(SKILLS, 'statechart')
+  const entry = provenance.skills.statechart
+  // LF-normalized for text, raw bytes otherwise (a file with a NUL byte counts as binary).
+  const fileHash = data => (data.includes(0) ? createHash('sha256').update(data).digest('hex') : sha256(data.toString('utf8')))
+  const assertFilesMatch = dir => {
+    for (const [rel, hash] of Object.entries(entry.files)) {
+      assert.equal(fileHash(readFileSync(path.join(dir, ...rel.split('/')))), hash, `statechart/${rel} differs from upstream v0.15.36`)
+    }
+  }
+  const assertFileList = dir =>
+    assert.deepEqual(listFiles(dir), [...Object.keys(entry.files), 'LICENSE'].sort(), 'statechart file list differs from the files map plus LICENSE')
+  const copyOf = prefix => {
+    const dir = tempDir(prefix)
+    cpSync(STATECHART, dir, { recursive: true })
+
+    return dir
+  }
+
+  test('rule 1: every vendored statechart file matches its hash in the files map at c742dd6, and changing one byte of scripts/ir.ts fails naming statechart/scripts/ir.ts', () => {
+    assert.equal(provenance.commit, 'c742dd61706fbacc1b95f1a20b7b988cf096ce6c')
+    assert.deepEqual(Object.keys(entry).sort(), ['adapted', 'files'])
+    assert.equal(entry.adapted, false)
+    assert.equal(Object.keys(entry.files).length, 31)
+    assertFilesMatch(STATECHART)
+    const copy = copyOf('statechart-byte')
+    try {
+      const file = path.join(copy, 'scripts', 'ir.ts')
+      const data = readFileSync(file)
+      data[0] = data[0] === 0x61 ? 0x62 : 0x61
+      writeFileSync(file, data)
+      assert.throws(() => assertFilesMatch(copy), /statechart\/scripts\/ir\.ts/)
+    } finally {
+      cleanup(copy)
+    }
+  })
+
+  test('rule 2: the vendored file list equals the files map keys plus LICENSE, negative: no scripts/test file and no file absent upstream is vendored', () => {
+    assertFileList(STATECHART)
+    assert.ok(!Object.keys(entry.files).some(rel => rel.startsWith('scripts/test/')), 'a scripts/test file is in the files map')
+    assert.equal(readSkill(STATECHART, 'LICENSE'), readSkill(SKILLS, 'principle-attack-the-premise', 'LICENSE'))
+    const copy = copyOf('statechart-extra')
+    try {
+      write(path.join(copy, 'scripts', 'test', 'cli.test.ts'), 'test')
+      assert.throws(() => assertFileList(copy), /statechart file list differs/)
+    } finally {
+      cleanup(copy)
+    }
+  })
+
+  test('rule 3: statechart SKILL.md keeps disable-model-invocation: true', () => {
+    assert.match(skill('statechart'), /^disable-model-invocation:\s*true$/m)
+    assert.doesNotMatch(skill('statechart'), /^disable-model-invocation:\s*false$/m)
+  })
+
+  test('rule 4: global installs every statechart file under both skill roots byte-identical, the launcher is executable on macOS and Linux, negative: an installed file whose hash differs fails', () => {
+    const home = tempDir('statechart-global')
+    try {
+      const result = cli(home, ['global', '--skip-pi'])
+      assert.equal(result.status, 0, result.out)
+      for (const root of ['.claude', '.agents']) {
+        const installed = path.join(home, root, 'skills', 'statechart')
+        assertFileList(installed)
+        for (const rel of listFiles(STATECHART)) {
+          const same = readFileSync(path.join(installed, rel)).equals(readFileSync(path.join(STATECHART, rel)))
+          assert.ok(same, `${root}/skills/statechart/${rel} differs from the vendored copy`)
+        }
+        assertFilesMatch(installed)
+        if (process.platform !== 'win32') {
+          assert.ok(statSync(path.join(installed, 'scripts', 'statechart')).mode & 0o100, `${root} launcher is not executable`)
+        }
+        const run = path.join(installed, 'scripts', 'run.ts')
+        writeFileSync(run, readFileSync(run, 'utf8') + '\n')
+        assert.throws(() => assertFilesMatch(installed), /statechart\/scripts\/run\.ts/)
+      }
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test('rule 5: doctor warns, never fails, when statechart is installed and no runtime is available or mise is missing, and with Node 26 and mise present there is no warning', () => {
+    const linux = (versions, mise = true) => statechartWarnings({ installed: true, platform: 'linux', versions, mise })
+    assert.deepEqual(linux({ node: '26.13.0' }), [])
+    assert.deepEqual(statechartWarnings({ installed: false, platform: 'win32', versions: {}, mise: false }), [])
+    for (const versions of [{ node: '22.18.0' }, { node: '22.99.0' }, { node: '23.6.0' }, { bun: '1.1.5' }, { deno: '2.0.0' }]) {
+      assert.deepEqual(linux(versions), [], JSON.stringify(versions))
+    }
+    for (const versions of [{}, { node: '22.17.9' }, { node: '23.5.0' }, { node: '20.19.0', bun: '1.1.4', deno: '1.46.3' }]) {
+      const warnings = linux(versions)
+      assert.equal(warnings.length, 1, JSON.stringify(versions))
+      assert.match(warnings[0], /Node 22\.18 a 22\.x, Node 23\.6 o más nuevo, Bun 1\.1\.5 o más nuevo, o Deno 2\.0 o más nuevo/)
+    }
+    const [mise] = linux({ node: '26.13.0' }, false)
+    assert.match(mise, /`mise` no está en el PATH: la primera corrida instala TLC y Java con mise y necesita red/)
+    assert.match(mise, /`TLA2TOOLS`.*`JAVA`/)
+    const [windows] = statechartWarnings({ installed: true, platform: 'win32', versions: { node: '26.13.0' }, mise: true })
+    assert.match(windows, /Windows nativo no corre.*WSL o un contenedor.*`TLA2TOOLS`.*`JAVA`/)
+
+    const home = tempDir('statechart-doctor')
+    try {
+      const doctor = () => cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home })
+      assert.doesNotMatch(doctor().out, /skill statechart/)
+      assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
+      const out = doctor().out
+      assert.doesNotMatch(out, /✖ skill statechart/)
+      if (process.platform === 'win32') {
+        assert.match(out, /⚠ skill statechart - en Windows nativo no corre/)
+      }
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test('rule 6: docs/guia-setup.md and the README pstack credit row name statechart, its runtimes and that the first run downloads TLC and Java with mise over the network', () => {
+    const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
+    const guide = read(path.join(ROOT, 'docs', 'guia-setup.md')).split('\n').find(line => line.includes('skill `statechart`'))
+    assert.ok(guide, 'docs/guia-setup.md does not name the statechart skill')
+    for (const text of [row, guide]) {
+      assert.ok(text.includes('`statechart`'), text)
+      assert.match(text, /Node 22\.18 a 22\.x.*23\.6 o más nuevo.*Bun 1\.1\.5 o más nuevo.*Deno 2\.0 o más nuevo/)
+      assert.match(text, /primera corrida descarga TLC y Java con mise/)
+      assert.match(text, /red/)
+      assert.match(text, /Windows nativo no corre/)
+    }
+  })
+
+  const versions = Object.fromEntries(['node', 'bun', 'deno'].map(bin => [bin, which(bin) ? binaryVersion(bin) : null]))
+  const corpusSkip =
+    process.platform === 'win32'
+      ? 'native Windows has no /bin/sh, which the skill spawns (#305); CI runs this on ubuntu'
+      : !statechartRuntimeOk(versions)
+        ? 'no Node 22.18+, Bun 1.1.5+ or Deno 2.0+ on the PATH'
+        : !process.env.TLA2TOOLS && !which('mise')
+          ? 'neither TLA2TOOLS nor mise is available to find TLC'
+          : false
+
+  test('rule 7: the installed launcher checks the upstream Counter corpus example and writes the report and the Mermaid chart', { skip: corpusSkip, timeout: 300_000 }, () => {
+    const home = tempDir('statechart-run')
+    const work = tempDir('statechart-counter')
+    try {
+      assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
+      const fixture = path.join(ROOT, 'test', 'fixtures', 'statechart-counter')
+      for (const name of ['Counter.tla', 'Counter.cfg']) {
+        cpSync(path.join(fixture, name), path.join(work, name))
+      }
+      const launcher = path.join(home, '.claude', 'skills', 'statechart', 'scripts', 'statechart')
+      const result = spawnSync(launcher, ['Counter.tla', '--out', 'out'], { cwd: work, encoding: 'utf8', timeout: 280_000 })
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+      const report = readFileSync(path.join(work, 'out', 'report.md'), 'utf8')
+      assert.match(report, /^# Counter\n/)
+      assert.match(report, /TLC reached 4 states and 3 steps/)
+      assert.equal(readFileSync(path.join(work, 'out', 'chart.mmd'), 'utf8'), readSkill(fixture, 'chart.mmd'))
+    } finally {
+      cleanup(home)
+      cleanup(work)
+    }
+  })
+
+  test('PRESERVE: global still renders the other skills .md files and copies their other files unchanged', () => {
+    const home = tempDir('statechart-preserve-global')
+    try {
+      assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
+      for (const root of ['.claude', '.agents']) {
+        const policy = readFileSync(path.join(home, root, 'skills', 'orca-stack-policy', 'SKILL.md'), 'utf8')
+        assert.doesNotMatch(policy, /\{\{[A-Z_]+\}\}/, `${root} orca-stack-policy keeps a placeholder`)
+        for (const name of FORMAL) {
+          const installed = readFileSync(path.join(home, root, 'skills', name, 'LICENSE'))
+          assert.ok(installed.equals(readFileSync(path.join(SKILLS, name, 'LICENSE'))), `${root} ${name} LICENSE differs`)
+        }
+      }
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test('PRESERVE: doctor still reports the installed skill count under both roots', () => {
+    const home = tempDir('statechart-preserve-doctor')
+    try {
+      assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
+      const out = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home }).out
+      const count = readdirSync(SKILLS).filter(name => statSync(path.join(SKILLS, name)).isDirectory()).length
+      assert.match(out, new RegExp(`✔ ~[\\\\/]\\.claude[\\\\/]skills - ${count} skills`))
+      assert.match(out, new RegExp(`✔ ~[\\\\/]\\.agents[\\\\/]skills - ${count} skills`))
+    } finally {
+      cleanup(home)
+    }
   })
 })

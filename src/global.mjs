@@ -69,8 +69,18 @@ const installSkills = ctx => {
     for (const name of names) {
       const dir = assetPath('skills', name)
       for (const rel of listFiles(dir)) {
-        const text = readFileSync(path.join(dir, rel), 'utf8')
-        ctx.writeOwned(path.join(root, name, ...rel.split('/')), rel.endsWith('.md') ? render(text, vars) : text)
+        const file = path.join(root, name, ...rel.split('/'))
+        if (rel.endsWith('.md')) {
+          ctx.writeOwned(file, render(readFileSync(path.join(dir, rel), 'utf8'), vars))
+          continue
+        }
+        // Other files go out byte for byte; a script with a shebang (statechart's launcher) stays runnable.
+        const data = readFileSync(path.join(dir, rel))
+        const executable = !isWindows() && data.subarray(0, 2).toString() === '#!'
+        const status = ctx.writeOwned(file, data, { mode: executable ? 0o755 : undefined })
+        if (executable && status !== 'skipped' && !ctx.dryRun && existsSync(file)) {
+          chmodSync(file, 0o755)
+        }
       }
     }
   }
