@@ -78,6 +78,7 @@ const installSkills = ctx => {
         const data = readFileSync(path.join(dir, rel))
         const executable = !isWindows() && data.subarray(0, 2).toString() === '#!'
         const status = ctx.writeOwned(file, data, { mode: executable ? 0o755 : undefined })
+        // writeOwned applies the mode only when it writes; an unchanged copy may have lost its executable bit.
         if (executable && status !== 'skipped' && !ctx.dryRun && existsSync(file)) {
           chmodSync(file, 0o755)
         }

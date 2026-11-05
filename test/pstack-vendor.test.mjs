@@ -505,13 +505,21 @@ describe('#305 vendored statechart with per-file hashes (upstream v0.15.36)', ()
 
     const home = tempDir('statechart-doctor')
     try {
-      const doctor = () => cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home })
+      const doctor = (env = {}) => cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home, env })
       assert.doesNotMatch(doctor().out, /skill statechart/)
       assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
-      const out = doctor().out
-      assert.doesNotMatch(out, /✖ skill statechart/)
-      if (process.platform === 'win32') {
-        assert.match(out, /⚠ skill statechart - en Windows nativo no corre/)
+      // An empty PATH: no node, bun, deno or mise for doctor to find, on every platform.
+      const empty = tempDir('statechart-empty-path')
+      try {
+        const out = doctor({ PATH: empty, Path: empty }).out
+        assert.doesNotMatch(out, /✖ skill statechart/)
+        assert.match(out, /⚠ skill statechart - necesita Node 22\.18 a 22\.x/)
+        assert.match(out, /⚠ skill statechart - `mise` no está en el PATH/)
+        if (process.platform === 'win32') {
+          assert.match(out, /⚠ skill statechart - en Windows nativo no corre/)
+        }
+      } finally {
+        cleanup(empty)
       }
     } finally {
       cleanup(home)
