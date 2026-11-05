@@ -999,7 +999,7 @@ describe('launchers', () => {
     assert.ok(!ps.includes('--tools'), "a ticket keeps all of pi's tools: subagents, SDD, engram")
     const sh = launcherFor({ ...base, agent: 'pi', win: false, mode: 'review', home: '/h', briefPath: '/b.md', skills: '/s' })
     assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && sh.includes("export GENTLE_PI_AUTONOMOUS_MODE='1';"))
-    assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode'") && !sh.includes('CLAUDE_CONFIG_DIR'))
+    assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode,mem_current_project,mem_context,mem_search,mem_get_observation'") && !sh.includes('CLAUDE_CONFIG_DIR'))
   })
 
   test('issue 304 rule 4: no pi worker launcher sets ENGRAM_DATA_DIR, in any mode or platform', () => {

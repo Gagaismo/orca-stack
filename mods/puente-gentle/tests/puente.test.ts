@@ -97,7 +97,7 @@ test('the command line carries every flag, the cleared Orca env, and runs node o
     '-p', '--mode', 'json',
     '--no-skills', '--skill', SKILLS,
     '--session-id', 'gentle-pr-612',
-    '--tools', 'read,grep,find,ls,codemode', '--append-system-prompt',
+    '--tools', 'read,grep,find,ls,codemode,mem_current_project,mem_context,mem_search,mem_get_observation', '--append-system-prompt',
   ])
   expect(args).not.toContain('--model')
   expect(args[11]).toBe(MARCO)
@@ -827,8 +827,8 @@ test('Rule 8: with pr and issue Pi keeps its read-only tools; the mod runs gh, P
   await consult($, { tema: 'pr-218', planteo: 'p', pregunta: 'q', pr: 218, issue: 214 })
   const args = piCall(w)!.argv
   expect(args.filter(arg => arg === '--tools')).toHaveLength(1)
-  expect(args[args.indexOf('--tools') + 1]).toBe('read,grep,find,ls,codemode')
-  expect(READ_ONLY_TOOLS).toBe('read,grep,find,ls,codemode')
+  expect(args[args.indexOf('--tools') + 1]).toBe('read,grep,find,ls,codemode,mem_current_project,mem_context,mem_search,mem_get_observation')
+  expect(READ_ONLY_TOOLS).toBe('read,grep,find,ls,codemode,mem_current_project,mem_context,mem_search,mem_get_observation')
   expect(ghCalls(w).length).toBeGreaterThan(0)
 })
 

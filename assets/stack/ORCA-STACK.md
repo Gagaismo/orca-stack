@@ -157,8 +157,9 @@ terminal on Windows, which is PowerShell; in a POSIX shell the leading `& ` is d
   config sets it, `CLAUDE_CONFIG_DIR` from `agentes.pi.claudeConfigDir`, and no `ENGRAM_DATA_DIR`, so the worker shares
   the human's global Engram memory (`~/.engram`). Then it runs `pi --no-skills --skill <gentle-pi skills> --session-id <id> --no-approve --exclude-tools ask_user_choice,ask_user_question [--tools <tools>] "Read and carry out the brief in <path>. Unattended: never wait for user input."`
   Nothing waits on a person: the two dialog tools are left out and `--no-approve` skips the project-trust prompt.
-  Tools: no `--tools` to implement, so gentle-pi keeps its subagents, ODD and engram tools; `read,bash,grep,find,ls` to
-  review. Unlike the consult bridge, this one can run git, gh and the suite.
+  Tools: no `--tools` to implement, so gentle-pi keeps its subagents, ODD and engram tools; to review,
+  `read,bash,grep,find,ls,codemode` plus the Engram read tools `mem_current_project`, `mem_context`, `mem_search` and
+  `mem_get_observation` (never an Engram write tool). Unlike the consult bridge, this one can run git, gh and the suite.
 
 ## Official Orca integration (preferred)
 

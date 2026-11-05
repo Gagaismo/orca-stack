@@ -17,7 +17,7 @@ export const emptyState = () => ({
   claudeMd: null, // { file, createdFile }
   codexAgentsMd: null, // { file, createdFile }: the codex ASCII block, Windows only
   config: null, // { file, sha256 }
-  pi: { packagesInstalled: [], npmGlobalInstalled: false },
+  pi: { packagesInstalled: [], npmGlobalInstalled: false, piInstalled: false },
   backups: [],
 })
 

@@ -139,7 +139,7 @@ Sale con código 1 si hay una falla (`✖`); los avisos (`⚠`) no cambian el c�
 ```bash
 orca-stack remove --dry-run
 orca-stack remove            # deshace global
-orca-stack remove --with-pi  # además desinstala lo de Pi que instaló global
+orca-stack remove --with-pi  # además desinstala lo de Pi que instaló global (Pi incluido, si lo instaló global)
 ```
 
 Borra lo que `global` creó, restaura lo que había reemplazado, saca las entradas de `CLAUDE_CODE_PLUGIN_DIRS` y deja los respaldos. Sin `~/.orca-stack/state.json` dice que no hay nada que deshacer. Si editaste `~/.orca-stack/config.json`, se conserva.

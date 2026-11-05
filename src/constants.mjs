@@ -7,6 +7,9 @@ export const PINNED = {
   gentleEngram: '0.6.0',
 }
 
+// The npm package of Pi itself: `global` installs PINNED.pi with it when Pi is missing (#304).
+export const PI_NPM_PACKAGE = '@earendil-works/pi-coding-agent'
+
 // Oldest Pi that gentle-pi PINNED.gentlePi runs on (its peer range): an older Pi makes gentle-shell exit.
 export const PI_MIN_VERSION = '1.2.0'
 
