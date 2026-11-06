@@ -22,6 +22,7 @@ if [ "$#" -eq 0 ]; then
     broken-ci-limit.cfg CiBounceTwice \
     broken-conflict.cfg ConflictBounceOncePerHead \
     broken-interp.cfg InterpretationNeverToAuthor \
+    broken-answer-order.cfg InterpretationNeverToAuthor \
     broken-owed.cfg ConflictBounceOncePerHead
 fi
 if [ $(( $# % 2 )) -ne 0 ]; then

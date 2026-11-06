@@ -20,6 +20,7 @@ CONSTANTS
     CiLimitGuard,    \* L960-965: third distinct CI bounce refused
     ReviewOnceGuard, \* L980: review bounce after the head advanced refused
     InterpGuard,     \* L977-978, L981-984: unsettled interpretation findings never reach the author
+    AnswerOrderGuard,\* L972-976: an answer settles only the reviews posted before it, one by one
     OwedGuard,       \* L1100-1111: main posts the printed marker before any other rebote (contract step 8)
     CommentFail      \* TRUE: all 3 attempts of `gh pr comment` (L1093-1099) may fail after the author was launched
 
@@ -32,7 +33,8 @@ VARIABLES
     ci,        \* rollup of the head: "pending" | "green" | "red" (L918-L959)
     merge,     \* pr.mergeable: "ok" | "conflict" (L913). UNKNOWN only refuses (L911): not a state.
     rev,       \* blocking review comments posted for each head: subset of {"impl","interp"} (L966-970)
-    settled,   \* a `Respuesta del humano:` newer than the interpretation review exists (L971-976)
+    settled,   \* some interpretation review of the head has a `Respuesta del humano:` after it (L971-976)
+    open,      \* some interpretation review of the head has no answer after it (L977)
     mk,        \* marker comments seen in the PR, by kind: the heads they name (L907-909)
     owed,      \* markers `rebote` printed after its comment failed; main has to post them (L1100-1111)
     alive,     \* an author is working in the PR worktree (L1034)
@@ -41,7 +43,7 @@ VARIABLES
     lauC,      \* history: launches of a conflict bounce, per head
     leaked     \* history: some launch carried an unsettled interpretation finding to the author
 
-vars == <<head, ci, merge, rev, settled, mk, owed, alive, lauR, lauCI, lauC, leaked>>
+vars == <<head, ci, merge, rev, settled, open, mk, owed, alive, lauR, lauCI, lauC, leaked>>
 
 TypeOK ==
     /\ head \in Heads
@@ -49,6 +51,7 @@ TypeOK ==
     /\ merge \in {"ok", "conflict"}
     /\ rev \in [Heads -> SUBSET {"impl", "interp"}]
     /\ settled \in [Heads -> BOOLEAN]
+    /\ open \in [Heads -> BOOLEAN]
     /\ mk \in [Kinds -> SUBSET Heads]
     /\ owed \in [Kinds -> SUBSET Heads]
     /\ alive \in BOOLEAN
@@ -63,6 +66,7 @@ Init ==
     /\ merge = "ok"
     /\ rev = [x \in Heads |-> {}]
     /\ settled = [x \in Heads |-> FALSE]
+    /\ open = [x \in Heads |-> FALSE]
     /\ mk = NoMarkers
     /\ owed = NoMarkers
     /\ alive = FALSE
@@ -79,43 +83,46 @@ Push ==
     /\ head' = head + 1
     /\ ci' = "pending"
     /\ merge' \in {"ok", "conflict"}
-    /\ UNCHANGED <<rev, settled, mk, owed, alive, lauR, lauCI, lauC, leaked>>
+    /\ UNCHANGED <<rev, settled, open, mk, owed, alive, lauR, lauCI, lauC, leaked>>
 
 \* GitHub runs no workflow while the PR conflicts (comment at L912).
 CIFinishes ==
     /\ ci = "pending"
     /\ merge = "ok"
     /\ ci' \in {"green", "red"}
-    /\ UNCHANGED <<head, merge, rev, settled, mk, owed, alive, lauR, lauCI, lauC, leaked>>
+    /\ UNCHANGED <<head, merge, rev, settled, open, mk, owed, alive, lauR, lauCI, lauC, leaked>>
 
 BaseMoves ==
     /\ merge = "ok"
     /\ merge' = "conflict"
-    /\ UNCHANGED <<head, ci, rev, settled, mk, owed, alive, lauR, lauCI, lauC, leaked>>
+    /\ UNCHANGED <<head, ci, rev, settled, open, mk, owed, alive, lauR, lauCI, lauC, leaked>>
 
 \* A reviewer posts `## BLOQUEA` with `Commit: <head>` (L966-969); "interp" if its section says interpretación (L970).
+\* A new interpretation review has no answer after it yet, whatever answered the earlier ones.
 ReviewPosts(kind) ==
     /\ rev' = [rev EXCEPT ![head] = @ \cup {kind}]
+    /\ open' = IF kind = "interp" THEN [open EXCEPT ![head] = TRUE] ELSE open
     /\ UNCHANGED <<head, ci, merge, settled, mk, owed, alive, lauR, lauCI, lauC, leaked>>
 
-\* `Respuesta del humano:` posted after the interpretation review (L971-976).
+\* `Respuesta del humano:` posted after the open interpretation reviews (L971-976): it settles all of them.
+\* Reviews of older heads are never read again (L966-969), so only the current head is tracked.
 HumanAnswers ==
-    /\ "interp" \in rev[head]
-    /\ ~settled[head]
+    /\ open[head]
     /\ settled' = [settled EXCEPT ![head] = TRUE]
+    /\ open' = [open EXCEPT ![head] = FALSE]
     /\ UNCHANGED <<head, ci, merge, rev, mk, owed, alive, lauR, lauCI, lauC, leaked>>
 
 AuthorExits ==
     /\ alive
     /\ alive' = FALSE
-    /\ UNCHANGED <<head, ci, merge, rev, settled, mk, owed, lauR, lauCI, lauC, leaked>>
+    /\ UNCHANGED <<head, ci, merge, rev, settled, open, mk, owed, lauR, lauCI, lauC, leaked>>
 
 \* main runs the printed `gh pr comment <pr> --body-file <file>` (L1108): the owed markers reach the PR.
 MainPostsOwed ==
     /\ owed /= NoMarkers
     /\ mk' = [k \in Kinds |-> mk[k] \cup owed[k]]
     /\ owed' = NoMarkers
-    /\ UNCHANGED <<head, ci, merge, rev, settled, alive, lauR, lauCI, lauC, leaked>>
+    /\ UNCHANGED <<head, ci, merge, rev, settled, open, alive, lauR, lauCI, lauC, leaked>>
 
 (*************************** one `rebote` run ***************************)
 
@@ -123,13 +130,13 @@ h == head                                                        \* sha, L904
 conflict == merge = "conflict"                                   \* L913
 failed == ci = "red"                                             \* failedChecks, L959
 impl == "impl" \in rev[h]
-interp == "interp" \in rev[h]
-settledNow == settled[h]
-\* L977-978: interpretations = flagged and unsettled; reviewBlockers = blockers minus interpretations.
+\* L973-976: the code finds an answer after each review. Broken variant (AnswerOrderGuard FALSE): any answer
+\* on the head settles every review, so an open review posted after an answer counts as settled.
+codeOpen == open[h] /\ (AnswerOrderGuard \/ ~settled[h])          \* interpretations.length > 0 (L977)
+\* L978: reviewBlockers = blockers minus interpretations. The settled reviews go to the author.
 \* Broken variant (InterpGuard FALSE): every blocker goes to the author and none is refused.
-authorGetsInterp == IF InterpGuard THEN interp /\ settledNow ELSE interp
-reviewBlockers == impl \/ authorGetsInterp                       \* reviewBlockers.length > 0
-unsettledInterp == interp /\ ~settledNow                         \* interpretations.length > 0
+sendsOpen == open[h] /\ ~(InterpGuard /\ codeOpen)                \* an unanswered review reaches the author
+reviewBlockers == impl \/ settled[h] \/ sendsOpen                 \* reviewBlockers.length > 0
 priorCI == mk["CI"] \ {h}                                        \* previousCiShas, L961
 
 Refused ==
@@ -138,7 +145,7 @@ Refused ==
     \/ (CiLimitGuard /\ failed /\ Cardinality(priorCI) >= 2)                                \* L960-965
     \/ (ReviewOnceGuard /\ (mk["R"] \ {h}) /= {}
          /\ ~((conflict \/ failed) /\ ~reviewBlockers))                                     \* L980
-    \/ (InterpGuard /\ unsettledInterp /\ ~failed /\ ~conflict)                             \* L981-984
+    \/ (InterpGuard /\ codeOpen /\ ~failed /\ ~conflict)                                     \* L981-984
     \/ (~reviewBlockers /\ ~failed /\ ~conflict)                                            \* L989-992
     \/ alive                                                                                \* L1034
     \/ (OwedGuard /\ owed /= NoMarkers)                     \* L1109: main posts the printed marker first
@@ -156,8 +163,8 @@ Launch ==
     /\ lauR'  = IF reviewBlockers THEN lauR \cup {h} ELSE lauR
     /\ lauCI' = IF failed THEN lauCI \cup {h} ELSE lauCI
     /\ lauC'  = IF conflict THEN [lauC EXCEPT ![h] = IF @ = 2 THEN 2 ELSE @ + 1] ELSE lauC
-    /\ leaked' = (leaked \/ (unsettledInterp /\ authorGetsInterp /\ reviewBlockers))
-    /\ UNCHANGED <<head, ci, merge, rev, settled>>
+    /\ leaked' = (leaked \/ sendsOpen)
+    /\ UNCHANGED <<head, ci, merge, rev, settled, open>>
 
 \* L1087-1099: the markers are posted after the launch; one of the 3 attempts succeeds.
 Rebote ==

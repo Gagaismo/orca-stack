@@ -165,6 +165,29 @@ describe('replay: counterexamples of formal/rebote/Rebote.tla on the fixed rebot
     assert.equal(launches(advanced), 0, 'a second review bounce on a different head was launched')
   })
 
+  // Model: ReviewPosts("interp"), HumanAnswers, ReviewPosts("interp"), Rebote (rebote.cfg, InterpretationNeverToAuthor).
+  // broken-answer-order.cfg lets the earlier answer settle the later review: the conflict bounce carries it to the author.
+  const settledThenNew = () => {
+    const older = { body: 'Commit: abc123\n## BLOQUEA\n1. (concreta, interpretación): answered disagreement', submittedAt: '2026-10-23T22:00:00Z', url: 'https://example.test/review/1' }
+    const answer = { body: 'Respuesta del humano: "keep it"', createdAt: '2026-10-23T23:00:00Z', url: 'https://example.test/comment/9' }
+    const newer = { body: 'Commit: abc123\n## BLOQUEA\n1. (concreta, interpretación): new disagreement', submittedAt: '2026-10-24T00:00:00Z', url: 'https://example.test/review/2' }
+    return { reviews: [older, newer], comments: [answer] }
+  }
+  test('replay: an answer to an earlier interpretation review does not settle a later one on the same head', async () => {
+    const env = bounceEnv(pr(settledThenNew()))
+    await assert.rejects(reboteCommand({}, '12', env.io), error => /van al humano/.test(error.message) && error.message.includes('new disagreement') && !error.message.includes('answered disagreement'))
+    assert.equal(launches(env), 0, 'the author was launched with an unanswered interpretation review')
+  })
+
+  test('replay: a conflict bounce after that answer carries only the answered interpretation review to the author', async () => {
+    const env = bounceEnv(pr({ mergeable: 'CONFLICTING', ...settledThenNew() }))
+    await reboteCommand({}, '12', env.io)
+    assert.equal(launches(env), 1)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.match(brief, /answered disagreement/)
+    assert.doesNotMatch(brief, /new disagreement/)
+  })
+
   // Control: with the marker posted by rebote itself, the same head advance is refused (the review-once guard, "El head del PR avanzó desde el rebote", works).
   test('control: with the marker posted, the second review bounce on a later head is refused', async () => {
     const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }], reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. still broken' }] }))
