@@ -2871,6 +2871,55 @@ describe('rebote', () => {
       assert.ok(plain.out.includes('Rebote conflicto: abc123'))
     })
   })
+  describe('issue 315: interpretation findings are classified by their tag', () => {
+    const launchCount = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create').length
+    const review = blockers => ({ body: `Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n${blockers}\n\n## SUGERENCIAS\n(none)`, submittedAt: '2026-11-05T10:00:00Z', url: 'https://example.test/review/315' })
+    const bounceBrief = env => env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+
+    test('Rule 1: a blocker whose tag ends in interpretación, in any case or without the accent, goes to the human', async () => {
+      for (const kind of ['interpretaci\u00F3n', 'interpretacion', 'INTERPRETACI\u00D3N']) {
+        const env = bounceEnv(pr({ reviews: [review(`1. \`a.mjs:3\` (introducido, test, ${kind}): product disagreement`)] }))
+        await assert.rejects(reboteCommand({}, '12', env.io), /Los bloqueos de interpretaci\u00F3n van al humano[\s\S]*product disagreement/)
+        assert.equal(launchCount(env), 0)
+      }
+    })
+
+    test('Rule 2: an implementation blocker that mentions interpretación in its text bounces to the author', async () => {
+      const finding = '1. `formal/rebote/Rebote.tla:97-99` (introducido, concreta, implementaci\u00F3n): una respuesta anterior se aplica indebidamente a un nuevo review de interpretaci\u00F3n del mismo head.'
+      const env = bounceEnv(pr({ reviews: [review(finding)] }))
+      await reboteCommand({}, '12', env.io)
+      assert.equal(launchCount(env), 1)
+      assert.match(bounceBrief(env), /nuevo review de interpretaci\u00F3n del mismo head/)
+      assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
+    })
+
+    test('Rule 3: both tag formats are read, and the refusal lists only the interpretation line', async () => {
+      const blockers = [
+        '1. `src/a.mjs:1` (introducido, regla sin test, implementaci\u00F3n): fix it, unrelated to any interpretaci\u00F3n.',
+        '2. `src/b.mjs:2` (empeorado, inferida, interpretaci\u00F3n): product disagreement',
+      ].join('\n')
+      const env = bounceEnv(pr({ reviews: [review(blockers)] }))
+      await assert.rejects(reboteCommand({}, '12', env.io), error => {
+        assert.match(error.message, /van al humano[\s\S]*product disagreement/)
+        assert.doesNotMatch(error.message, /fix it/)
+        return true
+      })
+      assert.equal(launchCount(env), 0)
+      const newFormat = bounceEnv(pr({ reviews: [review('1. `src/b.mjs:2` (introducido, regla escrita, interpretaci\u00F3n): scope disagreement')] }))
+      await assert.rejects(reboteCommand({}, '12', newFormat.io), /van al humano[\s\S]*scope disagreement/)
+    })
+
+    test('Rule 4: a blocker without a parseable tag is an implementation finding, and a human answer still settles an interpretation one', async () => {
+      const untagged = bounceEnv(pr({ reviews: [review('1. the interpretaci\u00F3n of the spec in src/a.mjs is wrong; fix it.')] }))
+      await reboteCommand({}, '12', untagged.io)
+      assert.equal(launchCount(untagged), 1)
+      const answer = { body: 'Respuesta del humano: "implementation"', createdAt: '2026-11-05T11:00:00Z', url: 'https://example.test/comment/315' }
+      const settled = bounceEnv(pr({ reviews: [review('1. `src/b.mjs:2` (introducido, test, interpretaci\u00F3n): product disagreement')], comments: [answer] }))
+      await reboteCommand({}, '12', settled.io)
+      assert.equal(launchCount(settled), 1)
+      assert.match(bounceBrief(settled), /Interpretation settled by the human: https:\/\/example\.test\/comment\/315/)
+    })
+  })
 })
 
 

@@ -851,6 +851,11 @@ const blockingBody = body => {
   const section = blockingSection(body)
   return section !== '' && !/^nada\s*$/i.test(section)
 }
+// A blocker is an interpretation finding only when the last element of the tag after its file:line says so, never from words in its text.
+const interpretationLines = section => section.split(/\r?\n/).filter(line => {
+  const tag = /^\s*\d+[.)]\s+(?:`[^`\n]*`|[^\s(]+)?\s*\(([^()\n]*)\)/.exec(line)?.[1]
+  return tag !== undefined && /^interpretaci[oó]n$/i.test(tag.split(',').at(-1).trim().normalize('NFC'))
+})
 // An issue that cannot be read adds no answers, so its interpretation findings stay with the human.
 const humanAnswers = (io, root, pr) => {
   const isAnswer = item => /^Respuesta del humano:/m.test(reviewBody(item))
@@ -967,7 +972,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     const body = reviewBody(item)
     return blockingBody(body) && /^\s*Commit:\s*(\S+)/mi.exec(body)?.[1] === sha
   })
-  const flagged = blockers.filter(item => /interpretaci[o\u00F3]n/i.test(blockingSection(reviewBody(item))))
+  const flagged = blockers.filter(item => interpretationLines(blockingSection(reviewBody(item))).length > 0)
   // A Respuesta del humano posted after the review, on the PR or on an issue it closes, settles its interpretation findings.
   const answers = flagged.length > 0 ? humanAnswers(io, root, pr) : []
   const settledBy = new Map(flagged.map(item => {
@@ -979,7 +984,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   // A conflict-only or CI-only bounce does not spend the review bounce, so an older Rebote: marker does not refuse it.
   if (markers.some(marker => marker !== sha) && !((conflict || failedChecks.length > 0) && reviewBlockers.length === 0)) throw new Error(`El head del PR avanz\u00F3 desde el rebote (${markers.at(-1)} -> ${sha}); lo que siga en pie lo decide main con Decidido por main.`)
   if (interpretations.length > 0 && failedChecks.length === 0 && !conflict) {
-    const lines = interpretations.map(item => `${item.url ?? item.html_url ?? 'review'}: ${blockingSection(reviewBody(item)).split(/\r?\n/).filter(line => /interpretaci[o\u00F3]n/i.test(line)).join(' ')}`)
+    const lines = interpretations.map(item => `${item.url ?? item.html_url ?? 'review'}: ${interpretationLines(blockingSection(reviewBody(item))).join(' ')}`)
     throw new Error(`Los bloqueos de interpretaci\u00F3n van al humano, no al autor:\n${lines.join('\n')}`)
   }
   const findings = reviewBlockers.map(item => {
