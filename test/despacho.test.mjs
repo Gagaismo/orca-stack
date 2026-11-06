@@ -2918,6 +2918,9 @@ describe('rebote', () => {
       const parenthesized = bounceEnv(pr({ reviews: [review('1. fix (a, interpretación) later in src/a.mjs.')] }))
       await reboteCommand({}, '12', parenthesized.io)
       assert.equal(launchCount(parenthesized), 1)
+      const codeProse = bounceEnv(pr({ reviews: [review('1. `rebote` (a, interpretación) appears in the description and needs correction.')] }))
+      await reboteCommand({}, '12', codeProse.io)
+      assert.equal(launchCount(codeProse), 1)
       const answer = { body: 'Respuesta del humano: "implementation"', createdAt: '2026-11-05T11:00:00Z', url: 'https://example.test/comment/315' }
       const settled = bounceEnv(pr({ reviews: [review('1. `src/b.mjs:2` (introducido, test, interpretaci\u00F3n): product disagreement')], comments: [answer] }))
       await reboteCommand({}, '12', settled.io)

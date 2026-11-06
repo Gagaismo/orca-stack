@@ -852,8 +852,9 @@ const blockingBody = body => {
   return section !== '' && !/^nada\s*$/i.test(section)
 }
 // A blocker is an interpretation finding only when the last element of the tag right after its optional `file:line` says so, never from words in its text.
+// Only a location shaped like path:line or path:line-line, backticked or bare, can precede the tag; other inline code is description.
 const interpretationLines = section => section.split(/\r?\n/).filter(line => {
-  const tag = /^\s*\d+[.)]\s+(?:`[^`\n]*`|[^\s(`]*:\d[^\s(]*)?\s*\(([^()\n]*)\)/.exec(line)?.[1]
+  const tag = /^\s*\d+[.)]\s+(?:`[^`\s]+:\d+(?:-\d+)?`|[^\s(`]+:\d+(?:-\d+)?)?\s*\(([^()\n]*)\)/.exec(line)?.[1]
   return tag !== undefined && /^interpretaci[o\u00F3]n$/i.test(tag.split(',').at(-1).trim().normalize('NFC'))
 })
 // An issue that cannot be read adds no answers, so its interpretation findings stay with the human.
