@@ -2947,6 +2947,11 @@ describe('rebote', () => {
       const spacedProse = bounceEnv(pr({ reviews: [review('1. `orca-stack rebote` (a, interpretaci\u00F3n) appears in the description and needs correction.')] }))
       await reboteCommand({}, '12', spacedProse.io)
       assert.equal(launchCount(spacedProse), 1)
+      for (const prose of ['ratio is 1:3', 'version 1.5:3']) {
+        const env = bounceEnv(pr({ reviews: [review(`1. \`${prose}\` (a, interpretación) appears in the description and needs correction.`)] }))
+        await reboteCommand({}, '12', env.io)
+        assert.equal(launchCount(env), 1, prose)
+      }
       const implementation = bounceEnv(pr({ reviews: [review('1. `src/my file.mjs:3` (introducido, test, implementaci\u00F3n): wrong interpretaci\u00F3n of the spec.')] }))
       await reboteCommand({}, '12', implementation.io)
       assert.equal(launchCount(implementation), 1)
