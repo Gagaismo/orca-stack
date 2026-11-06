@@ -20,6 +20,7 @@ Versión de referencia: `orca-stack v0.16.1`. Lo que se mergee después de ese t
    - [4.8 Review, rebote y merge](#48-review-rebote-y-merge)
    - [4.9 Arena y swarm](#49-arena-y-swarm)
    - [4.10 El chequeo de `## Evidencia` en CI](#410-el-chequeo-de--evidencia-en-ci)
+   - [4.11 La verificación formal de `rebote`](#411-la-verificación-formal-de-rebote)
 5. [Casos borde](#5-casos-borde)
 6. [Manejo: operación y problemas](#6-manejo-operación-y-problemas)
 7. [Qué hay solo en `main`](#7-qué-hay-solo-en-main)
@@ -459,6 +460,23 @@ Cómo se lee la tabla: busca tablas dentro de `## Evidencia` cuya segunda column
 - Falta alguno: sale con 1 y dice `Evidencia fila <n>: no encuentro el test `<nombre>` en test/ ni mods/*/tests/`.
 
 Para probarlo en local, con el cuerpo en un archivo: `node scripts/check-evidencia.mjs <archivo>`.
+
+### 4.11 La verificación formal de `rebote`
+
+`formal/rebote/Rebote.tla` es un modelo TLA+ de los límites de `orca-stack rebote` (paso 8 del contrato), y TLC lo recorre entero. Comprueba cuatro promesas: el rebote de review pasa una sola vez por PR, el de CI como mucho dos veces sobre SHAs distintos, el de conflicto una vez por head, y un hallazgo de interpretación nunca llega al autor. También modela los 3 intentos de `gh pr comment` y la salida con error cuando fallan todos (#310).
+
+Límites y supuestos: un PR, un autor y una sola sesión de `main` (no hay dos `rebote` a la vez); cada corrida de `rebote` es un paso indivisible; 3 heads distintos (`MaxHead=3`); la CI de cada head se resume como pendiente, verde o roja (no se modelan los checks cancelados ni el contenido del brief); los reviews de interpretación de un head se resumen en si alguno ya tiene una `Respuesta del humano:` posterior y si alguno no la tiene, porque una respuesta salda los reviews anteriores a ella y ninguno posterior; y, cuando `rebote` sale con error, `main` publica el marcador impreso antes de cualquier otro `rebote`.
+
+Cada `.cfg` tiene un resultado esperado: `rebote.cfg` y `rebote-commentfail.cfg` pasan; cada `broken-*.cfg` apaga un resguardo y tiene que fallar con su invariante. `check.sh` compara cada resultado con el esperado y sale con 1 si alguno difiere. Para correrlo en local hacen falta Java 11 o posterior y `tla2tools.jar` 1.7.4:
+
+```bash
+TLA2TOOLS=/ruta/a/tla2tools.jar bash formal/rebote/check.sh
+TLA2TOOLS=/ruta/a/tla2tools.jar JAVA=/ruta/a/java bash formal/rebote/check.sh   # si java no está en el PATH
+```
+
+El job `formal` de CI (en `ubuntu-latest`) baja el jar de la release v1.7.4, comprueba su SHA-256 antes de correr TLC (si no coincide, falla sin correrlo) y ejecuta `check.sh`; `ci-ok` lo exige. Los contraejemplos del modelo se reproducen sobre el código real en `test/formal-rebote-replay.test.mjs`, que corre en `npm run verify` y no necesita Java.
+
+Si un cambio toca `reboteCommand` o el paso 8, seguí la skill `verify-rebote` (`.claude/skills/verify-rebote/SKILL.md`): dice cuándo hay que actualizar el modelo y cómo. Claude la carga sola como skill del proyecto; codex y agy no leen `.claude/skills/`, así que la abren por esa ruta. Para leer un resultado (el camino más corto a una violación, o el diagrama de estados) está la skill `/statechart` de pstack, que no corre en Windows nativo: usala desde WSL, Linux o macOS.
 
 ## 5. Casos borde
 
