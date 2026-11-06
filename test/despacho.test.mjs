@@ -2882,6 +2882,8 @@ describe('rebote', () => {
         await assert.rejects(reboteCommand({}, '12', env.io), /Los bloqueos de interpretaci\u00F3n van al humano[\s\S]*product disagreement/)
         assert.equal(launchCount(env), 0)
       }
+      const bareLocation = bounceEnv(pr({ reviews: [review('1. src/a.mjs:3 (introducido, comando, interpretación): scope disagreement')] }))
+      await assert.rejects(reboteCommand({}, '12', bareLocation.io), /van al humano[\s\S]*scope disagreement/)
     })
 
     test('Rule 2: an implementation blocker that mentions interpretación in its text bounces to the author', async () => {
@@ -2913,6 +2915,9 @@ describe('rebote', () => {
       const untagged = bounceEnv(pr({ reviews: [review('1. the interpretaci\u00F3n of the spec in src/a.mjs is wrong; fix it.')] }))
       await reboteCommand({}, '12', untagged.io)
       assert.equal(launchCount(untagged), 1)
+      const parenthesized = bounceEnv(pr({ reviews: [review('1. fix (a, interpretación) later in src/a.mjs.')] }))
+      await reboteCommand({}, '12', parenthesized.io)
+      assert.equal(launchCount(parenthesized), 1)
       const answer = { body: 'Respuesta del humano: "implementation"', createdAt: '2026-11-05T11:00:00Z', url: 'https://example.test/comment/315' }
       const settled = bounceEnv(pr({ reviews: [review('1. `src/b.mjs:2` (introducido, test, interpretaci\u00F3n): product disagreement')], comments: [answer] }))
       await reboteCommand({}, '12', settled.io)
