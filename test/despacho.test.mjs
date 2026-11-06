@@ -2928,6 +2928,43 @@ describe('rebote', () => {
       assert.match(bounceBrief(settled), /Interpretation settled by the human: https:\/\/example\.test\/comment\/315/)
     })
   })
+  describe('issue 317: backticked locations with spaces open the tag', () => {
+    const launchCount = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create').length
+    const review = blockers => ({ body: `Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n${blockers}\n\n## SUGERENCIAS\n(none)`, submittedAt: '2026-11-05T10:00:00Z', url: 'https://example.test/review/317' })
+
+    test('Rule 1: a spaced backticked location tagged interpretación goes to the human and the refusal lists it', async () => {
+      const finding = '1. `src/my file.mjs:3` (introducido, test, interpretaci\u00F3n): product disagreement'
+      const env = bounceEnv(pr({ reviews: [review(finding)] }))
+      await assert.rejects(reboteCommand({}, '12', env.io), error => {
+        assert.match(error.message, /van al humano/)
+        assert.ok(error.message.includes(finding))
+        return true
+      })
+      assert.equal(launchCount(env), 0)
+    })
+
+    test('Rule 2: code prose before (a, interpretación) and an implementación tag that mentions interpretación still bounce to the author', async () => {
+      const spacedProse = bounceEnv(pr({ reviews: [review('1. `orca-stack rebote` (a, interpretaci\u00F3n) appears in the description and needs correction.')] }))
+      await reboteCommand({}, '12', spacedProse.io)
+      assert.equal(launchCount(spacedProse), 1)
+      for (const prose of ['ratio is 1:3', 'version 1.5:3']) {
+        const env = bounceEnv(pr({ reviews: [review(`1. \`${prose}\` (a, interpretación) appears in the description and needs correction.`)] }))
+        await reboteCommand({}, '12', env.io)
+        assert.equal(launchCount(env), 1, prose)
+      }
+      const implementation = bounceEnv(pr({ reviews: [review('1. `src/my file.mjs:3` (introducido, test, implementaci\u00F3n): wrong interpretaci\u00F3n of the spec.')] }))
+      await reboteCommand({}, '12', implementation.io)
+      assert.equal(launchCount(implementation), 1)
+    })
+
+    test('Rule 3: line ranges and Windows-style paths with spaces go to the human', async () => {
+      for (const location of ['a.mjs:3-9', 'src/my file.mjs:3-9', 'C:\\Program Files\\orca\\a.mjs:3', 'C:\\My Dir\\a.mjs:3-9']) {
+        const env = bounceEnv(pr({ reviews: [review(`1. \`${location}\` (introducido, test, interpretaci\u00F3n): scope disagreement`)] }))
+        await assert.rejects(reboteCommand({}, '12', env.io), /van al humano[\s\S]*scope disagreement/, location)
+        assert.equal(launchCount(env), 0)
+      }
+    })
+  })
 })
 
 
