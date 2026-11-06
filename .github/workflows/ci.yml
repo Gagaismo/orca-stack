@@ -114,6 +114,32 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node scripts/check-evidencia.mjs "$RUNNER_TEMP/pr-body.md"
 
+  # TLC on the Rebote model (formal/rebote, skill verify-rebote): every config must give its expected result.
+  formal:
+    name: TLC formal/rebote
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download tla2tools.jar 1.7.4
+        run: curl -fsSL -o "$RUNNER_TEMP/tla2tools.jar" https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+      - name: Verify tla2tools.jar checksum
+        run: echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict -
+      - name: Run TLC on every config
+        run: TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" bash formal/rebote/check.sh
+      - name: A result that differs from the expected one fails check.sh
+        run: |
+          rc=0
+          TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" bash formal/rebote/check.sh rebote.cfg ReviewBounceOnce || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "check.sh exited $rc on a result that differs from the expected one; expected 1"
+            exit 1
+          fi
+
   ci-ok:
     name: ci-ok
     needs:
@@ -121,6 +147,7 @@ jobs:
       - hygiene
       - evidencia
       - mods
+      - formal
     if: always()
     runs-on: ubuntu-latest
     steps:
