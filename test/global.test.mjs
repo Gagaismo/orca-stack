@@ -536,7 +536,7 @@ describe('doctor', () => {
     assert.doesNotMatch(policy, /codex-cc|Command Code|model_provider=cc/)
     assert.match(policy, /claude-orca-stack/)
     const contract = read(path.join(ROOT, 'assets', 'stack', 'CONTRATO.md'))
-    assert.doesNotMatch(contract, /model_provider=cc|orca-stack.cmd|auth.json/)
+    for (const doc of [contract, read(path.join(ROOT, 'assets', 'stack', 'MAIN.md'))]) assert.doesNotMatch(doc, /model_provider=cc|orca-stack.cmd|auth.json/)
   })
 
   test('warns about a legacy block and a pending setup, and stays quiet once both are fixed', () => {

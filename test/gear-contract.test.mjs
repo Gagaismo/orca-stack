@@ -5,10 +5,12 @@ import { describe, test } from 'node:test'
 import { cleanup, cli, git, read, tempDir, write } from './helpers.mjs'
 
 const contract = read(path.join(process.cwd(), 'assets', 'stack', 'CONTRATO.md'))
+const main = read(path.join(process.cwd(), 'assets', 'stack', 'MAIN.md'))
 const policy = read(path.join(process.cwd(), 'assets', 'stack', 'ORCA-STACK.md'))
-const marchas = contract.split('### Marchas')[1]?.split('\n### ')[0] ?? ''
+const marchas = main.split('### Marchas')[1]?.split('\n### ')[0] ?? ''
 const gearList = policy.split('## Gear knobs')[1]?.split('\n## ')[0] ?? ''
-const arena = contract.split('### Arena y swarm')[1]?.split('\n### ')[0] ?? ''
+// Issue 325: the contract keeps what any fan-out owner acts on; MAIN.md holds main's part of the section.
+const arena = [contract, main].map(text => text.split('### Arena y swarm')[1]?.split('\n### ')[0] ?? '').join('\n')
 const permissions = contract.split('### Permisos')[1]?.split('\n### ')[0] ?? ''
 
 const checkCitedHeadings = (contractText, policyText) => {
@@ -80,7 +82,7 @@ describe('gear contract', () => {
   })
 
   test('ticket rule 7: second CI bounce carries escalation and proposal together', () => {
-    const step8 = contract.split('\n').find(line => line.startsWith('8. '))
+    const step8 = main.split('\n').find(line => line.startsWith('8. '))
     assert.match(step8, /Despu\u00E9s del segundo rebote de CI, si vuelve a fallar, se lo pas\u00E1s al humano/)
     assert.match(step8, /Si propon\u00E9s un swarm para diagnosticar, atac\u00E1 la premisa primero con la skill de #160/)
     assert.match(step8, /la propuesta viaja con la escalaci\u00F3n al humano, nunca en su lugar ni para demorarla/)
@@ -170,7 +172,7 @@ describe('gear contract', () => {
   })
 
   test('rule 8: step 10 records the gear and the next session suggests it without applying it', () => {
-    const step10 = contract.split('\n').find(line => line.startsWith('10. '))
+    const step10 = main.split('\n').find(line => line.startsWith('10. '))
     assert.match(step10, /marcha que deja/)
     assert.match(step10, /sugiere en una l\u00EDnea esa marcha/)
     assert.match(step10, /sin aplicarla/)

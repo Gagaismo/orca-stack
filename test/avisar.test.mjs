@@ -285,7 +285,7 @@ describe('avisar', () => {
     }
     const stack = file => readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', file), 'utf8')
     assert.ok(stack('brief-rebote.md').includes(doorbell), 'bounce brief must carry the doorbell line')
-    const collaboration = stack('CONTRATO.md').split(/\r?\n/).find(line => line.includes('Reglas de colaboración:'))
+    const collaboration = stack('MAIN.md').split(/\r?\n/).find(line => line.includes('Reglas de colaboración:'))
     assert.match(collaboration, /`orca-stack avisar <issue\|pr> <url-del-comentario>`/)
     assert.match(collaboration, /nunca lo arma con llamadas sueltas a `orca`/)
   })

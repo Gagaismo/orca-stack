@@ -44,7 +44,7 @@ export const stackVars = L => {
 const installPolicyDocs = ctx => {
   ctx.say('\nPolítica del stack')
   const vars = stackVars(ctx.L)
-  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md']) {
+  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md']) {
     ctx.writeOwned(path.join(ctx.L.stackDir, name), render(readAsset('stack', name), vars))
   }
 }

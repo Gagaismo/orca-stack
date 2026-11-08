@@ -8,12 +8,14 @@ const root = process.cwd()
 const file = rel => read(path.join(root, rel))
 const contract = file('assets/stack/CONTRATO.md')
 const agents = file('AGENTS.md')
+// Issue 325: main's cycle and Marchas moved to MAIN.md; Agentes and Skills de Matt stay in the contract.
+const main = file('assets/stack/MAIN.md')
 const step = (text, n) => text.split(/\r?\n/).find(line => line.startsWith(`${n}. `)) ?? ''
 const section = (text, heading) => text.split(`### ${heading}`)[1]?.split('\n### ')[0] ?? ''
 
 describe('planning paths (#267)', () => {
   test('Rule 1: step 1 defines the Straight shot by the ODD small test, with its examples and the #199 negative', () => {
-    for (const text of [contract, agents]) {
+    for (const text of [main]) {
       const s1 = step(text, 1)
       assert.ok(s1.includes('**Straight shot**'))
       assert.ok(s1.includes('se sabe qué y dónde cambiar; no toca una ruta de `riesgo` ni una puerta de una vía; se podría retomar solo con el pedido y el `git diff`'))
@@ -25,7 +27,7 @@ describe('planning paths (#267)', () => {
   })
 
   test('Rule 2: step 1 sends every other idea to grill-with-docs, then to-spec and to-tickets, and line counts never decide', () => {
-    for (const text of [contract, agents]) {
+    for (const text of [main]) {
       const s1 = step(text, 1)
       assert.ok(s1.includes('**Mediano o grande**: si no, `main` propone primero `grill-with-docs` y después `to-spec` y `to-tickets`'))
       assert.ok(s1.includes('la cantidad de líneas nunca decide cuál'))
@@ -34,25 +36,25 @@ describe('planning paths (#267)', () => {
   })
 
   test('Rule 3: step 1 proposes wayfinder only after a grill-with-docs session outgrows itself, never for an idea with no grilling', () => {
-    for (const text of [contract, agents]) {
+    for (const text of [main]) {
       const s1 = step(text, 1)
       assert.ok(s1.includes('`main` propone `wayfinder` solo cuando una sesión de `grill-with-docs` se le va de las manos, nunca para una idea nueva que todavía no pasó por `grill-with-docs`, y la dispara el humano (por ejemplo "/wayfinder let\'s turn this into a map")'))
     }
   })
 
   test('Rule 4: the contract names grill-with-docs, never grilling, in step 1, Agentes, Marchas and Skills de Matt', () => {
+    assert.ok(step(main, 1).includes('`grill-with-docs`'))
+    assert.doesNotMatch(step(main, 1), /`grilling`/)
+    assert.ok(section(main, 'Marchas').includes('A Proactive cuando empieza la planificación (`grill-with-docs`, `to-spec`, `to-tickets` o charting de un map)'))
     for (const text of [contract, agents]) {
-      assert.ok(step(text, 1).includes('`grill-with-docs`'))
-      assert.doesNotMatch(step(text, 1), /`grilling`/)
       assert.ok(section(text, 'Agentes').includes('Planificación con las skills de Matt (`grill-with-docs`, `to-spec`, `to-tickets`, disparadas por el humano)'))
-      assert.ok(section(text, 'Marchas').includes('A Proactive cuando empieza la planificación (`grill-with-docs`, `to-spec`, `to-tickets` o charting de un map)'))
       assert.ok(section(text, 'Skills de Matt').includes('`grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano'))
-      assert.doesNotMatch(text, /`grilling`|\(grilling,/)
     }
+    for (const text of [contract, agents, main]) assert.doesNotMatch(text, /`grilling`|\(grilling,/)
   })
 
   test('Rule 5: step 2 adds ## Pedido original and ## Tareas to every new ticket and keeps older tickets valid', () => {
-    for (const text of [contract, agents]) {
+    for (const text of [main]) {
       const s2 = step(text, 2)
       assert.ok(s2.includes('Cada ticket nuevo lleva además `## Pedido original`, con el pedido del humano textual (citado, nunca parafraseado), y `## Tareas`, numeradas `T1`..`Tn` con la regla que cubre cada una, que el worker va tildando'))
       assert.ok(s2.includes('Las reglas citan textuales las cadenas y los ejemplos exactos del humano cuando los dio'))
@@ -76,7 +78,7 @@ describe('planning paths (#267)', () => {
   })
 
   test('Issue 322 Rule 1: steps 1, 2 and 5 apply cuts C1-C12 while keeping required rules and markers', () => {
-    for (const text of [file('assets/stack/CONTRATO.md'), file('AGENTS.md')]) {
+    for (const text of [file('assets/stack/MAIN.md')]) {
       const s1 = step(text, 1)
       const s2 = step(text, 2)
       const s5 = step(text, 5)
@@ -111,7 +113,7 @@ describe('planning paths (#267)', () => {
   })
 
   test('Issue 322 Rule 2: negative examples and essential rules are preserved', () => {
-    for (const text of [file('assets/stack/CONTRATO.md'), file('AGENTS.md')]) {
+    for (const text of [file('assets/stack/MAIN.md')]) {
       const s1 = step(text, 1)
       const s2 = step(text, 2)
       assert.ok(s2.includes('Si el cliente vuelve a reportar el mismo problema, vinculá el reporte al ticket existente en vez de abrir un duplicado'))
@@ -122,7 +124,7 @@ describe('planning paths (#267)', () => {
   })
 
   test('Issue 322 Rule 5: lines 1, 2 and 5 shrink by at least 350 bytes', () => {
-    const text = file('assets/stack/CONTRATO.md')
+    const text = file('assets/stack/MAIN.md')
     const s1 = step(text, 1)
     const s2 = step(text, 2)
     const s5 = step(text, 5)

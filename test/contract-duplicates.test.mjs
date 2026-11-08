@@ -36,9 +36,10 @@ const duplicatesIn = files => {
 }
 
 describe('stack contract duplicate paragraphs and list items', () => {
-  test('CONTRATO.md has one step 9 and steps 1 through 10 in order', () => {
-    const contract = readFileSync(path.join(ASSET_DIR, 'CONTRATO.md'), 'utf8')
-    const cycle = contract.split('### Ciclo de `main`')[1].split('\n### Verificación')[0]
+  test('MAIN.md has one step 9 and steps 1 through 10 in order', () => {
+    // Issue 325: main's cycle moved to MAIN.md, where Arena y swarm follows it.
+    const contract = readFileSync(path.join(ASSET_DIR, 'MAIN.md'), 'utf8')
+    const cycle = contract.split('### Ciclo de `main`')[1].split('\n### Arena y swarm')[0]
     const steps = [...cycle.matchAll(/^(\d+)\./gm)].map(([, number]) => Number(number))
     assert.deepEqual(steps, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
   })
