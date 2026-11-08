@@ -3,6 +3,7 @@ import { existsSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
+import { renderBrief } from '../src/despacho.mjs'
 import { POLICY } from '../src/init.mjs'
 import { policyBlock } from '../src/templates.mjs'
 import { cleanup, cli, read, tempDir } from './helpers.mjs'
@@ -48,6 +49,13 @@ describe('issue 325: main-only rules move to MAIN.md', () => {
     assert.ok(contract.includes('Si `.orca-stack.json` no existe o no tiene `"setup": "completo"`'))
     for (const heading of ['### Verificación', '### PRs', '### Review', '### Skills de Matt', '### Agentes']) assert.ok(contract.includes(`\n${heading}\n`), heading)
     assert.ok(asset('ORCA-STACK.md').includes('A Claude worker may run an arena or swarm only when its dispatch or bounce note'))
+    // The worker side of the moved Despacho and step 5 text reaches every agent through its brief.
+    for (const agent of ['claude', 'codex', 'agy', 'pi']) {
+      const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '42', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      assert.ok(brief.includes(`starts with \`Consulta: ${agent}\``), agent)
+      assert.ok(brief.includes('A message from main may arrive while you work.'), agent)
+      assert.ok(brief.includes('handle any `Respuesta de main:` / `Respuesta del humano:`'), agent)
+    }
   })
 
   test('R2 negative: MAIN.md does not take the Permisos lines that workers act on', () => {
