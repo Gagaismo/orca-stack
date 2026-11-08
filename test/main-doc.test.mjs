@@ -103,6 +103,12 @@ describe('issue 325 R6: global installs MAIN.md and doctor checks it', () => {
     assert.match(result.out, /MAIN\.md/)
   })
 
+  test('global --help lists MAIN.md with the policy docs it installs', () => {
+    const result = cli(home, ['global', '--help'])
+    assert.equal(result.status, 0, result.out)
+    assert.match(result.out, /1\. ~\/orca\/stack\/ORCA-STACK\.md, ROLE-BRIEFS\.md y MAIN\.md \(las reglas de main\)/)
+  })
+
   test('doctor reports MAIN.md ok after global, and fails naming it when it is missing', () => {
     assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
     const doctor = () => cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home }).out
