@@ -2,9 +2,9 @@
 
 export const PINNED = {
   pi: '1.5.0',
-  gentlePi: '4.6.0',
-  claudeBridge: '0.10.0',
-  gentleEngram: '0.6.0',
+  gentlePi: '4.7.0',
+  claudeBridge: '0.11.0',
+  gentleEngram: '0.7.0',
 }
 
 // The npm package of Pi itself: `global` installs PINNED.pi with it when Pi is missing (#304).
