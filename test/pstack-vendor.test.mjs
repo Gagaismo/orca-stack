@@ -395,13 +395,39 @@ describe('#303 vendored create- and maintain-formal-verification-skill (upstream
     }
   })
 
-  test('rule 6: the skills table in docs/manual.md lists both as optional, says what they are for, and names /statechart as the follow-up ticket', () => {
+  test('rule 6: the skills table in docs/manual.md lists both as optional and says what they are for', () => {
     const line = read(path.join(ROOT, 'docs', 'manual.md')).split('\n').find(l => l.startsWith('| `create-formal-verification-skill`'))
     assert.ok(line, 'docs/manual.md has no row for the formal-verification skills')
     assert.ok(line.includes('`maintain-formal-verification-skill`'), line)
     assert.match(line, /Opcionales/)
     assert.match(line, /verificación formal \(máquinas de estado, carreras e invariantes\)/)
-    assert.match(line, /`\/statechart`.*ticket siguiente \(#305\)/)
+  })
+})
+
+describe('#320 docs/manual.md statechart rows match the vendored skill', () => {
+  const manualRow = start => read(path.join(ROOT, 'docs', 'manual.md')).split('\n').find(l => l.startsWith(start))
+
+  test('R1: the formal-verification row says it uses the installed /statechart to read TLA+ results, negative: no "llega en el ticket siguiente" or "#305" as a future event', () => {
+    const line = manualRow('| `create-formal-verification-skill`')
+    assert.ok(line, 'docs/manual.md has no row for the formal-verification skills')
+    assert.match(line, /para leer los resultados de TLA\+ usan `\/statechart` \(ver la fila siguiente\)/)
+    assert.doesNotMatch(line, /llega en el ticket siguiente/)
+    assert.doesNotMatch(line, /#305/)
+  })
+
+  test('R2: the statechart row states exactly the runtimes the vendored scripts/statechart launcher accepts, plus mise and the network on the first run', () => {
+    const line = manualRow('| `statechart`')
+    assert.ok(line, 'docs/manual.md has no row for statechart')
+    const message = /^echo "statechart needs (.*)\." >&2$/m.exec(readSkill(SKILLS, 'statechart', 'scripts', 'statechart'))
+    assert.ok(message, 'scripts/statechart no longer prints its runtime requirement')
+    assert.equal(message[1], 'Node 22.18 to 22.x, Node 23.6 or later, Bun 1.1.5 or later, or Deno 2.0 or later')
+    assert.match(skill('statechart'), /The first run installs TLC and Java with mise and needs the network\./)
+    assert.match(line, /Necesita Node 22\.18 a 22\.x, Node 23\.6 o posterior, Bun 1\.1\.5 o posterior, o Deno 2\.0 o posterior \(lo exige `scripts\/statechart`\), `mise` y red en la primera corrida/)
+    assert.doesNotMatch(line, /Node 22\.18\+/)
+  })
+
+  test('R3: the statechart row keeps the Windows note', () => {
+    assert.match(manualRow('| `statechart`'), /en Windows, WSL o un contenedor \|$/)
   })
 })
 
