@@ -34,7 +34,7 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 | Ocho mods de Claude Code (ver abajo) y sus rutas en `env.CLAUDE_CODE_PLUGIN_DIRS` | `~/.claude/mods/` y `~/.claude/settings.json` |
 | Nada de metodología en `~/.claude/CLAUDE.md`: si un `global` anterior dejó ahí el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->`, lo saca (con respaldo). También achica el bloque que gentle-ai escribe ahí (ver abajo) | `~/.claude/CLAUDE.md` |
 | Codex: `project_doc_max_bytes` en `config.toml`, para que codex no corte el `AGENTS.md` del proyecto (lo lee hasta 32 KiB por defecto y trunca el resto; el `AGENTS.md` global no cuenta). Lo pone en la menor potencia de dos que sea al menos 65536 y al menos el doble del bloque orca-stack (hoy 65536), solo si falta o es menor: nunca baja un valor más alto. Si no existe la carpeta de codex, se omite | `$CODEX_HOME/config.toml` (o `~/.codex/config.toml`) |
-| Pi: `gentle-pi@4.6.0`, `pi-claude-bridge@0.10.0` y `gentle-engram@0.6.0` con `pi install` (`pi install npm:gentle-pi@4.6.0`), más `npm i -g gentle-pi@4.6.0` (comando `gentle-shell`). Probado con Pi `1.5.0`. Un Pi anterior a `1.5.0` se actualiza con `pi update --self` (va a la última versión) y, si sigue anterior, `global` no instala los paquetes y falla; si falta Pi, lo instala con `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.5.0` (sin `npm`, imprime el instalador oficial y sigue sin Pi); un Pi más nuevo no se toca, solo avisa | `~/.pi/agent/` y npm global |
+| Pi: `gentle-pi@4.7.0`, `pi-claude-bridge@0.11.0` y `gentle-engram@0.7.0` con `pi install` (`pi install npm:gentle-pi@4.7.0`), más `npm i -g gentle-pi@4.7.0` (comando `gentle-shell`). Probado con Pi `1.5.0`. Un Pi anterior a `1.5.0` se actualiza con `pi update --self` (va a la última versión) y, si sigue anterior, `global` no instala los paquetes y falla; si falta Pi, lo instala con `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.5.0` (sin `npm`, imprime el instalador oficial y sigue sin Pi); un Pi más nuevo no se toca, solo avisa | `~/.pi/agent/` y npm global |
 | Comando `orca-stack`, para usar desde cualquier repo sin npx ni red | Windows: prefijo global de npm si esta en `PATH`, con shims `.cmd` y sin extension para PowerShell y Git Bash. Otros sistemas: primer directorio escribible del `PATH`. La copia queda en `~/.orca-stack/cli/`; si falta el destino compartido, se usa `~/.orca-stack/bin/` y `global` imprime como agregarlo al `PATH` |
 | Registro de lo instalado, para `remove` | `~/.orca-stack/state.json` |
 | Capa personal de configuración | `~/.orca-stack/config.json` |
@@ -134,7 +134,7 @@ orca-stack vigilar --merge-de-main <pr>
 No se queda en "el archivo existe":
 
 - corre el `--orca-stack-self-test` de cada wrapper y comprueba que la ruta de la política exista;
-- compara la versión de Pi y de sus paquetes con las fijadas (Pi `1.5.0`, gentle-pi `4.6.0`, pi-claude-bridge `0.10.0`, gentle-engram `0.6.0`) y avisa si no coinciden; un paquete que falta es una falla, y un Pi anterior a `1.2.0` también, porque gentle-pi 4.6.0 no arranca con él;
+- compara la versión de Pi y de sus paquetes con las fijadas (Pi `1.5.0`, gentle-pi `4.7.0`, pi-claude-bridge `0.11.0`, gentle-engram `0.7.0`) y avisa si no coinciden; un paquete que falta es una falla, y un Pi anterior a `1.2.0` también, porque gentle-pi 4.7.0 no arranca con él;
 - sondea con un `pi -p` corto (con tiempo máximo) si falta el `/login` (se omite con `--offline`);
 - verifica que las skills de gentle-pi se resuelvan igual que lo hace `puente-gentle` en ejecución (primero la carpeta de Pi, después `npm root -g`);
 - comprueba que cada mod esté en `CLAUDE_CODE_PLUGIN_DIRS`;
@@ -142,7 +142,7 @@ No se queda en "el archivo existe":
 - combina las tres capas de configuración igual que los mods y avisa si un script de `despacho` no existe;
 - en un repo que usa `codex`, avisa con los dos números si `project_doc_max_bytes` (o los 32768 por defecto, si falta) es menor que el `AGENTS.md` del repo: codex cortaría el contrato;
 - avisa de la deriva: el plugin `mattpocock-skills` por debajo de 1.3.1, skills que están en `~/.claude/skills` y también en el plugin (quedan dos veces en el contexto), `pr`, `implement-spec` o `retro` ausentes de `~/.agents/skills`, el bloque orca-stack viejo que sigue en `~/.claude/CLAUDE.md` (`orca-stack global` lo saca) el bloque de gentle-ai que la sync reescribió completo (o, en modo `full`, las secciones de review que siguen ahí con RDD apagado) y, como falla, un puntero lazy sin su copia. Son avisos, no fallas, y cada uno trae el comando que lo arregla;
-- detecta `engram` (y avisa si es anterior a 3.4.0: con un servidor más viejo, Gentle Shell 4.6.0 deja la memoria apagada), `gentle-ai`, `gh` y Orca, y **solo lee** `orca-data.json` de los perfiles de Orca para decirte si los overrides de los agentes apuntan a los wrappers. Nunca lo escribe.
+- detecta `engram` (y avisa si es anterior a 3.4.0: con un servidor más viejo, Gentle Shell 4.7.0 deja la memoria apagada), `gentle-ai`, `gh` y Orca, y **solo lee** `orca-data.json` de los perfiles de Orca para decirte si los overrides de los agentes apuntan a los wrappers. Nunca lo escribe.
 
 ## Configuración en tres capas
 

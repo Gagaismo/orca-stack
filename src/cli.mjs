@@ -1,4 +1,5 @@
 import { avisarCommand } from './avisar.mjs'
+import { PINNED, PI_MIN_VERSION } from './constants.mjs'
 import { consultasCommand } from './consultas.mjs'
 import { briefRevisionCommand, despacharCommand, reboteCommand, revisarCommand } from './despacho.mjs'
 import { doctorCommand } from './doctor.mjs'
@@ -68,7 +69,7 @@ Instala a nivel usuario:
      <!-- orca-stack:begin --> que haya dejado una versión anterior, con respaldo.
      Con el RDD de gentle-ai apagado, saca de ese archivo sus secciones de review (\`gentle-ai sync\` las restaura: volvé a correr \`global\`)
   6. Pi: gentle-pi, pi-claude-bridge y gentle-engram con \`pi install\` + gentle-pi global (omitido con --skip-pi). Con un
-     Pi anterior a 1.2.0 no instala gentle-pi y falla: gentle-pi 4.6.0 no arranca con él
+     Pi anterior a ${PI_MIN_VERSION} no instala gentle-pi y falla: gentle-pi ${PINNED.gentlePi} no arranca con él
   7. ~/.orca-stack/state.json (para \`remove\`) y ~/.orca-stack/config.json (capa personal)
 
 Es idempotente: una segunda corrida no cambia nada ni genera respaldos nuevos.
