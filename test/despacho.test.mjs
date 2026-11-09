@@ -1802,10 +1802,15 @@ describe('rebote', () => {
       assert.equal(await reboteCommand({}, '12', third.io), 0)
       assert.equal(markerOf(third), 'Rebote: fed789\nRonda: 3\n')
       assert.equal(reminders(third).length, 1)
+      // A marker that a retry posted twice is still one earlier round.
+      const twice = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('def456')], comments: [{ body: 'Rebote: abc123' }, { body: 'Rebote: abc123' }] }))
+      assert.equal(await reboteCommand({}, '12', twice.io), 0)
+      assert.equal(markerOf(twice), 'Rebote: def456\nRonda: 2\n')
       const dry = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('def456')], comments: [{ body: 'Rebote: abc123' }] }))
       assert.equal(await reboteCommand({ dryRun: true }, '12', dry.io), 0)
       assert.deepEqual(dry.out.slice(-3, -1), ['[simulación] Rebote: def456', '[simulación] Ronda: 2'])
       assert.equal(reminders(dry).length, 1)
+      assert.ok(reminders(dry)[0].startsWith('[simulación] Ronda 2 de review'))
     })
 
     test('Rule 3: CI-only and conflict-only bounces add no Ronda, and their markers do not count as rounds', async () => {

@@ -1174,7 +1174,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote: ${sha}`)
     say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Ronda: ${round}`)
     // Only printed, never posted: the contract's signal is for main, and it does not stop this bounce.
-    if (round >= 2) say(`Ronda ${round} de review con bloqueos: el contrato pide un swarm de diagn\u00F3stico desde la segunda ronda o el segundo bounce del mismo hallazgo (MAIN.md, Arena y swarm, Se\u00F1ales); este rebote sigue igual.`)
+    if (round >= 2) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Ronda ${round} de review con bloqueos: el contrato pide un swarm de diagn\u00F3stico desde la segunda ronda o el segundo bounce del mismo hallazgo (MAIN.md, Arena y swarm, Se\u00F1ales); este rebote sigue igual.`)
   }
   if (failedChecks.length > 0) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote CI: ${sha}`)
   if (conflict) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote conflicto: ${sha}`)
