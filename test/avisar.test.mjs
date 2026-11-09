@@ -187,12 +187,38 @@ describe('avisar', () => {
     }
   })
 
-  test("Rule 5: a codex or agy worker is refused until that agent's Enter test passes", async () => {
-    for (const identity of ['codex', 'antigravity']) {
-      const env = fakeIo({ terminals: [terminal('term_x', { identity })], agents: [agent('term_x', 'working', identity)], screens: { term_x: RUNNING } })
-      await assert.rejects(() => avisarCommand({}, '42', URL42, env.io), new RegExp(`${identity}.*prueba de Enter`))
-      assert.equal(env.sends().length, 0)
+  test('Rule 1: avisar on a codex or agy worker sends the one-line pointer to its terminal', async () => {
+    const prUrl = 'https://github.com/Gagaismo/orca-stack/pull/57#issuecomment-2002'
+    for (const identity of ['codex', 'agy', 'antigravity']) {
+      const env = fakeIo({
+        linkedIssue: 'none',
+        prHead: 'Gagaismo/orca-stack-42',
+        terminals: [terminal('term_x', { identity })],
+        agents: [agent('term_x', 'working', identity)],
+        screens: { term_x: RUNNING },
+        comment: { user: { login: 'stack-bot' }, html_url: prUrl, body: 'Respuesta de main: pointer line.' },
+      })
+      assert.equal(await avisarCommand({}, '57', prUrl, env.io), 0)
+      assert.equal(env.sends().length, 1)
+      assert.deepEqual(env.sends()[0].slice(3), ['--terminal', 'term_x', '--text', `Message from main: ${prUrl}`, '--enter', '--wait-submit', '10', '--json'])
     }
+  })
+
+  test("Rule 1 (unsupported agent): an unknown worker is refused until that agent's Enter test passes", async () => {
+    const env = fakeIo({ terminals: [terminal('term_x', { identity: 'other' })], agents: [agent('term_x', 'working', 'other')], screens: { term_x: RUNNING } })
+    await assert.rejects(() => avisarCommand({}, '42', URL42, env.io), /other.*prueba de Enter/)
+    assert.equal(env.sends().length, 0)
+  })
+
+  test('Preserve avisarCommand: existing claude and pi doorbell flows remain unchanged', async () => {
+    const claudeEnv = fakeIo()
+    assert.equal(await avisarCommand({}, '42', URL42, claudeEnv.io), 0)
+    assert.equal(claudeEnv.sends().length, 1)
+
+    const piScreen = ['● bash npm run verify', '╭─ ❀ implementing… ───────────────╮', '│                                │', '╰────────────────────────────────╯']
+    const piEnv = fakeIo({ terminals: [terminal('term_pi', { identity: 'pi', title: 'pi' })], agents: [agent('term_pi', 'working', 'pi')], screens: { term_pi: piScreen } })
+    assert.equal(await avisarCommand({}, '42', URL42, piEnv.io), 0)
+    assert.equal(piEnv.sends().length, 1)
   })
 
   test("Rule 6: after a rebote left two terminals, the line goes to the relaunched author's live terminal", async () => {

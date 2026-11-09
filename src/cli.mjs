@@ -154,8 +154,7 @@ El timbre de Proactive: cuando main responde la pregunta de un worker, le escrib
 ("Message from main: <url>") con la URL del comentario y nada de su texto, para que la lea sin esperar a su PR.
 Encuentra la terminal por el worktree de este repo enlazado a <n> (con un PR, el de su rama), buscado solo entre los de
 \`git worktree list\` porque los selectores de Orca abarcan todos los repos, y, si un rebote dejó dos, elige la del agente vivo. Manda solo mientras el turno del worker está en curso: se niega si ya terminó, si la
-terminal muestra un shell o un diálogo, o si hay más de un agente vivo. Por ahora solo avisa a claude: se niega con pi, que
-corre sin TUI y relee los comentarios antes de su PR, y con codex y agy hasta que pasen su prueba de Enter a mitad de turno.
+terminal muestra un shell o un diálogo, o si hay más de un agente vivo. Avisa a claude, pi, codex y agy.
 Se niega si el comentario no es de la cuenta del stack (\`gh api user\`), no está en <issue|pr> o no empieza con
 \`Respuesta de main:\` o \`Respuesta del humano:\`. Envía con \`--wait-submit\` y nunca reintenta: sin recibo de entrega
 informa la falla y no reenvía.
@@ -165,7 +164,8 @@ Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
 
 Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una línea con la URL de la respuesta; si ya salió,
 lo relanza en su worktree existente con el brief original y la URL al principio. Exige que la respuesta sea un comentario real
-de la cuenta del stack o del humano, y se niega si el worker sigue trabajando, si ya hay un PR abierto, o si el worktree está sucio.
+de la cuenta del stack o del humano (del issue o de su PR abierto), y se niega si el worker sigue trabajando, si ya hay un PR abierto
+y la respuesta es del issue, o si el worktree está sucio.
 Usa --confirmado solo después de que el humano haya confirmado relanzar un agente de agentes.preguntarAntes.
 Un worker de pi se relanza con el modelo y el thinking del orquestador del perfil que fija su worktree (.pi/gentle-ai/profile.json).
 Sin pin y sin agentes.pi.perfil se niega como despachar. Si el pin nombra un perfil que ya no existe, repetí con --perfil-pi <nombre>:
