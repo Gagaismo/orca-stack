@@ -126,7 +126,7 @@ Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, s
 Relanza al autor indicado por \`Implementador:\` en el worktree existente de la rama del PR. Exige un review bloqueante
 vigente o checks fallidos sobre el head, worktree limpio y detenido en ese commit; los hallazgos de interpretaci\u00F3n (los que llevan \`interpretaci\u00F3n\` al final de su etiqueta, no en su texto) solo bloquean el rebote por review,
 salvo que despu\u00E9s del review haya un comentario \`Respuesta del humano:\` en el PR o en un issue que cierra (\`Closes #<n>\`): entonces van al autor con el enlace a esa respuesta.
-Un rebote solo de CI o de conflicto no gasta el rebote por review, as\u00ED que un \`Rebote: <sha>\` de un head anterior no lo frena.
+El rebote por review se cuenta por el \`Commit:\` de cada review: un \`Rebote: <sha>\` de un head anterior no frena ning\u00FAn rebote, y un head que avanz\u00F3 rebota si tiene un review bloqueante propio.
 Un worktree limpio que solo est\u00E1 atr\u00E1s del head (por ejemplo, tras \`gh pr update-branch\`) se adelanta con \`git merge --ff-only <sha>\`.
 Para CI roja agrega los checks fallidos al brief y publica \`Rebote CI: <sha>\`; publica \`Rebote: <sha>\` solo con bloqueos de review.
 Un PR en conflicto con la base (mergeable CONFLICTING) rebota aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente:
@@ -181,6 +181,8 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
   ci-verde #<n> PR #<pr> <sha>       todos los checks del head terminaron en verde
   ci-roja #<n> PR #<pr> <sha>: ...   un check terminado falló, venció o se canceló (los lista); uno por corrida,
                                      también si un gh run rerun --failed vuelve a fallar en el mismo head
+  review-publicado #<pr> <agente> <sha> bloquea=<n>  review publicado en el PR
+  head-nuevo #<pr> <sha>             camb\u00F3 el head del PR
   pr-en-conflicto #<n> PR #<pr> <sha>
                                      el PR quedó en conflicto con la base; uno por head (rebote, con el worker detenido)
   pr-mergeado #<n> PR #<pr> <sha>    el PR se mergeó y main no registró ese merge
