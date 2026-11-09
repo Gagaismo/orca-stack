@@ -530,7 +530,7 @@ describe('doctor', () => {
     cli(home, ['global', '--skip-pi'])
     const policy = read(path.join(home, 'orca', 'stack', 'ORCA-STACK.md'))
     assert.match(policy, /## Launching agents/)
-    assert.match(policy, /ticket authoring rules.*AGENTS\.md/i)
+    assert.match(policy, /ticket authoring rules.*MAIN\.md/i)
     assert.doesNotMatch(policy, /{{[A-Z_]+}}/)
     for (const agent of ['claude:', 'agy:', 'codex:', 'pi (Gentle Shell):']) assert.ok(policy.includes(`- ${agent}`), agent)
     assert.doesNotMatch(policy, /codex-cc|Command Code|model_provider=cc/)

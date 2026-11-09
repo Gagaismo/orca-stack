@@ -951,3 +951,31 @@ test('Rule 4 (touched public entries): consultar_gentle_shell with valid pr and 
   expect(message).toContain(`PR #218: ${OID}`)
 })
 
+
+// ---- #334: a PR consult (merge or review) names main's rules in ~/orca/stack/MAIN.md -----------------
+
+const MAIN_DOC = 'C:\\Users\\tester\\orca\\stack\\MAIN.md'
+const lastPi = (w: { calls: { argv: string[] }[] }) => w.calls.filter(call => call.argv[0] === 'node').at(-1)!.argv.at(-1)!
+const MAIN_LINE = `Reglas de \`main\` para mergear y revisar (AGENTS.md solo le dice a main que las lea); leelas con read: ${MAIN_DOC}\n`
+
+test('Rule 3: a pr consult names ~/orca/stack/MAIN.md in ## Precarga when it exists; issue-only, free or missing-file consults do not', async ($, on) => {
+  const w = setup(on, github(), {}, { project: true, files: { [MAIN_DOC]: '## Orca stack: reglas de `main`\n' } })
+  await boot($)
+  await consult($, { tema: 'pr-218', planteo: 'p', pregunta: 'q', pr: 218 })
+  const message = lastPi(w)
+  expect(message.split('## Precarga')[1]).toContain(MAIN_LINE)
+  expect([...w.written.keys()]).toEqual(PATHS.slice(1))
+
+  await consult($, { tema: 'issue-214', planteo: 'p', pregunta: 'q', issue: 214 })
+  expect(lastPi(w)).not.toContain('MAIN.md')
+  await consult($, { tema: 't', planteo: 'p', pregunta: 'q' })
+  expect(lastPi(w)).toBe(buildMessage('p', 'q'))
+})
+
+test('Rule 3: without ~/orca/stack/MAIN.md a pr consult still runs and its ## Precarga does not name it', async ($, on) => {
+  const w = setup(on, github(), {}, { project: true })
+  await boot($)
+  const out = await consult($, { tema: 'pr-218', planteo: 'p', pregunta: 'q', pr: 218 })
+  expect(JSON.parse(textOf(out))).toEqual({ tema: 'pr-218', respuesta: 'Coincido salvo en X.' })
+  expect(lastPi(w)).not.toContain('MAIN.md')
+})

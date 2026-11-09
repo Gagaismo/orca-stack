@@ -6,11 +6,12 @@ import { CANDIDATE_WORKTREES_EXCLUDE, CANDIDATE_WORKTREES_PROBE, findGitignoreNe
 import { LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, MARKER_END, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { removeBlock, upsertBlock } from './marker.mjs'
 import { policyBlock } from './templates.mjs'
-import { homeDir, readTextIfExists, run, timestamp, tilde, which } from './util.mjs'
+import { homeDir, layout, readTextIfExists, run, timestamp, tilde, which } from './util.mjs'
 
 // Portable pointers: never an absolute user path.
 export const POLICY = '~/orca/stack/ORCA-STACK.md'
 export const BRIEFS = '~/orca/stack/ROLE-BRIEFS.md'
+export const MAIN_DOC = '~/orca/stack/MAIN.md'
 
 const projectRoot = cwd => {
   const git = which('git')
@@ -98,9 +99,12 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
     plan.push({ file: ignore, name: '.gitignore', content: `${base}${PROJECT_LOCAL_CONFIG}${eol}`, verb: ignoreText === null ? 'creo' : 'actualizo' })
   }
 
+  // The block sends main to MAIN.md, which `global` installs: without it, main's rules are missing.
+  const mainDoc = path.join(layout(home).stackDir, 'MAIN.md')
+  const hasMainDoc = existsSync(mainDoc)
   for (const { file, name, content, verb, grew } of plan) {
     console.log(`${prefix}${verb} ${name}`)
-    if (grew && name === 'AGENTS.md') {
+    if (grew && name === 'AGENTS.md' && hasMainDoc) {
       console.log('  el bloque orca-stack ahora lleva el contrato de trabajo completo')
     }
     if (dryRun) {
@@ -139,6 +143,9 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
   const ignored = git ? run(git, ['check-ignore', '-q', CANDIDATE_WORKTREES_PROBE], { cwd: root, timeout: 5_000, env: process.env }).status === 0 : true
   if (negation || (!dryRun && !ignored)) {
     console.log(`⚠ git no ignora ${CANDIDATE_WORKTREES_EXCLUDE} (un .gitignore con \`${negation ?? '!.claude/worktrees/'}\` gana sobre info/exclude)`)
+  }
+  if (!hasMainDoc) {
+    console.log(`⚠ falta ${MAIN_DOC}, con las reglas de main a las que apunta el bloque: corré \`orca-stack global\``)
   }
 
   console.log(
