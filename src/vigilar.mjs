@@ -171,7 +171,8 @@ const readWorld = (targets, cursor, root, io, warn) => {
         if (state) worker = { state, agent: identity }
       }
 
-      return [issue, { pr, workersReadable, worker: worker ?? null, replacedWorkflows: replacedRuns(pr, root, io) }]
+      const discussion = ghJson(io, root, ['pr', 'view', String(pr.number), '--json', 'comments,reviews'])
+      return [issue, { pr, discussion, workersReadable, worker: worker ?? null, replacedWorkflows: replacedRuns(pr, root, io) }]
     }
 
     const res = io.sh('gh', ['issue', 'view', issue, '--json', 'state'], { cwd: root })
@@ -209,10 +210,22 @@ const advance = (issue, seen, before, merges) => {
   const entry = fresh ? { ...(before?.worker ? { worker: before.worker } : {}), pr: pr.number } : { ...before }
   if (seen.workersReadable !== false && seen.worker) entry.worker = seen.worker
   const lines = []
+  const reported = new Set(entry.reviews ?? [])
+  for (const comment of [...(seen.discussion.comments ?? []), ...(seen.discussion.reviews ?? [])]) {
+    const reviewer = /^Revisor:\s*(\S+)/im.exec(comment.body ?? '')?.[1]
+    const sha = /^Commit:\s*([a-f0-9]{7,40})\s*$/im.exec(comment.body ?? '')?.[1]
+    if (!comment.id || !reviewer || !sha || reported.has(comment.id)) continue
+    const section = /(?:^|\r?\n)##\s+BLOQUEA\s*(?:\r?\n|$)([\s\S]*?)(?=\r?\n##\s|$)/i.exec(comment.body)?.[1] ?? ''
+    const count = [...section.matchAll(/^\s*\d+\.\s+/gm)].length
+    lines.push(`review-publicado #${pr.number} ${reviewer} ${sha.slice(0, 7)} bloquea=${count}`)
+    reported.add(comment.id)
+  }
+  if (reported.size) entry.reviews = [...reported]
   if (pr.state === 'OPEN') {
     delete entry.fin
     if (fresh) lines.push(event('pr-abierto', issue, pr, pr.headRefOid))
     if (entry.head !== pr.headRefOid) {
+      if (entry.head) lines.push(`head-nuevo #${pr.number} ${pr.headRefOid.slice(0, 7)}`)
       entry.head = pr.headRefOid
       delete entry.ci
       delete entry.corrida
