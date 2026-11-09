@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, readPin, refuseGlobalOverStalePin, shellPrompt, writePin } from './despacho.mjs'
+import { AGENTS, blockOf, defaultIo, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, readPin, refuseGlobalOverStalePin, shellPrompt, writePin } from './despacho.mjs'
 import { identityOf, isDialog, paneAgents, stackAgent, piIdle, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
@@ -126,7 +126,11 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
       throw new Error(`La URL tiene que apuntar a un comentario del PR abierto de #${n} (#${pr.number}): ${url}`)
     }
   } else if (pr) {
-    throw new Error(`El issue #${n} ya tiene un PR abierto (#${pr.number}); usá \`orca-stack rebote ${pr.number}\`.`)
+    // A bounce marked on the current head whose author stopped is resumed by `rebote --continuar` (#292).
+    const view = io.sh('gh', ['pr', 'view', String(pr.number), '--json', 'headRefOid,comments,reviews'], { cwd: root })
+    const detail = view.status === 0 ? parse(view) : undefined
+    const bounced = Boolean(detail?.headRefOid) && lastBounceMark([...(detail.reviews ?? []), ...(detail.comments ?? [])]) === detail.headRefOid
+    throw new Error(`El issue #${n} ya tiene un PR abierto (#${pr.number}); usá \`orca-stack rebote ${pr.number}\`.${bounced ? ` Si el autor del rebote se cortó, usá orca-stack rebote ${pr.number} --continuar.` : ''}`)
   }
 
   const terminals = workerTerminals(row.path, n, io)

@@ -345,10 +345,21 @@ const ok = (res, what) => {
 
 export const shellPrompt = text => /(?:^|\n)\s*PS\s+[A-Za-z]:\\[^\n>]*>\s*$/im.test(text)
 
+const QUOTA = /quota (reached|exceeded)|usage limit|rate[- ]limit|Resets? in \d/i
+
 export const quotaLine = lines => {
   if (!Array.isArray(lines)) return undefined
-  return lines.slice(-15).find(line => /quota (reached|exceeded)|usage limit|rate[- ]limit|Resets? in \d/i.test(String(line)))
+  return lines.slice(-15).find(line => QUOTA.test(String(line)))
 }
+
+// The reset time a usage-limit line names, as read: "resets 02:20:00" -> "resets 02:20", "Resets in 10h45m" -> "resets in 10h45m".
+export const quotaReset = line => {
+  const match = /\bresets?\s+(in\s+\d[\dhms]*|(?:at\s+)?\d{1,2}(?::\d{2})?(?:\s*[ap]m)?)/i.exec(String(line ?? ''))
+  return match ? `resets ${match[1].trim()}` : undefined
+}
+
+// A usage-limit failure carries the line it read, so a caller can name the reset time without parsing the message.
+const quotaError = (message, line) => Object.assign(new Error(message), { quota: line })
 
 const checkPostLaunchScreen = async (io, handle, agent) => {
   for (let i = 0; i < 3; i += 1) {
@@ -357,7 +368,7 @@ const checkPostLaunchScreen = async (io, handle, agent) => {
     const tail = parseJson(res, 'orca terminal read').result?.terminal?.tail
     const lines = Array.isArray(tail) ? tail : typeof tail === 'string' ? tail.split(/\r?\n/) : []
     const quota = quotaLine(lines)
-    if (quota) throw new Error(`La terminal de ${agent} (${handle}) muestra un l\u00edmite de cuota; el turno no est\u00e1 ejecut\u00e1ndose: ${quota}`)
+    if (quota) throw quotaError(`La terminal de ${agent} (${handle}) muestra un l\u00edmite de cuota; el turno no est\u00e1 ejecut\u00e1ndose: ${quota}`, quota)
     // shellPrompt intentionally recognizes PowerShell only; bash and cmd.exe prompts remain out of scope.
     const last = lines.map(line => String(line)).reverse().find(line => line.trim() !== '')
     if (last && shellPrompt(last)) throw new Error(`La terminal de ${agent} (${handle}) volvi\u00f3 al shell prompt; el turno no est\u00e1 ejecut\u00e1ndose: ${last}`)
@@ -492,8 +503,11 @@ const piFirstReply = (io, file, after = 0) => {
     const message = entry?.type === 'message' ? entry.message : undefined
     if (message?.role !== 'assistant') continue
     const texts = [message.errorMessage, ...(Array.isArray(message.content) ? message.content.map(part => part?.text) : [message.content])]
-    const auth = message.stopReason === 'error' ? texts.flatMap(t => (typeof t === 'string' ? t.split(/\r?\n/) : [])).find(t => PI_AUTH.test(t)) : undefined
-    return auth ? { auth: auth.trim() } : { ok: true }
+    const lines = message.stopReason === 'error' ? texts.flatMap(t => (typeof t === 'string' ? t.split(/\r?\n/) : [])) : []
+    const auth = lines.find(t => PI_AUTH.test(t))
+    // A usage limit is also an error turn: "Claude rate limit (five_hour) — resets 02:20:00: You've hit your session limit" (#292).
+    const quota = lines.find(t => QUOTA.test(t))
+    return auth ? { auth: auth.trim() } : quota ? { quota: quota.trim() } : { ok: true }
   }
   return undefined
 }
@@ -508,6 +522,7 @@ const checkPiAuth = async (io, file, configDir, after) => {
       const dir = configDir ?? 'sin fijar (agentes.pi.claudeConfigDir no está en ~/.orca-stack/config.json; pi usa el que herede la terminal)'
       throw new Error(`Pi no pudo autenticarse; el turno no está ejecutándose: ${reply.auth}. CLAUDE_CONFIG_DIR: ${dir}. Volvé a iniciar sesión de Claude con esa carpeta antes de relanzar.`)
     }
+    if (reply?.quota) throw quotaError(`Pi muestra un límite de cuota; el turno no está ejecutándose: ${reply.quota}`, reply.quota)
     if (reply?.ok) return
   }
 }
@@ -972,8 +987,102 @@ const humanAnswers = (io, root, pr) => {
 const MARKER_ATTEMPTS = 3
 const MARKER_RETRY_WAIT_MS = 3000
 
+// The sha of the newest `Rebote:`, `Rebote CI:` or `Rebote conflicto:` mark among a PR's reviews and comments, by date.
+const BOUNCE_MARK = /^Rebote(?: CI| conflicto)?:\s*(\S+)\s*$/gim
+export const lastBounceMark = items => (items ?? [])
+  .map((item, index) => ({ index, at: Date.parse(item?.submittedAt ?? item?.createdAt ?? ''), shas: [...reviewBody(item).matchAll(BOUNCE_MARK)].map(match => match[1]) }))
+  .filter(item => item.shas.length > 0)
+  .sort((a, b) => ((Number.isNaN(a.at) ? -Infinity : a.at) - (Number.isNaN(b.at) ? -Infinity : b.at)) || a.index - b.index)
+  .at(-1)?.shas.at(-1)
+
+const prWorktree = (io, root, pr, n) => {
+  const listed = ok(io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root }), 'git worktree list').stdout
+  const worktree = listed.split(/\r?\n\s*\r?\n/).map(entry => {
+    const branch = /^branch refs\/heads\/(.+)$/m.exec(entry)?.[1]
+    const location = /^worktree (.+)$/m.exec(entry)?.[1]
+    return branch === pr.headRefName && location ? location : undefined
+  }).find(Boolean)
+  if (!worktree) throw new Error(`No hay un worktree para la rama ${pr.headRefName} del PR #${n}.`)
+  return worktree
+}
+
+// Before the worktree moves: a pi bounce with no profile fails closed. The pin wins; with none, the flag or the config.
+// A pin naming a profile the store no longer has can only be replaced: --perfil-pi does it, and the launch rewrites it.
+const bounceProfile = (io, { agent, worktree, perfilPi, config, commonDir }) => {
+  if (agent !== 'pi') return undefined
+  const profilePin = readPin(io, worktree)
+  const stalePin = profilePin !== undefined && !piProfileStored(io, profilePin)
+  refuseGlobalOverStalePin(io, profilePin, perfilPi)
+  if (perfilPi !== undefined && profilePin !== undefined && perfilPi !== profilePin && !stalePin) throw new Error(`El worktree fija el perfil de Pi "${profilePin}"; no se puede cambiar a "${perfilPi}" en un rebote.`)
+  try {
+    return piProfileFor({ flag: profilePin === undefined || stalePin ? perfilPi : undefined, pin: profilePin, config, home: io.home, commonDir, io })
+  } catch (error) {
+    if (perfilPi === undefined && stalePin) error.message += ` Repetí con --perfil-pi <nombre> para fijar otro perfil en el worktree.`
+    throw error
+  }
+}
+
+const refuseLiveAgent = (io, worktree) => {
+  const ps = io.sh('orca', ['worktree', 'ps', '--json'])
+  if (ps.status !== 0) throw new Error(`Orca no contesta (orca worktree ps): ${(ps.stderr || ps.stdout).trim()}`)
+  const rows = parseJson(ps, 'orca worktree ps').result?.worktrees ?? []
+  const row = rows.find(item => samePath(item.path ?? '', worktree))
+  if ((row?.agents ?? []).some(item => /^(working|running|active)$/i.test(item.state ?? item.status ?? ''))) {
+    throw new Error(`Hay un agente vivo en ${worktree}; cerralo antes de rebotar.`)
+  }
+}
+
+export const CONTINUE_LINE = 'You were stopped before finishing this bounce (for example by a usage limit). The worktree keeps your work in progress (a merge in progress stays in progress): continue it, do not abort or reset it.'
+
+// `rebote <pr> --continuar` (#292): relaunch the author of the bounce on the current head, in its worktree as it is,
+// with the bounce brief and the session id the bounce used. It posts no marker, so it counts toward no bounce limit.
+// Only pi is launched with a session id (`--session-id`); claude, codex and agy start a fresh session with the same brief.
+const continueBounce = async ({ n, pr, agent, root, repo, config, commonDir, perfilPi, dryRun }, io) => {
+  const say = io.out
+  const sim = dryRun ? '[simulación] ' : ''
+  const sha = pr.headRefOid
+  const mark = lastBounceMark([...(pr.reviews ?? []), ...(pr.comments ?? [])])
+  if (!mark) throw new Error(`El PR #${n} no tiene un marcador Rebote: ni Rebote CI: ni Rebote conflicto:; no hay rebote que continuar.`)
+  if (mark !== sha) throw new Error(`El autor ya pusheó ${sha}; esto es un rebote nuevo, no una continuación.`)
+  const name = `${repo}-pr-${n}-rebote`
+  const bounceBrief = path.join(io.home, 'orca', 'briefs', `${name}.md`)
+  if (!io.exists(bounceBrief)) throw new Error(`No encuentro el brief del rebote ${bounceBrief}; no hay rebote que continuar.`)
+  const worktree = prWorktree(io, root, pr, n)
+  const profile = bounceProfile(io, { agent, worktree, perfilPi, config, commonDir })
+  refuseLiveAgent(io, worktree)
+  const sessionPath = path.join(io.home, 'orca', 'briefs', `${name}.session`)
+  let session = agent === 'pi' && io.exists(sessionPath) ? io.readFile(sessionPath).trim() : ''
+  if (!session) {
+    session = `${name}-${(io.now ?? Date.now)()}`
+    say(agent === 'pi'
+      ? `${sim}No encuentro la sesión del rebote (${sessionPath}): relanzo a pi con una sesión nueva y el mismo brief.`
+      : `${sim}${agent} no continúa una sesión: lo relanzo con una sesión nueva y el mismo brief.`)
+    if (agent === 'pi' && !dryRun) io.writeFile(sessionPath, `${session}\n`)
+  }
+  const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
+  if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corré `orca-stack global`.')
+  if (profile) for (const line of piProfileLines(profile)) say(`${sim}${line}`)
+  if (needsPin(profile) && !dryRun) writePin(io, worktree, commonDir, profile.name)
+  // Rebuilt from the bounce brief on every run, so a second --continuar does not stack the line twice.
+  const briefPath = path.join(io.home, 'orca', 'briefs', `${name}-continuar.md`)
+  const brief = `${CONTINUE_LINE}\n\n${io.readFile(bounceBrief)}`
+  if (!dryRun) io.writeFile(briefPath, brief)
+  say(`${sim}brief -> ${briefPath}`)
+  const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
+  try {
+    await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })
+  } catch (error) {
+    if (error.quota === undefined) throw error
+    // One launch per run: still out of quota means wait for the reset, never loop.
+    const reset = quotaReset(error.quota)
+    throw new Error(`${agent} sigue sin cuota${reset ? ` (${reset})` : ''}: reintentá \`orca-stack rebote ${n} --continuar\` ${reset ? 'después de esa hora' : 'cuando se renueve la cuota'}. ${error.message}`)
+  }
+  say(`${sim}Continúo el rebote de ${sha} de ${agent}.`)
+  return 0
+}
+
 export const reboteCommand = async (flags, n, io = defaultIo()) => {
-  const { nota, confirmado = false, perfilPi, dryRun = false } = flags
+  const { nota, confirmado = false, perfilPi, dryRun = false, continuar = false } = flags
   const say = io.out
   if (!/^\d+$/.test(String(n ?? ''))) throw new Error('Falta el n\u00FAmero de PR. Uso: orca-stack rebote <pr>.')
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
@@ -1004,6 +1113,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
 
   const sha = pr.headRefOid
   if (typeof sha !== 'string' || sha.trim() === '') throw new Error(`No pude obtener headRefOid del PR #${n}.`)
+  if (continuar) return await continueBounce({ n, pr, agent, root, repo, config, commonDir, perfilPi, dryRun }, io)
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const conflictMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote conflicto:\s*(\S+)\s*$/gim)].map(match => match[1]))
@@ -1105,28 +1215,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     }).join('\n')
     : 'None.'
 
-  const listed = ok(io.sh('git', ['worktree', 'list', '--porcelain'], { cwd: root }), 'git worktree list').stdout
-  const worktree = listed.split(/\r?\n\s*\r?\n/).map(entry => {
-    const branch = /^branch refs\/heads\/(.+)$/m.exec(entry)?.[1]
-    const location = /^worktree (.+)$/m.exec(entry)?.[1]
-    return branch === pr.headRefName && location ? location : undefined
-  }).find(Boolean)
-  if (!worktree) throw new Error(`No hay un worktree para la rama ${pr.headRefName} del PR #${n}.`)
-  // Before the worktree moves: a pi bounce with no profile fails closed. The pin wins; with none, the flag or the config.
-  // A pin naming a profile the store no longer has can only be replaced: --perfil-pi does it, and the launch rewrites it.
-  const profilePin = agent === 'pi' ? readPin(io, worktree) : undefined
-  const stalePin = profilePin !== undefined && !piProfileStored(io, profilePin)
-  if (agent === 'pi') refuseGlobalOverStalePin(io, profilePin, perfilPi)
-  if (perfilPi !== undefined && profilePin !== undefined && perfilPi !== profilePin && !stalePin) throw new Error(`El worktree fija el perfil de Pi "${profilePin}"; no se puede cambiar a "${perfilPi}" en un rebote.`)
-  let profile
-  if (agent === 'pi') {
-    try {
-      profile = piProfileFor({ flag: profilePin === undefined || stalePin ? perfilPi : undefined, pin: profilePin, config, home: io.home, commonDir, io })
-    } catch (error) {
-      if (perfilPi === undefined && stalePin) error.message += ` Repetí con --perfil-pi <nombre> para fijar otro perfil en el worktree.`
-      throw error
-    }
-  }
+  const worktree = prWorktree(io, root, pr, n)
+  const profile = bounceProfile(io, { agent, worktree, perfilPi, config, commonDir })
   const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: worktree })
   if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${worktree}: ${(status.stderr || status.stdout).trim()}`)
   if (status.stdout.trim() !== '') throw new Error(`El worktree ${worktree} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de relanzar.`)
@@ -1140,13 +1230,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     if (ancestry.status === 1) throw new Error(`El worktree ${worktree} est\u00E1 en ${head}, no en el head del PR ${sha}.`)
     if (ancestry.status !== 0) throw new Error(`No pude comprobar si el worktree ${worktree} (${head}) est\u00E1 atr\u00E1s del head del PR ${sha}: ${(ancestry.stderr || ancestry.stdout || '').trim()}`)
   }
-  const ps = io.sh('orca', ['worktree', 'ps', '--json'])
-  if (ps.status !== 0) throw new Error(`Orca no contesta (orca worktree ps): ${(ps.stderr || ps.stdout).trim()}`)
-  const rows = parseJson(ps, 'orca worktree ps').result?.worktrees ?? []
-  const row = rows.find(item => samePath(item.path ?? '', worktree))
-  if ((row?.agents ?? []).some(item => /^(working|running|active)$/i.test(item.state ?? item.status ?? ''))) {
-    throw new Error(`Hay un agente vivo en ${worktree}; cerralo antes de rebotar.`)
-  }
+  refuseLiveAgent(io, worktree)
   if (head !== sha) {
     if (!dryRun) ok(io.sh('git', ['merge', '--ff-only', sha], { cwd: worktree }), 'git merge --ff-only')
     say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Adelant\u00E9 el worktree de ${head.slice(0, 7)} a ${sha.slice(0, 7)} (el head del PR).`)
@@ -1176,6 +1260,11 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corr\u00E9 `orca-stack global`.')
   if (profile) for (const line of piProfileLines(profile)) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}${line}`)
   if (needsPin(profile) && !dryRun) writePin(io, worktree, commonDir, profile.name)
+  // `--continuar` reads it back to relaunch pi with the same --session-id; written before the launch, which may fail.
+  if (!dryRun) {
+    io.mkdirp(path.dirname(briefPath))
+    io.writeFile(path.join(io.home, 'orca', 'briefs', `${name}.session`), `${session}\n`)
+  }
   const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
   const brief = withProfileLines(render(readAsset('stack', 'brief-rebote.md'), {
     PR: String(n), SHA: sha,

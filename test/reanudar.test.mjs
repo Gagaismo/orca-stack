@@ -733,3 +733,25 @@ describe('reanudar: the pi profile (#276)', () => {
     assert.equal(JSON.parse(exited.files[PIN]).profile, 'opus-sonnet')
   })
 })
+
+describe('reanudar: an open PR whose bounce stopped (#292)', () => {
+  const OLD = 'El issue #212 ya tiene un PR abierto (#81); usá `orca-stack rebote 81`.'
+  const withPrView = (h, view) => {
+    const original = h.io.sh
+    h.io.sh = (cmd, args, opts) => cmd === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '81' ? json(view) : original(cmd, args, opts)
+    return h
+  }
+
+  test("issue #292 Rule 7: reanudar points to rebote --continuar when the open PR's last Rebote mark is on its head", async () => {
+    const onHead = withPrView(harness({ pr: true }), { headRefOid: 'abc', comments: [{ body: 'Rebote conflicto: abc' }], reviews: [] })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, onHead.io), error =>
+      error.message === `${OLD} Si el autor del rebote se cortó, usá orca-stack rebote 81 --continuar.`)
+    assert.equal(onHead.sends().length, 0)
+    const otherSha = withPrView(harness({ pr: true }), { headRefOid: 'def', comments: [{ body: 'Rebote: abc' }], reviews: [] })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, otherSha.io), error => error.message === OLD)
+    assert.equal(otherSha.sends().length, 0)
+    const ghDown = harness({ pr: true })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, ghDown.io), error => error.message === OLD)
+    assert.equal(ghDown.sends().length, 0)
+  })
+})
