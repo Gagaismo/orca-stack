@@ -160,15 +160,19 @@ describe('Reglas 1-8', () => {
   test('Regla 6: contract and ORCA-STACK.md name ODD as implementation method and SDD nowhere; un-agente implements with ODD', () => {
     const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
     const policy = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'ORCA-STACK.md'), 'utf8')
+    // Issue 325: the Modo `un-agente` section moved to MAIN.md.
+    const main = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
 
     assert.doesNotMatch(contract, /\bsdd\b/i, 'CONTRATO.md must not mention SDD')
+    assert.doesNotMatch(main, /\bsdd\b/i, 'MAIN.md must not mention SDD')
     assert.doesNotMatch(policy, /\bsdd\b/i, 'ORCA-STACK.md must not mention SDD')
 
     assert.ok(contract.includes('implementación con gentle-ai ODD (main corre ODD para su trabajo de orquestación, nunca implementa tickets)'))
     assert.ok(contract.includes('| claude (worker) | Sí, con ODD |'))
     assert.ok(contract.includes('| Implementar un ticket | gentle-ai ODD |'))
-    assert.ok(contract.includes('Cuando `modo` es `"un-agente"` no hay workers: la misma sesión planifica e implementa con ODD'))
+    assert.ok(main.includes('Cuando `modo` es `"un-agente"` no hay workers: la misma sesión planifica e implementa con ODD'))
     assert.doesNotMatch(contract, /implement-spec/, 'implement-spec is no longer mentioned in contract')
+    assert.doesNotMatch(main, /implement-spec/, 'implement-spec is no longer mentioned in MAIN.md')
 
     assert.ok(policy.includes('Implementation across the stack uses gentle-ai ODD.'))
     assert.ok(policy.includes('implementation follows gentle-ai ODD'))

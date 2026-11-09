@@ -2,7 +2,7 @@
 
 Este manual cuenta cómo se usa orca-stack día a día: qué hace cada comando, mod y skill, cuándo conviene usarlo y cuándo no, qué pasa en los bordes y cómo se opera y se arregla. No repite el setup: para instalar y configurar un proyecto, seguí la [guía de setup](guia-setup.md). Para el detalle de cada instalación y de cada clave de configuración, el [README](../README.md).
 
-Versión de referencia: `orca-stack v0.17.0`. Lo que se mergee después de ese tag lleva la marca **`[solo en main]`** y se lista en la [sección 7](#7-qué-hay-solo-en-main): todavía no está publicado en un release, así que con `npx github:Gagaismo/orca-stack#v0.17.0` no lo vas a tener. Para usarlo, corré el CLI desde un checkout de `main` (`node bin/orca-stack.mjs <comando>`) o esperá al próximo release.
+Versión de referencia: `orca-stack v0.18.0`. Lo que se mergee después de ese tag lleva la marca **`[solo en main]`** y se lista en la [sección 7](#7-qué-hay-solo-en-main): todavía no está publicado en un release, así que con `npx github:Gagaismo/orca-stack#v0.18.0` no lo vas a tener. Para usarlo, corré el CLI desde un checkout de `main` (`node bin/orca-stack.mjs <comando>`) o esperá al próximo release.
 
 ## Contenido
 
@@ -37,7 +37,7 @@ Lo esencial en tres líneas:
 - **Los workers implementan**, cada uno en su worktree, con un brief generado desde el ticket.
 - **Un agente distinto revisa** (o un subagente de contexto limpio en modo `un-agente`), y la CI es la que cuenta para lo mecánico.
 
-El contrato completo vive en `assets/stack/CONTRATO.md` y `init` lo copia al `AGENTS.md` de cada proyecto. Este manual explica cómo se usa; si hay una diferencia, manda el contrato.
+El contrato completo vive en `assets/stack/CONTRATO.md` y `init` lo copia al `AGENTS.md` de cada proyecto. Lo que solo usa `main` (el Ciclo de `main`, las Marchas, el Modo `un-agente`, el Despacho, sus Permisos y su parte de Arena y swarm) vive en `assets/stack/MAIN.md`, que `global` instala en `~/orca/stack/MAIN.md`; el contrato deja en esas secciones una línea que apunta ahí y le pide a `main` leerlo entero. Así el bloque que cargan todos los workers y revisores queda por debajo de 24 KiB. Este manual explica cómo se usa; si hay una diferencia, manda el contrato.
 
 ## 2. Los roles: `main`, worker y revisor
 
@@ -185,7 +185,7 @@ orca-stack rebote 15 --dry-run
 orca-stack rebote 15 --nota "El segundo hallazgo es de interpretación: no lo toques, lo decide el humano."
 ```
 
-Relanza al autor (línea `Implementador:`) en el worktree existente de la rama del PR. Exige un review bloqueante vigente o checks fallidos sobre el head, un worktree limpio y detenido en ese commit. En un repo sin reviews, el comentario bloqueante puede venir de una consulta confirmada. Si el worktree está limpio y solo está atrás del head (por ejemplo, después de `gh pr update-branch`), lo adelanta con `git merge --ff-only <sha>` y lo dice en una línea; si tiene commits que no están en el head, se niega. Con `--dry-run` igual trae la rama (`git fetch`, que solo toca las referencias remotas) para comprobarlo, pero no adelanta nada. Publica `Rebote: <sha>` (review) y/o `Rebote CI: <sha>` (CI roja); cada contador cuenta SHAs distintos. Publica el marcador después de lanzar al autor; si `gh pr comment` falla, lo reintenta hasta 3 intentos, con unos segundos entre uno y otro, y avisa cada intento fallido en una línea. Si los 3 intentos fallan, sale con código 1 e imprime, en este orden: que el autor ya está relanzado, las líneas exactas del marcador, el archivo del marcador y el comando `gh pr comment <pr> --body-file <archivo>`, que `main` tiene que correr antes de cualquier otro rebote o merge de ese PR (sin el marcador, el próximo `rebote` no ve este). Un PR en conflicto con la base (`mergeable: CONFLICTING`) también rebota, aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente (GitHub no corre los workflows de `pull_request` mientras hay conflicto): el brief suma una sección `## Merge conflict` con la rama base, los pasos (`git fetch origin`, `git merge origin/<base>`, nunca rebase ni force push), los archivos en conflicto y los commits de la base que los tocaron, y el comando publica `Rebote conflicto: <sha>`. Ese contador es propio: no gasta el rebote de review ni los de CI, y un segundo rebote por conflicto sobre el mismo head se niega. Con la mergeabilidad todavía en cálculo (`UNKNOWN`) se niega y pide repetir; un PR que solo está atrás (`BEHIND`) sin conflicto se niega y apunta a `gh pr update-branch <n>`. El brief de rebote autoriza además al autor a editar el cuerpo del PR (`gh pr edit <pr> --body-file <file>`, únicamente el cuerpo) para resolver fallas que están solo en el cuerpo sin generar un commit vacío. Detalle de los rechazos en [Casos borde](#5-casos-borde).
+Relanza al autor (línea `Implementador:`) en el worktree existente de la rama del PR. Exige un review bloqueante vigente o checks fallidos sobre el head, un worktree limpio y detenido en ese commit. En un repo sin reviews, el comentario bloqueante puede venir de una consulta confirmada. Si el worktree está limpio y solo está atrás del head (por ejemplo, después de `gh pr update-branch`), lo adelanta con `git merge --ff-only <sha>` y lo dice en una línea; si tiene commits que no están en el head, se niega. Con `--dry-run` igual trae la rama (`git fetch`, que solo toca las referencias remotas) para comprobarlo, pero no adelanta nada. Publica `Rebote: <sha>` (review) y/o `Rebote CI: <sha>` (CI roja); cada contador cuenta SHAs distintos. El rebote por review se cuenta por el `Commit:` de cada review: solo cuentan los bloqueos sobre el head actual, así que un head que avanzó desde el último `Rebote:` rebota si tiene un review bloqueante propio, y un review de un head anterior no rebota nada. Publica el marcador después de lanzar al autor; si `gh pr comment` falla, lo reintenta hasta 3 intentos, con unos segundos entre uno y otro, y avisa cada intento fallido en una línea. Si los 3 intentos fallan, sale con código 1 e imprime, en este orden: que el autor ya está relanzado, las líneas exactas del marcador, el archivo del marcador y el comando `gh pr comment <pr> --body-file <archivo>`, que `main` tiene que correr antes de cualquier otro rebote o merge de ese PR (sin el marcador, el próximo `rebote` no ve este). Un PR en conflicto con la base (`mergeable: CONFLICTING`) también rebota, aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente (GitHub no corre los workflows de `pull_request` mientras hay conflicto): el brief suma una sección `## Merge conflict` con la rama base, los pasos (`git fetch origin`, `git merge origin/<base>`, nunca rebase ni force push), los archivos en conflicto y los commits de la base que los tocaron, y el comando publica `Rebote conflicto: <sha>`. Ese contador es propio: no gasta el rebote de review ni los de CI, y un segundo rebote por conflicto sobre el mismo head se niega. Con la mergeabilidad todavía en cálculo (`UNKNOWN`) se niega y pide repetir; un PR que solo está atrás (`BEHIND`) sin conflicto se niega y apunta a `gh pr update-branch <n>`. El brief de rebote autoriza además al autor a editar el cuerpo del PR (`gh pr edit <pr> --body-file <file>`, únicamente el cuerpo) para resolver fallas que están solo en el cuerpo sin generar un commit vacío. Detalle de los rechazos en [Casos borde](#5-casos-borde).
 
 #### `brief-revision`
 
@@ -238,6 +238,8 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 | `ci-verde-retenido #<n> PR #<pr> <sha>: <agente> <estado>` | CI está verde, pero el worker sigue vivo; esperá a que termine antes de mergear |
 | `ci-roja #<n> PR #<pr> <sha>: ...` | Un check terminado falló o venció; uno por corrida, también si un `gh run rerun --failed` vuelve a fallar en el mismo head |
 | `ci-cancelada #<n> PR #<pr> <sha>: <check>=CANCELLED, ...` | No hay una corrida más nueva que reemplace a la cancelada y ninguna falla real previa en la corrida la explica; revisá la causa y re-ejecutá con `gh run rerun <run> --failed` |
+| `review-publicado #<pr> <agente> <sha> bloquea=<n>` | Un comentario de review con `Revisor:` y `Commit:`; cuenta los hallazgos numerados de `## BLOQUEA` |
+| `head-nuevo #<pr> <sha>` | Cambió el head de un PR ya observado |
 | `pr-en-conflicto #<n> PR #<pr> <sha>` | El PR quedó en conflicto con la base (`mergeable: CONFLICTING`) y GitHub no le corre la CI; uno por head, también con el worker vivo (el autor puede estar resolviéndolo). Corré `orca-stack rebote <pr>` una vez que el worker se detuvo: con el agente vivo, `rebote` se niega |
 | `pr-mergeado #<n> PR #<pr> <sha>` | Se mergeó y `main` no registró ese merge |
 | `pr-cerrado #<n> PR #<pr>` | Se cerró sin mergear |
@@ -260,7 +262,7 @@ Solo lectura. Lista sesiones recientes de Claude Code, Pi y agy (agy necesita No
 
 ### 4.2 El ciclo de una tanda
 
-Resumen del "Ciclo de `main`" del contrato, con el comando de cada paso:
+Resumen del "Ciclo de `main`" (en `~/orca/stack/MAIN.md`), con el comando de cada paso:
 
 | # | Paso | Comando o regla |
 | --- | --- | --- |
@@ -463,7 +465,7 @@ Para probarlo en local, con el cuerpo en un archivo: `node scripts/check-evidenc
 
 ### 4.11 La verificación formal de `rebote`
 
-`formal/rebote/Rebote.tla` es un modelo TLA+ de los límites de `orca-stack rebote` (paso 8 del contrato), y TLC lo recorre entero. Comprueba cuatro promesas: el rebote de review pasa una sola vez por PR, el de CI como mucho dos veces sobre SHAs distintos, el de conflicto una vez por head, y un hallazgo de interpretación nunca llega al autor. También modela los 3 intentos de `gh pr comment` y la salida con error cuando fallan todos (#310).
+`formal/rebote/Rebote.tla` es un modelo TLA+ de los límites de `orca-stack rebote` (paso 8 del contrato), y TLC lo recorre entero. Comprueba cuatro promesas: el rebote de review pasa solo sobre un head con un review bloqueante propio (se cuenta por el `Commit:` del review), el de CI como mucho dos veces sobre SHAs distintos, el de conflicto una vez por head, y un hallazgo de interpretación nunca llega al autor. También modela los 3 intentos de `gh pr comment` y la salida con error cuando fallan todos (#310).
 
 Límites y supuestos: un PR, un autor y una sola sesión de `main` (no hay dos `rebote` a la vez); cada corrida de `rebote` es un paso indivisible; 3 heads distintos (`MaxHead=3`); la CI de cada head se resume como pendiente, verde o roja (no se modelan los checks cancelados ni el contenido del brief); los reviews de interpretación de un head se resumen en si alguno ya tiene una `Respuesta del humano:` posterior y si alguno no la tiene, porque una respuesta salda los reviews anteriores a ella y ninguno posterior; y, cuando `rebote` sale con error, `main` publica el marcador impreso antes de cualquier otro `rebote`.
 
@@ -542,7 +544,7 @@ orca-stack sesiones                  # para /retro
 | Configuración personal | `~/.orca-stack/config.json` |
 | Respaldos | `~/.orca-stack/backups/<fecha>/` (nunca al lado del archivo) |
 | Copia del CLI y de `gentle` | `~/.orca-stack/cli/`, `~/.orca-stack/gentle/orchestrator.md` |
-| Política y wrappers | `~/orca/stack/` (`ORCA-STACK.md`, `ROLE-BRIEFS.md`, `scripts/`) |
+| Política y wrappers | `~/orca/stack/` (`ORCA-STACK.md`, `ROLE-BRIEFS.md`, `MAIN.md`, `scripts/`) |
 | Briefs de despacho y review | `~/orca/briefs/` |
 | Mods | `~/.claude/mods/` y `env.CLAUDE_CODE_PLUGIN_DIRS` en `~/.claude/settings.json` |
 | Skills | `~/.claude/skills/` y `~/.agents/skills/` |
@@ -575,7 +577,7 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 
 ## 7. Qué hay solo en `main`
 
-Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.17.0`, todavía no publicado en un release.
+Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.18.0`, todavía no publicado en un release.
 
 (nada por ahora)
 

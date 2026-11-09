@@ -1,13 +1,13 @@
 ---
 name: verify-rebote
-description: "Model-check the bounce limits of `orca-stack rebote` (review bounce once, CI bounce at most twice, conflict bounce once per head, interpretation findings never to the author). Use when a change touches `reboteCommand` in src/despacho.mjs, src/checks.mjs, the marker lines `Rebote:` / `Rebote CI:` / `Rebote conflicto:`, or step 8 of assets/stack/CONTRATO.md."
+description: "Model-check the bounce limits of `orca-stack rebote` (review bounce only on a head with its own blocking review, CI bounce at most twice, conflict bounce once per head, interpretation findings never to the author). Use when a change touches `reboteCommand` in src/despacho.mjs, src/checks.mjs, the marker lines `Rebote:` / `Rebote CI:` / `Rebote conflicto:`, or step 8 of assets/stack/CONTRATO.md."
 ---
 
 # verify-rebote
 
 ## What is promised, and what breaks if it fails
 
-Promise: `orca-stack rebote <pr>` never launches the author more often than contract step 8 allows. A review bounce happens once per PR (a head that advanced after it goes to main), CI bounces at most twice on distinct heads, a conflict bounce at most once per head, and an interpretation finding never reaches the author.
+Promise: `orca-stack rebote <pr>` never launches the author more often than contract step 8 allows. A review bounce happens only on a head with a blocking review of its own, counted by the review's `Commit:` sha (#296: a head that advanced after a bounce bounces again on its own review; a review of an older head bounces nothing), CI bounces at most twice on distinct heads, a conflict bounce at most once per head, and an interpretation finding never reaches the author.
 
 Harm: an author loops on the same PR, burns quota and rewrites work while main believes the PR is waiting for a human decision.
 
@@ -17,7 +17,7 @@ Harm: an author loops on the same PR, burns quota and rewrites work while main b
 - Code covered: `reboteCommand` in `src/despacho.mjs` L874-L1117 (decision part L890-L1034, launch L1086, markers L1087-L1111: retry loop L1093-L1099 with `MARKER_ATTEMPTS = 3`, fail-loud exit L1100-L1111) and the helpers it calls for the CI view in `src/checks.mjs` (`latestChecks`, `analyzeChecks`, `isPending`) plus `blockingBody`, `blockingSection`, `humanAnswers` in `src/despacho.mjs` L849-L869.
 - Contract text: `assets/stack/CONTRATO.md` step 8.
 - Model: `formal/rebote/Rebote.tla`; every action carries the `file:line` it models in a comment.
-- Scope and assumptions: one PR, one author, one `main` session (no concurrent `rebote` runs); one `rebote` run is one indivisible step, including its 3 comment attempts; 3 distinct heads (`MaxHead = 3`); checks are summarised as `pending | green | red` per head, so cancelled-check handling (L923-L954) and the exact content of the brief are NOT modeled; the interpretation reviews of a head are summarised as `settled` (some has a `Respuesta del humano:` after it) and `open` (some has none), since an answer settles every review posted before it and none posted after it (`AnswerOrderGuard`); same-head retry after the author exited is allowed on purpose (test `Rule 2: permits same-head retry marker but refuses when head advanced` in test/despacho.test.mjs); markers are trusted as written (nobody forges or quotes a marker); when `rebote` fails loud, `main` posts the printed marker before any other `rebote` (`OwedGuard`, the protocol, not the code).
+- Scope and assumptions: one PR, one author, one `main` session (no concurrent `rebote` runs); one `rebote` run is one indivisible step, including its 3 comment attempts; 3 distinct heads (`MaxHead = 3`); checks are summarised as `pending | green | red` per head, so cancelled-check handling (L923-L954) and the exact content of the brief are NOT modeled; the interpretation reviews of a head are summarised as `settled` (some has a `Respuesta del humano:` after it) and `open` (some has none), since an answer settles every review posted before it and none posted after it (`AnswerOrderGuard`); same-head retry after the author exited is allowed on purpose (test `Rule 2: permits same-head retry marker but refuses when head advanced without a review of its own` in test/despacho.test.mjs); markers are trusted as written (nobody forges or quotes a marker); when `rebote` fails loud, `main` posts the printed marker before any other `rebote` (`OwedGuard`, the protocol, not the code).
 
 ## Run it
 
@@ -29,7 +29,7 @@ Needs Java 11 or later (`JAVA=<java binary>` when `java` is not on PATH) and `tl
 
 - `rebote.cfg`: pass. This is the current code.
 - `rebote-commentfail.cfg`: pass. All 3 comment attempts may fail; `rebote` fails loud and `main` posts the printed marker first.
-- `broken-review-once.cfg`, `broken-ci-limit.cfg`, `broken-conflict.cfg`, `broken-interp.cfg`, `broken-answer-order.cfg`, `broken-owed.cfg`: each fails with the invariant `check.sh` names for it. A broken config that passes means the model no longer sees that guard: fix the model.
+- `broken-review-sha.cfg`, `broken-ci-limit.cfg`, `broken-conflict.cfg`, `broken-interp.cfg`, `broken-answer-order.cfg`, `broken-owed.cfg`: each fails with the invariant `check.sh` names for it. A broken config that passes means the model no longer sees that guard: fix the model.
 
 `check.sh <cfg> <pass|Invariant>...` checks only the pairs given.
 

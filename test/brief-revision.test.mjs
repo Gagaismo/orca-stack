@@ -232,8 +232,8 @@ describe('brief-revision', () => {
     assert.ok(brief.includes('Revisor: agy\nCommit: abc123'))
   })
 
-  test('CONTRATO keeps the human reviewer marker literal and the review body outside the discardable worktree', () => {
-    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/CONTRATO.md'), 'utf8')
+  test('MAIN.md keeps the human reviewer marker literal and the review body outside the discardable worktree', () => {
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/MAIN.md'), 'utf8')
     assert.match(contract, /Si `review` es `"humano"`[\s\S]*?`Revisor: humano` y `Commit: <sha>`/)
     assert.match(contract, /--modelo <modelo>/)
     assert.match(contract, /<repo>-revision-<pr>-subagente\.review\.md/)

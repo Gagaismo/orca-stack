@@ -63,14 +63,14 @@ describe('#269: global raises codex project_doc_max_bytes', () => {
     const result = runGlobal(home, codexDir)
     assert.equal(result.status, 0, result.out)
     const expected = codexDocBytesFor(initBlockBytes())
-    assert.equal(expected, 131072)
+    assert.equal(expected, 65536)
     assert.equal(read(path.join(codexDir, 'config.toml')), `project_doc_max_bytes = ${expected}\nmodel = "gpt-5"\n`)
-    assert.match(result.out, /project_doc_max_bytes = 131072; sin valor, codex usaba 32768/)
+    assert.match(result.out, /project_doc_max_bytes = 65536; sin valor, codex usaba 32768/)
     assert.equal(existsSync(path.join(home, '.codex')), false)
   })
 
   test('rule 2: a value equal to or above the target is left untouched and global says so; it never lowers it', () => {
-    for (const value of [131072, 1048576]) {
+    for (const value of [65536, 1048576]) {
       const home = temp('doc-bytes-high-home')
       const codexDir = temp('doc-bytes-high-codex')
       const config = path.join(codexDir, 'config.toml')
@@ -80,7 +80,7 @@ describe('#269: global raises codex project_doc_max_bytes', () => {
       const result = runGlobal(home, codexDir)
       assert.equal(result.status, 0, result.out)
       assert.equal(read(config), text)
-      assert.ok(result.out.includes(`project_doc_max_bytes ya es ${value} (alcanza con 131072): no lo toco`), result.out)
+      assert.ok(result.out.includes(`project_doc_max_bytes ya es ${value} (alcanza con 65536): no lo toco`), result.out)
       assert.deepEqual(backups(home).filter(name => name.endsWith('config.toml')), [])
     }
   })
@@ -93,14 +93,14 @@ describe('#269: global raises codex project_doc_max_bytes', () => {
 
     const first = runGlobal(home, codexDir)
     assert.equal(first.status, 0, first.out)
-    assert.equal(read(config), 'project_doc_max_bytes = 131072\n')
-    assert.match(first.out, /project_doc_max_bytes = 131072; antes 32768/)
+    assert.equal(read(config), 'project_doc_max_bytes = 65536\n')
+    assert.match(first.out, /project_doc_max_bytes = 65536; antes 32768/)
     const after = snapshot(codexDir)
 
     const second = runGlobal(home, codexDir)
     assert.equal(second.status, 0, second.out)
     assert.deepEqual(snapshot(codexDir), after)
-    assert.match(second.out, /project_doc_max_bytes ya es 131072/)
+    assert.match(second.out, /project_doc_max_bytes ya es 65536/)
   })
 
   test('rule 3: config.toml is backed up first, the rest of the file stays byte for byte, and --dry-run writes nothing', () => {
@@ -125,7 +125,7 @@ describe('#269: global raises codex project_doc_max_bytes', () => {
 
     const result = runGlobal(home, codexDir)
     assert.equal(result.status, 0, result.out)
-    assert.equal(read(config), original.replace('project_doc_max_bytes = 40_000  #', 'project_doc_max_bytes = 131072  #'))
+    assert.equal(read(config), original.replace('project_doc_max_bytes = 40_000  #', 'project_doc_max_bytes = 65536  #'))
     const saved = backups(home).filter(name => name.endsWith('config.toml'))
     assert.equal(saved.length, 1, result.out)
     assert.equal(readFileSync(path.join(home, ...saved[0].split('/')), 'utf8'), original)
@@ -144,7 +144,7 @@ describe('#269: global raises codex project_doc_max_bytes', () => {
       '[not.a.table]',
       'project_doc_max_bytes = 1',
       '"""',
-      'project_doc_max_bytes = 65536',
+      'project_doc_max_bytes = 40000',
       '',
       '[profiles.x]',
       'a = 1',
@@ -154,14 +154,14 @@ describe('#269: global raises codex project_doc_max_bytes', () => {
 
     const first = runGlobal(home, codexDir)
     assert.equal(first.status, 0, first.out)
-    const raised = original.replace('project_doc_max_bytes = 65536', 'project_doc_max_bytes = 131072')
+    const raised = original.replace('project_doc_max_bytes = 40000', 'project_doc_max_bytes = 65536')
     assert.equal(read(config), raised)
-    assert.match(first.out, /project_doc_max_bytes = 131072; antes 65536/)
+    assert.match(first.out, /project_doc_max_bytes = 65536; antes 40000/)
 
     const second = runGlobal(home, codexDir)
     assert.equal(second.status, 0, second.out)
     assert.equal(read(config), raised)
-    assert.match(second.out, /project_doc_max_bytes ya es 131072/)
+    assert.match(second.out, /project_doc_max_bytes ya es 65536/)
   })
 
   test('preserve: without codex\'s home global skips the step and creates nothing there', () => {

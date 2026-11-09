@@ -45,7 +45,8 @@ describe('formal/rebote (issue #311)', () => {
     assert.match(model, /\\\/ \(OwedGuard \/\\ owed \/= NoMarkers\)/)
     // Every refusal carries the src/despacho.mjs line it models.
     const refused = /^Refused ==\n([\s\S]*?)\n\n/m.exec(model)[1].split(/\n(?=\s+\\\/ )/)
-    assert.equal(refused.length, 8)
+    // #296 removed the moved-head refusal: the review bounce is counted by the review's Commit: sha.
+    assert.equal(refused.length, 7)
     for (const disjunct of refused) assert.match(disjunct, /\\\* L\d+/, disjunct)
   })
 
@@ -97,7 +98,7 @@ describe('formal/rebote (issue #311)', () => {
     assert.equal(spawnSync('java', ['-version'], { env }).error?.code, 'ENOENT', 'java is reachable')
     assert.equal(run.status, 0, run.stdout + run.stderr)
     assert.match(run.stdout, /✔ replay: a conflict bounce whose marker comment failed is refused on the same head once main posts the printed marker/)
-    assert.match(run.stdout, /✔ replay: a review bounce whose marker comment failed is not repeated on a later head once main posts the printed marker/)
+    assert.match(run.stdout, /✔ replay: a blocking review of an older head does not bounce the head that moved/)
     // npm test runs every test/*.test.mjs, so the replay is part of npm run verify.
     assert.ok(readdirSync(path.join(root, 'test')).includes('formal-rebote-replay.test.mjs'))
   })

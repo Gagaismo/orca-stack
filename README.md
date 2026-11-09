@@ -5,17 +5,17 @@ Instala de una vez el stack de agentes que uso para trabajar con [Orca](https://
 **¿Cómo se usa día a día?** Leé el [manual de uso](docs/manual.md): comandos, mods, marchas, cuándo conviene usarlo y cuándo no, casos borde y manejo. Marca lo que está solo en `main` y todavía no salió en un release.
 
 ```bash
-npx github:Gagaismo/orca-stack#v0.17.0 global     # instalación a nivel usuario
-npx github:Gagaismo/orca-stack#v0.17.0 init       # cablea el proyecto actual
-npx github:Gagaismo/orca-stack#v0.17.0 doctor     # verifica que todo funcione de verdad
-npx github:Gagaismo/orca-stack#v0.17.0 remove     # deshace lo que instaló global
-npx github:Gagaismo/orca-stack#v0.17.0 sesiones   # lista las sesiones recientes de Claude, Pi y agy (para `/retro`)
-npx github:Gagaismo/orca-stack#v0.17.0 despachar 12 agy   # desde el checkout principal: despacha el ticket #12 al agente
-npx github:Gagaismo/orca-stack#v0.17.0 revisar 15 pi      # despacha el review del PR #15
-npx github:Gagaismo/orca-stack#v0.17.0 brief-revision 15 --modelo <modelo>   # modo un-agente: worktree y brief de review para un subagente
-npx github:Gagaismo/orca-stack#v0.17.0 consultas 42 57    # filtra y avisa consultas nuevas en issues y PRs en curso
-npx github:Gagaismo/orca-stack#v0.17.0 avisar 42 <url>    # Proactive: le toca el timbre al worker de #42 con la URL de la respuesta
-npx github:Gagaismo/orca-stack#v0.17.0 vigilar 42 57      # el Monitor de la tanda: solo eventos de sus PRs, hasta tanda-cerrada
+npx github:Gagaismo/orca-stack#v0.18.0 global     # instalación a nivel usuario
+npx github:Gagaismo/orca-stack#v0.18.0 init       # cablea el proyecto actual
+npx github:Gagaismo/orca-stack#v0.18.0 doctor     # verifica que todo funcione de verdad
+npx github:Gagaismo/orca-stack#v0.18.0 remove     # deshace lo que instaló global
+npx github:Gagaismo/orca-stack#v0.18.0 sesiones   # lista las sesiones recientes de Claude, Pi y agy (para `/retro`)
+npx github:Gagaismo/orca-stack#v0.18.0 despachar 12 agy   # desde el checkout principal: despacha el ticket #12 al agente
+npx github:Gagaismo/orca-stack#v0.18.0 revisar 15 pi      # despacha el review del PR #15
+npx github:Gagaismo/orca-stack#v0.18.0 brief-revision 15 --modelo <modelo>   # modo un-agente: worktree y brief de review para un subagente
+npx github:Gagaismo/orca-stack#v0.18.0 consultas 42 57    # filtra y avisa consultas nuevas en issues y PRs en curso
+npx github:Gagaismo/orca-stack#v0.18.0 avisar 42 <url>    # Proactive: le toca el timbre al worker de #42 con la URL de la respuesta
+npx github:Gagaismo/orca-stack#v0.18.0 vigilar 42 57      # el Monitor de la tanda: solo eventos de sus PRs, hasta tanda-cerrada
 ```
 
 ¿Primera vez, o un proyecto nuevo o ya empezado? Seguí la [guía de setup](docs/guia-setup.md): tiene un cuestionario que dice qué configurar en cada caso.
@@ -28,12 +28,12 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 
 | Qué | Dónde |
 | --- | --- |
-| Política del stack: `ORCA-STACK.md` y `ROLE-BRIEFS.md` | `~/orca/stack/` |
+| Política del stack: `ORCA-STACK.md`, `ROLE-BRIEFS.md` y `MAIN.md` (las reglas que solo usa `main`) | `~/orca/stack/` |
 | Wrappers `claude-orca-stack`, `codex-orca-stack`, `agy-orca-stack` (`.cmd` en Windows, `.sh` en el resto), cada uno con `--orca-stack-self-test` | `~/orca/stack/scripts/` |
 | Skills propias: `orca-stack-policy`, `orca-setup`, `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | `~/.claude/skills/` y `~/.agents/skills/` |
 | Ocho mods de Claude Code (ver abajo) y sus rutas en `env.CLAUDE_CODE_PLUGIN_DIRS` | `~/.claude/mods/` y `~/.claude/settings.json` |
 | Nada de metodología en `~/.claude/CLAUDE.md`: si un `global` anterior dejó ahí el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->`, lo saca (con respaldo). También achica el bloque que gentle-ai escribe ahí (ver abajo) | `~/.claude/CLAUDE.md` |
-| Codex: `project_doc_max_bytes` en `config.toml`, para que codex no corte el `AGENTS.md` del proyecto (lo lee hasta 32 KiB por defecto y trunca el resto; el `AGENTS.md` global no cuenta). Lo pone en la menor potencia de dos que sea al menos 65536 y al menos el doble del bloque orca-stack (hoy 131072), solo si falta o es menor: nunca baja un valor más alto. Si no existe la carpeta de codex, se omite | `$CODEX_HOME/config.toml` (o `~/.codex/config.toml`) |
+| Codex: `project_doc_max_bytes` en `config.toml`, para que codex no corte el `AGENTS.md` del proyecto (lo lee hasta 32 KiB por defecto y trunca el resto; el `AGENTS.md` global no cuenta). Lo pone en la menor potencia de dos que sea al menos 65536 y al menos el doble del bloque orca-stack (hoy 65536), solo si falta o es menor: nunca baja un valor más alto. Si no existe la carpeta de codex, se omite | `$CODEX_HOME/config.toml` (o `~/.codex/config.toml`) |
 | Pi: `gentle-pi@4.7.0`, `pi-claude-bridge@0.11.0` y `gentle-engram@0.7.0` con `pi install` (`pi install npm:gentle-pi@4.7.0`), más `npm i -g gentle-pi@4.7.0` (comando `gentle-shell`). Probado con Pi `1.5.0`. Un Pi anterior a `1.5.0` se actualiza con `pi update --self` (va a la última versión) y, si sigue anterior, `global` no instala los paquetes y falla; si falta Pi, lo instala con `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.5.0` (sin `npm`, imprime el instalador oficial y sigue sin Pi); un Pi más nuevo no se toca, solo avisa | `~/.pi/agent/` y npm global |
 | Comando `orca-stack`, para usar desde cualquier repo sin npx ni red | Windows: prefijo global de npm si esta en `PATH`, con shims `.cmd` y sin extension para PowerShell y Git Bash. Otros sistemas: primer directorio escribible del `PATH`. La copia queda en `~/.orca-stack/cli/`; si falta el destino compartido, se usa `~/.orca-stack/bin/` y `global` imprime como agregarlo al `PATH` |
 | Registro de lo instalado, para `remove` | `~/.orca-stack/state.json` |
@@ -112,7 +112,7 @@ orca-stack vigilar --merge-de-main <pr>
 - `reanudar` retoma una TUI detenida o relanza al worker en el mismo worktree con su brief original y la URL de respuesta.
 - `--force` reemplaza archivos que ya existían y no son de orca-stack (por ejemplo, una skill tuya llamada igual). Sin `--force` se saltean con un aviso ⚠ y quedan como estaban; con `--force` se respaldan antes.
 - `global --limpiar-sdd` respalda en `~/.orca-stack/backups/sdd-<fecha>/` y mueve solo restos conocidos; `doctor` lista los que encuentra y muestra el comando exacto. Los nombres desconocidos nunca se mueven y `global` sin esta opción no limpia nada. Si algún movimiento falla, informa qué quedó pendiente; podés volver a ejecutar el mismo comando.
-- `init` escribe en el `AGENTS.md` del proyecto el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` con el contrato de trabajo completo (`assets/stack/CONTRATO.md`, igual en todos los proyectos) y las líneas de la política; a `CLAUDE.md` le pone un bloque corto con `@AGENTS.md`. Además crea `.orca-stack.json` y `.orca-stack.local.json` si faltan y agrega este último a `.gitignore`. Es idempotente y respalda lo que modifica. Los valores propios de cada proyecto no van en el bloque: viven en `.orca-stack.json`.
+- `init` escribe en el `AGENTS.md` del proyecto el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` con el contrato de trabajo completo (`assets/stack/CONTRATO.md`, igual en todos los proyectos) y las líneas de la política; lo que solo usa `main` no va en el bloque: el contrato apunta a `~/orca/stack/MAIN.md`, que instala `global`; a `CLAUDE.md` le pone un bloque corto con `@AGENTS.md`. Además crea `.orca-stack.json` y `.orca-stack.local.json` si faltan y agrega este último a `.gitignore`. Es idempotente y respalda lo que modifica. Los valores propios de cada proyecto no van en el bloque: viven en `.orca-stack.json`.
 - `orca-setup` es la skill con la que la sesión de `main` entrevista al humano, en una sola ronda, para completar `.orca-stack.json` (`"setup": "completo"`). La ofrece sola cuando falta y `doctor` avisa si quedó pendiente.
 - `sesiones` es de solo lectura: lista las sesiones recientes de Claude Code (`~/.claude/projects` y, si está, la carpeta de `agentes.pi.claudeConfigDir`), de Pi (`~/.pi/agent/sessions`) y de agy (`~/.gemini/antigravity-cli`, solo con Node 22.13 o más nuevo). Por sesión muestra la herramienta, la carpeta, inicio y fin, las llamadas, tus mensajes, las llamadas con error y los resultados de más de 15k caracteres. Es la entrada para quien corre `/retro` de Matt: `--desde` fija el día de inicio (por defecto, los últimos 2 días) y `--limite` cuántas sesiones (por defecto, 10).
 - `consultas <n...>` filtra y avisa consultas nuevas en issues o PRs de una tanda. Consulta `gh api user` en ejecución, busca comentarios de la cuenta del stack que empiecen con `Consulta:` e imprime `consulta nueva en #<n>` una sola vez por comentario, guardando los IDs en `.git/orca-stack/consultas-reportadas.json`.

@@ -414,14 +414,15 @@ describe('orca-stack reanudar (#214)', () => {
   })
 
   test('Rule 10: contract names pause recovery and init renders the managed block into AGENTS', () => {
-    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
+    // Issue 325: steps 5 and Despacho moved to MAIN.md; the AGENTS.md block sends main there.
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
     assert.ok(contract.includes('worker-en-pausa #<n> <agente>'))
     assert.match(contract, /`orca-stack avisar` y `orca-stack reanudar` son las \u00FAnicas formas en que main llega a una terminal de worker/)
     assert.ok(contract.includes('orca-stack reanudar <issue> <url-del-comentario>'))
     const init = spawnSync(process.execPath, [path.join(PACKAGE_ROOT, 'bin', 'orca-stack.mjs'), 'init'], { cwd: PACKAGE_ROOT, encoding: 'utf8' })
     assert.equal(init.status, 0, init.stderr)
     const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
-    assert.ok(agents.includes('worker-en-pausa #<n> <agente>'))
+    assert.ok(agents.includes('leé `~/orca/stack/MAIN.md` entero antes de actuar'))
     const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
     assert.equal(upsertBlock(agents, block), agents, 'init rendered the current managed contract block')
   })
