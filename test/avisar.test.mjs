@@ -209,6 +209,22 @@ describe('avisar', () => {
     assert.equal(env.sends().length, 0)
   })
 
+  test('issue #341 Rule 2: an idle pi whose transcript quotes a busy frame is refused: only the current frame counts', async () => {
+    const env = piWorker([
+      'The former frame was:',
+      '─ ✾ implementing… ─── INSERT ─',
+      'Now finished.',
+      '─ ✿ waiting for input ─── INSERT ─',
+      '›   type, or / for commands',
+      'status',
+    ])
+    await assert.rejects(() => avisarCommand({}, '42', URL42, env.io), error => {
+      assert.equal(error.message, 'No veo el turno en curso en la pantalla de term_pi (#42): pudo haber terminado. No aviso.')
+      return true
+    })
+    assert.equal(env.sends().length, 0)
+  })
+
   test('Rule 1: avisar on a codex or agy worker sends the one-line pointer to its terminal', async () => {
     const prUrl = 'https://github.com/Gagaismo/orca-stack/pull/57#issuecomment-2002'
     for (const identity of ['codex', 'agy', 'antigravity']) {

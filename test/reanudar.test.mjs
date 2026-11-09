@@ -350,6 +350,15 @@ describe('orca-stack reanudar (#214)', () => {
     assert.equal(busy.sends().length, 0)
   })
 
+  test('issue #341 Rule 4: reanudar refuses a busy pi whose transcript quotes an idle frame: only the current frame counts', async () => {
+    const quoted = pinned(harness({ agent: 'pi', screen: ['The idle frame reads:', '─ ✿ waiting for input ─── INSERT ─', '─ ✾ implementing… ─── INSERT ─', '›   type, or / for commands', 'status'] }))
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, quoted.io), error => {
+      assert.equal(error.message, `No veo a Pi en reposo en la pantalla de term-1 (#${ISSUE}): no reanudo.`)
+      return true
+    })
+    assert.equal(quoted.sends().length, 0)
+  })
+
   test('issue #277 Rule 3: relaunching an exited pi worker refuses when no new pi session appears', async () => {
     const h = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
     h.io.gentleSkills = () => '/pi/skills'
