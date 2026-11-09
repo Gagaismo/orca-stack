@@ -25,7 +25,7 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 
 ```text
 {{VERIFICATION}}
-```
+```{{PI_FOREGROUND}}
 
 - Push the fix to the same branch.
 - Comment on PR #{{PR}} with what changed for each finding and check.

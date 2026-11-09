@@ -1124,6 +1124,7 @@ describe('launchers', () => {
 
 // As pi recorded it in traslado-programado-sys revision-107-pi on 2026-11-04: the first reply is an error turn.
 const PI_AUTH = 'Failed to authenticate: OAuth session expired and could not be refreshed'
+const PI_FOREGROUND = 'Your process ends when your turn ends, and background jobs die with it: run every verification (the configured suite and focused tests) in the foreground and wait for it to finish before you commit and push.'
 const piAuthReply = { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: PI_AUTH }], stopReason: 'error', errorMessage: PI_AUTH } }
 
 describe('issue #295: pi launches report an auth failure', () => {
@@ -1171,6 +1172,20 @@ describe('issue #295: pi launches report an auth failure', () => {
       assert.deepEqual(sessionReads, [], agent)
       assert.ok(env.out.some(line => line.includes(`✔ ${agent} despachado`)), agent)
       assert.ok(!env.out.some(line => /autenticar|CLAUDE_CONFIG_DIR/.test(line)), agent)
+    }
+  })
+
+  test('Rule 4: the ticket and review briefs generated for pi carry the foreground rule; claude, codex and agy briefs do not', async () => {
+    for (const agent of ['pi', 'claude', 'codex', 'agy']) {
+      const ticket = fakeIo()
+      await run('ticket', { n: '7', agent }, ticket)
+      const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: `Implementador: ${agent === 'agy' ? 'codex' : 'agy'}`, number: 9 }) })
+      await run('review', { n: '9', agent }, review)
+      const briefs = [ticket.written.find(([file]) => file.endsWith('proj-7.md'))?.[1], review.written.find(([file]) => file.endsWith(`proj-revision-9-${agent}.md`))?.[1]]
+      for (const [i, brief] of briefs.entries()) {
+        assert.ok(brief, `${agent} brief ${i} is written`)
+        assert.equal(brief.includes(PI_FOREGROUND), agent === 'pi', `${agent} brief ${i}`)
+      }
     }
   })
 })
@@ -1589,6 +1604,19 @@ describe('rebote', () => {
       error.message.includes(PI_AUTH) && error.message.includes('CLAUDE_CONFIG_DIR: '))
     assert.ok(!env.out.some(line => line.includes('\u2714 pi despachado')))
     assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+  })
+
+  test('issue #295 Rule 4: the bounce brief carries the foreground rule only when the author is pi', async () => {
+    for (const agent of ['pi', 'claude', 'codex', 'agy']) {
+      const env = bounceEnv(pr({ body: `Implementador: ${agent}` }))
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      env.io.now = () => 100
+      env.io.modifiedAt = () => 101
+      await reboteCommand({}, '12', env.io)
+      const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+      assert.ok(brief, agent)
+      assert.equal(brief.includes(PI_FOREGROUND), agent === 'pi', agent)
+    }
   })
 
   test('Rule 1: relaunches author with current blockers and posts Rebote only after launch', async () => {

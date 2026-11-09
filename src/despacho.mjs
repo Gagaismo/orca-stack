@@ -258,6 +258,11 @@ const subagentsInstruction = agent => {
   return `Subagents: when your runtime has subagents, you may use your session's subagents ${scope} When it has none, do those steps inline and note it under ## Desvíos del ticket.`
 }
 
+// pi's process ends with its turn and takes its background jobs along: a suite left in the background never reports (#295).
+const piForeground = agent => agent === 'pi'
+  ? '\n\nYour process ends when your turn ends, and background jobs die with it: run every verification (the configured suite and focused tests) in the foreground and wait for it to finish before you commit and push.'
+  : ''
+
 const bodyPrecheckStep = cuerpoPr => {
   if (typeof cuerpoPr !== 'string' || cuerpoPr.trim() === '') return ''
   const cmd = cuerpoPr.trim().replace(/\{file\}/g, '<your body file>')
@@ -290,6 +295,7 @@ export const renderBrief = (kind, vars, nota) => {
     CODING_STANDARDS_INSTRUCTION: vars.HAS_CODING_STANDARDS ? 'Read CODING_STANDARDS.md and check the change against it before every commit.' : '',
     REVIEW_STANDARDS: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md and AGENTS.md' : 'AGENTS.md',
     FANOUT_INSTRUCTIONS: fanoutInstructions(vars.AGENT, nota),
+    PI_FOREGROUND: piForeground(vars.AGENT),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
   })
 }
@@ -1120,6 +1126,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     FAILED_CHECKS: failedChecksText,
     CONFLICT_SECTION: conflictSection,
     VERIFICATION: verificationBlock(config),
+    PI_FOREGROUND: piForeground(agent),
     BODY_PRECHECK_STEP: reboteBodyPrecheckStep(config.verificacion?.cuerpoPR),
     FANOUT_INSTRUCTIONS: fanoutInstructions(agent, nota, true),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',

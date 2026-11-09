@@ -19,7 +19,7 @@ Run these exactly as written, without changing their flags:
 
 ```
 {{VERIFICATION}}
-```
+```{{PI_FOREGROUND}}
 
 If a command can take more than ten minutes, set a time limit; if it runs out, report the last output on the issue instead of waiting in the background.
 
