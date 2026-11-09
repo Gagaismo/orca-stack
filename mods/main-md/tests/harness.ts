@@ -3,7 +3,8 @@ import type { On } from 'claude-code'
 
 export const MAIN_GIT = '/repo/.git\n/repo/.git\n/repo\n'
 export const WORKTREE_GIT = '/repo/.git/worktrees/orca-stack-321\n/repo/.git\n/home/u/orca/workspaces/repo/orca-stack-321\n'
-export const MAIN_DOC = '## Ciclo de `main`\n1. reglas de main\n'
+export const CYCLE = '### Ciclo de `main`\n\n1. reglas de main'
+export const MAIN_DOC = `## Orca stack: reglas de \`main\`\n\n### Marchas\n\nmarchas\n\n${CYCLE}\n\n### Despacho\n\ndespacho\n`
 export const DEFAULT_PATH = '/home/u/orca/stack/MAIN.md'
 
 export const harness = (

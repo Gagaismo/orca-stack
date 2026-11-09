@@ -41,6 +41,52 @@ const readMainDoc = async ($: EngineInterface, path: string): Promise<string | u
   }
 }
 
+// Claude Code caps each additionalContext string at 10,000 characters and past it hands the model a 2,000-character
+// preview and a path (https://code.claude.com/docs/en/hooks, "JSON output"). MAIN.md is about 23,000: the ticket's
+// fallback sends the steps of `### Ciclo de main` instead, cut at line ends into entries that stay under the cap.
+const CHUNK = 9_500
+const CYCLE = '### Ciclo de `main`'
+
+const cycleOf = (doc: string): string | undefined => {
+  const lines = doc.replace(/\r\n/g, '\n').split('\n')
+  const first = lines.findIndex(line => line.trim() === CYCLE)
+  if (first === -1) return undefined
+  const after = lines.slice(first + 1).findIndex(line => /^#{1,3} /.test(line))
+  const end = after === -1 ? lines.length : first + 1 + after
+
+  return lines.slice(first, end).join('\n').trimEnd()
+}
+
+const chunks = (text: string): string[] => {
+  const out: string[] = []
+  let rest = text
+  while (rest.length > CHUNK) {
+    const cut = rest.lastIndexOf('\n', CHUNK)
+    if (cut <= 0) {
+      out.push(rest.slice(0, CHUNK))
+      rest = rest.slice(CHUNK)
+    } else {
+      out.push(rest.slice(0, cut))
+      rest = rest.slice(cut + 1)
+    }
+  }
+
+  return [...out, rest]
+}
+
+const textsFor = (path: string, doc: string | undefined): string[] => {
+  if (doc === undefined) return [`main-md: no se pudo leer \`${path}\`; seguí el puntero a MAIN.md del contrato.`]
+  const cycle = cycleOf(doc)
+  if (cycle === undefined) {
+    return [`main-md: \`${path}\` no tiene la sección \`${CYCLE}\`; seguí el puntero a MAIN.md del contrato.`]
+  }
+  const parts = chunks(cycle)
+
+  return parts.map((part, i) => i === 0
+    ? `Estos son los pasos de \`${CYCLE}\` de \`${path}\`, el mismo MAIN.md al que apunta el contrato de AGENTS.md; el resto de sus secciones está en ese archivo.\n\n${part}`
+    : `main-md: sigue \`${CYCLE}\` de \`${path}\` (parte ${i + 1} de ${parts.length}).\n\n${part}`)
+}
+
 const hasSetup = async ($: EngineInterface, root: string): Promise<boolean> => {
   try {
     return await $.fs.exists(`${root}/.orca-stack.json`)
@@ -57,14 +103,11 @@ export const register: Register = on => {
     const root = await mainCheckout(host)
     if (root === undefined || !(await hasSetup($, root))) return result
     const path = await mainDocPath($, host)
-    const doc = await readMainDoc($, path)
-    const text = doc === undefined
-      ? `main-md: no se pudo leer \`${path}\`; seguí el puntero a MAIN.md del contrato.`
-      : `Este es el contenido de \`${path}\`, el mismo MAIN.md al que apunta el contrato de AGENTS.md: ya lo tenés, no lo vuelvas a leer.\n\n${doc}`
+    const texts = textsFor(path, await readMainDoc($, path))
 
     return {
       ...result,
-      additionalContext: [...(result.additionalContext ?? []), text],
+      additionalContext: [...(result.additionalContext ?? []), ...texts],
     }
   })
 }
