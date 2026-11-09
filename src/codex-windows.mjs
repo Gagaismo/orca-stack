@@ -32,7 +32,8 @@ export const CODEX_ASCII_MARKERS = {
 export const CODEX_ASCII_RULE = `## Source code stays ASCII (Windows)
 
 - Source code stays pure ASCII: write every non-ASCII character in a string literal as a \`\\u\` escape (for example \`'acci\\u00f3n'\` for "acción"). Markdown and other prose files keep real accents.
-- Reason: on Windows, PowerShell 5.1 can garble accented text you read and copy into code (Gagaismo/orca-stack#58).`
+- Reason: on Windows, PowerShell 5.1 can garble accented text you read and copy into code (Gagaismo/orca-stack#58).
+- This rule is for the code you write. It is not a review criterion: when you review another agent's code, do not block or flag its non-ASCII characters; only a rule in that repo's own \`AGENTS.md\` or \`CODING_STANDARDS.md\` counts.`
 
 export const PROFILE_LINE = "$PSDefaultParameterValues['Get-Content:Encoding'] = 'UTF8'"
 
