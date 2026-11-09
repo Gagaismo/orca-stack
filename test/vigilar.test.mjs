@@ -578,6 +578,8 @@ describe('orca-stack vigilar (#195)', () => {
       assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar)'))
       output = ''
       assert.equal(await main(['vigilar', '--help']), 0)
+      assert.ok(output.includes('review-publicado #<pr> <agente> <sha> bloquea=<n>'))
+      assert.ok(output.includes('head-nuevo #<pr> <sha>'))
       assert.ok(output.includes('orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]'))
       assert.ok(output.includes('orca-stack vigilar --merge-de-main <pr>'))
     } finally {
@@ -1122,6 +1124,12 @@ describe('orca-stack vigilar (#299)', () => {
     rearmed.files[CURSOR] = JSON.stringify(h.cursor())
     await once(rearmed, ['7'])
     assert.deepEqual(rearmed.out, [])
+    const shared = harness({ prs: [{ ...pr(70, { closes: [7, 8] }), comments: world.prs[0].comments }] })
+    await once(shared, ['7', '8'])
+    assert.equal(shared.out.filter(line => line === 'review-publicado #70 agy abc1234 bloquea=0').length, 1)
+    shared.world.prs[0].headRefOid = DEF
+    await once(shared, ['7', '8'])
+    assert.equal(shared.out.filter(line => line === 'head-nuevo #70 def5678').length, 1)
   })
 
   test('PRESERVE: vigilarCommand retains existing PR and CI events', async () => {
