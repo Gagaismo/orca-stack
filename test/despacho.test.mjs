@@ -2543,7 +2543,7 @@ describe('rebote', () => {
 
     test('Rule 5: ticket and review briefs keep current remote operations unchanged and review stays read-only', async () => {
       const ticketBrief = renderBrief('ticket', { AGENT: 'agy', ISSUE: '255', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
-      assert.ok(ticketBrief.includes('- Operations: read issue #255 and its comments and the repo; comment on the issue; push only the ticket branch to `origin`; open the PR against main.'))
+      assert.ok(ticketBrief.includes('- Operations: read issue #255 and its comments and the repo; comment on the issue; check off its `## Tareas` with `gh issue edit 255 --body-file <file>`; push only the ticket branch to `origin`; open the PR against main.'))
       assert.ok(!ticketBrief.includes('gh pr edit'))
 
       const reviewBrief = renderBrief('review', { AGENT: 'codex', PR: '255', REPO: 'orca-stack', BASE: 'main', SHA: 'abc123', IMPLEMENTER: 'agy' })

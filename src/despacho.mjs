@@ -272,7 +272,7 @@ const reboteBodyPrecheckStep = cuerpoPr => {
 
 export const renderBrief = (kind, vars, nota) => {
   const defaultOps = kind === 'ticket'
-    ? `read issue #${vars.ISSUE ?? '<n>'} and its comments and the repo; comment on the issue; push only the ticket branch to \`origin\`; open the PR against ${vars.BASE ?? 'main'}.`
+    ? `read issue #${vars.ISSUE ?? '<n>'} and its comments and the repo; comment on the issue; check off its \`## Tareas\` with \`gh issue edit ${vars.ISSUE ?? '<n>'} --body-file <file>\`; push only the ticket branch to \`origin\`; open the PR against ${vars.BASE ?? 'main'}.`
     : 'read the PR, its diff, its checks and the issue it closes; publish the review with the command the brief already gives. No push.'
   return render(readAsset('stack', kind === 'ticket' ? 'brief-ticket.md' : 'brief-revision.md'), {
     ...vars,

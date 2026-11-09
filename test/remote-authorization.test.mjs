@@ -137,7 +137,7 @@ describe('Reglas 1-8', () => {
     assert.ok(out.includes('## Remote authorization'))
     assert.ok(out.includes('- Destination: github.com, repository Gagaismo/orca-stack'))
     assert.ok(out.includes('- Credential/session: the GitHub CLI (`gh`) session and the git credentials already configured on this machine.'))
-    assert.ok(out.includes('- Operations: read issue #7 and its comments and the repo; comment on the issue; push only the ticket branch to `origin`; open the PR against main.'))
+    assert.ok(out.includes('- Operations: read issue #7 and its comments and the repo; comment on the issue; check off its `## Tareas` with `gh issue edit 7 --body-file <file>`; push only the ticket branch to `origin`; open the PR against main.'))
   })
 
   test('Regla 2: despachar on SSH origin resolves the same host and owner/repo', async () => {

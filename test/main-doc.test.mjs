@@ -55,6 +55,9 @@ describe('issue 325: main-only rules move to MAIN.md', () => {
       assert.ok(brief.includes(`starts with \`Consulta: ${agent}\``), agent)
       assert.ok(brief.includes('A message from main may arrive while you work.'), agent)
       assert.ok(brief.includes('handle any `Respuesta de main:` / `Respuesta del humano:`'), agent)
+      // Step 2 of main's cycle: the worker checks off the ticket's `## Tareas`, and may edit the issue body to do it.
+      assert.ok(brief.includes('Check off each `T<n>` of the issue\'s `## Tareas` in the issue body as soon as it is done (`gh issue edit 42 --body-file <file>`, changing only that checkbox).'), agent)
+      assert.ok(brief.includes('- Operations: read issue #42 and its comments and the repo; comment on the issue; check off its `## Tareas` with `gh issue edit 42 --body-file <file>`; push only the ticket branch to `origin`; open the PR against main.'), agent)
     }
   })
 
