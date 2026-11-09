@@ -1367,7 +1367,7 @@ describe('pi: --perfil-pi', () => {
   })
 
   const withPerfil = perfil => ({ ...PROJECT, agentes: { ...PROJECT.agentes, pi: perfil === undefined ? {} : { perfil } } })
-  const NO_PROFILE = /Falta el perfil de Pi: pasá --perfil-pi <nombre> \(hay: opus-sonnet, OpusFull, samu-balanceado\) o poné agentes\.pi\.perfil en la config \("global" usa el perfil activo global a propósito\)\.$/
+  const NO_PROFILE = /Falta el perfil de Pi: pasá --perfil-pi <nombre> \(hay: opus-sonnet, OpusFull\) o poné agentes\.pi\.perfil en la config \("global" usa el perfil activo global a propósito\)\.$/
 
   test('agentes.pi.perfil applies and the flag wins', async () => {
     await run('ticket', { n: '7', agent: 'pi' }, fakeIo({}, { config: withPerfil('OpusFull') }))
@@ -1397,6 +1397,21 @@ describe('pi: --perfil-pi', () => {
     assert.deepEqual(env.writes(), [])
     const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) }, { config: withPerfil(undefined) })
     await assert.rejects(run('review', { n: '9', agent: 'pi', dryRun: true }, review), NO_PROFILE)
+  })
+
+  test('issue 293 Rule 4: the missing-profile error lists only launchable profiles, or says why none is', async () => {
+    // The other half is NO_PROFILE above: samu-balanceado (commandcode subagents) is not listed next to the launchable ones.
+    write(store(), JSON.stringify({ profiles: {
+      'samu-balanceado': PROFILES.profiles['samu-balanceado'],
+      vacio: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' }, 'gentle-ai-worker': { model: '' } },
+      'no-orchestrator': { 'gentle-ai-worker': { model: 'claude-bridge/claude-sonnet-5-5' } },
+    } }))
+    const env = fakeIo({}, { config: withPerfil(undefined) })
+    await assert.rejects(run('ticket', { n: '13', agent: 'pi' }, env), {
+      message: 'Falta el perfil de Pi: pasá --perfil-pi <nombre> (ninguno se puede lanzar: samu-balanceado: usa proveedores no permitidos: gentle-ai-explore (commandcode/deepseek/deepseek-v4.1-flash), jd-judge-a (commandcode/glm-5.1); vacio: usa proveedores no permitidos: gentle-ai-worker (); no-orchestrator: no define orchestrator.model) o poné agentes.pi.perfil en la config ("global" usa el perfil activo global a propósito).',
+    })
+    assert.deepEqual(env.writes(), [])
+    assert.ok(!existsSync(pinFile()))
   })
 
   test('issue 276 Rule 2: "global" launches on the active global profile and says so; a profile named global is ambiguous', async () => {
@@ -1991,6 +2006,45 @@ describe('rebote', () => {
     await reboteCommand({ perfilPi: 'OpusFull' }, '12', flagged.io)
     assert.ok(flagged.out.includes('perfil de Pi: OpusFull (fuente: flag)'))
     assert.equal(JSON.parse(read(pinFile)).profile, 'OpusFull')
+  })
+
+  test('issue 293 Rule 1: --perfil-pi replaces a pin naming a profile that no longer exists; a pin that exists still refuses a change', async () => {
+    write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ profiles: {
+      'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },
+      OpusFull: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' } },
+    } }))
+    const pinFile = path.join(worktree, '.pi', 'gentle-ai', 'profile.json')
+    const pin = profile => write(pinFile, JSON.stringify({ kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile }))
+    const piEnv = () => {
+      const env = bounceEnv(pr({ body: 'Implementador: pi' }), {}, { ...PROJECT, agentes: { ...PROJECT.agentes, pi: {} } })
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      env.io.now = () => 100
+      env.io.modifiedAt = () => 101
+      return env
+    }
+    const launched = env => env.calls.find(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+
+    pin('opus-haiku')
+    const stuck = piEnv()
+    await assert.rejects(reboteCommand({}, '12', stuck.io), /No existe el perfil de Pi "opus-haiku".*Repetí con --perfil-pi <nombre> para fijar otro perfil en el worktree\.$/)
+    assert.ok(!launched(stuck))
+    // Lautaro's decision on PR 347: "global" never replaces a stale pin; it refuses, asks for a name, and the pin stays.
+    const global = piEnv()
+    await assert.rejects(reboteCommand({ perfilPi: 'global' }, '12', global.io), { message: 'El worktree fija el perfil de Pi "opus-haiku", que ya no existe, y --perfil-pi global no lo reemplaza: pasá --perfil-pi <nombre> para fijar otro perfil en el worktree.' })
+    assert.ok(!launched(global) && !global.calls.some(call => call[0] === 'gh' && call[2] === 'comment'))
+    assert.equal(JSON.parse(read(pinFile)).profile, 'opus-haiku')
+    const replaced = piEnv()
+    assert.equal(await reboteCommand({ perfilPi: 'opus-sonnet' }, '12', replaced.io), 0)
+    assert.equal(JSON.parse(read(pinFile)).profile, 'opus-sonnet')
+    assert.ok(replaced.out.includes('perfil de Pi: opus-sonnet (fuente: flag)'), replaced.out.join('\n'))
+    assert.ok(launched(replaced)[launched(replaced).indexOf('--command') + 1].includes("--model 'claude-bridge/claude-opus-5-5' --thinking high"))
+
+    pin('OpusFull')
+    const refused = piEnv()
+    await assert.rejects(reboteCommand({ perfilPi: 'opus-sonnet' }, '12', refused.io), { message: 'El worktree fija el perfil de Pi "OpusFull"; no se puede cambiar a "opus-sonnet" en un rebote.' })
+    assert.ok(!launched(refused) && !refused.calls.some(call => call[0] === 'gh' && call[2] === 'comment'))
+    assert.equal(JSON.parse(read(pinFile)).profile, 'OpusFull')
+    cleanup(path.dirname(pinFile))
   })
 
   test('issue #277 Rule 1: rebote relaunches a pi author as a TUI with the brief as its first message', async () => {

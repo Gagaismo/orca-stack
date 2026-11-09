@@ -679,4 +679,57 @@ describe('reanudar: the pi profile (#276)', () => {
     assert.ok(flagged.outputs.includes('[simulaci\u00F3n] perfil de Pi: OpusFull (fuente: flag)'), flagged.outputs.join('\n'))
     await assert.rejects(() => reanudarCommand({ perfilPi: 'OpusFull', dryRun: true }, ISSUE, URL, harness({ state: 'done', agent: 'codex' }).io), /solo vale para el agente pi/)
   })
+
+  test('issue 293 Rule 2: a paused pi gets the line with a stale pin, and --perfil-pi rewrites the pin on the send and the relaunch paths', async () => {
+    // git ignores the pin (writePin asks it) and does not track it.
+    const ignoring = h => {
+      const sh = h.io.sh
+      h.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'check-ignore' ? ok('') : cmd === 'git' && args[0] === 'ls-files' ? fail('') : sh(cmd, args, opts)
+      return h
+    }
+    const idle = ['● PR opened.', '╭─ ✿ ────────────────────────────╮', '│ type, or / for commands        │', '╰────────────────────────────────╯', ' claude-opus-5-5 · high']
+    const paused = () => {
+      const h = harness({ agent: 'pi', screen: idle })
+      h.files[STORE] = JSON.stringify(PROFILES)
+      h.files[PIN] = pinFile('opus-haiku')
+      return ignoring(h)
+    }
+    const plain = paused()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, plain.io), 0)
+    assert.equal(plain.sends().length, 1)
+    assert.equal(launches(plain).length, 0)
+    assert.equal(JSON.parse(plain.files[PIN]).profile, 'opus-haiku')
+
+    const flagged = paused()
+    assert.equal(await reanudarCommand({ perfilPi: 'OpusFull' }, ISSUE, URL, flagged.io), 0)
+    assert.equal(flagged.sends().length, 1)
+    assert.equal(launches(flagged).length, 0)
+    assert.equal(JSON.parse(flagged.files[PIN]).profile, 'OpusFull')
+
+    // A --perfil-pi the CLI would not launch is refused before the line goes out, and the pin stays.
+    const wrong = paused()
+    await assert.rejects(() => reanudarCommand({ perfilPi: 'nope' }, ISSUE, URL, wrong.io), /No existe el perfil de Pi "nope"/)
+    assert.equal(wrong.sends().length, 0)
+    assert.equal(JSON.parse(wrong.files[PIN]).profile, 'opus-haiku')
+
+    // Lautaro's decision on PR 347: "global" never replaces a stale pin, on the send and the relaunch paths: it refuses,
+    // asks for a name, sends and launches nothing, and the pin stays.
+    const STALE_GLOBAL = 'El worktree fija el perfil de Pi "opus-haiku", que ya no existe, y --perfil-pi global no lo reemplaza: pasá --perfil-pi <nombre> para fijar otro perfil en el worktree.'
+    const globalPaused = paused()
+    await assert.rejects(() => reanudarCommand({ perfilPi: 'global' }, ISSUE, URL, globalPaused.io), { message: STALE_GLOBAL })
+    assert.equal(globalPaused.sends().length, 0)
+    assert.equal(JSON.parse(globalPaused.files[PIN]).profile, 'opus-haiku')
+    const globalExited = ignoring(piHarness('opus-haiku'))
+    await assert.rejects(() => reanudarCommand({ perfilPi: 'global' }, ISSUE, URL, globalExited.io), { message: STALE_GLOBAL })
+    assert.equal(launches(globalExited).length, 0)
+    assert.equal(JSON.parse(globalExited.files[PIN]).profile, 'opus-haiku')
+
+    // The relaunch path: the fake host shows no new pi session, so the launch is refused after it started, pin rewritten.
+    const exited = ignoring(piHarness('opus-haiku'))
+    exited.io.listFiles = () => []
+    await assert.rejects(() => reanudarCommand({ perfilPi: 'opus-sonnet' }, ISSUE, URL, exited.io), /No observé una sesión nueva de Pi/)
+    assert.equal(launches(exited).length, 1)
+    assert.ok(launches(exited)[0].args.some(arg => arg.includes("--model 'claude-bridge/claude-opus-5-5' --thinking high")))
+    assert.equal(JSON.parse(exited.files[PIN]).profile, 'opus-sonnet')
+  })
 })

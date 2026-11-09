@@ -1,18 +1,14 @@
 // Pure helpers for the "which gentle-pi profile?" question (no engine access): spot a pi dispatch made with the
 // orca-stack CLI, list the profiles to offer, and put `--perfil-pi <name>` into the command.
 
+import { piProfileProblem } from './orca-config'
+
 const SEPARATOR = /(&&|\|\||;|\||\r?\n)/
 const ENV_ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/
 const RUNNERS = new Set(['npx', 'bunx', 'pnpx', 'npm', 'pnpm', 'yarn', 'exec', 'dlx', 'node', 'env', 'time', '&'])
 
-// Same shape gentle-pi accepts for a profile name; nothing else is ever offered or put into a command.
-const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
-
 const unquote = (token: string): string => token.replace(/^['"]|['"]$/g, '')
 
-// The only model providers a pi launch may use (the CLI refuses any other): Claude through the bridge or pi's
-// Anthropic login, and OpenAI.
-const PROVIDERS = ['claude-bridge/', 'anthropic/', 'openai/']
 // AskUserQuestion takes 2-4 options.
 export const MAX_OPTIONS = 4
 
@@ -22,10 +18,15 @@ const isPlain = (value: unknown): value is Record<string, unknown> => typeof val
 const modelOf = (agent: unknown): string | undefined =>
   isPlain(agent) && typeof agent.model === 'string' && agent.model.trim() !== '' ? agent.model.trim() : undefined
 
+// The profile the clone-local pin (`<git-common-dir>/gentle-ai/profile-pin.json`) declares, if any: gentle-pi gives it
+// precedence over the worktree pin, so the CLI launches no other profile while it is there.
+export const clonePinProfile = (pin: unknown): string | undefined =>
+  isPlain(pin) && pin.kind === 'gentle-pi.agent_model_profile_pin' && typeof pin.profile === 'string' ? pin.profile : undefined
+
 // Every profile of the store (`{ profiles: { <name>: { orchestrator: { model }, <agent>: { model } } } }`) the CLI would
-// launch, in store order: a safe name other than "global" (the CLI refuses it as ambiguous), an orchestrator model, and
-// every model on an allowed provider.
-export const launchableProfiles = (store: unknown): ProfileOption[] => {
+// launch, in store order: the ones piProfileProblem (shared with the CLI) finds nothing wrong with and, with a clone
+// pin, only the one it declares. Only those names are ever offered or put into a command.
+export const launchableProfiles = (store: unknown, clonePin?: string): ProfileOption[] => {
   const profiles = isPlain(store) ? store.profiles : undefined
   if (!isPlain(profiles)) {
     return []
@@ -33,8 +34,7 @@ export const launchableProfiles = (store: unknown): ProfileOption[] => {
 
   return Object.entries(profiles).flatMap(([name, profile]) => {
     const orchestrator = isPlain(profile) ? modelOf(profile.orchestrator) : undefined
-    const models = isPlain(profile) ? Object.values(profile).map(modelOf).filter(model => model !== undefined) : []
-    if (!SAFE_NAME.test(name) || name.toLowerCase() === 'global' || orchestrator === undefined || !models.every(model => PROVIDERS.some(provider => model.startsWith(provider)))) {
+    if (piProfileProblem(name, profile) !== undefined || orchestrator === undefined || (clonePin !== undefined && name !== clonePin)) {
       return []
     }
 

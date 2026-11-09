@@ -82,6 +82,43 @@ export const familyOf = (
   return { family: model === undefined ? (FAMILIES.defaults as Record<string, string>)[agent] : familyOfModel(model), model }
 }
 
+// The only model providers a pi launch may use: Claude through the bridge or pi's Anthropic login, and OpenAI.
+// The literal between the markers is JSON: src/despacho.mjs keeps the same one, and test/units.test.mjs compares them.
+// BEGIN PI_PROVIDERS
+export const PI_PROVIDERS = ["claude-bridge/", "anthropic/", "openai/"]
+// END PI_PROVIDERS
+
+// Same shape gentle-pi accepts for a profile name.
+const PI_PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
+// Why `orca-stack despachar <n> pi --perfil-pi <name>` refuses the profile `name` of the gentle-pi store, or undefined
+// when it launches it. src/despacho.mjs answers the same: both sides run the cases of shared/perfiles-pi.json.
+export const piProfileProblem = (name: string, profile: unknown): string | undefined => {
+  if (name.toLowerCase() === 'global') {
+    return '"global" es ambiguo'
+  }
+  if (!PI_PROFILE_NAME.test(name)) {
+    return 'nombre no válido'
+  }
+  if (!isPlain(profile)) {
+    return 'no es un perfil'
+  }
+  const bad = Object.entries(profile).flatMap(([agent, value]) => {
+    const model = isPlain(value) && typeof value['model'] === 'string' ? value['model'].trim() : undefined
+
+    return model !== undefined && !PI_PROVIDERS.some(provider => model.startsWith(provider)) ? [`${agent} (${model})`] : []
+  })
+  if (bad.length > 0) {
+    return `usa proveedores no permitidos: ${bad.join(', ')}`
+  }
+  const orchestrator = profile['orchestrator']
+  if (!isPlain(orchestrator) || typeof orchestrator['model'] !== 'string' || orchestrator['model'].trim() === '') {
+    return 'no define orchestrator.model'
+  }
+
+  return undefined
+}
+
 // "2026-10-29" -> local midnight of that day; an agent is blocked while now < that instant.
 export const parseUntil = (date: string): number | undefined => {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim())
