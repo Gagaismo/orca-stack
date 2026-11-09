@@ -1,4 +1,5 @@
 import { getCommonDir, getStackAccount } from './consultas.mjs'
+import { WRAPPERS } from './constants.mjs'
 import { AGENTS, defaultIo, getRemoteOrigin, shellPrompt } from './despacho.mjs'
 import { samePath } from './util.mjs'
 
@@ -93,10 +94,10 @@ export const workerTerminals = (worktree, n, io) => {
 
 // The title fallback (despachar names the terminal after its agent) only picks a target together with a live Orca
 // agent record: a dead terminal keeps that title.
-export const identityOf = (terminal, record) => {
-  const raw = terminal.agentIdentity ?? record?.agentType ?? (AGENTS.includes(terminal.title) ? terminal.title : undefined)
-  return raw === 'antigravity' ? 'agy' : raw
-}
+export const identityOf = (terminal, record) => stackAgent(terminal.agentIdentity ?? record?.agentType ?? (AGENTS.includes(terminal.title) ? terminal.title : undefined))
+
+// Orca names some agents differently from the stack (WRAPPERS[agent].orcaKey): Orca's `antigravity` is agy (#330).
+export const stackAgent = raw => Object.keys(WRAPPERS).find(agent => WRAPPERS[agent].orcaKey === raw) ?? raw
 
 export const readScreen = (io, handle) => {
   const res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])

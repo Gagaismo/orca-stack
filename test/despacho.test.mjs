@@ -582,6 +582,84 @@ describe('despachar: the TUI wait', () => {
     assert.ok(!env.out.some(line => line.includes('✔ codex despachado')))
   })
 
+  // agy's real folder-trust screen, as seen on 2026-11-08 (#298, #330): no "trust this folder?" anywhere.
+  const AGY_TRUST = ['Antigravity CLI requires permission to read, edit, and execute files here.', '> Yes, I trust this folder', 'No, exit']
+  // The trust screen for the first `trustReads` reads, then agy's TUI; a timeline of sleeps, Enters and brief sends.
+  const agyTrustIo = (trustReads, over = {}) => {
+    let reads = 0
+    const env = fakeIo({
+      ...over,
+      'orca terminal read': () => {
+        reads += 1
+        return json({ result: { terminal: { tail: reads <= trustReads ? AGY_TRUST : ['agy ready'] } } })
+      },
+    })
+    const timeline = []
+    const { sh, sleep } = env.io
+    env.io.sleep = async ms => { timeline.push(`sleep ${ms}`); return sleep(ms) }
+    env.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') timeline.push(`read ${reads < trustReads ? 'trust' : 'tui'}`)
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send') timeline.push(args.includes('--text') ? 'brief' : 'enter')
+      return sh(cmd, args, opts)
+    }
+    return { env, timeline }
+  }
+
+  test('issue 330 Rule 1: agy\'s real trust screen is recognized and confirmed with Enter', async () => {
+    const { env, timeline } = agyTrustIo(1)
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    assert.deepEqual(timeline.slice(0, 4), ['sleep 2000', 'read trust', 'enter', 'sleep 2000'])
+    assert.ok(timeline.indexOf('brief') > timeline.indexOf('enter'))
+    assert.ok(env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('issue 330 Rule 2: agy gets an Enter every 2 s while the trust screen stays, and the brief only once it is gone', async () => {
+    const { env, timeline } = agyTrustIo(3)
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    const enters = timeline.flatMap((step, i) => step === 'enter' ? [i] : [])
+    assert.equal(enters.length, 3)
+    for (const i of enters) assert.deepEqual(timeline.slice(i - 2, i), ['sleep 2000', 'read trust'])
+    const brief = timeline.indexOf('brief')
+    assert.ok(brief > enters.at(-1))
+    // Every read before the brief that came after the last Enter shows agy's TUI, never the trust screen.
+    assert.ok(timeline.slice(enters.at(-1), brief).every(step => step !== 'read trust'))
+    assert.equal(timeline.filter(step => step === 'brief').length, 1)
+  })
+
+  test('issue 330 Rule 3: agy still on the trust screen after 3 Enters fails with what to do and never gets the brief', async () => {
+    const { env, timeline } = agyTrustIo(Infinity)
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), error => {
+      assert.equal(error.message, 'agy sigue en la pantalla de confianza de la carpeta y no recibió el brief. Elegí "Yes, I trust this folder" en la terminal term_1 y corré orca-stack reanudar 7 <url-del-comentario>.')
+      return true
+    })
+    assert.equal(timeline.filter(step => step === 'enter').length, 3)
+    assert.ok(!timeline.includes('brief'))
+    assert.ok(!env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('issue 330 Rule 3 (revisar): agy still on the trust screen asks to paste the exact brief line, not to run reanudar', async () => {
+    const { env, timeline } = agyTrustIo(Infinity, { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), error => {
+      const briefPath = env.written.find(([file]) => /revision-9-agy\.md$/.test(file))[0]
+      assert.equal(error.message, `agy sigue en la pantalla de confianza de la carpeta y no recibió el brief. Elegí "Yes, I trust this folder" en la terminal term_1 y pegá en la terminal esta línea: Read and follow the brief in ${briefPath}`)
+      assert.ok(!error.message.includes('reanudar'))
+      return true
+    })
+    assert.equal(timeline.filter(step => step === 'enter').length, 3)
+    assert.ok(!timeline.includes('brief'))
+  })
+
+  test('issue 330 Rule 5: codex keeps its trust error and claude its launch; neither gets a bare Enter', async () => {
+    const codex = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: ['Trust this folder?'] } } }) })
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, codex), /Codex pide confiar en la carpeta y no recibió el brief\. /)
+    assert.ok(!codex.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send'))
+    const claude = fakeIo()
+    await run('ticket', { n: '7', agent: 'claude' }, claude)
+    const sends = claude.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
+    assert.equal(sends.length, 1)
+    assert.ok(sends[0].includes('--text'))
+  })
+
   test('revisar applies the same trust check before sending its brief', async () => {
     const env = fakeIo({
       'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }),

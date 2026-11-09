@@ -1,7 +1,7 @@
 import path from 'node:path'
 
 import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, readPin, shellPrompt, writePin } from './despacho.mjs'
-import { identityOf, isDialog, paneAgents, PI_IDLE, readScreen, SPINNER_LINES, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
+import { identityOf, isDialog, paneAgents, stackAgent, PI_IDLE, readScreen, SPINNER_LINES, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
 const LIVE = ['working', 'running', 'active', 'blocked', 'waiting']
@@ -156,9 +156,9 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     }
   }
   const target = done.length === 1
-    ? workers.find(worker => worker.record?.paneKey === done[0].paneKey) ?? { record: done[0], identity: done[0].agentType }
+    ? workers.find(worker => worker.record?.paneKey === done[0].paneKey) ?? { record: done[0], identity: stackAgent(done[0].agentType) }
     : identifiedWorkers.length === 1 ? identifiedWorkers[0] : undefined
-  let agent = target?.identity ?? target?.record?.agentType
+  let agent = target?.identity ?? stackAgent(target?.record?.agentType)
   const originalPath = path.join(io.home, 'orca', 'briefs', `${repo}-${n}.md`)
   let originalBrief
   if (!agent && agentRecords.length === 0 && identifiedWorkers.length === 0) {
@@ -212,7 +212,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     markAttempt()
   }
   const session = `${repo}-${n}-reanudar-${(io.now ?? Date.now)()}`
-  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0 })
+  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: n })
 
   return 0
 }
