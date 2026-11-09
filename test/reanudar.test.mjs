@@ -679,4 +679,39 @@ describe('reanudar: the pi profile (#276)', () => {
     assert.ok(flagged.outputs.includes('[simulaci\u00F3n] perfil de Pi: OpusFull (fuente: flag)'), flagged.outputs.join('\n'))
     await assert.rejects(() => reanudarCommand({ perfilPi: 'OpusFull', dryRun: true }, ISSUE, URL, harness({ state: 'done', agent: 'codex' }).io), /solo vale para el agente pi/)
   })
+
+  test('issue 293 Rule 2: a paused pi gets the line with a stale pin, and --perfil-pi rewrites the pin on the send and the relaunch paths', async () => {
+    // git ignores the pin (writePin asks it) and does not track it.
+    const ignoring = h => {
+      const sh = h.io.sh
+      h.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'check-ignore' ? ok('') : cmd === 'git' && args[0] === 'ls-files' ? fail('') : sh(cmd, args, opts)
+      return h
+    }
+    const idle = ['● PR opened.', '╭─ ✿ ────────────────────────────╮', '│ type, or / for commands        │', '╰────────────────────────────────╯', ' claude-opus-5-5 · high']
+    const paused = () => {
+      const h = harness({ agent: 'pi', screen: idle })
+      h.files[STORE] = JSON.stringify(PROFILES)
+      h.files[PIN] = pinFile('opus-haiku')
+      return ignoring(h)
+    }
+    const plain = paused()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, plain.io), 0)
+    assert.equal(plain.sends().length, 1)
+    assert.equal(launches(plain).length, 0)
+    assert.equal(JSON.parse(plain.files[PIN]).profile, 'opus-haiku')
+
+    const flagged = paused()
+    assert.equal(await reanudarCommand({ perfilPi: 'OpusFull' }, ISSUE, URL, flagged.io), 0)
+    assert.equal(flagged.sends().length, 1)
+    assert.equal(launches(flagged).length, 0)
+    assert.equal(JSON.parse(flagged.files[PIN]).profile, 'OpusFull')
+
+    // The relaunch path: the fake host shows no new pi session, so the launch is refused after it started, pin rewritten.
+    const exited = ignoring(piHarness('opus-haiku'))
+    exited.io.listFiles = () => []
+    await assert.rejects(() => reanudarCommand({ perfilPi: 'opus-sonnet' }, ISSUE, URL, exited.io), /No observé una sesión nueva de Pi/)
+    assert.equal(launches(exited).length, 1)
+    assert.ok(launches(exited)[0].args.some(arg => arg.includes("--model 'claude-bridge/claude-opus-5-5' --thinking high")))
+    assert.equal(JSON.parse(exited.files[PIN]).profile, 'opus-sonnet')
+  })
 })

@@ -20,7 +20,7 @@ const prMatchesIssue = (pr, issue, branches) =>
   branches.includes(pr.headRefName) ||
   new RegExp(`^\\s*Closes\\s+#${issue}\\b`, 'im').test(pr.body ?? '')
 
-const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt) => {
+const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt, beforeSend) => {
   const { handle } = target.terminal
   const screen = readScreen(io, handle)
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
@@ -43,6 +43,7 @@ const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt) => {
     return true
   }
 
+  beforeSend()
   markAttempt()
   const sent = io.sh('orca', argv)
   const receipt = parse(sent)?.result?.send
@@ -177,25 +178,30 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   }
   if (flags.perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
   // Like rebote: the worktree pin decides, so the orchestrator follows the same profile as the subagents. --perfil-pi
-  // replaces a pin that can no longer be honored; with neither (and no config), it fails closed.
-  let profile
-  if (agent === 'pi') {
-    const pin = readPin(io, row.path)
+  // replaces a pin that can no longer be honored; with neither (and no config), a relaunch fails closed. Sending a line
+  // to a paused pi launches nothing, so it needs no profile; a --perfil-pi there is still checked and rewrites the pin,
+  // so the subagents the paused pi launches next follow it.
+  const pin = agent === 'pi' ? readPin(io, row.path) : undefined
+  const resolveProfile = () => {
     try {
-      profile = piProfileFor({ flag: flags.perfilPi, pin, config, home: io.home, commonDir, io })
+      return piProfileFor({ flag: flags.perfilPi, pin, config, home: io.home, commonDir, io })
     } catch (error) {
       if (flags.perfilPi === undefined && pin !== undefined) error.message += ` Repet\u{ed} con --perfil-pi <nombre> para fijar otro perfil en el worktree.`
       throw error
     }
   }
+  let profile = agent === 'pi' && flags.perfilPi !== undefined ? resolveProfile() : undefined
 
   if (!io.exists(originalPath)) throw new Error(`No encuentro el brief original ${originalPath}; no relanzo sin \u{e9}l.`)
 
   if (target?.terminal && stateOf(target.record) === 'done') {
     target.worktree = row.path
-    const handled = sendToPaused(flags, n, url, originalPath, target, io, markAttempt)
+    const handled = sendToPaused(flags, n, url, originalPath, target, io, markAttempt, () => {
+      if (needsPin(profile)) writePin(io, row.path, commonDir, profile.name)
+    })
     if (handled) return 0
   }
+  if (agent === 'pi') profile ??= resolveProfile()
 
   const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: row.path })
   if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${row.path}: ${detail(status)}`)
