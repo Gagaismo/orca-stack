@@ -38,8 +38,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           jar="$RUNNER_TEMP/tla2tools.jar"
-          curl -fsSL -o "$jar" https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
-          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $jar" | sha256sum -c -
+          bash scripts/fetch-tla2tools.sh "$jar"
           echo "TLA2TOOLS=$jar" >> "$GITHUB_ENV"
       - name: Tests (incluye el chequeo de rutas personales y de copias compartidas)
         run: npm test
@@ -125,10 +124,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Download tla2tools.jar 1.7.4
-        run: curl -fsSL -o "$RUNNER_TEMP/tla2tools.jar" https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
-      - name: Verify tla2tools.jar checksum
-        run: echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict -
+      - name: Download and verify tla2tools.jar 1.7.4
+        run: bash scripts/fetch-tla2tools.sh "$RUNNER_TEMP/tla2tools.jar"
       - name: Run TLC on every config
         run: TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" bash formal/rebote/check.sh
       - name: A result that differs from the expected one fails check.sh
