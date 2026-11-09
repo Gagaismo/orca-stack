@@ -263,6 +263,13 @@ const piForeground = agent => agent === 'pi'
   ? '\n\nYour process ends when your turn ends, and background jobs die with it: run every verification (the configured suite and focused tests) in the foreground and wait for it to finish before you commit and push.'
   : ''
 
+// The RDD review mode (#338): opt-in per repo with agentes.pi.review "rdd", and only for PRs pi implements.
+export const rddMode = (config, agent) => agent === 'pi' && config?.agentes?.pi?.review === 'rdd'
+
+const rddAssessStep = (agent, piReview) => rddMode({ agentes: { pi: { review: piReview } } }, agent)
+  ? '\n\nThis repo uses the RDD review mode for pi PRs (`agentes.pi.review: "rdd"`). After your last commit and before opening the PR, run `gentle_review` with `{"operation":"assess"}` on that commit and write under `## Merge Danger` three lines: `Tier: <the tier assess returned>`, `reviewDue: <true|false, as assess returned it>` and your ODD `Risk:` line. Do not start an RDD review yourself: main reads those lines and decides whether the PR gets no review or an RDD review, and an RDD review you run on your own before the PR does not count as its review.'
+  : ''
+
 const bodyPrecheckStep = cuerpoPr => {
   if (typeof cuerpoPr !== 'string' || cuerpoPr.trim() === '') return ''
   const cmd = cuerpoPr.trim().replace(/\{file\}/g, '<your body file>')
@@ -292,6 +299,7 @@ export const renderBrief = (kind, vars, nota) => {
     PROJECT_INSTRUCTIONS: projectInstructions(vars.AGENT),
     SUBAGENTS_INSTRUCTION: subagentsInstruction(vars.AGENT),
     BODY_PRECHECK_STEP: vars.BODY_PRECHECK_STEP ?? bodyPrecheckStep(vars.CUERPO_PR),
+    RDD_ASSESS_STEP: rddAssessStep(vars.AGENT, vars.PI_REVIEW),
     CODING_STANDARDS_INSTRUCTION: vars.HAS_CODING_STANDARDS ? 'Read CODING_STANDARDS.md and check the change against it before every commit.' : '',
     REVIEW_STANDARDS: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md and AGENTS.md' : 'AGENTS.md',
     REVIEW_STANDARDS_ANY: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md or AGENTS.md (a rule in either file alone is enough)' : 'AGENTS.md',
@@ -850,6 +858,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     BRANCH: branch,
     VERIFICATION: verificationBlock(config),
     CUERPO_PR: config.verificacion?.cuerpoPR,
+    PI_REVIEW: config.agentes?.pi?.review,
     HAS_CODING_STANDARDS: hasCodingStandards,
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
     ...(review ? {

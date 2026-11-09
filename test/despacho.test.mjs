@@ -1194,6 +1194,29 @@ describe('issue #295: pi launches report an auth failure', () => {
     }
   })
 
+  const RDD_ASSESS = 'run `gentle_review` with `{"operation":"assess"}` on that commit and write under `## Merge Danger` three lines: `Tier: <the tier assess returned>`, `reviewDue: <true|false, as assess returned it>` and your ODD `Risk:` line.'
+  const RDD_CONFIG = { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { ...PROJECT.agentes.pi, review: 'rdd' } } }
+
+  test('issue #338 Rule 1: the RDD mode applies only to a pi ticket in a repo with agentes.pi.review "rdd"; codex, agy, claude and a repo without the key keep today\'s brief', async () => {
+    for (const [agent, config, on] of [['pi', RDD_CONFIG, true], ['codex', RDD_CONFIG, false], ['agy', RDD_CONFIG, false], ['claude', RDD_CONFIG, false], ['pi', PROJECT, false]]) {
+      const env = fakeIo({}, { config })
+      await run('ticket', { n: '7', agent }, env)
+      const brief = env.written.find(([file]) => file.endsWith('proj-7.md'))?.[1]
+      assert.ok(brief, `${agent} brief is written`)
+      assert.equal(brief.includes('RDD review mode'), on, `${agent} ${config === RDD_CONFIG ? 'with' : 'without'} the key`)
+      assert.ok(!brief.includes('{{RDD_ASSESS_STEP}}'), `${agent} brief leaves no placeholder`)
+    }
+  })
+
+  test('issue #338 Rule 2: with the mode on, the pi ticket brief asks for gentle_review assess before the PR and the tier, reviewDue and Risk: lines under ## Merge Danger', async () => {
+    const env = fakeIo({}, { config: RDD_CONFIG })
+    await run('ticket', { n: '7', agent: 'pi' }, env)
+    const brief = env.written.find(([file]) => file.endsWith('proj-7.md'))?.[1]
+    assert.ok(brief.includes(`After your last commit and before opening the PR, ${RDD_ASSESS}`), brief)
+    assert.ok(brief.indexOf(RDD_ASSESS) < brief.indexOf('gh pr create'), 'the assess step comes before gh pr create')
+    assert.ok(brief.includes('Do not start an RDD review yourself'), 'the worker does not decide the review')
+  })
+
   test('Preserve: README, the manual and despachar --help describe the pi auth check', () => {
     for (const file of ['README.md', path.join('docs', 'manual.md'), path.join('src', 'cli.mjs')]) {
       const text = readFileSync(path.join(PACKAGE_ROOT, file), 'utf8').replace(/\s+/g, ' ')
