@@ -10,6 +10,11 @@ import { cleanup, cli, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const codes = text => [...text].map(char => char.charCodeAt(0)).join(',')
 const BLOCK = buildBlock(CODEX_ASCII_RULE, '\n', CODEX_ASCII_MARKERS)
+// The block global wrote before #342, kept verbatim to prove an old block is replaced.
+const OLD_RULE = `## Source code stays ASCII (Windows)
+
+- Source code stays pure ASCII: write every non-ASCII character in a string literal as a \`\\u\` escape (for example \`'acci\\u00f3n'\` for "acción"). Markdown and other prose files keep real accents.
+- Reason: on Windows, PowerShell 5.1 can garble accented text you read and copy into code (Gagaismo/orca-stack#58).`
 // 'está' as cp1252 decodes it (written escaped: the repo scans tracked files for mojibake).
 const MOJIBAKE = 'est\u00C3\u00A1'
 const PROFILE = 'C:\\Users\\Ana\\OneDrive\\Documentos\\WindowsPowerShell\\Microsoft.PowerShell_profile.ps1'
@@ -223,6 +228,20 @@ describe('global and remove: codex ASCII block', () => {
     write(agentsMd(), `${before}${buildBlock('old rule', '\n', CODEX_ASCII_MARKERS)}${after}`)
     run(['global', '--skip-pi'])
     assert.equal(read(agentsMd()), `${before}${BLOCK}${after}`)
+  })
+
+  test('issue 342 rule 3: an old block is replaced, not duplicated, and a second global run leaves the file unchanged', () => {
+    const own = '## Rules\n\n- mine\n\n'
+    write(agentsMd(), `${own}${buildBlock(OLD_RULE, '\n', CODEX_ASCII_MARKERS)}\n`)
+    run(['global', '--skip-pi'])
+    const first = read(agentsMd())
+    assert.equal(first, `${own}${BLOCK}\n`)
+    assert.equal(first.split(CODEX_ASCII_MARKERS.begin).length - 1, 1)
+    assert.ok(first.includes('This rule is for the code you write.'))
+
+    const again = run(['global', '--skip-pi'])
+    assert.equal(read(agentsMd()), first)
+    assert.match(again.out, /ya tiene la regla/)
   })
 
   test('rule 4: no ~/.codex/AGENTS.md, global creates it with only the block', () => {
