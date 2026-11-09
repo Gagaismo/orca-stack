@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, readPin, shellPrompt, writePin } from './despacho.mjs'
+import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, readPin, shellPrompt, writePin } from './despacho.mjs'
 import { identityOf, isDialog, paneAgents, stackAgent, piIdle, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
@@ -186,7 +186,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     try {
       return piProfileFor({ flag: flags.perfilPi, pin, config, home: io.home, commonDir, io })
     } catch (error) {
-      if (flags.perfilPi === undefined && pin !== undefined) error.message += ` Repet\u{ed} con --perfil-pi <nombre> para fijar otro perfil en el worktree.`
+      if (flags.perfilPi === undefined && pin !== undefined && !piProfileStored(io, pin)) error.message += ` Repet\u{ed} con --perfil-pi <nombre> para fijar otro perfil en el worktree.`
       throw error
     }
   }

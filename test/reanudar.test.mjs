@@ -706,6 +706,12 @@ describe('reanudar: the pi profile (#276)', () => {
     assert.equal(launches(flagged).length, 0)
     assert.equal(JSON.parse(flagged.files[PIN]).profile, 'OpusFull')
 
+    // A --perfil-pi the CLI would not launch is refused before the line goes out, and the pin stays.
+    const wrong = paused()
+    await assert.rejects(() => reanudarCommand({ perfilPi: 'nope' }, ISSUE, URL, wrong.io), /No existe el perfil de Pi "nope"/)
+    assert.equal(wrong.sends().length, 0)
+    assert.equal(JSON.parse(wrong.files[PIN]).profile, 'opus-haiku')
+
     // The relaunch path: the fake host shows no new pi session, so the launch is refused after it started, pin rewritten.
     const exited = ignoring(piHarness('opus-haiku'))
     exited.io.listFiles = () => []
