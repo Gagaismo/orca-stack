@@ -11,6 +11,7 @@ import { homeDir, layout, readTextIfExists, run, timestamp, tilde, which } from 
 // Portable pointers: never an absolute user path.
 export const POLICY = '~/orca/stack/ORCA-STACK.md'
 export const BRIEFS = '~/orca/stack/ROLE-BRIEFS.md'
+export const MAIN_DOC = '~/orca/stack/MAIN.md'
 
 const projectRoot = cwd => {
   const git = which('git')
@@ -144,7 +145,7 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
     console.log(`⚠ git no ignora ${CANDIDATE_WORKTREES_EXCLUDE} (un .gitignore con \`${negation ?? '!.claude/worktrees/'}\` gana sobre info/exclude)`)
   }
   if (!hasMainDoc) {
-    console.log(`⚠ falta ${tilde(mainDoc, home)}, con las reglas de main a las que apunta el bloque: corré \`orca-stack global\``)
+    console.log(`⚠ falta ${MAIN_DOC}, con las reglas de main a las que apunta el bloque: corré \`orca-stack global\``)
   }
 
   console.log(

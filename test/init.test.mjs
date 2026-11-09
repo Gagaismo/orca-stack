@@ -52,7 +52,7 @@ describe('init', () => {
     assert.equal(result.status, 0, result.out)
     assert.ok(read(path.join(repo, 'AGENTS.md')).includes('<!-- orca-stack:begin -->'))
     const warnings = result.out.split(/\r?\n/).filter(line => line.includes('MAIN.md'))
-    assert.deepEqual(warnings, [`⚠ falta ${path.join('~', 'orca', 'stack', 'MAIN.md')}, con las reglas de main a las que apunta el bloque: corré \`orca-stack global\``])
+    assert.deepEqual(warnings, [`⚠ falta ~/orca/stack/MAIN.md, con las reglas de main a las que apunta el bloque: corré \`orca-stack global\``])
     assert.doesNotMatch(result.out, /contrato de trabajo completo/)
   })
 
