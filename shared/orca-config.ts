@@ -224,6 +224,26 @@ export const repoRoot = async (host: Host): Promise<string | undefined> => {
   }
 }
 
+// The repo root when this checkout is the main one (git-dir equals git-common-dir, on any branch); undefined in a
+// linked worktree, outside git or when git fails.
+export const mainCheckout = async (host: Host): Promise<string | undefined> => {
+  try {
+    const result = await host.git(['git', 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'])
+    if (result.exitCode !== 0) {
+      return undefined
+    }
+    const [gitDir, commonDir, top] = result.stdout.split(/\r?\n/).map(path => path.trim())
+    if (gitDir === undefined || commonDir === undefined || slashed(gitDir).toLowerCase() !== slashed(commonDir).toLowerCase()) {
+      return undefined
+    }
+    const common = slashed(commonDir)
+
+    return common.endsWith('/.git') ? common.slice(0, -'/.git'.length) : slashed(top ?? '')
+  } catch {
+    return undefined
+  }
+}
+
 // Whether the repo opted into orca-stack, with `.orca-stack.json` or `.orca-stack.local.json`: mods that inject text
 // into the session, or that gate on it, only do so in such a project.
 export const hasProjectConfig = async (host: Host): Promise<boolean> => {

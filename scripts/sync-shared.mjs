@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-export const SHARED_USERS = ['puente-gentle', 'bandeja-mensajes', 'guardia-despacho', 'tablero-despacho']
+export const SHARED_USERS = ['puente-gentle', 'bandeja-mensajes', 'guardia-despacho', 'tablero-despacho', 'marchas', 'main-md']
 export const FIXTURE_USERS = ['puente-gentle']
 export const asModule = json =>
   `// Generated from shared/familias.json by \`npm run sync-shared\`: edit that file, not this one.\nexport default ${json.trim()}\n`

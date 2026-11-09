@@ -29,7 +29,7 @@ Versión de referencia: `orca-stack v0.18.0`. Lo que se mergee después de ese t
 
 ## 1. Qué es y para qué sirve
 
-orca-stack instala y mantiene el **stack de agentes** que se usa con [Orca](https://github.com/stablyai/orca): una política de trabajo (el contrato), skills propias, wrappers de proveedores (`claude`, `codex`, `agy`), Pi con Gentle Shell y ocho mods de Claude Code. Además trae comandos para despachar tickets a agentes, pedir reviews, relanzar autores y vigilar una tanda de PRs.
+orca-stack instala y mantiene el **stack de agentes** que se usa con [Orca](https://github.com/stablyai/orca): una política de trabajo (el contrato), skills propias, wrappers de proveedores (`claude`, `codex`, `agy`), Pi con Gentle Shell y nueve mods de Claude Code. Además trae comandos para despachar tickets a agentes, pedir reviews, relanzar autores y vigilar una tanda de PRs.
 
 Lo esencial en tres líneas:
 
@@ -293,6 +293,7 @@ Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `
 | `bandeja-mensajes` | `/mensajes` | Captura los bloques ` ```mensaje <destinatario> ` que redacta Claude y deja copiarlos o guardarlos | `mensajes.destinatarios` limita los nombres; deshabilitar el plugin |
 | `grilling-ok` | — | Responde con un clic (o con `ok`) las preguntas Q1…Qn de un grilling | Deshabilitar el plugin |
 | `modo-autonomo` | `/autonomo [meta \| off]` | Instrucción permanente de trabajar hasta la meta (por defecto `producción`) con recordatorio anti-parada acotado (máximo 3). Se apaga solo cuando el agente escribe `[AUTONOMO-LISTO]` | `/autonomo off` |
+| `main-md` | — | Solo en el checkout principal (git-dir igual a git-common-dir, en cualquier rama) de un repo con `.orca-stack.json`: al arrancar, al retomar y después de compactar inyecta los pasos de `### Ciclo de main` de `MAIN.md` (`~/orca/stack/MAIN.md`, o el que está junto a `$ORCA_STACK_POLICY_PATH`), precedidos de una línea que dice que salen del mismo archivo al que apunta el contrato. Claude Code corta cada texto de un hook en 10.000 caracteres, así que los pasos van en partes por debajo de ese límite y el resto del archivo se lee desde el puntero. Si no lo puede leer, o no tiene esa sección, deja solo una línea con la ruta | `claude plugin disable main-md@inline --scope user` (o `local`, o `project`) |
 | `marchas` | `/marcha [lazy\|medium\|proactive]` | Solo en el checkout principal de un repo con `.orca-stack.json` o `.orca-stack.local.json` cuyo contrato incluye `Marchas`. Muestra o cambia la marcha | `claude plugin disable marchas@inline --scope user` (o `local`, o `project`) |
 | `reloj-cache` | `/compactar-ya` | Muestra cuánto falta para que venza el caché del prompt (supone 1 hora), avisa 10 minutos antes y ofrece compactar | Deshabilitar el plugin |
 
