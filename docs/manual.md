@@ -37,7 +37,7 @@ Lo esencial en tres líneas:
 - **Los workers implementan**, cada uno en su worktree, con un brief generado desde el ticket.
 - **Un agente distinto revisa** (o un subagente de contexto limpio en modo `un-agente`), y la CI es la que cuenta para lo mecánico.
 
-El contrato completo vive en `assets/stack/CONTRATO.md` y `init` lo copia al `AGENTS.md` de cada proyecto. Este manual explica cómo se usa; si hay una diferencia, manda el contrato.
+El contrato completo vive en `assets/stack/CONTRATO.md` y `init` lo copia al `AGENTS.md` de cada proyecto. Lo que solo usa `main` (el Ciclo de `main`, las Marchas, el Modo `un-agente`, el Despacho, sus Permisos y su parte de Arena y swarm) vive en `assets/stack/MAIN.md`, que `global` instala en `~/orca/stack/MAIN.md`; el contrato deja en esas secciones una línea que apunta ahí y le pide a `main` leerlo entero. Así el bloque que cargan todos los workers y revisores queda por debajo de 24 KiB. Este manual explica cómo se usa; si hay una diferencia, manda el contrato.
 
 ## 2. Los roles: `main`, worker y revisor
 
@@ -262,7 +262,7 @@ Solo lectura. Lista sesiones recientes de Claude Code, Pi y agy (agy necesita No
 
 ### 4.2 El ciclo de una tanda
 
-Resumen del "Ciclo de `main`" del contrato, con el comando de cada paso:
+Resumen del "Ciclo de `main`" (en `~/orca/stack/MAIN.md`), con el comando de cada paso:
 
 | # | Paso | Comando o regla |
 | --- | --- | --- |
@@ -544,7 +544,7 @@ orca-stack sesiones                  # para /retro
 | Configuración personal | `~/.orca-stack/config.json` |
 | Respaldos | `~/.orca-stack/backups/<fecha>/` (nunca al lado del archivo) |
 | Copia del CLI y de `gentle` | `~/.orca-stack/cli/`, `~/.orca-stack/gentle/orchestrator.md` |
-| Política y wrappers | `~/orca/stack/` (`ORCA-STACK.md`, `ROLE-BRIEFS.md`, `scripts/`) |
+| Política y wrappers | `~/orca/stack/` (`ORCA-STACK.md`, `ROLE-BRIEFS.md`, `MAIN.md`, `scripts/`) |
 | Briefs de despacho y review | `~/orca/briefs/` |
 | Mods | `~/.claude/mods/` y `env.CLAUDE_CODE_PLUGIN_DIRS` en `~/.claude/settings.json` |
 | Skills | `~/.claude/skills/` y `~/.agents/skills/` |

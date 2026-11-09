@@ -61,7 +61,7 @@ const COMMAND_HELP = {
   global: `orca-stack global [--dry-run] [--force] [--skip-pi] [--limpiar-sdd] [--humano <nombre>]
 
 Instala a nivel usuario:
-  1. ~/orca/stack/ORCA-STACK.md y ROLE-BRIEFS.md
+  1. ~/orca/stack/ORCA-STACK.md, ROLE-BRIEFS.md y MAIN.md (las reglas de main)
   2. Wrappers claude/codex/agy-orca-stack (.cmd en Windows, .sh en el resto) en ~/orca/stack/scripts
   3. Skills propias en ~/.claude/skills y ~/.agents/skills
   4. Mods en ~/.claude/mods y sus rutas en env.CLAUDE_CODE_PLUGIN_DIRS de ~/.claude/settings.json

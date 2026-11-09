@@ -565,7 +565,7 @@ describe('orca-stack vigilar (#195)', () => {
     assert.deepEqual(h.out, ['pr-mergeado #7 PR #70 abc1234', 'tanda-cerrada #7 #8'])
   })
 
-  test('Rule 22: --help lists vigilar and its flags; CONTRATO steps 5 and 7 name it; the AGENTS.md block equals the asset', async () => {
+  test('Rule 22: --help lists vigilar and its flags; MAIN.md steps 5 and 7 name it; the AGENTS.md block equals the asset', async () => {
     const oldLog = console.log
     let output = ''
     console.log = value => { output += `${value}\n` }
@@ -586,7 +586,7 @@ describe('orca-stack vigilar (#195)', () => {
       console.log = oldLog
     }
 
-    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
     const step = n => contract.split(/\r?\n/).find(line => line.startsWith(`${n}. `))
     assert.ok(step(5).includes('un solo Monitor de fondo armado con `orca-stack vigilar <n...>`'))
     assert.ok(step(5).includes('En marcha Proactive, armalo con `--consultas`'))
@@ -644,8 +644,8 @@ describe('orca-stack vigilar (#206)', () => {
     }
   })
 
-  test('Rule 5: CONTRATO step 7 says main still tries gh pr merge when --merge-de-main fails; the AGENTS.md block equals the asset', () => {
-    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
+  test('Rule 5: MAIN.md step 7 says main still tries gh pr merge when --merge-de-main fails; the AGENTS.md block equals the asset', () => {
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
     const step7 = contract.split(/\r?\n/).find(line => line.startsWith('7. '))
     assert.ok(step7.includes('corré `orca-stack vigilar --merge-de-main <n>`, también después de `gh pr update-branch <n>` (el registro lleva el head); si el registro falla, igual intentás el merge, y si sale, su `pr-mergeado` es tuyo.'))
 
@@ -1035,13 +1035,13 @@ describe('orca-stack vigilar (#254)', () => {
     assert.deepEqual(h.out, ['pr-mergeado #250 PR #251 df9e86a', 'tanda-cerrada #7 #250'])
   })
 
-  test('Issue 254 Rule 7: the manual events table has pr-en-conflicto with rebote; CONTRATO step 5 names it next to worker-en-pausa; AGENTS.md equals the asset; vigilar --help lists it', async () => {
+  test('Issue 254 Rule 7: the manual events table has pr-en-conflicto with rebote; MAIN.md step 5 names it next to worker-en-pausa; AGENTS.md equals the asset; vigilar --help lists it', async () => {
     const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs', 'manual.md'), 'utf8')
     const row = manual.split(/\r?\n/).find(line => line.startsWith('| `pr-en-conflicto #<n> PR #<pr> <sha>`'))
     assert.ok(row, 'manual events row')
     assert.ok(row.includes('Corré `orca-stack rebote <pr>` una vez que el worker se detuvo'), row)
 
-    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
     const step5 = contract.split(/\r?\n/).find(line => line.startsWith('5. '))
     assert.ok(step5.includes('`worker-en-pausa #<n> <agente>`'))
     assert.ok(step5.includes('`pr-en-conflicto #<n> PR #<pr> <sha>`'))

@@ -23,7 +23,7 @@ const PROJECT = {
 }
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const SHIPPED_STACK_FILES = ['CONTRATO.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']
+const SHIPPED_STACK_FILES = ['CONTRATO.md', 'MAIN.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']
 const packageOnlyPathRegex = (packageRoot = PACKAGE_ROOT) => {
   // .claude/ is the project's Claude Code directory (for example .claude/worktrees/), never package code.
   const allowedDirectories = new Set(['docs', '.github', '.git', '.claude'])
@@ -410,10 +410,10 @@ describe('issue 196 brief hygiene', () => {
   })
 
   test('Rule 7: contract reads issue and PR bodies plus comments and review records', () => {
-    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/CONTRATO.md'), 'utf8')
+    // Issue 325: main's cycle moved to MAIN.md; the AGENTS.md block sends main there.
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/MAIN.md'), 'utf8')
     const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
-    assert.match(agents, /gh issue view <n> --json title,body,comments/)
-    assert.match(agents, /gh pr view <n> --json title,body,comments,reviews/)
+    assert.match(agents, /leé `~\/orca\/stack\/MAIN\.md` entero antes de actuar/)
     assert.match(contract, /gh issue view <n> --json title,body,comments/)
     assert.match(contract, /gh pr view <n> --json title,body,comments,reviews/)
     assert.match(contract, /gh pr view <n> --json headRefOid/)
@@ -741,12 +741,12 @@ describe('briefs', () => {
   })
 
   test('Rule 4: main reports note/result N mismatch without blocking merge', () => {
-    const contract = readFileSync(new URL('../assets/stack/CONTRATO.md', import.meta.url), 'utf8')
+    const contract = readFileSync(new URL('../assets/stack/MAIN.md', import.meta.url), 'utf8')
     assert.match(contract, /N=4[\s\S]*nota aprob\u00F3 N=3[\s\S]*resumen de merge reporta el mismatch[\s\S]*el merge sigue/i)
   })
 
   test('Rule 6: main only writes a fan-out note after human OK, including autonomous and ultracode', () => {
-    const contract = readFileSync(new URL('../assets/stack/CONTRATO.md', import.meta.url), 'utf8')
+    const contract = readFileSync(new URL('../assets/stack/MAIN.md', import.meta.url), 'utf8')
     assert.match(contract, /Escribe esa nota solo con el OK expl\u00EDcito del humano[\s\S]*modo aut\u00F3nomo[\s\S]*ultracode/i)
   })
 
@@ -772,7 +772,7 @@ describe('briefs', () => {
     assert.ok(roleBriefs.includes(touched))
     assert.match(roleBriefs, /RED is one test per rule[\s\S]*PRESERVE is one test per existing public entry[\s\S]*Nothing else/i)
     assert.match(roleBriefs, /If a rule\s+cites an artifact, test against that artifact, not a paraphrase/i)
-    assert.doesNotMatch(contract, /A public entry is touched when its own code changed in the diff/)
+    for (const doc of [contract, readFileSync(new URL('../assets/stack/MAIN.md', import.meta.url), 'utf8')]) assert.doesNotMatch(doc, /A public entry is touched when its own code changed in the diff/)
     assert.match(contract, /## Evidencia` con una fila por cada regla[\s\S]*por cada entrada pública tocada \(la definición está en el brief del ticket que arma `orca-stack despachar`\)/i)
     const reviewSection = contract.split('### Review')[1].split('### Skills de Matt')[0]
     assert.match(reviewSection, /Los ejes, los tests derivados, la comprobación de que un test del autor falle sin el cambio y la limpieza de tests están en el brief de revisión que arman `orca-stack revisar` y `orca-stack brief-revision`\./)
@@ -786,7 +786,7 @@ describe('briefs', () => {
     }
   })
 
-  const contractStep = n => readFileSync(new URL('../assets/stack/CONTRATO.md', import.meta.url), 'utf8')
+  const contractStep = n => readFileSync(new URL('../assets/stack/MAIN.md', import.meta.url), 'utf8')
     .split('\n').find(line => line.startsWith(`${n}. `))
 
   test('step 7 (c): with CI, main needs no Suite: line of its own after a bounce', () => {
@@ -2032,7 +2032,7 @@ describe('rebote', () => {
   test('CLI help and bounce brief describe CI findings and safe repair rules', () => {
     const cli = readFileSync(path.join(PACKAGE_ROOT, 'src', 'cli.mjs'), 'utf8')
     const brief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-rebote.md'), 'utf8')
-    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'CONTRATO.md'), 'utf8')
+    const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
     assert.match(cli, /rebote\s+Relanza al autor de un PR bloqueado o con CI roja/i)
     assert.match(brief, /## Failed checks/)
     assert.match(brief, /do not delete, skip or weaken a test/i)
@@ -2429,13 +2429,14 @@ describe('rebote', () => {
     })
 
     test('Rule 10: contract step 8 and the manual say how main merges after a conflict bounce', () => {
-      const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/CONTRATO.md'), 'utf8')
+      // Issue 325: step 8 moved to MAIN.md; the AGENTS.md block sends main there.
+      const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/MAIN.md'), 'utf8')
       const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
       const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs/manual.md'), 'utf8')
       const rule = 'Después de un rebote por conflicto, el merge del autor es un push a mano (paso 7 (b)): main mergea con un review nuevo sobre el head nuevo o, fuera de `riesgo`, con `Verificado por main` escrito tras leer el diff de la resolución.'
       const step8 = text => text.split(/\r?\n/).find(line => line.startsWith('8. Un PR rebota una sola vez por review.')) ?? ''
       assert.ok(step8(contract).includes(rule))
-      assert.ok(step8(agents).includes(rule))
+      assert.match(agents, /leé `~\/orca\/stack\/MAIN\.md` entero antes de actuar/)
       assert.ok(manual.includes(rule))
     })
 
@@ -2488,9 +2489,11 @@ describe('rebote', () => {
         const text = readFileSync(path.join(PACKAGE_ROOT, file), 'utf8')
         const markers = text.split(/\r?\n/).find(line => line.includes('son marcas fijas del protocolo')) ?? ''
         for (const marker of ['`Rebote: <sha>`', '`Rebote CI: <sha>`', '`Rebote conflicto: <sha>`']) assert.ok(markers.includes(marker), `${file}: ${marker}`)
-        const step8 = text.split(/\r?\n/).find(line => line.startsWith('8. Un PR rebota una sola vez por review.')) ?? ''
-        assert.match(step8, /conflicto con la base[\s\S]*Rebote conflicto: <sha>/, file)
       }
+      // Issue 325: step 8 moved to MAIN.md.
+      const main = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/MAIN.md'), 'utf8')
+      const step8 = main.split(/\r?\n/).find(line => line.startsWith('8. Un PR rebota una sola vez por review.')) ?? ''
+      assert.match(step8, /conflicto con la base[\s\S]*Rebote conflicto: <sha>/, 'assets/stack/MAIN.md')
     })
   })
 
@@ -2602,7 +2605,7 @@ describe('rebote', () => {
 
     test('Rule 5: ticket and review briefs keep current remote operations unchanged and review stays read-only', async () => {
       const ticketBrief = renderBrief('ticket', { AGENT: 'agy', ISSUE: '255', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
-      assert.ok(ticketBrief.includes('- Operations: read issue #255 and its comments and the repo; comment on the issue; push only the ticket branch to `origin`; open the PR against main.'))
+      assert.ok(ticketBrief.includes('- Operations: read issue #255 and its comments and the repo; comment on the issue; check off its `## Tareas` with `gh issue edit 255 --body-file <file>`; push only the ticket branch to `origin`; open the PR against main.'))
       assert.ok(!ticketBrief.includes('gh pr edit'))
 
       const reviewBrief = renderBrief('review', { AGENT: 'codex', PR: '255', REPO: 'orca-stack', BASE: 'main', SHA: 'abc123', IMPLEMENTER: 'agy' })

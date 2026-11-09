@@ -94,6 +94,7 @@ After posting a Consulta:, the next action is a tool call on work that is not bl
 
 - Follow ODD (explore, classify, track, implement, close). The feature is `issue-{{ISSUE}}`. Its document is `odd/tasks/issue-{{ISSUE}}.md` plus the Engram mirror `odd/issue-{{ISSUE}}/tasks`. Never commit `odd/`.
 - The ticket's `## Reglas` are the feature's acceptance criteria. The existing RED and PRESERVE rules above override ODD test-first applicability: one test per rule and one per touched public entry.
+- Check off each `T<n>` of the issue's `## Tareas` in the issue body as soon as it is done (`gh issue edit {{ISSUE}} --body-file <file>`, changing only that checkbox). An issue without `## Tareas` has nothing to check off.
 - ODD step 1 (Authorize): this brief is your explicit authorization to implement the ticket. Step 3 (Resolve uncertainty): product questions go to the issue as a comment (`gh issue comment {{ISSUE}} --body-file <file>`), then continue with whatever is not blocked; never stop and wait.
 - This brief is the repository policy for delivery: commit work units, push the branch and open the PR yourself. Delivery strategy is always a single PR (`single-pr`), never ask.
 - If Engram is unavailable or reports `ambiguous_project`, mark the mirror pending and continue; never ask.

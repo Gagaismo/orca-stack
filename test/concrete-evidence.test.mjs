@@ -13,7 +13,9 @@ const between = (text, start, end) => text.split(start)[1].split(end)[0]
 
 const contract = read('assets/stack/CONTRATO.md')
 const reviewSection = between(contract, '### Review', '### Skills de Matt')
-const step8 = contract.split('\n').find(line => line.startsWith('8. '))
+// Issue 325: main's cycle moved to MAIN.md.
+const main = read('assets/stack/MAIN.md')
+const step8 = main.split('\n').find(line => line.startsWith('8. '))
 const brief = read('assets/stack/brief-revision.md')
 const manual = between(read('docs/manual.md'), '### 4.8 Review, rebote y merge', '\n### ')
 
@@ -46,7 +48,7 @@ describe('issue 302: only concrete evidence blocks a review', () => {
     assert.ok(brief.includes(`1. \`file:line\` ${FORMAT}:`))
     assert.ok(brief.includes('Each blocker says whether the diff introduces or worsens it, and its evidence kind.'))
     assert.ok(manual.includes(`1. \`archivo:línea\` ${FORMAT}:`))
-    for (const [name, text] of [['CONTRATO.md', contract], ['AGENTS.md', read('AGENTS.md')], ['brief-revision.md', brief], ['manual.md', manual]]) {
+    for (const [name, text] of [['CONTRATO.md', contract], ['MAIN.md', main], ['AGENTS.md', read('AGENTS.md')], ['brief-revision.md', brief], ['manual.md', manual]]) {
       assert.doesNotMatch(text, /concreta\|inferida|\*\*concreta\*\* o \*\*inferida\*\*|concrete \(a line, a failing test\) or inferred/, name)
     }
   })
@@ -58,7 +60,7 @@ describe('issue 302: only concrete evidence blocks a review', () => {
   })
 
   test('Rule 4 negative: the merge gate accepts a review whose only blocker is inferred', () => {
-    const step7 = contract.split(/\r?\n/).find(line => line.startsWith('7. '))
+    const step7 = main.split(/\r?\n/).find(line => line.startsWith('7. '))
     assert.doesNotMatch(step7, /un review con `## BLOQUEA` en `nada`/, 'step 7 still demands BLOQUEA=nada even for an unsupported finding')
     assert.ok(step7.includes('(a) un review sin bloqueos con evidencia concreta en `## BLOQUEA` (paso 8)'))
     assert.doesNotMatch(manual, /Hay un review con `## BLOQUEA` en `nada`/, 'the manual merge condition still demands BLOQUEA=nada')
@@ -88,7 +90,8 @@ describe('issue 302: only concrete evidence blocks a review', () => {
     const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
     assert.ok(block.startsWith('## Orca stack: contrato de trabajo'))
     assert.ok(block.includes(`1. \`archivo:línea\` ${FORMAT}:`))
-    assert.ok(block.includes(STEP_8_SENTENCE))
+    assert.ok(block.includes('leé `~/orca/stack/MAIN.md` entero antes de actuar'))
+    assert.ok(main.includes(STEP_8_SENTENCE))
     assert.ok(block.includes('### Política del stack'))
   })
 })

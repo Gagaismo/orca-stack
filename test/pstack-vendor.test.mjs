@@ -52,7 +52,7 @@ describe('vendored pstack principles (upstream v0.15.36)', () => {
       assert.match(text, /^disable-model-invocation:\s*true$/m, `${name} missing disable-model-invocation: true`)
       assert.doesNotMatch(text, /^disable-model-invocation:\s*false$/m, `${name} has disable-model-invocation: false`)
     }
-    for (const file of ['brief-ticket.md', 'brief-rebote.md', 'brief-revision.md', 'CONTRATO.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']) {
+    for (const file of ['brief-ticket.md', 'brief-rebote.md', 'brief-revision.md', 'CONTRATO.md', 'MAIN.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']) {
       const content = read(path.join(ROOT, 'assets', 'stack', file))
       assert.doesNotMatch(content, /(?:^|\s)\/principle-/, `${file} must not invoke principles by slash command`)
       assert.doesNotMatch(content, /--skill\s+principle-/, `${file} must not load principles by name`)
@@ -84,7 +84,8 @@ describe('vendored pstack principles (upstream v0.15.36)', () => {
     const ticketBrief = read(path.join(ROOT, 'assets', 'stack', 'brief-ticket.md'))
     const bounceBrief = read(path.join(ROOT, 'assets', 'stack', 'brief-rebote.md'))
     const roleBriefs = read(path.join(ROOT, 'assets', 'stack', 'ROLE-BRIEFS.md'))
-    const contract = read(path.join(ROOT, 'assets', 'stack', 'CONTRATO.md'))
+    // Issue 325: main's cycle moved to MAIN.md.
+    const contract = read(path.join(ROOT, 'assets', 'stack', 'MAIN.md'))
 
     // 1. make-operations-idempotent in implementation brief, Rules
     assert.match(ticketBrief, /The ticket touches a command, lifecycle step or loop that can run again after a crash, retry or rerun:\s*read `~\/\.claude\/skills\/principle-make-operations-idempotent\/SKILL\.md`\./)
@@ -92,8 +93,8 @@ describe('vendored pstack principles (upstream v0.15.36)', () => {
     assert.match(ticketBrief, /Two fixes sharing one premise have failed the same check; apply it before a third:\s*read `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
     // 3. attack-the-premise in bounce brief, Work
     assert.match(bounceBrief, /The PR already bounced and the new failure shares the previous fix's premise:\s*read `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
-    // 4. attack-the-premise in CONTRATO.md step 8 (main)
-    const cycle = contract.split('### Ciclo de `main`')[1].split('\n### Verificación')[0]
+    // 4. attack-the-premise in MAIN.md step 8 (main)
+    const cycle = contract.split('### Ciclo de `main`')[1].split('\n### Arena y swarm')[0]
     const step8 = cycle.split('\n').find(line => line.startsWith('8. '))
     assert.ok(step8, 'step 8 not found in Ciclo de main')
     assert.match(step8, /Antes de decidir qué sigue en pie después de la segunda ronda de review o de CI, o de pasárselo al humano:\s*leé `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
@@ -103,7 +104,7 @@ describe('vendored pstack principles (upstream v0.15.36)', () => {
     // 6. explain-the-number in implementation brief, Evidencia
     const evidenciaSection = ticketBrief.split('## Evidencia')[1].split('## Merge Danger')[0]
     assert.match(evidenciaSection, /A row's evidence is a measured number \(time, size, throughput, cost\):\s*read `~\/\.claude\/skills\/principle-explain-the-number\/SKILL\.md`\./)
-    // 7. explain-the-number in CONTRATO.md (main)
+    // 7. explain-the-number in MAIN.md (main)
     assert.match(cycle, /Antes de actuar sobre un número medido que viene de una investigación, de una tabla de Evidencia o de una retro:\s*leé `~\/\.claude\/skills\/principle-explain-the-number\/SKILL\.md`\./)
   })
 
@@ -309,14 +310,14 @@ describe('#265 re-vendor pstack principles and swarm from 0.15.36', () => {
   test('rule 7: trigger lines in brief-ticket.md, brief-rebote.md and CONTRATO.md are not edited, negative: no file under assets/stack is touched', () => {
     const ticketBrief = read(path.join(ROOT, 'assets', 'stack', 'brief-ticket.md'))
     const bounceBrief = read(path.join(ROOT, 'assets', 'stack', 'brief-rebote.md'))
-    const contract = read(path.join(ROOT, 'assets', 'stack', 'CONTRATO.md'))
+    const contract = read(path.join(ROOT, 'assets', 'stack', 'MAIN.md'))
 
     assert.match(ticketBrief, /The ticket touches a command, lifecycle step or loop that can run again after a crash, retry or rerun:\s*read `~\/\.claude\/skills\/principle-make-operations-idempotent\/SKILL\.md`\./)
     assert.match(ticketBrief, /Two fixes sharing one premise have failed the same check; apply it before a third:\s*read `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
     assert.match(bounceBrief, /The PR already bounced and the new failure shares the previous fix's premise:\s*read `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
     assert.match(contract, /Antes de decidir qu\u00e9 sigue en pie despu\u00e9s de la segunda ronda de review o de CI, o de pas\u00e1rselo al humano:\s*le\u00e9 `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
 
-    for (const file of ['brief-ticket.md', 'brief-rebote.md', 'brief-revision.md', 'CONTRATO.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']) {
+    for (const file of ['brief-ticket.md', 'brief-rebote.md', 'brief-revision.md', 'CONTRATO.md', 'MAIN.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']) {
       const current = read(path.join(ROOT, 'assets', 'stack', file))
       assert.ok(current.length > 0, `${file} must exist`)
     }
@@ -344,7 +345,7 @@ describe('#303 vendored create- and maintain-formal-verification-skill (upstream
     for (const name of FORMAL) {
       assert.match(skill(name), /^disable-model-invocation:\s*true$/m, `${name} missing disable-model-invocation: true`)
     }
-    for (const file of ['brief-ticket.md', 'brief-rebote.md', 'brief-revision.md', 'CONTRATO.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']) {
+    for (const file of ['brief-ticket.md', 'brief-rebote.md', 'brief-revision.md', 'CONTRATO.md', 'MAIN.md', 'ORCA-STACK.md', 'ROLE-BRIEFS.md']) {
       const content = read(path.join(ROOT, 'assets', 'stack', file))
       for (const name of FORMAL) {
         assert.ok(!content.includes(name), `${file} must not load ${name} by name`)
