@@ -128,8 +128,8 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   } else if (pr) {
     // A bounce marked on the current head whose author stopped is resumed by `rebote --continuar` (#292).
     const view = io.sh('gh', ['pr', 'view', String(pr.number), '--json', 'headRefOid,comments,reviews'], { cwd: root })
-    const detail = view.status === 0 ? parse(view) : undefined
-    const bounced = Boolean(detail?.headRefOid) && lastBounceMark([...(detail.reviews ?? []), ...(detail.comments ?? [])]) === detail.headRefOid
+    const bounce = view.status === 0 ? parse(view) : undefined
+    const bounced = Boolean(bounce?.headRefOid) && lastBounceMark([...(bounce.reviews ?? []), ...(bounce.comments ?? [])]) === bounce.headRefOid
     throw new Error(`El issue #${n} ya tiene un PR abierto (#${pr.number}); usá \`orca-stack rebote ${pr.number}\`.${bounced ? ` Si el autor del rebote se cortó, usá orca-stack rebote ${pr.number} --continuar.` : ''}`)
   }
 

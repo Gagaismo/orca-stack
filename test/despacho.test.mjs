@@ -1746,7 +1746,10 @@ describe('rebote', () => {
       const noBrief = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), dirty)
       await assert.rejects(reboteCommand({ continuar: true }, '13', noBrief.io), error => error.message.includes(missing))
       assert.equal(creates(noBrief).length, 0)
-      assert.ok(!commented(none) && !commented(noBrief))
+      const noted = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), dirty)
+      await assert.rejects(reboteCommand({ continuar: true, nota: 'x' }, '12', noted.io), error => error.message === '--nota no vale con --continuar: el autor sigue con el brief del rebote.')
+      assert.equal(creates(noted).length, 0)
+      assert.ok(!commented(none) && !commented(noBrief) && !commented(noted))
     })
 
     test('issue #292 Rule 2: rebote --continuar reuses the bounce session id and prefixes the bounce brief', async () => {
@@ -1815,7 +1818,16 @@ describe('rebote', () => {
       await assert.rejects(reboteCommand({ continuar: true }, '12', pi.io), error =>
         error.message.includes('resets 02:20') && error.message.includes('Pi muestra un límite de cuota'))
       assert.equal(creates(pi).length, 1)
-      assert.ok(!commented(agy) && !commented(pi))
+      // Claude Code's own wording names no "usage limit": "You've hit your session limit · resets 4:30am".
+      let claudeReads = 0
+      const claude = bounceEnv(pr({ body: 'Implementador: claude', comments: [{ body: 'Rebote: abc123' }] }), {
+        ...dirty,
+        'orca terminal read': () => json({ result: { terminal: { tail: ++claudeReads <= 3 ? ['ready'] : ["You've hit your session limit · resets 4:30am (America/Argentina/Buenos_Aires)"] } } }),
+      })
+      await assert.rejects(reboteCommand({ continuar: true }, '12', claude.io), error =>
+        error.message.includes('claude sigue sin cuota (resets 4:30am)') && error.message.includes('orca-stack rebote 12 --continuar'))
+      assert.equal(creates(claude).length, 1)
+      assert.ok(!commented(agy) && !commented(pi) && !commented(claude))
     })
 
     test('issue #292 Preserve: plain rebote still refuses a dirty worktree and writes the session file', async () => {

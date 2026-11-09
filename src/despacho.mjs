@@ -345,7 +345,7 @@ const ok = (res, what) => {
 
 export const shellPrompt = text => /(?:^|\n)\s*PS\s+[A-Za-z]:\\[^\n>]*>\s*$/im.test(text)
 
-const QUOTA = /quota (reached|exceeded)|usage limit|rate[- ]limit|Resets? in \d/i
+const QUOTA = /quota (reached|exceeded)|usage limit|rate[- ]limit|Resets? in \d|hit your (?:session|usage) limit|\d+-hour limit reached/i
 
 export const quotaLine = lines => {
   if (!Array.isArray(lines)) return undefined
@@ -1113,6 +1113,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
 
   const sha = pr.headRefOid
   if (typeof sha !== 'string' || sha.trim() === '') throw new Error(`No pude obtener headRefOid del PR #${n}.`)
+  // The brief of a continuation is the bounce brief: a new note would need a new bounce.
+  if (continuar && nota !== undefined) throw new Error('--nota no vale con --continuar: el autor sigue con el brief del rebote.')
   if (continuar) return await continueBounce({ n, pr, agent, root, repo, config, commonDir, perfilPi, dryRun }, io)
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))

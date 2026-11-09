@@ -39,7 +39,7 @@ Opciones:
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
   --nota <texto>   (despachar, revisar, rebote) Texto que se agrega al brief.
   --confirmado     (despachar, revisar, rebote, reanudar) El humano dijo que s\u00ED a un agente de agentes.preguntarAntes.
-  --continuar      (rebote) Retoma al autor de un rebote que se cortó antes de pushear (por ejemplo, sin cuota): mismo worktree, misma sesión, sin marcador nuevo.
+  --continuar      (rebote) Retoma al autor de un rebote que se cortó antes de pushear (por ejemplo, sin cuota): mismo worktree, misma sesión de pi, sin marcador nuevo.
   --perfil-pi <nombre> (despachar, revisar, rebote, reanudar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver --help del comando).
   --modelo <modelo>  (brief-revision) Modelo del subagente revisor.
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
@@ -144,7 +144,7 @@ Si los 3 intentos fallan, sale con código 1 e imprime que el autor ya está rel
 Con mergeable UNKNOWN se niega hasta que GitHub termine de calcular; un PR solo atrás (BEHIND) se niega y apunta a \`gh pr update-branch <n>\`.
 Con pi usa el perfil que fija el worktree (.pi/gentle-ai/profile.json; --perfil-pi no lo cambia). Sin pin, --perfil-pi o agentes.pi.perfil
 lo eligen y se escribe el pin; sin ninguno se niega como despachar, antes de mover el worktree.
-Con --continuar retoma al autor que se cortó antes de pushear (por ejemplo, sin cuota): exige que el último marcador \`Rebote*\` sea del head, sin agente vivo y con el brief del rebote; acepta el worktree sucio, no publica marcador ni suma a los límites, y solo pi retoma la misma sesión (\`--session-id\`): claude, codex y agy arrancan una sesión nueva con el mismo brief. Si sigue sin cuota, falla con la hora de reset y no reintenta.
+Con --continuar retoma al autor que se cortó antes de pushear (por ejemplo, sin cuota): exige que el último marcador \`Rebote*\` sea del head, sin agente vivo y con el brief del rebote; acepta el worktree sucio, no publica marcador ni suma a los límites, y solo pi retoma la misma sesión (\`--session-id\`): claude, codex y agy arrancan una sesión nueva con el mismo brief. Si sigue sin cuota, falla con la hora de reset y no reintenta. No acepta --nota.
 `,
   'brief-revision': `orca-stack brief-revision <pr> --modelo <modelo> [--dry-run]
 
