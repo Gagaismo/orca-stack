@@ -1,6 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { currentConfig, forgetConfig } from '../hooks/orca-config'
+import { currentConfig, forgetConfig, piProfileProblem } from '../hooks/orca-config'
+import perfiles from './perfiles-pi'
 import { chosenProfile, configuredProfile, launchableProfiles, piDispatchSlots, withProfile } from '../hooks/perfil-pi'
 import {
   buildRules,
@@ -759,6 +760,16 @@ test('issue 276 Rules 6 and 9: the profiles come from the store in its order, la
   for (const none of [undefined, '', '  ', 'preguntar', 'Preguntar', 3]) {
     expect(configuredProfile(none)).toBe(false)
   }
+})
+
+// The CLI runs the same cases against src/despacho.mjs (test/units.test.mjs).
+test('issue 293 Rule 3: the hook offers exactly the profiles of shared/perfiles-pi.json the CLI launches, so a profile with model "" is offered by neither', () => {
+  for (const c of perfiles) {
+    expect(piProfileProblem(c.name, c.profile) ?? null, c.name).toBe(c.problem)
+  }
+  const store = { profiles: Object.fromEntries(perfiles.map(c => [c.name, c.profile])) }
+  expect(launchableProfiles(store).map(profile => profile.name)).toEqual(perfiles.filter(c => c.problem === null).map(c => c.name))
+  expect(launchableProfiles({ profiles: { vacio: { orchestrator: bridge('claude-opus-5-5'), 'gentle-ai-worker': { model: '' } } } })).toEqual([])
 })
 
 type Asked = { asked: { header: string; options: string[] }[]; seen: string[] }

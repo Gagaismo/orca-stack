@@ -566,11 +566,35 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
 }
 
 // The only model providers a pi launch may use: Claude through the bridge or pi's Anthropic login, and OpenAI.
-export const PI_PROVIDERS = ['claude-bridge/', 'anthropic/', 'openai/']
+// Same JSON literal as shared/orca-config.ts (the mod side), compared by test/units.test.mjs.
+// BEGIN PI_PROVIDERS
+export const PI_PROVIDERS = ["claude-bridge/", "anthropic/", "openai/"]
+// END PI_PROVIDERS
 // The agents of a gentle-pi profile (orchestrator included) whose model is outside PI_PROVIDERS, as "agent (model)".
 export const disallowedModels = profile => Object.entries(isPlain(profile) ? profile : {})
   .filter(([, agent]) => isPlain(agent) && typeof agent.model === 'string' && !PI_PROVIDERS.some(provider => agent.model.trim().startsWith(provider)))
   .map(([name, agent]) => `${name} (${agent.model.trim()})`)
+// Why piProfileFor refuses the store profile `name`, or undefined when it launches it. The mod answers the same with
+// shared/orca-config.ts: both sides run the cases of shared/perfiles-pi.json.
+export const piProfileProblem = (name, profile) => {
+  if (name.toLowerCase() === 'global') return '"global" es ambiguo'
+  if (!PROFILE_NAME.test(name)) return 'nombre no válido'
+  if (!isPlain(profile)) return 'no es un perfil'
+  const bad = disallowedModels(profile)
+  if (bad.length > 0) return `usa proveedores no permitidos: ${bad.join(', ')}`
+  const orchestrator = profile.orchestrator
+  if (!isPlain(orchestrator) || typeof orchestrator.model !== 'string' || orchestrator.model.trim() === '') return 'no define orchestrator.model'
+
+  return undefined
+}
+// What the "Falta el perfil" error offers: the launchable profiles, or why none is.
+const launchableList = profiles => {
+  const entries = Object.entries(profiles ?? {})
+  const launchable = entries.filter(([name, profile]) => piProfileProblem(name, profile) === undefined).map(([name]) => name)
+  if (launchable.length > 0 || entries.length === 0) return `hay: ${launchable.join(', ') || 'ninguno'}`
+
+  return `ninguno se puede lanzar: ${entries.map(([name, profile]) => `${name}: ${piProfileProblem(name, profile)}`).join('; ')}`
+}
 const checkProviders = (name, profile) => {
   const bad = disallowedModels(profile)
   if (bad.length > 0) throw new Error(`El perfil de Pi "${name}" usa modelos de proveedores no permitidos (solo ${PI_PROVIDERS.join(', ')}): ${bad.join(', ')}.`)
@@ -589,7 +613,7 @@ export const piProfileFor = ({ flag, pin, config, home, commonDir, io }) => {
   const data = readJson(store, io)
   const profiles = isPlain(data?.profiles) ? data.profiles : undefined
   const names = profiles ? Object.keys(profiles).join(', ') || 'ninguno' : 'ninguno'
-  if (wanted === '') throw new Error(`Falta el perfil de Pi: pasá --perfil-pi <nombre> (hay: ${names}) o poné agentes.pi.perfil en la config ("global" usa el perfil activo global a propósito).`)
+  if (wanted === '') throw new Error(`Falta el perfil de Pi: pasá --perfil-pi <nombre> (${launchableList(profiles)}) o poné agentes.pi.perfil en la config ("global" usa el perfil activo global a propósito).`)
   if (wanted.toLowerCase() === 'global') {
     if (profiles && Object.keys(profiles).some(name => name.toLowerCase() === 'global')) {
       throw new Error(`"global" es ambiguo: ${store} tiene un perfil llamado así. Renombralo o pasá --perfil-pi con otro nombre.`)

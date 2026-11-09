@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
 import { parseArgs } from '../src/cli.mjs'
-import { FAMILIES, blockOf, familyOf } from '../src/despacho.mjs'
+import { FAMILIES, PI_PROVIDERS, blockOf, familyOf, piProfileFor, piProfileProblem } from '../src/despacho.mjs'
 import { MARKER_BEGIN, MARKER_END } from '../src/constants.mjs'
 import { buildBlock, removeBlock, upsertBlock } from '../src/marker.mjs'
 import { mergePluginDirs, removePluginDirs } from '../src/settings.mjs'
@@ -197,6 +197,36 @@ describe('the repository itself', () => {
     const cases = JSON.parse(readFileSync(path.join(ROOT, 'shared', 'familias.json'), 'utf8'))
     const module = readFileSync(path.join(ROOT, 'mods', 'puente-gentle', 'tests', 'familias.ts'), 'utf8')
     assert.deepEqual(JSON.parse(module.slice(module.indexOf('export default ') + 'export default '.length)), cases, 'puente-gentle/tests/familias.ts is out of sync: run npm run sync-shared')
+    const profiles = JSON.parse(readFileSync(path.join(ROOT, 'shared', 'perfiles-pi.json'), 'utf8'))
+    const profilesModule = readFileSync(path.join(ROOT, 'mods', 'guardia-despacho', 'tests', 'perfiles-pi.ts'), 'utf8')
+    assert.deepEqual(JSON.parse(profilesModule.slice(profilesModule.indexOf('export default ') + 'export default '.length)), profiles, 'guardia-despacho/tests/perfiles-pi.ts is out of sync: run npm run sync-shared')
+  })
+
+  test('issue 293 Rule 3: despacho keeps the same PI_PROVIDERS literal as shared/orca-config.ts and refuses exactly the profiles of shared/perfiles-pi.json', () => {
+    const shared = readFileSync(path.join(ROOT, 'shared', 'orca-config.ts'), 'utf8')
+    const literal = /\/\/ BEGIN PI_PROVIDERS\s*export const PI_PROVIDERS = ([\s\S]*?)\s*\/\/ END PI_PROVIDERS/.exec(shared)?.[1]
+    assert.ok(literal, 'shared/orca-config.ts lost its PI_PROVIDERS markers')
+    assert.deepEqual(JSON.parse(literal), PI_PROVIDERS)
+    // The mod runs the same cases against shared/orca-config.ts (its copy is mods/guardia-despacho/tests/perfiles-pi.ts),
+    // and piProfileFor, the launch itself, takes exactly the profiles with no problem.
+    const cases = JSON.parse(readFileSync(path.join(ROOT, 'shared', 'perfiles-pi.json'), 'utf8'))
+    const home = mkdtempSync(path.join(os.tmpdir(), 'perfiles-pi-'))
+    try {
+      mkdirSync(path.join(home, '.pi', 'gentle-ai'), { recursive: true })
+      writeFileSync(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ profiles: Object.fromEntries(cases.map(c => [c.name, c.profile])) }))
+      for (const c of cases) {
+        assert.equal(piProfileProblem(c.name, c.profile) ?? null, c.problem, JSON.stringify(c))
+        let launched = true
+        try {
+          piProfileFor({ flag: c.name, config: {}, home, commonDir: home, io: { out: () => {} } })
+        } catch {
+          launched = false
+        }
+        assert.equal(launched, c.problem === null, `piProfileFor and piProfileProblem disagree on ${c.name}`)
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   test('despacho keeps the same FAMILIES literal as shared/orca-config.ts', () => {
