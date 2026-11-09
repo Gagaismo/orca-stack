@@ -144,7 +144,7 @@ test('Rule 10: postures avoid excluded tools while Medium and Proactive name are
     expect(text).not.toContain('Consulta:')
   }
   expect(postures.get('lazy')).not.toContain('Arena y swarm')
-  expect(postures.get('medium')).toContain('Propon\u00e9 arena o swarm cuando un requisito muestre se\u00f1ales de la secci\u00f3n "Arena y swarm" del contrato.')
+  expect(postures.get('medium')).toContain('Propon\u00e9 arena o swarm cuando un requisito muestre se\u00f1ales de la secci\u00f3n "Arena y swarm" de ~/orca/stack/MAIN.md.')
   expect(postures.get('proactive')).toContain('Propon\u00e9 arena o swarm temprano, ante se\u00f1ales m\u00e1s d\u00e9biles, antes de que aparezca un problema.')
 })
 
