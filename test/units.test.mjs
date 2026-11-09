@@ -190,7 +190,7 @@ describe('the repository itself', () => {
 
   test('every copy of the shared config module matches shared/orca-config.ts', () => {
     const shared = readFileSync(path.join(ROOT, 'shared', 'orca-config.ts'), 'utf8')
-    for (const mod of ['puente-gentle', 'bandeja-mensajes', 'guardia-despacho', 'tablero-despacho']) {
+    for (const mod of ['puente-gentle', 'bandeja-mensajes', 'guardia-despacho', 'tablero-despacho', 'marchas', 'main-md']) {
       const copy = readFileSync(path.join(ROOT, 'mods', mod, 'hooks', 'orca-config.ts'), 'utf8')
       assert.equal(copy, shared, `${mod} is out of sync: run npm run sync-shared`)
     }
