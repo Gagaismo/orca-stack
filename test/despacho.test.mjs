@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
-import { main } from '../src/cli.mjs'
+import { main, parseArgs } from '../src/cli.mjs'
 import { isConsultaComment } from '../src/consultas.mjs'
 import { layout } from '../src/util.mjs'
 import { ROOT, cleanup, cli, read, tempDir, write } from './helpers.mjs'
@@ -1708,6 +1708,173 @@ describe('rebote', () => {
     const env = bounceEnv(pr({ headRefOid: 'def456', reviews: [{ body: 'Commit: abc123\n## BLOQUEA\n1. old finding' }], comments: [{ body: 'Rebote: abc123' }], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }] }))
     await reboteCommand({}, '12', env.io)
     assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: def456\n')
+  })
+
+  describe('issue #292: rebote --continuar', () => {
+    const CONTINUE = 'You were stopped before finishing this bounce (for example by a usage limit). The worktree keeps your work in progress (a merge in progress stays in progress): continue it, do not abort or reset it.'
+    const bounceBrief = () => path.join(home, 'orca', 'briefs', 'proj-pr-12-rebote.md')
+    const creates = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    const commented = env => env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+    const dirty = { 'git status': okRes(' M src/app.mjs\n') }
+    const piEnv = (env, now) => {
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      env.io.now = () => now
+      env.io.modifiedAt = () => now + 1
+      return env
+    }
+    const sessionOf = env => /--session-id (\S+)/.exec(creates(env)[0][creates(env)[0].indexOf('--command') + 1])?.[1]
+
+    test('issue #292 Rule 1: rebote --continuar relaunches the author when the last Rebote mark is on the head, even after a conflict bounce', async () => {
+      write(bounceBrief(), 'bounce brief\n')
+      const conflicted = pr({ reviews: [], mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY', baseRefName: 'main', comments: [{ body: 'Rebote conflicto: abc123' }] })
+      const plain = bounceEnv(conflicted, dirty)
+      await assert.rejects(reboteCommand({}, '12', plain.io), /ya rebotó por conflicto/)
+      assert.equal(creates(plain).length, 0)
+      const env = bounceEnv(conflicted, dirty)
+      assert.equal(await reboteCommand({ continuar: true }, '12', env.io), 0)
+      assert.equal(creates(env).length, 1)
+      assert.ok(!commented(env))
+      assert.ok(!env.calls.some(call => call[0] === 'git' && (call[1] === 'merge' || call[1] === 'fetch')))
+    })
+
+    test('issue #292 Rule 1: rebote --continuar refuses without a Rebote mark or without the bounce brief', async () => {
+      write(bounceBrief(), 'bounce brief\n')
+      const none = bounceEnv(pr(), dirty)
+      await assert.rejects(reboteCommand({ continuar: true }, '12', none.io), /no hay rebote que continuar/)
+      assert.equal(creates(none).length, 0)
+      const missing = path.join(home, 'orca', 'briefs', 'proj-pr-13-rebote.md')
+      const noBrief = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), dirty)
+      await assert.rejects(reboteCommand({ continuar: true }, '13', noBrief.io), error => error.message.includes(missing))
+      assert.equal(creates(noBrief).length, 0)
+      const noted = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), dirty)
+      await assert.rejects(reboteCommand({ continuar: true, nota: 'x' }, '12', noted.io), error => error.message === '--nota no vale con --continuar: el autor sigue con el brief del rebote.')
+      assert.equal(creates(noted).length, 0)
+      assert.ok(!commented(none) && !commented(noBrief) && !commented(noted))
+    })
+
+    test('issue #292 Rule 2: rebote --continuar reuses the bounce session id and prefixes the bounce brief', async () => {
+      const first = piEnv(bounceEnv(pr({ body: 'Implementador: pi' })), 100)
+      await reboteCommand({}, '12', first.io)
+      const session = sessionOf(first)
+      assert.equal(session, 'proj-pr-12-rebote-100')
+      const continued = pr({ body: 'Implementador: pi', comments: [{ body: 'Rebote: abc123' }] })
+      const continuedBrief = path.join(home, 'orca', 'briefs', 'proj-pr-12-rebote-continuar.md')
+      for (let i = 0; i < 2; i += 1) {
+        const env = piEnv(bounceEnv(continued, dirty), 200 + i * 100)
+        assert.equal(await reboteCommand({ continuar: true }, '12', env.io), 0)
+        assert.equal(creates(env).length, 1)
+        assert.equal(sessionOf(env), session)
+        assert.equal(readFileSync(continuedBrief, 'utf8'), `${CONTINUE}\n\n${readFileSync(bounceBrief(), 'utf8')}`)
+        assert.ok(!env.out.some(line => line.includes('no continúa una sesión')))
+      }
+      const agy = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), dirty)
+      await reboteCommand({ continuar: true }, '12', agy.io)
+      assert.ok(agy.out.includes('agy no continúa una sesión: lo relanzo con una sesión nueva y el mismo brief.'))
+    })
+
+    test('issue #292 Rule 3: rebote --continuar posts no marker and prints the continue line', async () => {
+      write(bounceBrief(), 'bounce brief\n')
+      const env = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), dirty)
+      await reboteCommand({ continuar: true }, '12', env.io)
+      assert.ok(env.out.includes('Continúo el rebote de abc123 de agy.'))
+      assert.ok(!commented(env))
+      assert.ok(!env.written.some(([file]) => file.endsWith('-comment.md')))
+      const pending = bounceEnv(pr({ reviews: [], comments: [{ body: 'Rebote CI: abc123' }], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', status: 'IN_PROGRESS', conclusion: null }] }), dirty)
+      assert.equal(await reboteCommand({ continuar: true }, '12', pending.io), 0)
+      assert.equal(creates(pending).length, 1)
+      assert.ok(pending.out.includes('Continúo el rebote de abc123 de agy.'))
+      assert.ok(!commented(pending))
+    })
+
+    test('issue #292 Rule 4: rebote --continuar refuses when the author pushed since the last mark', async () => {
+      write(bounceBrief(), 'bounce brief\n')
+      const env = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }] }), dirty)
+      await assert.rejects(reboteCommand({ continuar: true }, '12', env.io), error => error.message === 'El autor ya pusheó def456; esto es un rebote nuevo, no una continuación.')
+      assert.equal(creates(env).length, 0)
+      assert.ok(!commented(env))
+    })
+
+    test('issue #292 Rule 5: rebote --continuar refuses while an agent is live in the worktree', async () => {
+      write(bounceBrief(), 'bounce brief\n')
+      // blocked and waiting are live too: the agent waits on a dialog (src/avisar.mjs LIVE).
+      for (const state of ['working', 'blocked', 'waiting']) {
+        const env = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), { ...dirty, 'orca worktree ps': json({ result: { worktrees: [{ path: worktree, agents: [{ state }] }] } }) })
+        await assert.rejects(reboteCommand({ continuar: true }, '12', env.io), /Hay un agente vivo en .*; cerralo antes de rebotar\./, state)
+        assert.equal(creates(env).length, 0, state)
+        assert.ok(!commented(env), state)
+        assert.ok(!env.out.some(line => line.includes('brief ->')), state)
+      }
+    })
+
+    test('issue #292 Rule 6: rebote --continuar fails with the reset time when the author is still out of quota, without retrying', async () => {
+      write(bounceBrief(), 'bounce brief\n')
+      let reads = 0
+      const agy = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), {
+        ...dirty,
+        'orca terminal read': () => json({ result: { terminal: { tail: ++reads <= 3 ? ['ready'] : ['Claude usage limit reached. resets 02:20:00'] } } }),
+      })
+      await assert.rejects(reboteCommand({ continuar: true }, '12', agy.io), error =>
+        error.message.includes('resets 02:20') && error.message.includes('orca-stack rebote 12 --continuar'))
+      assert.equal(creates(agy).length, 1)
+      assert.ok(!agy.out.some(line => line.startsWith('Continúo el rebote')))
+      const quota = { type: 'message', timestamp: '2026-11-09T02:00:00.000Z', message: { role: 'assistant', stopReason: 'error', errorMessage: "Claude rate limit (five_hour) — resets 02:20:00: You've hit your session limit", content: [] } }
+      const pi = piEnv(bounceEnv(pr({ body: 'Implementador: pi', comments: [{ body: 'Rebote: abc123' }] }), dirty, PROJECT, [quota]), 100)
+      await assert.rejects(reboteCommand({ continuar: true }, '12', pi.io), error =>
+        error.message.includes('resets 02:20') && error.message.includes('Pi muestra un límite de cuota'))
+      assert.equal(creates(pi).length, 1)
+      // Claude Code's own wording names no "usage limit": "You've hit your session limit · resets 4:30am".
+      let claudeReads = 0
+      const claude = bounceEnv(pr({ body: 'Implementador: claude', comments: [{ body: 'Rebote: abc123' }] }), {
+        ...dirty,
+        'orca terminal read': () => json({ result: { terminal: { tail: ++claudeReads <= 3 ? ['ready'] : ["You've hit your session limit · resets 4:30am (America/Argentina/Buenos_Aires)"] } } }),
+      })
+      await assert.rejects(reboteCommand({ continuar: true }, '12', claude.io), error =>
+        error.message.includes('claude sigue sin cuota (resets 4:30am)') && error.message.includes('orca-stack rebote 12 --continuar'))
+      assert.equal(creates(claude).length, 1)
+      // A weekly limit names its reset day: the refusal keeps day and time.
+      let weeklyReads = 0
+      const weekly = bounceEnv(pr({ body: 'Implementador: claude', comments: [{ body: 'Rebote: abc123' }] }), {
+        ...dirty,
+        'orca terminal read': () => json({ result: { terminal: { tail: ++weeklyReads <= 3 ? ['ready'] : ['Weekly limit reached · resets Mon 9am'] } } }),
+      })
+      await assert.rejects(reboteCommand({ continuar: true }, '12', weekly.io), error =>
+        error.message.includes('claude sigue sin cuota (resets Mon 9am)') && error.message.includes('orca-stack rebote 12 --continuar'))
+      assert.equal(creates(weekly).length, 1)
+      assert.ok(!commented(agy) && !commented(pi) && !commented(claude) && !commented(weekly))
+    })
+
+    test('issue #292 Preserve: plain rebote still refuses a dirty worktree and writes the session file', async () => {
+      const dirtyEnv = bounceEnv(pr(), dirty)
+      await assert.rejects(reboteCommand({}, '12', dirtyEnv.io), /está sucio/)
+      assert.equal(creates(dirtyEnv).length, 0)
+      const env = bounceEnv(pr())
+      env.io.now = () => 100
+      await reboteCommand({}, '12', env.io)
+      assert.equal(env.written.find(([file]) => file === path.join(home, 'orca', 'briefs', 'proj-pr-12-rebote.session'))?.[1], 'proj-pr-12-rebote-100\n')
+    })
+
+    test('issue #292 Preserve: a pi launch whose first reply is ordinary still succeeds, and an error turn that is not a quota still passes', async () => {
+      const working = { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', name: 'read' }], stopReason: 'toolUse' } }
+      const overloaded = { type: 'message', message: { role: 'assistant', stopReason: 'error', errorMessage: 'Overloaded: the server is busy', content: [] } }
+      for (const piReply of [[working], [overloaded]]) {
+        const env = fakeIo({}, { piReply })
+        await run('ticket', { n: '7', agent: 'pi' }, env)
+        assert.ok(env.out.some(line => line.startsWith(`✔ pi despachado en ${worktree}. Brief: `)))
+      }
+    })
+
+    test('issue #292 Rule 8: rebote --help names --continuar', async () => {
+      const oldLog = console.log
+      let output = ''
+      console.log = value => { output += `${value}\n` }
+      try {
+        await main(['rebote', '--help'])
+      } finally {
+        console.log = oldLog
+      }
+      assert.match(output, /--continuar/)
+      assert.equal(parseArgs(['rebote', '12', '--continuar']).flags.continuar, true)
+    })
   })
 
   describe('issue 296: the review bounce is counted by the review sha', () => {
