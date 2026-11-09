@@ -267,8 +267,8 @@ const piForeground = agent => agent === 'pi'
 export const rddMode = (config, agent) => agent === 'pi' && config?.agentes?.pi?.review === 'rdd'
 const RDD_LENSES = ['risk', 'resilience', 'readability', 'reliability']
 
-const rddAssessStep = (agent, piReview) => rddMode({ agentes: { pi: { review: piReview } } }, agent)
-  ? '\n\nThis repo uses the RDD review mode for pi PRs (`agentes.pi.review: "rdd"`). After your last commit and before opening the PR, run `gentle_review` with `{"operation":"assess"}` on that commit and write under `## Merge Danger` three lines: `Tier: <the tier assess returned>`, `reviewDue: <true|false, as assess returned it>` and your ODD `Risk:` line. Do not start an RDD review yourself: main reads those lines and decides whether the PR gets no review or an RDD review, and an RDD review you run on your own before the PR does not count as its review.'
+const rddAssessStep = (agent, piReview, base) => rddMode({ agentes: { pi: { review: piReview } } }, agent)
+  ? '\n\nThis repo uses the RDD review mode for pi PRs (`agentes.pi.review: "rdd"`). After your last commit and before opening the PR, run `gentle_review` with operation `assess` and input `{"baseRef":"<git merge-base HEAD origin/' + (base ?? 'main') + ', the full 40-character sha>","committedOnly":true}` (a plain assess finds no pending changes once everything is committed) and write under `## Merge Danger` three lines: `Tier: <the tier assess returned>`, `reviewDue: <true|false, as assess returned it>` and your ODD `Risk:` line. Do not start an RDD review yourself: main reads those lines and decides whether the PR gets no review or an RDD review, and an RDD review you run on your own before the PR does not count as its review.'
   : ''
 
 const bodyPrecheckStep = cuerpoPr => {
@@ -300,7 +300,7 @@ export const renderBrief = (kind, vars, nota) => {
     PROJECT_INSTRUCTIONS: projectInstructions(vars.AGENT),
     SUBAGENTS_INSTRUCTION: subagentsInstruction(vars.AGENT),
     BODY_PRECHECK_STEP: vars.BODY_PRECHECK_STEP ?? bodyPrecheckStep(vars.CUERPO_PR),
-    RDD_ASSESS_STEP: rddAssessStep(vars.AGENT, vars.PI_REVIEW),
+    RDD_ASSESS_STEP: rddAssessStep(vars.AGENT, vars.PI_REVIEW, vars.BASE),
     CODING_STANDARDS_INSTRUCTION: vars.HAS_CODING_STANDARDS ? 'Read CODING_STANDARDS.md and check the change against it before every commit.' : '',
     REVIEW_STANDARDS: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md and AGENTS.md' : 'AGENTS.md',
     REVIEW_STANDARDS_ANY: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md or AGENTS.md (a rule in either file alone is enough)' : 'AGENTS.md',

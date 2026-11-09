@@ -1194,7 +1194,7 @@ describe('issue #295: pi launches report an auth failure', () => {
     }
   })
 
-  const RDD_ASSESS = 'run `gentle_review` with `{"operation":"assess"}` on that commit and write under `## Merge Danger` three lines: `Tier: <the tier assess returned>`, `reviewDue: <true|false, as assess returned it>` and your ODD `Risk:` line.'
+  const RDD_ASSESS = 'run `gentle_review` with operation `assess` and input `{"baseRef":"<git merge-base HEAD origin/main, the full 40-character sha>","committedOnly":true}` (a plain assess finds no pending changes once everything is committed) and write under `## Merge Danger` three lines: `Tier: <the tier assess returned>`, `reviewDue: <true|false, as assess returned it>` and your ODD `Risk:` line.'
   const RDD_CONFIG = { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { ...PROJECT.agentes.pi, review: 'rdd' } } }
 
   test('issue #338 Rule 1: the RDD mode applies only to a pi ticket in a repo with agentes.pi.review "rdd"; codex, agy, claude and a repo without the key keep today\'s brief', async () => {
