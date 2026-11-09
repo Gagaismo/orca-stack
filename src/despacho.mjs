@@ -479,12 +479,14 @@ const waitForPiSession = async (io, home, worktree, after = 0) => {
 }
 
 // pi records an auth failure as its first reply: an error turn whose errorMessage is "Failed to authenticate: …" (#295).
-// Only that first reply counts, so a later turn that quotes the words does not fail a launch.
+// Only that first reply counts, so a later turn that quotes the words does not fail a launch. A relaunch with the same
+// --session-id appends to the old file: replies written before this launch (`after`) belong to earlier turns.
 const PI_AUTH = /Failed to authenticate/i
-const piFirstReply = (io, file) => {
+const piFirstReply = (io, file, after = 0) => {
   for (const line of io.readFile(file).split(/\r?\n/)) {
     let entry
     try { entry = JSON.parse(line) } catch { continue }
+    if (after > 0 && Date.parse(entry?.timestamp) < after) continue
     const message = entry?.type === 'message' ? entry.message : undefined
     if (message?.role !== 'assistant') continue
     const texts = [message.errorMessage, ...(Array.isArray(message.content) ? message.content.map(part => part?.text) : [message.content])]
@@ -495,11 +497,11 @@ const piFirstReply = (io, file) => {
 }
 
 // The same window as the screen check of #198: three reads, two five-second pauses; a first reply ends it early.
-const checkPiAuth = async (io, file, configDir) => {
+const checkPiAuth = async (io, file, configDir, after) => {
   for (let i = 0; i < 3; i += 1) {
     if (i > 0) await io.sleep(5000)
     let reply
-    try { reply = piFirstReply(io, file) } catch {}
+    try { reply = piFirstReply(io, file, after) } catch {}
     if (reply?.auth) {
       const dir = configDir ?? 'sin fijar (agentes.pi.claudeConfigDir no está en ~/.orca-stack/config.json; pi usa el que herede la terminal)'
       throw new Error(`Pi no pudo autenticarse; el turno no está ejecutándose: ${reply.auth}. CLAUDE_CONFIG_DIR: ${dir}. Volvé a iniciar sesión de Claude con esa carpeta antes de relanzar.`)
@@ -556,7 +558,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     const { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
     if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
-    if (file) await checkPiAuth(io, file, config.piClaudeConfigDir)
+    if (file) await checkPiAuth(io, file, config.piClaudeConfigDir, piSessionAfter)
   }
   say(`\u2714 ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
 

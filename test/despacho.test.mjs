@@ -1140,6 +1140,11 @@ describe('issue #295: pi launches report an auth failure', () => {
         error.message.includes(PI_AUTH) && error.message.includes(`CLAUDE_CONFIG_DIR: ${path.join(home, '.claude-pi')}`), kind)
       assert.ok(!env.out.some(line => line.includes('✔ pi despachado')), kind)
     }
+    // A relaunch with the same --session-id appends to the old file: an earlier turn that worked does not hide the failure.
+    const earlier = { ...workingReply, timestamp: '2026-01-01T00:00:00.000Z' }
+    const reused = fakeIo({}, { piReply: [earlier, { ...piAuthReply, timestamp: new Date(Date.now() + 60000).toISOString() }] })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, reused), error => error.message.includes(PI_AUTH))
+    assert.ok(!reused.out.some(line => line.includes('✔ pi despachado')))
     // Without agentes.pi.claudeConfigDir the message says the variable was not set by the stack.
     write(layout(home).config, JSON.stringify({}))
     const unset = fakeIo({}, { piReply: [piAuthReply] })
