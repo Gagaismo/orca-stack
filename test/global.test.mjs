@@ -679,6 +679,24 @@ describe('issue 300: ~/AGENTS.md carries a pointer, not a second copy of the con
     assert.equal(count(block, CONTRACT), 0, block)
   })
 
+  // From the codex review of PR #336: a legacy block next to a current one must not trim the user's whitespace.
+  test('issue 300 Rule 3: global preserves user bytes with legacy and current blocks', () => {
+    const before = 'before  \r\n\r\n'
+    const middle = '\r\n\r\n# User content\r\nKeep these spaces.  \r\n\r\n'
+    const after = '\r\n\r\nafter  \r\n'
+    const legacy = '<!-- orca-stack:auto -->\r\nold\r\n<!-- /orca-stack:auto -->'
+    const current = '<!-- orca-stack:begin -->\r\ncurrent\r\n<!-- orca-stack:end -->'
+    write(homeAgents(), before + legacy + middle + current + after)
+    const result = cli(home, ['global', '--skip-pi'])
+    assert.equal(result.status, 0, result.out)
+    const text = read(homeAgents())
+    assert.ok(text.includes(middle), text)
+    assert.ok(text.startsWith(before), text)
+    assert.ok(text.endsWith(after), text)
+    assert.doesNotMatch(text, /orca-stack:auto/)
+    assert.equal(count(text, POLICY), 1, text)
+  })
+
   test('issue 300 Rule 3: broken markers in ~/AGENTS.md stop global before it writes anything', () => {
     const broken = `# Mis reglas\n\n<!-- orca-stack:begin -->\n${CONTRACT}\n`
     write(homeAgents(), broken)

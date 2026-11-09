@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
 
-import { INSTALL_HINTS, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
+import { INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
 import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestratorMode, rddMode, readPersonalConfig, refreshLazyPointer, restoreBlock, sddBlock, trimReviewSections } from './gentle.mjs'
 import { cleanupKnownSdd } from './sdd-cleanup.mjs'
@@ -166,6 +166,17 @@ const removeClaudeMdBlock = ctx => {
 // `init` run where git resolves to the home directory leaves the full contract in ~/AGENTS.md. pi loads every ancestor
 // AGENTS.md (and ~/CLAUDE.md imports it into Claude), so each session got a second, stale copy (#300). `global`
 // swaps that block for a short pointer to the policy; it never creates the file nor adds a block. Text outside stays.
+// With a current block present, upsertBlock drops a legacy one with `cut`, which trims the user's blank lines around it.
+// Here only the legacy markers' own span goes; removeAnyBlock already rejected broken or duplicated markers.
+const dropLegacyBeside = text => {
+  const begin = text.indexOf(LEGACY_BEGIN)
+  if (begin === -1 || !text.includes(MARKER_BEGIN)) {
+    return text
+  }
+
+  return text.slice(0, begin) + text.slice(text.indexOf(LEGACY_END) + LEGACY_END.length)
+}
+
 const homeAgentsPointer = ctx => {
   ctx.say('\nAGENTS.md del home')
   const file = path.join(ctx.home, 'AGENTS.md')
@@ -175,7 +186,7 @@ const homeAgentsPointer = ctx => {
 
     return
   }
-  const text = upsertBlock(original, homePointerBlock({ policyPath: POLICY, briefsPath: BRIEFS }))
+  const text = upsertBlock(dropLegacyBeside(original), homePointerBlock({ policyPath: POLICY, briefsPath: BRIEFS }))
   if (text === original) {
     ctx.say('  ~/AGENTS.md ya tiene el puntero a la política')
 
