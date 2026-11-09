@@ -1643,7 +1643,7 @@ describe('rebote', () => {
     const comment = env.calls.findIndex(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
     const launch = env.calls.findIndex(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'send')
     assert.ok(comment > launch)
-    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\nRonda: 1\n')
   })
 
   test('Rule 2: permits same-head retry marker but refuses when head advanced without a review of its own', async () => {
@@ -1667,7 +1667,7 @@ describe('rebote', () => {
     const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
     assert.match(brief, /fix it/)
     assert.match(brief, /Interpretation settled by the human: https:\/\/example\.test\/comment\/9/)
-    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\nRonda: 1\n')
   })
 
   test('a later Respuesta del humano on an issue the PR closes settles an interpretation finding', async () => {
@@ -1707,11 +1707,11 @@ describe('rebote', () => {
       const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
       assert.match(brief, /still broken/)
       assert.doesNotMatch(brief, /first round/)
-      assert.equal(markerOf(env), 'Rebote: def456\n')
+      assert.equal(markerOf(env), 'Rebote: def456\nRonda: 2\n')
       // A third round: two earlier review bounces do not refuse a blocking review on the newest head.
       const third = bounceEnv(pr({ headRefOid: 'fed789', reviews: [reviewOn('fed789')], comments: [{ body: 'Rebote: abc123' }, { body: 'Rebote: def456' }] }))
       assert.equal(await reboteCommand({}, '12', third.io), 0)
-      assert.equal(markerOf(third), 'Rebote: fed789\n')
+      assert.equal(markerOf(third), 'Rebote: fed789\nRonda: 3\n')
     })
 
     test('Rule 2: a review on an old head does not bounce the head that moved', async () => {
@@ -1729,7 +1729,7 @@ describe('rebote', () => {
       const brief = answered.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
       assert.match(brief, /product disagreement/)
       assert.match(brief, /Interpretation settled by the human: https:\/\/example\.test\/comment\/6594475817/)
-      assert.equal(markerOf(answered), 'Rebote: def456\n')
+      assert.equal(markerOf(answered), 'Rebote: def456\nRonda: 2\n')
 
       const unanswered = bounceEnv(pr({ headRefOid: 'def456', reviews: [review], comments: [{ body: 'Rebote: abc123' }] }))
       await assert.rejects(reboteCommand({}, '12', unanswered.io), /^Error: Los bloqueos de interpretación van al humano, no al autor:\nhttps:\/\/example\.test\/review\/2: 2\. `src\/b\.mjs:2`/)
@@ -1740,7 +1740,7 @@ describe('rebote', () => {
       const comments = [{ body: 'Rebote: abc123' }, { body: 'Rebote: def456' }]
       const retry = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('def456')], comments }))
       assert.equal(await reboteCommand({}, '12', retry.io), 0)
-      assert.equal(markerOf(retry), 'Rebote: def456\n')
+      assert.equal(markerOf(retry), 'Rebote: def456\nRonda: 2\n')
       const live = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('def456')], comments }), { 'orca worktree': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'working' }] }] } }) })
       await assert.rejects(reboteCommand({}, '12', live.io), /Hay un agente vivo en .*; cerralo antes de rebotar\./)
       assert.equal(launches(live), 0)
@@ -1753,7 +1753,7 @@ describe('rebote', () => {
       assert.equal(markerOf(ci), 'Rebote CI: def456\n')
       const both = bounceEnv(pr({ headRefOid: 'def456', mergeable: 'CONFLICTING', baseRefName: 'main', reviews: [reviewOn('def456')], comments: [{ body: 'Rebote: abc123' }] }))
       assert.equal(await reboteCommand({}, '12', both.io), 0)
-      assert.equal(markerOf(both), 'Rebote: def456\nRebote conflicto: def456\n')
+      assert.equal(markerOf(both), 'Rebote: def456\nRonda: 2\nRebote conflicto: def456\n')
     })
   })
 
@@ -1773,6 +1773,83 @@ describe('rebote', () => {
     const base = wrong.io.sh
     wrong.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('oldsha\n') : base(cmd, args, opts)
     await assert.rejects(reboteCommand({}, '12', wrong.io), /no en el head del PR/)
+  })
+
+  describe('issue #297: review rounds, the swarm reminder and the defect class', () => {
+    const markerOf = env => env.written.find(([file]) => file.endsWith('-comment.md'))?.[1]
+    const briefOf = env => env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    const reviewOn = sha => ({ body: `Revisor: codex\nCommit: ${sha}\n\n## BLOQUEA\n1. \`src/app.mjs:1\` (introducido, concreta, implementación): still broken`, url: `https://example.test/review/${sha}` })
+    const reminders = env => env.out.filter(line => /swarm de diagnóstico/.test(line))
+    const red = [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }]
+    const DEFECT_CLASS = /name its defect class, fix every instance of that class in the diff, not only the reported line/
+
+    test('Rule 1: the first review bounce prints and posts Ronda: 1 and no swarm reminder', async () => {
+      const env = bounceEnv(pr())
+      assert.equal(await reboteCommand({}, '12', env.io), 0)
+      assert.equal(markerOf(env), 'Rebote: abc123\nRonda: 1\n')
+      assert.deepEqual(env.out.slice(-2), ['Rebote: abc123', 'Ronda: 1'])
+      assert.deepEqual(reminders(env), [])
+    })
+
+    test('Rule 2: from round 2 the reminder is printed once per run, never posted, and the bounce goes on', async () => {
+      const second = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('def456')], comments: [{ body: 'Rebote: abc123' }] }))
+      assert.equal(await reboteCommand({}, '12', second.io), 0)
+      assert.equal(markerOf(second), 'Rebote: def456\nRonda: 2\n')
+      assert.equal(reminders(second).length, 1)
+      assert.deepEqual(second.out.slice(-3), ['Rebote: def456', 'Ronda: 2', reminders(second)[0]])
+      assert.ok(second.calls.some(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create'))
+      const third = bounceEnv(pr({ headRefOid: 'fed789', reviews: [reviewOn('fed789')], comments: [{ body: 'Rebote: abc123' }, { body: 'Rebote: def456' }] }))
+      assert.equal(await reboteCommand({}, '12', third.io), 0)
+      assert.equal(markerOf(third), 'Rebote: fed789\nRonda: 3\n')
+      assert.equal(reminders(third).length, 1)
+      // A marker that a retry posted twice is still one earlier round.
+      const twice = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('def456')], comments: [{ body: 'Rebote: abc123' }, { body: 'Rebote: abc123' }] }))
+      assert.equal(await reboteCommand({}, '12', twice.io), 0)
+      assert.equal(markerOf(twice), 'Rebote: def456\nRonda: 2\n')
+      const dry = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('def456')], comments: [{ body: 'Rebote: abc123' }] }))
+      assert.equal(await reboteCommand({ dryRun: true }, '12', dry.io), 0)
+      assert.deepEqual(dry.out.slice(-3, -1), ['[simulación] Rebote: def456', '[simulación] Ronda: 2'])
+      assert.equal(reminders(dry).length, 1)
+      assert.ok(reminders(dry)[0].startsWith('[simulación] Ronda 2 de review'))
+    })
+
+    test('Rule 3: CI-only and conflict-only bounces add no Ronda, and their markers do not count as rounds', async () => {
+      const ci = bounceEnv(pr({ headRefOid: 'def456', reviews: [], comments: [{ body: 'Rebote: abc123' }], statusCheckRollup: red }))
+      assert.equal(await reboteCommand({}, '12', ci.io), 0)
+      assert.equal(markerOf(ci), 'Rebote CI: def456\n')
+      assert.ok(!ci.out.some(line => /Ronda/.test(line)))
+      assert.deepEqual(reminders(ci), [])
+      const conflict = bounceEnv(pr({ headRefOid: 'def456', mergeable: 'CONFLICTING', baseRefName: 'main', reviews: [], comments: [{ body: 'Rebote: abc123' }] }))
+      assert.equal(await reboteCommand({}, '12', conflict.io), 0)
+      assert.equal(markerOf(conflict), 'Rebote conflicto: def456\n')
+      assert.ok(!conflict.out.some(line => /Ronda/.test(line)))
+      const review = bounceEnv(pr({ headRefOid: 'fed789', reviews: [reviewOn('fed789')], comments: [{ body: 'Rebote CI: abc123' }, { body: 'Rebote conflicto: def456' }] }))
+      assert.equal(await reboteCommand({}, '12', review.io), 0)
+      assert.equal(markerOf(review), 'Rebote: fed789\nRonda: 1\n')
+      assert.deepEqual(reminders(review), [])
+    })
+
+    test('Rule 4: only review bounce briefs ask for the defect class', async () => {
+      const review = bounceEnv(pr())
+      await reboteCommand({}, '12', review.io)
+      assert.match(briefOf(review), DEFECT_CLASS)
+      assert.match(briefOf(review), /say in your PR comment which other instances of that class you checked/)
+      const ci = bounceEnv(pr({ reviews: [], statusCheckRollup: red }))
+      await reboteCommand({}, '12', ci.io)
+      assert.doesNotMatch(briefOf(ci), DEFECT_CLASS)
+      const conflict = bounceEnv(pr({ reviews: [], mergeable: 'CONFLICTING', baseRefName: 'main' }))
+      await reboteCommand({}, '12', conflict.io)
+      assert.doesNotMatch(briefOf(conflict), DEFECT_CLASS)
+      assert.doesNotMatch(briefOf(conflict), /\{\{[A-Z_]+\}\}/)
+    })
+
+    test('Rule 5: the existing markers keep their form and Ronda is one extra line in the same comment', async () => {
+      const env = bounceEnv(pr({ mergeable: 'CONFLICTING', baseRefName: 'main', statusCheckRollup: red }))
+      assert.equal(await reboteCommand({}, '12', env.io), 0)
+      assert.equal(markerOf(env), 'Rebote: abc123\nRonda: 1\nRebote CI: abc123\nRebote conflicto: abc123\n')
+      assert.equal(env.calls.filter(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment').length, 1)
+      assert.deepEqual(env.out.slice(-4), ['Rebote: abc123', 'Ronda: 1', 'Rebote CI: abc123', 'Rebote conflicto: abc123'])
+    })
   })
 
   describe('issue 241: a worktree behind the PR head', () => {
@@ -1800,7 +1877,7 @@ describe('rebote', () => {
       const merge = env.calls.findIndex(call => call[0] === 'git' && call[1] === 'merge')
       const launch = env.calls.findIndex(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
       assert.ok(merge >= 0 && merge < launch)
-      assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: d25b997c0ffee\n')
+      assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: d25b997c0ffee\nRonda: 1\n')
     })
 
     test('Rule 2: a worktree with local commits not in the PR head keeps the refusal word for word and is not touched', async () => {
@@ -1837,7 +1914,7 @@ describe('rebote', () => {
       await reboteCommand({}, '12', env.io)
       for (const sub of ['fetch', 'merge-base', 'merge']) assert.equal(gitCalls(env, sub).length, 0, sub)
       assert.ok(!env.out.some(line => line.includes('Adelanté')))
-      assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
+      assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\nRonda: 1\n')
     })
   })
 
@@ -2011,7 +2088,7 @@ describe('rebote', () => {
     assert.match(brief, /fix it/)
     assert.match(brief, /unit tests/)
     assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create').length, 1)
-    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\nRebote CI: abc123\n')
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\nRonda: 1\nRebote CI: abc123\n')
   })
 
   test('Rule 3: pending checks refuse before relaunch even with a blocking review', async () => {
@@ -2046,7 +2123,7 @@ describe('rebote', () => {
   test('Rule 6: CI markers do not consume a later review bounce on a new head', async () => {
     const env = bounceEnv(pr({ headRefOid: 'def456', reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. finding' }], comments: [{ body: 'Rebote CI: abc123' }] }))
     await reboteCommand({}, '12', env.io)
-    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: def456\n')
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: def456\nRonda: 1\n')
   })
 
   test('Rule 7: no failed checks and no current blocker keeps the existing refusal', async () => {
@@ -2081,7 +2158,7 @@ describe('rebote', () => {
     })
     const replaced = bounceEnv(pr({ statusCheckRollup: [okRow('CANCELLED', '2026-10-15T10:00:00Z', 987), okRow('SUCCESS', '2026-10-15T10:30:00Z', 988)] }))
     await reboteCommand({}, '12', replaced.io)
-    assert.equal(replaced.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
+    assert.equal(replaced.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\nRonda: 1\n')
 
     const latest = bounceEnv(pr({ statusCheckRollup: [okRow('SUCCESS', '2026-10-15T10:00:00Z', 987), okRow('CANCELLED', '2026-10-15T10:30:00Z', 988)] }), { 'gh run': json([]) })
     await assert.rejects(reboteCommand({}, '12', latest.io), {
@@ -2575,7 +2652,7 @@ describe('rebote', () => {
       await reboteCommand({}, '12', review.io)
       assert.match(briefOf(review), /fix it[\s\S]*## Merge conflict/)
       assert.equal(review.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create').length, 1)
-      assert.equal(markerOf(review), 'Rebote: abc123\nRebote conflicto: abc123\n')
+      assert.equal(markerOf(review), 'Rebote: abc123\nRonda: 1\nRebote conflicto: abc123\n')
 
       const red = conflictEnv(conflicting({ statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', status: 'COMPLETED', conclusion: 'FAILURE' }] }))
       await reboteCommand({}, '12', red.io)
@@ -2601,7 +2678,7 @@ describe('rebote', () => {
       // A conflict marker is not a review or CI bounce: later bounces on a new head still go through.
       const review = bounceEnv(pr({ headRefOid: 'def456', reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. finding' }], comments: [{ body: 'Rebote conflicto: abc123' }] }))
       await reboteCommand({}, '12', review.io)
-      assert.equal(markerOf(review), 'Rebote: def456\n')
+      assert.equal(markerOf(review), 'Rebote: def456\nRonda: 1\n')
       const ci = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote conflicto: old1' }, { body: 'Rebote conflicto: old2' }] }))
       await reboteCommand({}, '12', ci.io)
       assert.equal(markerOf(ci), 'Rebote CI: abc123\n')
@@ -2609,7 +2686,7 @@ describe('rebote', () => {
       // A conflict with review blockers on a new head bounces both: the review limit is counted by the review sha (#296).
       const newReview = conflictEnv(conflicting({ headRefOid: 'def456', reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. finding' }], comments: [{ body: 'Rebote: abc123' }] }))
       await reboteCommand({}, '12', newReview.io)
-      assert.equal(markerOf(newReview), 'Rebote: def456\nRebote conflicto: def456\n')
+      assert.equal(markerOf(newReview), 'Rebote: def456\nRonda: 2\nRebote conflicto: def456\n')
     })
 
     test('Rule 10: contract step 8 and the manual say how main merges after a conflict bounce', () => {
@@ -3082,7 +3159,7 @@ describe('rebote', () => {
       const first = bounceEnv(pr(), commentAttempts([false, true]))
       assert.equal(await reboteCommand({}, '12', first.io), 0)
       assert.equal(launchCount(first), 1)
-      assert.equal(markerFile(first)[1], 'Rebote: abc123\n')
+      assert.equal(markerFile(first)[1], 'Rebote: abc123\nRonda: 1\n')
       assert.equal(commentCalls(first).length, 2)
     })
 
@@ -3133,7 +3210,7 @@ describe('rebote', () => {
       await reboteCommand({}, '12', env.io)
       assert.equal(launchCount(env), 1)
       assert.match(bounceBrief(env), /nuevo review de interpretaci\u00F3n del mismo head/)
-      assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
+      assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\nRonda: 1\n')
     })
 
     test('Rule 3: both tag formats are read, and the refusal lists only the interpretation line', async () => {
