@@ -132,6 +132,9 @@ salvo que despu\u00E9s del review haya un comentario \`Respuesta del humano:\` e
 El rebote por review se cuenta por el \`Commit:\` de cada review: un \`Rebote: <sha>\` de un head anterior no frena ning\u00FAn rebote, y un head que avanz\u00F3 rebota si tiene un review bloqueante propio.
 Un worktree limpio que solo est\u00E1 atr\u00E1s del head (por ejemplo, tras \`gh pr update-branch\`) se adelanta con \`git merge --ff-only <sha>\`.
 Para CI roja agrega los checks fallidos al brief y publica \`Rebote CI: <sha>\`; publica \`Rebote: <sha>\` solo con bloqueos de review.
+Con bloqueos de review imprime y publica, en el mismo comentario, \`Ronda: <n>\` debajo de \`Rebote: <sha>\`: n es la cantidad de SHAs distintos de los \`Rebote:\` anteriores, sin contar el head actual, m\u00E1s uno (\`Rebote CI:\` y \`Rebote conflicto:\` no suman rondas).
+Desde la ronda 2 imprime, sin publicarla ni frenar el rebote, una l\u00EDnea que recuerda la se\u00F1al de swarm de diagn\u00F3stico del contrato.
+El brief de un rebote por review le pide al autor nombrar la clase de defecto de cada hallazgo, corregir todas sus instancias en el diff y decir en su comentario cu\u00E1les otras revis\u00F3.
 Un PR en conflicto con la base (mergeable CONFLICTING) rebota aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente:
 el brief suma \`## Merge conflict\` (git merge origin/<base>, nunca rebase) y publica \`Rebote conflicto: <sha>\`, con contador propio; repetirlo en el mismo head se niega.
 Publica el marcador después de lanzar al autor; si \`gh pr comment\` falla, lo reintenta hasta 3 intentos con unos segundos entre uno y otro.
