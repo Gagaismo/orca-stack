@@ -1,6 +1,8 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Gear } from '../types'
+import { mainCheckout } from './orca-config'
+import type { Host } from './orca-config'
 
 const GEARS: Gear[] = ['lazy', 'medium', 'proactive']
 const COLORS: Record<Gear, string> = { lazy: 'ide', medium: 'success', proactive: 'warning' }
@@ -124,30 +126,17 @@ const posture = (gear: Gear): string => {
   return [...opening, ...body[gear]].join('\n\n')
 }
 
-const mainCheckout = async ($: EngineInterface): Promise<string | undefined> => {
-  try {
-    const result = await $.process.run(
-      ['git', 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'],
-      { timeoutMs: 10_000 },
-    )
-    if (result.exitCode !== 0) {
-      return undefined
-    }
-    const [gitDir, commonDir, top] = result.stdout.split(/\r?\n/).map(path => path.trim())
-    const slashed = (path: string | undefined): string => (path ?? '').replace(/\\/g, '/').replace(/\/+$/, '')
-    if (gitDir === undefined || commonDir === undefined || slashed(gitDir).toLowerCase() !== slashed(commonDir).toLowerCase()) {
-      return undefined
-    }
-    const common = slashed(commonDir)
-
-    return common.endsWith('/.git') ? common.slice(0, -'/.git'.length) : slashed(top)
-  } catch {
-    return undefined
-  }
-}
+// The engine's `$` cannot cross an import: the shared module gets these closures instead.
+const hostOf = ($: EngineInterface): Host => ({
+  home: async () => (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')),
+  exists: path => $.fs.exists(path),
+  read: path => $.fs.read(path),
+  git: argv => $.process.run(argv, { timeoutMs: 10_000 }),
+  now: () => $.clock.now(),
+})
 
 const enabled = async ($: EngineInterface): Promise<boolean> => {
-  const root = await mainCheckout($)
+  const root = await mainCheckout(hostOf($))
   if (root === undefined) {
     return false
   }

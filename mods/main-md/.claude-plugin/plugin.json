@@ -1,0 +1,5 @@
+{
+  "name": "main-md",
+  "version": "0.1.0",
+  "description": "En la sesión de main de un repo con .orca-stack.json, inyecta MAIN.md al arrancar, al retomar y después de compactar."
+}
