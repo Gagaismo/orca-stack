@@ -499,6 +499,85 @@ describe('orca-stack reanudar (#214)', () => {
     assert.equal(dry.sends().length, 0)
     assert.ok(dry.outputs.some(out => out.includes('[simulaci\u{f3}n] orca terminal send')))
   })
+
+  test('Rule 2: reanudar validates a PR comment like an issue comment and resumes or relaunches', async () => {
+    const prUrl = 'https://github.com/Gagaismo/orca-stack/pull/81#issuecomment-6205678817'
+    const expectedLine = `Message from main: ${prUrl} . Continue the ticket per your brief: ${BRIEF_PATH}.`
+
+    // Paused (done) worker resumes with line sent to terminal
+    const paused = harness({ pr: true })
+    paused.io.sh = ((base) => (cmd, args, opts) => cmd === 'gh' && args[0] === 'api' && args[1] !== 'user'
+      ? json({ user: { login: 'stack-bot' }, body: 'Respuesta de main: continue on PR.', html_url: prUrl })
+      : base(cmd, args, opts))(paused.io.sh)
+    assert.equal(await reanudarCommand({}, ISSUE, prUrl, paused.io), 0)
+    assert.equal(paused.sends().length, 1)
+    assert.deepEqual(paused.sends()[0].args.slice(2), ['--terminal', 'term-1', '--text', expectedLine, '--enter', '--wait-submit', '10', '--json'])
+
+    // Exited worker relaunches with brief containing the PR comment URL
+    const exited = harness({ pr: true, state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
+    exited.io.sh = ((base) => (cmd, args, opts) => cmd === 'gh' && args[0] === 'api' && args[1] !== 'user'
+      ? json({ user: { login: 'stack-bot' }, body: 'Respuesta del humano:\n\nLautaro agreed.', html_url: prUrl })
+      : base(cmd, args, opts))(exited.io.sh)
+    assert.equal(await reanudarCommand({}, ISSUE, prUrl, exited.io), 0)
+    assert.equal(exited.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create').length, 1)
+    const relaunchedBrief = exited.files[path.join('/home', 'orca', 'briefs', 'orca-stack-212-reanudar.md')]
+    assert.equal(relaunchedBrief, `Message from main: ${prUrl}\n\nOriginal ticket brief\nKeep this unchanged.\n`)
+
+    // Refuses comment by another user
+    const otherUser = harness({ pr: true })
+    otherUser.io.sh = ((base) => (cmd, args, opts) => cmd === 'gh' && args[0] === 'api' && args[1] !== 'user'
+      ? json({ user: { login: 'someone-else' }, body: 'Respuesta de main: nope.', html_url: prUrl })
+      : base(cmd, args, opts))(otherUser.io.sh)
+    await assert.rejects(() => reanudarCommand({}, ISSUE, prUrl, otherUser.io), /cuenta del stack/)
+
+    // Refuses comment without Respuesta prefix
+    const badPrefix = harness({ pr: true })
+    badPrefix.io.sh = ((base) => (cmd, args, opts) => cmd === 'gh' && args[0] === 'api' && args[1] !== 'user'
+      ? json({ user: { login: 'stack-bot' }, body: 'Consulta: need help.', html_url: prUrl })
+      : base(cmd, args, opts))(badPrefix.io.sh)
+    await assert.rejects(() => reanudarCommand({}, ISSUE, prUrl, badPrefix.io), /Respuesta de main:.*Respuesta del humano:/)
+  })
+
+  test('Rule 3: reanudar refuses a PR comment URL from another PR or repo or when no PR is open', async () => {
+    // Another repo
+    const foreignRepo = harness({ pr: true })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, 'https://github.com/otro/repo/pull/81#issuecomment-6205678817', foreignRepo.io), error => {
+      assert.match(error.message, /Gagaismo\/orca-stack/)
+      return true
+    })
+
+    // Another PR (PR #99 instead of #81)
+    const foreignPr = harness({ pr: true })
+    foreignPr.io.sh = ((base) => (cmd, args, opts) => cmd === 'gh' && args[0] === 'api' && args[1] !== 'user'
+      ? json({ user: { login: 'stack-bot' }, body: 'Respuesta de main: ok.', html_url: 'https://github.com/Gagaismo/orca-stack/pull/99#issuecomment-6205678817' })
+      : base(cmd, args, opts))(foreignPr.io.sh)
+    await assert.rejects(() => reanudarCommand({}, ISSUE, 'https://github.com/Gagaismo/orca-stack/pull/99#issuecomment-6205678817', foreignPr.io), error => {
+      assert.match(error.message, /PR abierto de #212.*#81/)
+      return true
+    })
+
+    // No PR open for this issue (pr: false)
+    const noPr = harness({ pr: false })
+    noPr.io.sh = ((base) => (cmd, args, opts) => cmd === 'gh' && args[0] === 'api' && args[1] !== 'user'
+      ? json({ user: { login: 'stack-bot' }, body: 'Respuesta de main: ok.', html_url: 'https://github.com/Gagaismo/orca-stack/pull/81#issuecomment-6205678817' })
+      : base(cmd, args, opts))(noPr.io.sh)
+    await assert.rejects(() => reanudarCommand({}, ISSUE, 'https://github.com/Gagaismo/orca-stack/pull/81#issuecomment-6205678817', noPr.io), error => {
+      assert.match(error.message, /no tiene un PR abierto/)
+      return true
+    })
+  })
+
+  test('Preserve reanudarCommand: existing issue comment resume and relaunch workflows remain unchanged', async () => {
+    // Normal issue comment resume on paused worker
+    const h = harness()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.sends().length, 1)
+
+    // Issue comment with an already open PR is still refused with rebote hint
+    const openPr = harness({ pr: true })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, openPr.io), /orca-stack rebote 81/)
+    assert.equal(openPr.sends().length, 0)
+  })
 })
 
 describe('reanudar: the pi profile (#276)', () => {

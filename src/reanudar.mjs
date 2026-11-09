@@ -6,7 +6,7 @@ import { samePath } from './util.mjs'
 
 const LIVE = ['working', 'running', 'active', 'blocked', 'waiting']
 const ATTEMPTS_REL = ['orca-stack', 'reanudar.json']
-const COMMENT_URL_ISSUE = /^https:\/\/[^/\s]+\/([^/\s]+\/[^/\s]+)\/issues\/(\d+)#issuecomment-(\d+)$/
+const COMMENT_URL = /^https:\/\/[^/\s]+\/([^/\s]+\/[^/\s]+)\/(issues|pull)\/(\d+)#issuecomment-(\d+)$/
 const parse = res => {
   try {
     return JSON.parse(res.stdout)
@@ -72,12 +72,18 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
 
   const remote = getRemoteOrigin(root, io)
   const repo = remote.ownerRepo.split('/').at(-1)
-  const link = COMMENT_URL_ISSUE.exec(url)
+  const link = COMMENT_URL.exec(url)
   if (!link || link[1].toLowerCase() !== remote.ownerRepo.toLowerCase()) {
-    throw new Error(`La URL tiene que apuntar a un comentario de ${remote.ownerRepo}/issues/${n}.`)
+    throw new Error(`La URL tiene que apuntar a un comentario de ${remote.ownerRepo} (/issues/${n} o su PR abierto).`)
   }
-  if (link[2] !== n) throw new Error(`La URL apunta a #${link[2]}, no a #${n}: el aviso apunta a la respuesta donde pregunt\u{f3} el worker.`)
-  validateAnswerComment(n, url, root, remote, io)
+  const isPr = link[2] === 'pull'
+  const targetItem = link[3]
+  const commentId = link[4]
+
+  if (!isPr && targetItem !== n) {
+    throw new Error(`La URL apunta a #${targetItem}, no a #${n}: el aviso apunta a la respuesta donde preguntó el worker.`)
+  }
+  validateAnswerComment(targetItem, url, root, remote, io)
 
   const attemptsPath = path.join(commonDir, ...ATTEMPTS_REL)
   let attempts = {}
@@ -89,12 +95,12 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
       throw new Error(`No pude leer el registro ${attemptsPath}; no reanudo para evitar duplicar una entrega.`)
     }
   }
-  if (attempts[link[3]]) {
-    const at = attempts[link[3]].at ?? 'hora desconocida'
-    throw new Error(`Ya intent\u{e9} reanudar con el comentario ${link[3]} (${at}); no reenv\u{ed}o ni relanzo. Si ese intento no lleg\u{f3} (mir\u{e1} el estado del agente y su terminal), public\u{e1} una nueva Respuesta de main: en #${n} y corr\u{e9} orca-stack reanudar ${n} <url-del-comentario-nuevo>.`)
+  if (attempts[commentId]) {
+    const at = attempts[commentId].at ?? 'hora desconocida'
+    throw new Error(`Ya intenté reanudar con el comentario ${commentId} (${at}); no reenvío ni relanzo. Si ese intento no llegó (mirá el estado del agente y su terminal), publicá una nueva Respuesta de main: en #${n} y corré orca-stack reanudar ${n} <url-del-comentario-nuevo>.`)
   }
   const markAttempt = () => {
-    const next = { ...attempts, [link[3]]: { issue: n, at: new Date((io.now ?? Date.now)()).toISOString() } }
+    const next = { ...attempts, [commentId]: { issue: n, at: new Date((io.now ?? Date.now)()).toISOString() } }
     const temp = `${attemptsPath}.${process.pid}.tmp`
     io.mkdirp(path.dirname(attemptsPath))
     io.writeFile(temp, JSON.stringify(next, null, 2) + '\n')
@@ -108,10 +114,19 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
 
   const ours = repoWorktrees(root, io).filter(({ row }) => String(row.linkedIssue) === n)
   if (ours.length === 0) throw new Error(`No encuentro un worktree de este repo para #${n}: no reanudo.`)
-  if (ours.length > 1) throw new Error(`Hay ${ours.length} worktrees de este repo para #${n}: no adivino cu\u{e1}l reanudar.`)
+  if (ours.length > 1) throw new Error(`Hay ${ours.length} worktrees de este repo para #${n}: no adivino cuál reanudar.`)
   const { row, branch } = ours[0]
   const pr = pullRequests.find(candidate => prMatchesIssue(candidate, n, [branch].filter(Boolean)))
-  if (pr) throw new Error(`El issue #${n} ya tiene un PR abierto (#${pr.number}); us\u{e1} \`orca-stack rebote ${pr.number}\`.`)
+  if (isPr) {
+    if (!pr) {
+      throw new Error(`El issue #${n} no tiene un PR abierto: la URL tiene que apuntar a un comentario de #${n} o de su PR abierto.`)
+    }
+    if (String(pr.number) !== targetItem) {
+      throw new Error(`La URL tiene que apuntar a un comentario del PR abierto de #${n} (#${pr.number}): ${url}`)
+    }
+  } else if (pr) {
+    throw new Error(`El issue #${n} ya tiene un PR abierto (#${pr.number}); usá \`orca-stack rebote ${pr.number}\`.`)
+  }
 
   const terminals = workerTerminals(row.path, n, io)
   const agentRecords = row.agents ?? []

@@ -2,9 +2,10 @@ import { getCommonDir, getStackAccount } from './consultas.mjs'
 import { AGENTS, defaultIo, getRemoteOrigin, shellPrompt } from './despacho.mjs'
 import { samePath } from './util.mjs'
 
-// Agents whose TUI takes a line typed during a running turn. codex and agy join once their mid-turn Enter test passes
-// (#166, UNKNOWN / MUST VERIFY). Pi runs as a TUI since #277: a line typed mid-turn waits as a queued message.
-export const AVISAR_AGENTS = ['claude', 'pi']
+// Agents whose TUI takes a line typed during a running turn.
+// Pi runs as a TUI since #277: a line typed mid-turn waits as a queued message.
+// Codex and agy join in #298.
+export const AVISAR_AGENTS = ['claude', 'pi', 'codex', 'agy']
 
 export const doorbellLine = url => `Message from main: ${url}`
 
@@ -15,9 +16,14 @@ const LIVE = ['working', 'blocked', 'waiting']
 // Claude's spinner while a turn runs ("✢ Churning… (1m 2s · ↓ 3k tokens)"); a settled turn reads "✻ Baked for 2m 5s".
 // Pi's Gentle Shell prompt frame while it works ("╭─ ❀ implementing… ──╮": a spinning petal and the ODD phase, or
 // "working…"); idle, the petal stands alone ("╭─ ✿ ─────╮").
+// Codex and agy workers share the spinner pattern.
+const SPINNER = /^\s*[·✢✳✶✻✽]\s+\S[^\n]*…\s*\(\d+[smh]/mu
 const TURN_RUNNING = {
-  claude: /^\s*[·✢✳✶✻✽]\s+\S[^\n]*…\s*\(\d+[smh]/mu,
+  claude: SPINNER,
   pi: /^\s*╭─ [✿❀❁✾] [a-z]+… /mu,
+  codex: SPINNER,
+  agy: SPINNER,
+  antigravity: SPINNER,
 }
 export const PI_IDLE = /^\s*╭─ ✿ ─+╮\s*$/mu
 const DIALOG = /trust this folder\?|Do you want to proceed\?|Esc to cancel/i
@@ -87,7 +93,10 @@ export const workerTerminals = (worktree, n, io) => {
 
 // The title fallback (despachar names the terminal after its agent) only picks a target together with a live Orca
 // agent record: a dead terminal keeps that title.
-export const identityOf = (terminal, record) => terminal.agentIdentity ?? record?.agentType ?? (AGENTS.includes(terminal.title) ? terminal.title : undefined)
+export const identityOf = (terminal, record) => {
+  const raw = terminal.agentIdentity ?? record?.agentType ?? (AGENTS.includes(terminal.title) ? terminal.title : undefined)
+  return raw === 'antigravity' ? 'agy' : raw
+}
 
 export const readScreen = (io, handle) => {
   const res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])
