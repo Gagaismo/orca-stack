@@ -70,6 +70,15 @@ describe('brief-revision', () => {
     assert.equal((brief.match(/What to review/g) ?? []).length, 1)
   })
 
+  test('issue #295 Preserve: the subagent review brief does not gain the pi foreground rule', async () => {
+    const env = setup()
+    await briefRevisionCommand({ n: '7', modelo: 'gpt-6' }, env.io)
+    const brief = readFileSync(env.briefPath, 'utf8')
+    assert.match(brief, /Revisor: subagente \(gpt-6\)/)
+    assert.ok(!brief.includes('Your process ends when your turn ends'))
+    assert.ok(!brief.includes('{{PI_FOREGROUND}}'))
+  })
+
   test('issue 302 Preserve: brief-revision writes the blocker line with its evidence kind', async () => {
     const env = setup()
     await briefRevisionCommand({ n: '7', modelo: 'gpt-6' }, env.io)
