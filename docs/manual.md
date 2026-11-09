@@ -29,7 +29,7 @@ Versión de referencia: `orca-stack v0.18.0`. Lo que se mergee después de ese t
 
 ## 1. Qué es y para qué sirve
 
-orca-stack instala y mantiene el **stack de agentes** que se usa con [Orca](https://github.com/stablyai/orca): una política de trabajo (el contrato), skills propias, wrappers de proveedores (`claude`, `codex`, `agy`), Pi con Gentle Shell y ocho mods de Claude Code. Además trae comandos para despachar tickets a agentes, pedir reviews, relanzar autores y vigilar una tanda de PRs.
+orca-stack instala y mantiene el **stack de agentes** que se usa con [Orca](https://github.com/stablyai/orca): una política de trabajo (el contrato), skills propias, wrappers de proveedores (`claude`, `codex`, `agy`), Pi con Gentle Shell y nueve mods de Claude Code. Además trae comandos para despachar tickets a agentes, pedir reviews, relanzar autores y vigilar una tanda de PRs.
 
 Lo esencial en tres líneas:
 

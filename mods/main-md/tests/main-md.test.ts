@@ -39,6 +39,13 @@ test('R2: turns do not reinject MAIN.md', async ($, on) => {
   expect(w.reads).toEqual([DEFAULT_PATH])
 })
 
+test('R2: a session start of another kind, such as clear, gets nothing', async ($, on) => {
+  const w = harness(on)
+  const out = await $.classic.SessionStart(start('clear'))
+  expect(out.additionalContext).toEqual([])
+  expect(w.reads).toEqual([])
+})
+
 test('R3: a repo without .orca-stack.json gets nothing', async ($, on) => {
   const w = harness(on, { config: false })
   const out = await $.classic.SessionStart(start('startup'))
