@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, readPin, shellPrompt, writePin } from './despacho.mjs'
+import { AGENTS, blockOf, defaultIo, getRemoteOrigin, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, readPin, refuseGlobalOverStalePin, shellPrompt, writePin } from './despacho.mjs'
 import { identityOf, isDialog, paneAgents, stackAgent, piIdle, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
@@ -182,6 +182,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   // to a paused pi launches nothing, so it needs no profile; a --perfil-pi there is still checked and rewrites the pin,
   // so the subagents the paused pi launches next follow it.
   const pin = agent === 'pi' ? readPin(io, row.path) : undefined
+  if (agent === 'pi') refuseGlobalOverStalePin(io, pin, flags.perfilPi)
   const resolveProfile = () => {
     try {
       return piProfileFor({ flag: flags.perfilPi, pin, config, home: io.home, commonDir, io })

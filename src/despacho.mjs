@@ -587,13 +587,22 @@ export const piProfileProblem = (name, profile) => {
 
   return undefined
 }
-// What the "Falta el perfil" error offers: the launchable profiles, or why none is.
-const launchableList = profiles => {
+// The profile the clone-local pin (<git-common-dir>/gentle-ai/profile-pin.json) declares, if any. gentle-pi gives it
+// precedence over the worktree pin, so no other profile can be launched while it is there.
+const clonePinFile = commonDir => path.join(commonDir, 'gentle-ai', 'profile-pin.json')
+const clonePinOf = (commonDir, io) => {
+  const local = commonDir ? readJson(clonePinFile(commonDir), io) : undefined
+
+  return isPlain(local) && local.kind === PIN_KIND && typeof local.profile === 'string' ? local.profile : undefined
+}
+// What the "Falta el perfil" error offers: the launchable profiles, or why none is. A clone pin leaves only its own.
+const launchableList = (profiles, clonePin) => {
   const entries = Object.entries(profiles ?? {})
-  const launchable = entries.filter(([name, profile]) => piProfileProblem(name, profile) === undefined).map(([name]) => name)
+  const problem = (name, profile) => piProfileProblem(name, profile) ?? (clonePin !== undefined && name !== clonePin ? `el clon fija el perfil "${clonePin}"` : undefined)
+  const launchable = entries.filter(([name, profile]) => problem(name, profile) === undefined).map(([name]) => name)
   if (launchable.length > 0 || entries.length === 0) return `hay: ${launchable.join(', ') || 'ninguno'}`
 
-  return `ninguno se puede lanzar: ${entries.map(([name, profile]) => `${name}: ${piProfileProblem(name, profile)}`).join('; ')}`
+  return `ninguno se puede lanzar: ${entries.map(([name, profile]) => `${name}: ${problem(name, profile)}`).join('; ')}`
 }
 const checkProviders = (name, profile) => {
   const bad = disallowedModels(profile)
@@ -613,7 +622,7 @@ export const piProfileFor = ({ flag, pin, config, home, commonDir, io }) => {
   const data = readJson(store, io)
   const profiles = isPlain(data?.profiles) ? data.profiles : undefined
   const names = profiles ? Object.keys(profiles).join(', ') || 'ninguno' : 'ninguno'
-  if (wanted === '') throw new Error(`Falta el perfil de Pi: pasá --perfil-pi <nombre> (${launchableList(profiles)}) o poné agentes.pi.perfil en la config ("global" usa el perfil activo global a propósito).`)
+  if (wanted === '') throw new Error(`Falta el perfil de Pi: pasá --perfil-pi <nombre> (${launchableList(profiles, clonePinOf(commonDir, io))}) o poné agentes.pi.perfil en la config ("global" usa el perfil activo global a propósito).`)
   if (wanted.toLowerCase() === 'global') {
     if (profiles && Object.keys(profiles).some(name => name.toLowerCase() === 'global')) {
       throw new Error(`"global" es ambiguo: ${store} tiene un perfil llamado así. Renombralo o pasá --perfil-pi con otro nombre.`)
@@ -637,10 +646,9 @@ export const piProfileFor = ({ flag, pin, config, home, commonDir, io }) => {
     throw new Error(`El perfil de Pi "${wanted}" no define orchestrator.model: sin él, el orquestador dependería del settings.json global.`)
   }
   // gentle-pi gives the clone-local pin precedence over the worktree one, so it would win silently.
-  const localPin = path.join(commonDir, 'gentle-ai', 'profile-pin.json')
-  const local = readJson(localPin, io)
-  if (isPlain(local) && local.kind === PIN_KIND && typeof local.profile === 'string' && local.profile !== wanted) {
-    throw new Error(`El clon ya fija el perfil de Pi "${local.profile}" (${localPin}) y ese pin gana sobre el del worktree. Sacalo (/gentle:profiles, tecla p) o despachá con --perfil-pi ${local.profile}.`)
+  const local = clonePinOf(commonDir, io)
+  if (local !== undefined && local !== wanted) {
+    throw new Error(`El clon ya fija el perfil de Pi "${local}" (${clonePinFile(commonDir)}) y ese pin gana sobre el del worktree. Sacalo (/gentle:profiles, tecla p) o despachá con --perfil-pi ${local}.`)
   }
 
   let thinking
@@ -657,6 +665,12 @@ export const piProfileLines = profile => [
   ...(profile.global ? [`perfil de Pi: global (activo: ${profile.active})`] : []),
   `perfil de Pi: ${profile.global ? profile.active : profile.name} (fuente: ${profile.source})`,
 ]
+// A worktree pin naming a profile the store no longer has can only be replaced by a named profile: "global" is no pin,
+// and dropping the stale one would be a side effect nobody asked for. rebote and reanudar refuse it before any side effect.
+export const refuseGlobalOverStalePin = (io, pin, flag) => {
+  if (pin === undefined || typeof flag !== 'string' || flag.trim().toLowerCase() !== 'global' || piProfileStored(io, pin)) return
+  throw new Error(`El worktree fija el perfil de Pi "${pin}", que ya no existe, y --perfil-pi global no lo reemplaza: pasá --perfil-pi <nombre> para fijar otro perfil en el worktree.`)
+}
 // A bounce or a resume that chose a named profile without the worktree pin writes the pin, so the subagents follow it too.
 export const needsPin = profile => profile !== undefined && !profile.global && profile.source !== 'pin'
 const withProfileLines = (brief, profile) => profile ? `${brief.replace(/\s*$/, '\n')}\n${piProfileLines(profile).join('\n')}\n` : brief
@@ -1100,6 +1114,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   // A pin naming a profile the store no longer has can only be replaced: --perfil-pi does it, and the launch rewrites it.
   const profilePin = agent === 'pi' ? readPin(io, worktree) : undefined
   const stalePin = profilePin !== undefined && !piProfileStored(io, profilePin)
+  if (agent === 'pi') refuseGlobalOverStalePin(io, profilePin, perfilPi)
   if (perfilPi !== undefined && profilePin !== undefined && perfilPi !== profilePin && !stalePin) throw new Error(`El worktree fija el perfil de Pi "${profilePin}"; no se puede cambiar a "${perfilPi}" en un rebote.`)
   let profile
   if (agent === 'pi') {

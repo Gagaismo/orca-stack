@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 
 import { currentConfig, forgetConfig, piProfileProblem } from '../hooks/orca-config'
 import perfiles from './perfiles-pi'
-import { chosenProfile, configuredProfile, launchableProfiles, piDispatchSlots, withProfile } from '../hooks/perfil-pi'
+import { chosenProfile, clonePinProfile, configuredProfile, launchableProfiles, piDispatchSlots, withProfile } from '../hooks/perfil-pi'
 import {
   buildRules,
   checkLiveMerges,
@@ -873,6 +873,26 @@ test('issue 276 Rule 5: no profiles store denies the call without asking', async
 test('issue 276 Rule 5: fewer than two launchable profiles denies the call without asking', async ($, on) => {
   forgetConfig()
   const world = piWorld(on, { store: { profiles: { 'opus-sonnet': STORE.profiles['opus-sonnet'], 'samu-balanceado': STORE.profiles['samu-balanceado'] } }, answer: options => options[0] })
+  const out = await $.tool.call({ tool: 'Bash', command: 'orca-stack despachar 12 pi' })
+  expect(out.deny).toBe(NO_PROFILE)
+  expect(world.asked).toHaveLength(0)
+  expect(world.seen).toHaveLength(0)
+})
+
+// The codex review of PR 347 (issue 293 Rules 3 and 4): with a clone pin the CLI launches only the profile it declares,
+// so the hook offers no other one; a single launchable profile denies without asking, as above.
+test('issue 293 Rules 3 and 4: a clone pin leaves only its own profile, so the hook asks nothing and denies', async ($, on) => {
+  const PIN_KIND = 'gentle-pi.agent_model_profile_pin'
+  expect(launchableProfiles(STORE, 'OpusFull').map(profile => profile.name)).toEqual(['OpusFull'])
+  expect(launchableProfiles(STORE, 'gone')).toEqual([])
+  expect(clonePinProfile({ kind: PIN_KIND, version: 1, profile: 'OpusFull' })).toBe('OpusFull')
+  expect(clonePinProfile({ kind: 'other', profile: 'OpusFull' })).toBeUndefined()
+  expect(clonePinProfile(undefined)).toBeUndefined()
+  forgetConfig()
+  const world = piWorld(on, {
+    layers: { '/work/repo/.git/gentle-ai/profile-pin.json': { kind: PIN_KIND, version: 1, profile: 'OpusFull' } },
+    answer: options => options[0],
+  })
   const out = await $.tool.call({ tool: 'Bash', command: 'orca-stack despachar 12 pi' })
   expect(out.deny).toBe(NO_PROFILE)
   expect(world.asked).toHaveLength(0)

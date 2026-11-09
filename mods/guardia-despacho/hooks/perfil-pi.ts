@@ -18,10 +18,15 @@ const isPlain = (value: unknown): value is Record<string, unknown> => typeof val
 const modelOf = (agent: unknown): string | undefined =>
   isPlain(agent) && typeof agent.model === 'string' && agent.model.trim() !== '' ? agent.model.trim() : undefined
 
+// The profile the clone-local pin (`<git-common-dir>/gentle-ai/profile-pin.json`) declares, if any: gentle-pi gives it
+// precedence over the worktree pin, so the CLI launches no other profile while it is there.
+export const clonePinProfile = (pin: unknown): string | undefined =>
+  isPlain(pin) && pin.kind === 'gentle-pi.agent_model_profile_pin' && typeof pin.profile === 'string' ? pin.profile : undefined
+
 // Every profile of the store (`{ profiles: { <name>: { orchestrator: { model }, <agent>: { model } } } }`) the CLI would
-// launch, in store order: the ones piProfileProblem (shared with the CLI) finds nothing wrong with. Only those names
-// are ever offered or put into a command.
-export const launchableProfiles = (store: unknown): ProfileOption[] => {
+// launch, in store order: the ones piProfileProblem (shared with the CLI) finds nothing wrong with and, with a clone
+// pin, only the one it declares. Only those names are ever offered or put into a command.
+export const launchableProfiles = (store: unknown, clonePin?: string): ProfileOption[] => {
   const profiles = isPlain(store) ? store.profiles : undefined
   if (!isPlain(profiles)) {
     return []
@@ -29,7 +34,7 @@ export const launchableProfiles = (store: unknown): ProfileOption[] => {
 
   return Object.entries(profiles).flatMap(([name, profile]) => {
     const orchestrator = isPlain(profile) ? modelOf(profile.orchestrator) : undefined
-    if (piProfileProblem(name, profile) !== undefined || orchestrator === undefined) {
+    if (piProfileProblem(name, profile) !== undefined || orchestrator === undefined || (clonePin !== undefined && name !== clonePin)) {
       return []
     }
 

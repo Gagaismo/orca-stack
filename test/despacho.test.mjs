@@ -2028,6 +2028,11 @@ describe('rebote', () => {
     const stuck = piEnv()
     await assert.rejects(reboteCommand({}, '12', stuck.io), /No existe el perfil de Pi "opus-haiku".*Repetí con --perfil-pi <nombre> para fijar otro perfil en el worktree\.$/)
     assert.ok(!launched(stuck))
+    // Lautaro's decision on PR 347: "global" never replaces a stale pin; it refuses, asks for a name, and the pin stays.
+    const global = piEnv()
+    await assert.rejects(reboteCommand({ perfilPi: 'global' }, '12', global.io), { message: 'El worktree fija el perfil de Pi "opus-haiku", que ya no existe, y --perfil-pi global no lo reemplaza: pasá --perfil-pi <nombre> para fijar otro perfil en el worktree.' })
+    assert.ok(!launched(global) && !global.calls.some(call => call[0] === 'gh' && call[2] === 'comment'))
+    assert.equal(JSON.parse(read(pinFile)).profile, 'opus-haiku')
     const replaced = piEnv()
     assert.equal(await reboteCommand({ perfilPi: 'opus-sonnet' }, '12', replaced.io), 0)
     assert.equal(JSON.parse(read(pinFile)).profile, 'opus-sonnet')

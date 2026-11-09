@@ -4,7 +4,7 @@ import { currentConfig, homeOf, parseJson } from './orca-config'
 import type { Host, StackConfig } from './orca-config'
 import { buildRules, checkLiveMerges, checkRemovals, inspect } from './inspect'
 import type { Shell } from './inspect'
-import { MAX_OPTIONS, chosenProfile, configuredProfile, launchableProfiles, piDispatchSlots, withProfile } from './perfil-pi'
+import { MAX_OPTIONS, chosenProfile, clonePinProfile, configuredProfile, launchableProfiles, piDispatchSlots, withProfile } from './perfil-pi'
 
 // The engine's `$` cannot cross an import: the config module gets these closures instead.
 const hostOf = ($: EngineInterface): Host => ({
@@ -22,6 +22,19 @@ type Judgement = { deny: string } | { command: string } | undefined
 
 const NO_PROFILE = 'guardia-despacho: no hay perfil de Pi elegido; preguntale al humano y repetí con --perfil-pi <nombre>.'
 
+// The profile the clone pin declares, as the CLI reads it; undefined without one (or when git or the read fails).
+const clonePin = async (host: Host): Promise<string | undefined> => {
+  try {
+    const git = await host.git(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'])
+    const common = git.exitCode === 0 ? git.stdout.split(/\r?\n/)[0]?.trim().replace(/\\/g, '/') : undefined
+    const file = common ? `${common}/gentle-ai/profile-pin.json` : undefined
+
+    return file !== undefined && (await host.exists(file)) ? clonePinProfile(parseJson(await host.read(file))) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 // A pi dispatch made with the orca-stack CLI and no --perfil-pi: ask which gentle-pi profile the worktree gets and put
 // the flag in the command, right after the agent. When no profile gets chosen (no store, fewer than two launchable
 // profiles, dismissed, `-p`, an error) the call is denied, so it never runs on the global profile by accident.
@@ -38,7 +51,7 @@ const askProfile = async ($: EngineInterface, command: string, config: StackConf
     if (store === undefined || !(await $.fs.exists(store))) {
       return { deny: NO_PROFILE }
     }
-    const profiles = launchableProfiles(parseJson(await $.fs.read(store)))
+    const profiles = launchableProfiles(parseJson(await $.fs.read(store)), await clonePin(host))
     const options = profiles.slice(0, MAX_OPTIONS)
     if (options.length < 2) {
       return { deny: NO_PROFILE }

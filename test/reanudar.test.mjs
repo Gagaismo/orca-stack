@@ -712,6 +712,18 @@ describe('reanudar: the pi profile (#276)', () => {
     assert.equal(wrong.sends().length, 0)
     assert.equal(JSON.parse(wrong.files[PIN]).profile, 'opus-haiku')
 
+    // Lautaro's decision on PR 347: "global" never replaces a stale pin, on the send and the relaunch paths: it refuses,
+    // asks for a name, sends and launches nothing, and the pin stays.
+    const STALE_GLOBAL = 'El worktree fija el perfil de Pi "opus-haiku", que ya no existe, y --perfil-pi global no lo reemplaza: pasá --perfil-pi <nombre> para fijar otro perfil en el worktree.'
+    const globalPaused = paused()
+    await assert.rejects(() => reanudarCommand({ perfilPi: 'global' }, ISSUE, URL, globalPaused.io), { message: STALE_GLOBAL })
+    assert.equal(globalPaused.sends().length, 0)
+    assert.equal(JSON.parse(globalPaused.files[PIN]).profile, 'opus-haiku')
+    const globalExited = ignoring(piHarness('opus-haiku'))
+    await assert.rejects(() => reanudarCommand({ perfilPi: 'global' }, ISSUE, URL, globalExited.io), { message: STALE_GLOBAL })
+    assert.equal(launches(globalExited).length, 0)
+    assert.equal(JSON.parse(globalExited.files[PIN]).profile, 'opus-haiku')
+
     // The relaunch path: the fake host shows no new pi session, so the launch is refused after it started, pin rewritten.
     const exited = ignoring(piHarness('opus-haiku'))
     exited.io.listFiles = () => []
