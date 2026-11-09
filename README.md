@@ -76,6 +76,7 @@ Son plugins de Claude Code que se recargan en caliente (`.claude-plugin/plugin.j
 | `bandeja-mensajes` | Captura los bloques ` ```mensaje <destinatario> ` que redacta Claude y deja copiarlos o guardarlos | `mensajes.destinatarios` |
 | `grilling-ok` | Responde con un clic (o con un `ok`) a las preguntas Q1…Qn de una sesión de grilling | — |
 | `modo-autonomo` | Instrucción permanente de trabajo autónomo hasta la meta, con recordatorio anti-parada acotado | — |
+| `main-md` | En la sesión de `main` (checkout principal, en cualquier rama) de un repo con `.orca-stack.json`, inyecta `~/orca/stack/MAIN.md` (o el `MAIN.md` junto a `$ORCA_STACK_POLICY_PATH`) al arrancar, al retomar y después de compactar, para que las reglas de `main` no se pierdan al compactar. Si no puede leerlo, deja una línea con la ruta y el puntero del contrato sigue valiendo | — |
 | `marchas` | `/marcha` muestra o cambia la marcha de `main`: Lazy, Medium o Proactive; cada sesión nueva empieza en Medium; avisa en una línea cuando el modo autónomo coincide con Lazy, Proactive o ultracode | — |
 | `reloj-cache` | Muestra cuánto falta para que venza el caché del prompt y ofrece `/compactar-ya` | — |
 
