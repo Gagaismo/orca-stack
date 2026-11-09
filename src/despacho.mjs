@@ -454,8 +454,8 @@ const piSessionTools = (io, home, worktree, after = 0) => {
         if (!samePath(session.cwd ?? '', target)) continue
         const initial = JSON.parse(lines[4] ?? '{}')
         const tools = initial.message?.sections?.tools ?? initial.message?.content?.find?.(part => part.type === 'text')?.text ?? initial.message?.content
-        if (typeof tools === 'string' && /<tools>\s*\(none\)/i.test(tools)) return 'none'
-        return 'available'
+        if (typeof tools === 'string' && /<tools>\s*\(none\)/i.test(tools)) return { tools: 'none', file }
+        return { tools: 'available', file }
       } catch {}
     }
   } catch {}
@@ -465,11 +465,41 @@ const piSessionTools = (io, home, worktree, after = 0) => {
 // Up to 30 s: the TUI draws its screen before it takes the first message, so it can start slower than `pi -p` did.
 const waitForPiSession = async (io, home, worktree, after = 0) => {
   for (let i = 0; i < 150; i += 1) {
-    const tools = piSessionTools(io, home, worktree, after)
-    if (tools !== undefined) return tools
+    const session = piSessionTools(io, home, worktree, after)
+    if (session !== undefined) return session
     await io.sleep(200)
   }
+  return {}
+}
+
+// pi records an auth failure as its first reply: an error turn whose errorMessage is "Failed to authenticate: …" (#295).
+// Only that first reply counts, so a later turn that quotes the words does not fail a launch.
+const PI_AUTH = /Failed to authenticate/i
+const piFirstReply = (io, file) => {
+  for (const line of io.readFile(file).split(/\r?\n/)) {
+    let entry
+    try { entry = JSON.parse(line) } catch { continue }
+    const message = entry?.type === 'message' ? entry.message : undefined
+    if (message?.role !== 'assistant') continue
+    const texts = [message.errorMessage, ...(Array.isArray(message.content) ? message.content.map(part => part?.text) : [message.content])]
+    const auth = message.stopReason === 'error' ? texts.flatMap(t => (typeof t === 'string' ? t.split(/\r?\n/) : [])).find(t => PI_AUTH.test(t)) : undefined
+    return auth ? { auth: auth.trim() } : { ok: true }
+  }
   return undefined
+}
+
+// The same window as the screen check of #198: three reads, two five-second pauses; a first reply ends it early.
+const checkPiAuth = async (io, file, configDir) => {
+  for (let i = 0; i < 3; i += 1) {
+    if (i > 0) await io.sleep(5000)
+    let reply
+    try { reply = piFirstReply(io, file) } catch {}
+    if (reply?.auth) {
+      const dir = configDir ?? 'sin fijar (agentes.pi.claudeConfigDir no está en ~/.orca-stack/config.json; pi usa el que herede la terminal)'
+      throw new Error(`Pi no pudo autenticarse; el turno no está ejecutándose: ${reply.auth}. CLAUDE_CONFIG_DIR: ${dir}. Volvé a iniciar sesión de Claude con esa carpeta antes de relanzar.`)
+    }
+    if (reply?.ok) return
+  }
 }
 
 export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue }) => {
@@ -517,9 +547,10 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     if (!started) throw new Error(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
     await checkPostLaunchScreen(io, handle, agent)
   } else {
-    const tools = await waitForPiSession(io, home, worktree, piSessionAfter)
+    const { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
     if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
+    if (file) await checkPiAuth(io, file, config.piClaudeConfigDir)
   }
   say(`\u2714 ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
 
