@@ -619,3 +619,97 @@ describe('doctor', () => {
     assert.deepEqual(snapshot(orca), before)
   })
 })
+
+describe('issue 300: ~/AGENTS.md carries a pointer, not a second copy of the contract', () => {
+  const CONTRACT = '## Orca stack: contrato de trabajo'
+  const POLICY = '~/orca/stack/ORCA-STACK.md'
+  const homeAgents = () => path.join(home, 'AGENTS.md')
+  const stale = buildBlock(`${CONTRACT}\n\nUna copia vieja del contrato, sin Rebote conflicto.`)
+  // What pi loads: every AGENTS.md from the cwd up to the home directory.
+  const ancestorAgents = dir => {
+    const found = []
+    for (let current = dir; ; current = path.dirname(current)) {
+      const file = path.join(current, 'AGENTS.md')
+      if (existsSync(file)) found.push(read(file))
+      if (samePath(current, home)) return found.join('\n')
+    }
+  }
+  const count = (text, needle) => text.split(needle).length - 1
+
+  test('issue 300 Rule 1: a repo set up by init gets the contract once, the current one, after global', () => {
+    write(homeAgents(), `${stale}\n`)
+    const repo = path.join(home, 'proyecto')
+    mkdirSync(repo)
+    git(repo, 'init', '-q', '-b', 'main')
+    const init = cli(home, ['init'], { cwd: repo })
+    assert.equal(init.status, 0, init.out)
+    const result = cli(home, ['global', '--skip-pi'])
+    assert.equal(result.status, 0, result.out)
+    assert.match(result.out, /reemplacé el contrato de ~\/AGENTS\.md por un puntero/)
+    const loaded = ancestorAgents(repo)
+    assert.equal(count(loaded, CONTRACT), 1, loaded)
+    assert.doesNotMatch(read(homeAgents()), /Una copia vieja del contrato/)
+    assert.match(read(path.join(repo, 'AGENTS.md')), /Rebote conflicto/)
+    assert.deepEqual(backups(home).filter(name => name.endsWith('AGENTS.md')).length, 1)
+  })
+
+  test('issue 300 Rule 2: a home repo without its own AGENTS.md keeps the pointer to ORCA-STACK.md', () => {
+    write(homeAgents(), `${stale}\n`)
+    const repo = path.join(home, 'sin-setup')
+    mkdirSync(repo)
+    git(repo, 'init', '-q', '-b', 'main')
+    const result = cli(home, ['global', '--skip-pi'])
+    assert.equal(result.status, 0, result.out)
+    assert.equal(existsSync(path.join(repo, 'AGENTS.md')), false)
+    assert.ok(ancestorAgents(repo).includes(POLICY), ancestorAgents(repo))
+  })
+
+  test('issue 300 Rule 3: text outside the markers in ~/AGENTS.md is kept byte for byte', () => {
+    const above = '# Mis reglas\r\n\r\nNo tocar esto.  \r\n\r\n'
+    const below = '\r\n\r\n## Lo mío\r\nTambién queda.\r\n'
+    write(homeAgents(), above + buildBlock(`${CONTRACT}\n\nvieja`, '\r\n') + below)
+    const result = cli(home, ['global', '--skip-pi'])
+    assert.equal(result.status, 0, result.out)
+    const text = read(homeAgents())
+    assert.ok(text.startsWith(above), text)
+    assert.ok(text.endsWith(below), text)
+    const block = text.slice(above.length, text.length - below.length)
+    assert.ok(block.startsWith('<!-- orca-stack:begin -->') && block.endsWith('<!-- orca-stack:end -->'), block)
+    assert.ok(block.includes(POLICY), block)
+    assert.equal(count(block, CONTRACT), 0, block)
+  })
+
+  test('issue 300 Rule 3: broken markers in ~/AGENTS.md stop global before it writes anything', () => {
+    const broken = `# Mis reglas\n\n<!-- orca-stack:begin -->\n${CONTRACT}\n`
+    write(homeAgents(), broken)
+    const before = snapshot(home)
+    const result = cli(home, ['global', '--skip-pi'])
+    assert.equal(result.status, 1, result.out)
+    assert.match(result.out, /incompletos o desordenados/)
+    assert.deepEqual(snapshot(home), before)
+  })
+
+  test('issue 300 Rule 4: a second global run leaves ~/AGENTS.md unchanged', () => {
+    write(homeAgents(), `# Mis reglas\n\n${stale}\n`)
+    const first = cli(home, ['global', '--skip-pi'])
+    assert.equal(first.status, 0, first.out)
+    const bytes = read(homeAgents())
+    const saved = backups(home)
+    const second = cli(home, ['global', '--skip-pi'])
+    assert.equal(second.status, 0, second.out)
+    assert.match(second.out, /~\/AGENTS\.md ya tiene el puntero/)
+    assert.equal(read(homeAgents()), bytes)
+    assert.deepEqual(backups(home), saved)
+  })
+
+  test('issue 300 preserve global: without an orca-stack block, ~/AGENTS.md is neither created nor touched', () => {
+    const first = cli(home, ['global', '--skip-pi'])
+    assert.equal(first.status, 0, first.out)
+    assert.equal(existsSync(homeAgents()), false)
+    const own = '# Solo mis reglas\n'
+    write(homeAgents(), own)
+    const second = cli(home, ['global', '--skip-pi'])
+    assert.equal(second.status, 0, second.out)
+    assert.equal(read(homeAgents()), own)
+  })
+})

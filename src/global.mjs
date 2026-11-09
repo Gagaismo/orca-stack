@@ -19,6 +19,7 @@ import {
   listDirs,
   listFiles,
   readAsset,
+  homePointerBlock,
   policyBlock,
   render,
   skipForMod,
@@ -160,6 +161,28 @@ const removeClaudeMdBlock = ctx => {
   if (!ctx.dryRun) {
     ctx.state.claudeMd = null
   }
+}
+
+// `init` run where git resolves to the home directory leaves the full contract in ~/AGENTS.md. pi loads every ancestor
+// AGENTS.md (and ~/CLAUDE.md imports it into Claude), so each session got a second, stale copy (#300). `global`
+// swaps that block for a short pointer to the policy; it never creates the file nor adds a block. Text outside stays.
+const homeAgentsPointer = ctx => {
+  ctx.say('\nAGENTS.md del home')
+  const file = path.join(ctx.home, 'AGENTS.md')
+  const original = readTextIfExists(file)
+  if (original === null || !removeAnyBlock(original).found) {
+    ctx.say('  sin bloque orca-stack: no hay nada que cambiar')
+
+    return
+  }
+  const text = upsertBlock(original, homePointerBlock({ policyPath: POLICY, briefsPath: BRIEFS }))
+  if (text === original) {
+    ctx.say('  ~/AGENTS.md ya tiene el puntero a la política')
+
+    return
+  }
+  ctx.writeShared(file, text, `${ctx.show(file)} (puntero a la política en vez del contrato)`)
+  ctx.say('  reemplacé el contrato de ~/AGENTS.md por un puntero: el contrato vigente es el del AGENTS.md de cada repo')
 }
 
 // Lazy mode keeps the full coordinator text in ~/.orca-stack/gentle/orchestrator.md and leaves a short pointer between the markers.
@@ -442,6 +465,10 @@ export const preflight = ctx => {
   if (md !== null) {
     removeAnyBlock(md) // throws on unbalanced, reordered or duplicated markers
   }
+  const homeMd = readTextIfExists(path.join(ctx.home, 'AGENTS.md'))
+  if (homeMd !== null) {
+    removeAnyBlock(homeMd) // same
+  }
   const codexMd = isWindows() ? readTextIfExists(codexAgentsMd(ctx.L.codexDir)) : null
   if (codexMd !== null) {
     removeBlock(codexMd, CODEX_ASCII_MARKERS) // same
@@ -483,6 +510,7 @@ export const globalCommand = async flags => {
     installSkills(ctx)
     installMods(ctx)
     removeClaudeMdBlock(ctx)
+    homeAgentsPointer(ctx)
     gentleBlockStep(ctx)
     installCodexAsciiRule(ctx)
     raiseCodexDocBytes(ctx)

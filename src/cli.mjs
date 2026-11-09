@@ -68,6 +68,7 @@ Instala a nivel usuario:
   5. Nada de metodología en ~/.claude/CLAUDE.md (llega por el proyecto, con \`init\`); saca el bloque
      <!-- orca-stack:begin --> que haya dejado una versión anterior, con respaldo.
      Con el RDD de gentle-ai apagado, saca de ese archivo sus secciones de review (\`gentle-ai sync\` las restaura: volvé a correr \`global\`)
+     Si ~/AGENTS.md tiene un bloque orca-stack, lo cambia por un puntero corto a la política (con respaldo)
   6. Pi: gentle-pi, pi-claude-bridge y gentle-engram con \`pi install\` + gentle-pi global (omitido con --skip-pi). Con un
      Pi anterior a ${PI_MIN_VERSION} no instala gentle-pi y falla: gentle-pi ${PINNED.gentlePi} no arranca con él
   7. ~/.orca-stack/state.json (para \`remove\`) y ~/.orca-stack/config.json (capa personal)
