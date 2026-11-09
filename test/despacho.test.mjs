@@ -2008,6 +2008,40 @@ describe('rebote', () => {
     assert.equal(JSON.parse(read(pinFile)).profile, 'OpusFull')
   })
 
+  test('issue 293 Rule 1: --perfil-pi replaces a pin naming a profile that no longer exists; a pin that exists still refuses a change', async () => {
+    write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ profiles: {
+      'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },
+      OpusFull: { orchestrator: { model: 'claude-bridge/claude-opus-5-5' } },
+    } }))
+    const pinFile = path.join(worktree, '.pi', 'gentle-ai', 'profile.json')
+    const pin = profile => write(pinFile, JSON.stringify({ kind: 'gentle-pi.agent_model_profile_pin', version: 1, profile }))
+    const piEnv = () => {
+      const env = bounceEnv(pr({ body: 'Implementador: pi' }), {}, { ...PROJECT, agentes: { ...PROJECT.agentes, pi: {} } })
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      env.io.now = () => 100
+      env.io.modifiedAt = () => 101
+      return env
+    }
+    const launched = env => env.calls.find(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+
+    pin('opus-haiku')
+    const stuck = piEnv()
+    await assert.rejects(reboteCommand({}, '12', stuck.io), /No existe el perfil de Pi "opus-haiku".*Repetí con --perfil-pi <nombre> para fijar otro perfil en el worktree\.$/)
+    assert.ok(!launched(stuck))
+    const replaced = piEnv()
+    assert.equal(await reboteCommand({ perfilPi: 'opus-sonnet' }, '12', replaced.io), 0)
+    assert.equal(JSON.parse(read(pinFile)).profile, 'opus-sonnet')
+    assert.ok(replaced.out.includes('perfil de Pi: opus-sonnet (fuente: flag)'), replaced.out.join('\n'))
+    assert.ok(launched(replaced)[launched(replaced).indexOf('--command') + 1].includes("--model 'claude-bridge/claude-opus-5-5' --thinking high"))
+
+    pin('OpusFull')
+    const refused = piEnv()
+    await assert.rejects(reboteCommand({ perfilPi: 'opus-sonnet' }, '12', refused.io), { message: 'El worktree fija el perfil de Pi "OpusFull"; no se puede cambiar a "opus-sonnet" en un rebote.' })
+    assert.ok(!launched(refused) && !refused.calls.some(call => call[0] === 'gh' && call[2] === 'comment'))
+    assert.equal(JSON.parse(read(pinFile)).profile, 'OpusFull')
+    cleanup(path.dirname(pinFile))
+  })
+
   test('issue #277 Rule 1: rebote relaunches a pi author as a TUI with the brief as its first message', async () => {
     const env = bounceEnv(pr({ body: 'Implementador: pi' }))
     env.io.gentleSkills = () => 'C:\\pi\\skills'

@@ -672,6 +672,12 @@ export const readPin = (io, worktree) => {
 
   return typeof profile === 'string' ? profile : undefined
 }
+// Whether the gentle-pi store still has a profile called `name` (launchable or not).
+export const piProfileStored = (io, name) => {
+  const profiles = readJson(path.join(io.home, '.pi', 'gentle-ai', 'profiles.json'), io)?.profiles
+
+  return isPlain(profiles) && Object.hasOwn(profiles, name) && isPlain(profiles[name])
+}
 export const writePin = (io, worktree, commonDir, name) => {
   const file = path.join(worktree, ...PIN_REL.split('/'))
   if (io.sh('git', ['ls-files', '--error-unmatch', PIN_REL], { cwd: worktree }).status === 0) {
@@ -1091,9 +1097,19 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   }).find(Boolean)
   if (!worktree) throw new Error(`No hay un worktree para la rama ${pr.headRefName} del PR #${n}.`)
   // Before the worktree moves: a pi bounce with no profile fails closed. The pin wins; with none, the flag or the config.
+  // A pin naming a profile the store no longer has can only be replaced: --perfil-pi does it, and the launch rewrites it.
   const profilePin = agent === 'pi' ? readPin(io, worktree) : undefined
-  if (perfilPi !== undefined && profilePin !== undefined && perfilPi !== profilePin) throw new Error(`El worktree fija el perfil de Pi "${profilePin}"; no se puede cambiar a "${perfilPi}" en un rebote.`)
-  const profile = agent === 'pi' ? piProfileFor({ flag: profilePin === undefined ? perfilPi : undefined, pin: profilePin, config, home: io.home, commonDir, io }) : undefined
+  const stalePin = profilePin !== undefined && !piProfileStored(io, profilePin)
+  if (perfilPi !== undefined && profilePin !== undefined && perfilPi !== profilePin && !stalePin) throw new Error(`El worktree fija el perfil de Pi "${profilePin}"; no se puede cambiar a "${perfilPi}" en un rebote.`)
+  let profile
+  if (agent === 'pi') {
+    try {
+      profile = piProfileFor({ flag: profilePin === undefined || stalePin ? perfilPi : undefined, pin: profilePin, config, home: io.home, commonDir, io })
+    } catch (error) {
+      if (perfilPi === undefined && stalePin) error.message += ` Repetí con --perfil-pi <nombre> para fijar otro perfil en el worktree.`
+      throw error
+    }
+  }
   const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: worktree })
   if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${worktree}: ${(status.stderr || status.stdout).trim()}`)
   if (status.stdout.trim() !== '') throw new Error(`El worktree ${worktree} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de relanzar.`)
