@@ -115,7 +115,7 @@ orca-stack global --limpiar-sdd      # respalda y mueve restos SDD conocidos
 
 Instala política, wrappers, skills, mods, Pi, el comando `orca-stack` y el registro `~/.orca-stack/state.json`. Cada archivo que modifica se respalda antes en `~/.orca-stack/backups/<fecha>/`. Una segunda corrida no cambia nada ni genera respaldos nuevos. El detalle de qué va dónde está en el [README](../README.md#qué-instala).
 
-Si `~/AGENTS.md` tiene un bloque orca-stack (lo deja `init` cuando git resuelve la raíz del proyecto al home, por ejemplo si el home es un repo), `global` lo reemplaza por un puntero corto a `~/orca/stack/ORCA-STACK.md` y `ROLE-BRIEFS.md`, con respaldo. Pi carga cada `AGENTS.md` de los ancestros y `~/CLAUDE.md` lo importa en Claude, así que esa copia llegaba a cada sesión junto con la del repo y quedaba vieja. Un repo con su propio bloque recibe el contrato una sola vez; uno sin bloque conserva el puntero a la política. El texto fuera de los marcadores queda igual, byte por byte, y sin bloque `global` no crea ni toca `~/AGENTS.md`.
+Si `~/AGENTS.md` tiene un bloque orca-stack (lo deja `init` cuando git resuelve la raíz del proyecto al home, por ejemplo si el home es un repo), `global` lo reemplaza por un puntero corto a `~/orca/stack/ORCA-STACK.md` y `ROLE-BRIEFS.md`, con respaldo. Pi carga cada `AGENTS.md` de los ancestros y el `~/CLAUDE.md` que deja `init` lo importa en Claude, así que esa copia llegaba a cada sesión junto con la del repo y quedaba vieja. Un repo con su propio bloque recibe el contrato una sola vez; uno sin bloque conserva el puntero a la política. El texto fuera de los marcadores queda igual, byte por byte, y sin bloque `global` no crea ni toca `~/AGENTS.md`.
 
 #### `init`
 

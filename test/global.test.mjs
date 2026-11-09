@@ -650,7 +650,7 @@ describe('issue 300: ~/AGENTS.md carries a pointer, not a second copy of the con
     assert.equal(count(loaded, CONTRACT), 1, loaded)
     assert.doesNotMatch(read(homeAgents()), /Una copia vieja del contrato/)
     assert.match(read(path.join(repo, 'AGENTS.md')), /Rebote conflicto/)
-    assert.deepEqual(backups(home).filter(name => name.endsWith('AGENTS.md')).length, 1)
+    assert.equal(backups(home).filter(name => name.endsWith('AGENTS.md')).length, 1)
   })
 
   test('issue 300 Rule 2: a home repo without its own AGENTS.md keeps the pointer to ORCA-STACK.md', () => {
