@@ -387,6 +387,25 @@ describe('orca-stack reanudar (#214)', () => {
     await assert.rejects(() => reanudarCommand({ dryRun: true }, ISSUE, URL, unknown.io), /agente conocido/)
   })
 
+  test('issue 330 Rule 4: Orca\'s antigravity agentType is agy; an unknown agentType still refuses', async () => {
+    // The 2026-11-08 state: antigravity:done with its live TUI, despachar's terminal titled agy.
+    const live = harness({ agent: 'antigravity', terminals: [{ handle: 'term-1', tabId: 'tab-1', leafId: 'leaf-1', title: 'agy', worktreePath: WT }] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, live.io), 0)
+    assert.equal(live.sends().length, 1)
+    assert.equal(live.sends()[0].args[live.sends()[0].args.indexOf('--text') + 1], LINE)
+    // A done antigravity record whose pane Orca no longer lists: relaunched as agy, not refused.
+    const gone = harness({ agents: [{ paneKey: 'tab-9:leaf-9', state: 'done', agentType: 'antigravity' }], terminals: [] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, gone.io), 0)
+    const created = gone.calls.find(({ cmd, args }) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create')
+    assert.equal(created.args[created.args.indexOf('--title') + 1], 'agy')
+    for (const agentType of ['gemini', undefined]) {
+      const unknown = harness({ agents: [{ paneKey: 'tab-9:leaf-9', state: 'done', agentType }], terminals: [] })
+      await assert.rejects(() => reanudarCommand({}, ISSUE, URL, unknown.io), error => error.message === 'No puedo identificar un agente conocido para #212; no reanudo ni relanzo.')
+      assert.equal(unknown.sends().length, 0)
+      assert.ok(!unknown.calls.some(({ cmd, args }) => cmd === 'orca' && args[1] === 'create'))
+    }
+  })
+
   test('Rule 11: help lists reanudar and avisar still refuses when its worker is done', async () => {
     const oldLog = console.log
     const oldError = console.error

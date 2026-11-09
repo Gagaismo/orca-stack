@@ -138,6 +138,17 @@ const policyLines = ({ policyPath, briefsPath }) => [
   '- Las reglas de los mods de Claude Code para este proyecto están en `.orca-stack.json` (se commitea) y `.orca-stack.local.json` (local, ignorado por git); las personales, en `~/.orca-stack/config.json`.',
 ]
 
+// What `global` leaves in ~/AGENTS.md in place of a full block (#300): pi loads every ancestor AGENTS.md, and the
+// home copy of the contract goes stale next to the repo one. A repo without its own block still finds the policy.
+export const homePointerBlock = ({ policyPath, briefsPath }) =>
+  [
+    '## Orca stack',
+    '',
+    `Política canónica: \`${policyPath}\`. Briefs por rol: \`${briefsPath}\`.`,
+    'Un repo cableado con `orca-stack init` trae el contrato de trabajo vigente en su propio `AGENTS.md`: ese bloque manda.',
+    'Si faltan, corré `npx github:Gagaismo/orca-stack global`.',
+  ].join('\n')
+
 // The project blocks: the short CLAUDE.md one, or the AGENTS.md one that carries the work contract.
 export const policyBlock = ({ policyPath, briefsPath, short = false, importAgents = false }) => {
   if (short) {

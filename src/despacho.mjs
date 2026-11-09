@@ -356,10 +356,15 @@ const checkPostLaunchScreen = async (io, handle, agent) => {
   }
 }
 
-const waitForTui = async (io, handle, agent, root, tries = 45) => {
+// agy's folder-trust screen never says "trust this folder?" (#330): "Antigravity CLI requires permission to read, edit,
+// and execute files here." over the "Yes, I trust this folder" / "No, exit" menu.
+const AGY_TRUST = /trust this folder\?|requires permission to read, edit, and execute files here|Yes, I trust this folder/i
+const AGY_TRUST_ENTERS = 3
+
+const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45) => {
   let last = null
   let stable = 0
-  let trusted = false
+  let enters = 0
   for (let i = 0; i < tries; i += 1) {
     await io.sleep(2000)
     const res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])
@@ -374,9 +379,13 @@ const waitForTui = async (io, handle, agent, root, tries = 45) => {
         throw new Error(`Codex pide confiar en la carpeta y no recibió el brief. ${codexTrustHint(root)} Pantalla: ${text}`)
       }
     }
-    if (agent === 'agy' && !trusted && /trust/i.test(text)) {
+    // Enter picks "Yes, I trust this folder", but agy can draw the menu before it takes input: confirm until it clears.
+    if (agent === 'agy' && AGY_TRUST.test(text)) {
+      // A review has no issue for reanudar to find its worktree by: the way back is pasting the brief line by hand.
+      const next = issue === undefined ? `pegá en la terminal esta línea: ${prompt}` : `corré orca-stack reanudar ${issue} <url-del-comentario>.`
+      if (enters >= AGY_TRUST_ENTERS) throw new Error(`agy sigue en la pantalla de confianza de la carpeta y no recibió el brief. Elegí "Yes, I trust this folder" en la terminal ${handle} y ${next}`)
       io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
-      trusted = true
+      enters += 1
       stable = 0
       last = null
       continue
@@ -463,7 +472,7 @@ const waitForPiSession = async (io, home, worktree, after = 0) => {
   return undefined
 }
 
-export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0 }) => {
+export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue }) => {
   const say = io.out
   const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking })
   const act = (cmd, argv, opts = {}) => {
@@ -483,9 +492,9 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
   if (agent !== 'pi') {
     const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
     if (!handle) throw new Error('orca terminal create no devolvi\u00f3 el handle de la terminal.')
-    const before = await waitForTui(io, handle, agent, repositoryRoot)
-    if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
     const prompt = `Read and follow the brief in ${briefPath}`
+    const before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
+    if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
     const observed = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', '10', '--json'])
     let sent = observed
     let oldHost = false
@@ -830,7 +839,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     await launchInWorktree({
       agent, mode, worktree, briefPath, brief, session, config, win, home: io.home, skills,
       piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun,
-      piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0,
+      piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: review ? undefined : n,
     })
 
     return 0
@@ -1089,7 +1098,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     io.writeFile(briefPath, brief)
   }
   say(`${dryRun ? '[simulaci\u00F3n] ' : ''}brief -> ${briefPath}`)
-  await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0 })
+  await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })
   if (!dryRun) {
     const markerPath = path.join(io.home, 'orca', 'briefs', `${name}-comment.md`)
     const markersToPost = [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null, conflict ? `Rebote conflicto: ${sha}` : null].filter(Boolean)
