@@ -1724,6 +1724,11 @@ describe('rebote', () => {
     await assert.rejects(reboteCommand({ rdd: 'risk' }, '12', env.io), error => error.message === 'Ya hay un review RDD de pi sobre abc123.')
     assert.deepEqual(env.writes(), [])
     assert.deepEqual(env.written, [])
+    // A Commit: abbreviated to 7+ characters names the same head, as puente-gentle reads it.
+    const sha = 'abc1234def5678'
+    const short = rddEnv(pr({ headRefOid: sha, body: 'Implementador: pi\nCloses #7', reviews: [{ body: 'Revisor: pi (RDD: risk, reliability)\nCommit: abc1234\n\n## BLOQUEA\nnada' }] }))
+    await assert.rejects(reboteCommand({ rdd: 'risk' }, '12', short.io), error => error.message === `Ya hay un review RDD de pi sobre ${sha}.`)
+    assert.deepEqual(short.written, [])
   })
 
   test('Preserve: rebote without --rdd still refuses a PR with no blocking review on the head', async () => {

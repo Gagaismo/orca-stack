@@ -1141,9 +1141,11 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (continuar && nota !== undefined) throw new Error('--nota no vale con --continuar: el autor sigue con el brief del rebote.')
   if (continuar) return await continueBounce({ n, pr, agent, root, repo, config, commonDir, perfilPi, dryRun }, io)
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
+  // As puente-gentle's reviewsOf: the first five lines, and a Commit: sha abbreviated to 7+ characters still names the head.
   if (rdd && allReviews.some(item => {
-    const head = reviewBody(item).trimStart().split(/\r?\n/).slice(0, 3).join('\n')
-    return /^\s*Revisor:\s*pi \(RDD:[^)]*\)/mi.test(head) && /^\s*Commit:\s*(\S+)/mi.exec(head)?.[1] === sha
+    const head = reviewBody(item).trimStart().split(/\r?\n/).slice(0, 5).join('\n')
+    const commit = /^\s*Commit:\s*(\S+)\s*$/mi.exec(head)?.[1]?.toLowerCase()
+    return /^\s*Revisor:\s*pi \(RDD:[^)]*\)/mi.test(head) && commit !== undefined && (commit === sha.toLowerCase() || (commit.length >= 7 && sha.toLowerCase().startsWith(commit)))
   })) throw new Error(`Ya hay un review RDD de pi sobre ${sha}.`)
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const conflictMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote conflicto:\s*(\S+)\s*$/gim)].map(match => match[1]))
