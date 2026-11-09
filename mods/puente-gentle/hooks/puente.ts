@@ -213,12 +213,14 @@ export const diffUnavailable = (n: number, detail: string, filesStdout: string |
   return `diff no disponible: ${detail}\n${list === '' ? '' : `\nArchivos del PR (gh pr view ${n} --json files):\n${list}`}`
 }
 
-// The one section the message gains: where the files are and, for a PR, its full head commit.
-export const precargaSection = (paths: string[], head?: { pr: number; headRefOid: string }): string =>
+// The one section the message gains: where the files are, for a PR its full head commit and, when installed,
+// main's rules (the AGENTS.md block only tells main to read ~/orca/stack/MAIN.md).
+export const precargaSection = (paths: string[], head?: { pr: number; headRefOid: string }, mainDoc?: string): string =>
   '## Precarga\n' +
   'Lo que sigue lo leyó el mod de GitHub con gh antes de lanzarte (vos no tenés gh); leé estos archivos con read:\n' +
   paths.map(path => `- ${path}\n`).join('') +
-  (head === undefined ? '' : `Commit de cabeza del PR #${head.pr}: ${head.headRefOid}\n`)
+  (head === undefined ? '' : `Commit de cabeza del PR #${head.pr}: ${head.headRefOid}\n`) +
+  (mainDoc === undefined ? '' : `Reglas de \`main\` para mergear y revisar (AGENTS.md solo le dice a main que las lea); leelas con read: ${mainDoc}\n`)
 
 type Block = { type?: string; text?: string }
 type Message = {

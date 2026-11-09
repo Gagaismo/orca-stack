@@ -205,7 +205,11 @@ const preload = async (
     paths.push(path)
   }
 
-  return { precarga: precargaSection(paths, head) }
+  // A PR consult is a merge or review consult: Pi also gets main's rules, which AGENTS.md leaves to main.
+  const home = pr == null ? '' : await homeDir($)
+  const mainDoc = home === '' ? undefined : joinPath(home, 'orca', 'stack', 'MAIN.md')
+
+  return { precarga: precargaSection(paths, head, mainDoc !== undefined && (await $.fs.exists(mainDoc)) ? mainDoc : undefined) }
 }
 
 const consult = async (
