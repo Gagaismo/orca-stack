@@ -191,7 +191,7 @@ const readWorld = (targets, cursor, root, io, warn) => {
 
 // One item's events and its next cursor entry: the PR, its last head commit, the last CI result emitted for that head
 // commit (with the run of the last red one), and how the item ended.
-const advance = (issue, seen, before, merges) => {
+const advance = (issue, seen, before, merges, emitted) => {
   if (!seen.pr) {
     const entry = seen.issueState === 'CLOSED' ? { fin: 'issue-cerrado' } : {}
     if (seen.workersReadable === false) {
@@ -217,11 +217,18 @@ const advance = (issue, seen, before, merges) => {
     if (!comment.id || !reviewer || !sha || reported.has(comment.id)) continue
     const section = /(?:^|\r?\n)##\s+BLOQUEA\s*(?:\r?\n|$)([\s\S]*?)(?=\r?\n##\s|$)/i.exec(comment.body)?.[1] ?? ''
     const count = [...section.matchAll(/^\s*\d+\.\s+/gm)].length
-    lines.push(`review-publicado #${pr.number} ${reviewer} ${sha.slice(0, 7)} bloquea=${count}`)
+    const key = `review:${pr.number}:${comment.id}`
+    if (!emitted.has(key)) lines.push(`review-publicado #${pr.number} ${reviewer} ${sha.slice(0, 7)} bloquea=${count}`)
+    emitted.add(key)
     reported.add(comment.id)
   }
   if (reported.size) entry.reviews = [...reported]
-  if (!fresh && entry.head && entry.head !== pr.headRefOid) lines.push(`head-nuevo #${pr.number} ${pr.headRefOid.slice(0, 7)}`)
+  if (!fresh && entry.head && entry.head !== pr.headRefOid) {
+    const key = `head:${pr.number}:${pr.headRefOid}`
+    if (!emitted.has(key)) lines.push(`head-nuevo #${pr.number} ${pr.headRefOid.slice(0, 7)}`)
+    emitted.add(key)
+    if (pr.state !== 'OPEN') entry.head = pr.headRefOid
+  }
   if (pr.state === 'OPEN') {
     delete entry.fin
     if (fresh) lines.push(event('pr-abierto', issue, pr, pr.headRefOid))
@@ -355,11 +362,10 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     const next = { ...cursor }
     const lines = []
     let endedNow = false
+    const emitted = new Set()
     for (const issue of targets) {
-      const step = advance(issue, world[issue], cursor[issue], merges)
-      for (const line of step.lines) {
-        if (!/^(review-publicado|head-nuevo) /.test(line) || !lines.includes(line)) lines.push(line)
-      }
+      const step = advance(issue, world[issue], cursor[issue], merges, emitted)
+      lines.push(...step.lines)
       if (step.entry.fin && !cursor[issue]?.fin) endedNow = true
       next[issue] = step.entry
     }

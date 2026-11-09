@@ -1110,6 +1110,11 @@ describe('orca-stack vigilar (#299)', () => {
     h.world.prs[0] = pr(70, { state: 'MERGED', head: ABC })
     await once(h, ['7'])
     assert.ok(h.out.includes('head-nuevo #70 abc1234'))
+    h.world.prs[0].headRefOid = DEF
+    await once(h, ['7'])
+    drain(h)
+    await once(h, ['7'])
+    assert.ok(!h.out.some(line => line.startsWith('head-nuevo')))
   })
 
   test('Rule 3: review and head events survive a rearm without repetition', async () => {
@@ -1125,8 +1130,9 @@ describe('orca-stack vigilar (#299)', () => {
     await once(rearmed, ['7'])
     assert.deepEqual(rearmed.out, [])
     const shared = harness({ prs: [{ ...pr(70, { closes: [7, 8] }), comments: world.prs[0].comments }] })
+    shared.world.prs[0].comments.push({ ...shared.world.prs[0].comments[0], id: 'c2' })
     await once(shared, ['7', '8'])
-    assert.equal(shared.out.filter(line => line === 'review-publicado #70 agy abc1234 bloquea=0').length, 1)
+    assert.equal(shared.out.filter(line => line === 'review-publicado #70 agy abc1234 bloquea=0').length, 2)
     shared.world.prs[0].headRefOid = DEF
     await once(shared, ['7', '8'])
     assert.equal(shared.out.filter(line => line === 'head-nuevo #70 def5678').length, 1)
