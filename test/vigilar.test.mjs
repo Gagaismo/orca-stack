@@ -309,10 +309,10 @@ describe('orca-stack vigilar (#195)', () => {
       'pr-abierto #8 PR #80 abc1234',
     ])
 
-    // A new head commit starts a new cycle: pending emits nothing and the old commit's result is not repeated.
+    // A new head commit starts a new cycle: pending emits only the head event.
     h.world.prs = [pr(70, { head: DEF, checks: PENDING })]
     await once(h, ['7'])
-    assert.deepEqual(drain(h), [])
+    assert.deepEqual(drain(h), ['head-nuevo #70 def5678'])
 
     // Green, red after a re-run, then green again on the same head commit: each change is emitted once.
     for (const checks of [GREEN, GREEN, [check('ci-ok', 'FAILURE')], [check('ci-ok', 'SUCCESS')]]) {
@@ -550,7 +550,7 @@ describe('orca-stack vigilar (#195)', () => {
     const plain = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] } })
     await once(plain, ['7'])
     assert.deepEqual(plain.out, ['pr-abierto #7 PR #70 abc1234'])
-    assert.equal(plain.calls.some(call => call.includes('comments')), false)
+    assert.equal(plain.calls.some(call => call.startsWith('gh issue view') && call.includes('comments')), false)
 
     // A failing consultas check goes to stderr; the PR events of that poll are still printed.
     const broken = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] }, userDown: 'HTTP 401: Bad credentials' })
@@ -578,6 +578,8 @@ describe('orca-stack vigilar (#195)', () => {
       assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar)'))
       output = ''
       assert.equal(await main(['vigilar', '--help']), 0)
+      assert.ok(output.includes('review-publicado #<pr> <agente> <sha> bloquea=<n>'))
+      assert.ok(output.includes('head-nuevo #<pr> <sha>'))
       assert.ok(output.includes('orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]'))
       assert.ok(output.includes('orca-stack vigilar --merge-de-main <pr>'))
     } finally {
@@ -975,11 +977,11 @@ describe('orca-stack vigilar (#254)', () => {
 
     h.world.prs = [pr251({ head: ABC, mergeable: 'CONFLICTING' })]
     await once(h, ['250'])
-    assert.deepEqual(drain(h), ['pr-en-conflicto #250 PR #251 abc1234'])
+    assert.deepEqual(drain(h), ['head-nuevo #251 abc1234', 'pr-en-conflicto #250 PR #251 abc1234'])
 
     h.world.prs = [pr251({ head: DEF, mergeable: 'MERGEABLE', checks: PENDING })]
     await once(h, ['250'])
-    assert.deepEqual(drain(h), [])
+    assert.deepEqual(drain(h), ['head-nuevo #251 def5678'])
     h.world.prs = [pr251({ head: DEF, mergeable: 'MERGEABLE', checks: GREEN })]
     await once(h, ['250'])
     assert.deepEqual(h.out, ['ci-verde #250 PR #251 def5678'])
@@ -1067,7 +1069,7 @@ describe('orca-stack vigilar (#254)', () => {
     assert.deepEqual(drain(h), ['pr-abierto #7 PR #70 abc1234', 'ci-roja #7 PR #70 abc1234: ci-ok=FAILURE'])
     h.world.prs = [pr(70, { head: DEF, mergeable: 'MERGEABLE', checks: GREEN })]
     await once(h, ['7'])
-    assert.deepEqual(drain(h), ['ci-verde-retenido #7 PR #70 def5678: codex working'])
+    assert.deepEqual(drain(h), ['head-nuevo #70 def5678', 'ci-verde-retenido #7 PR #70 def5678: codex working'])
     worker.agents[0].state = 'done'
     await once(h, ['7'])
     assert.deepEqual(drain(h), ['ci-verde #7 PR #70 def5678'])
@@ -1088,5 +1090,57 @@ describe('orca-stack vigilar (#254)', () => {
     const paused = harness({ worktrees: [{ path: '/wt/orca-stack-9', branch: 'b9', linkedIssue: 9, agents: [{ state: 'done', agentType: 'codex' }] }] })
     await once(paused, ['9'])
     assert.deepEqual(paused.out, ['worker-en-pausa #9 codex'])
+  })
+})
+
+describe('orca-stack vigilar (#299)', () => {
+  test('Rule 1: emits each marked review comment with its reviewer, commit and blocker count', async () => {
+    const h = harness({ prs: [{ ...pr(70), comments: [{ id: 'c1', body: 'Revisor: agy\nCommit: abc1234aaaaaaaa\n\n## BLOQUEA\n1. First\n2. Second\n\n## SUGERENCIAS\nNone' }], reviews: [{ id: 'r1', body: 'Revisor: pi\nCommit: def5678bbbbbbbb\n\n## BLOQUEA\nnada' }, { id: 'r2', body: 'ordinary comment' }] }] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out.filter(line => line.startsWith('review-publicado')), ['review-publicado #70 agy abc1234 bloquea=2', 'review-publicado #70 pi def5678 bloquea=0'])
+  })
+
+  test('Rule 2: emits a new head only after the watched PR head changes', async () => {
+    const h = harness({ prs: [pr(70)] })
+    await once(h, ['7'])
+    assert.ok(!h.out.some(line => line.startsWith('head-nuevo')))
+    h.world.prs[0].headRefOid = DEF
+    await once(h, ['7'])
+    assert.ok(h.out.includes('head-nuevo #70 def5678'))
+    h.world.prs[0] = pr(70, { state: 'MERGED', head: ABC })
+    await once(h, ['7'])
+    assert.ok(h.out.includes('head-nuevo #70 abc1234'))
+    h.world.prs[0].headRefOid = DEF
+    await once(h, ['7'])
+    drain(h)
+    await once(h, ['7'])
+    assert.ok(!h.out.some(line => line.startsWith('head-nuevo')))
+  })
+
+  test('Rule 3: review and head events survive a rearm without repetition', async () => {
+    const world = { prs: [{ ...pr(70), comments: [{ id: 'c1', body: 'Revisor: agy\nCommit: abc1234aaaaaaaa\n## BLOQUEA\nnada' }] }] }
+    const h = harness(world)
+    await once(h, ['7'])
+    world.prs[0].headRefOid = DEF
+    await once(h, ['7'])
+    assert.equal(h.out.filter(line => line === 'review-publicado #70 agy abc1234 bloquea=0').length, 1)
+    assert.equal(h.out.filter(line => line === 'head-nuevo #70 def5678').length, 1)
+    const rearmed = harness(world)
+    rearmed.files[CURSOR] = JSON.stringify(h.cursor())
+    await once(rearmed, ['7'])
+    assert.deepEqual(rearmed.out, [])
+    const shared = harness({ prs: [{ ...pr(70, { closes: [7, 8] }), comments: world.prs[0].comments }] })
+    shared.world.prs[0].comments.push({ ...shared.world.prs[0].comments[0], id: 'c2' })
+    await once(shared, ['7', '8'])
+    assert.equal(shared.out.filter(line => line === 'review-publicado #70 agy abc1234 bloquea=0').length, 2)
+    shared.world.prs[0].headRefOid = DEF
+    await once(shared, ['7', '8'])
+    assert.equal(shared.out.filter(line => line === 'head-nuevo #70 def5678').length, 1)
+  })
+
+  test('PRESERVE: vigilarCommand retains existing PR and CI events', async () => {
+    const h = harness({ prs: [pr(70, { checks: GREEN })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
   })
 })
