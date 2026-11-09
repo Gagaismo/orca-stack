@@ -85,8 +85,8 @@ afterEach(() => {
 })
 
 // A scripted environment: every external call is recorded; `over` answers specific ones ("cmd arg0 [arg1]").
-// piTools 'missing': the pi launch leaves no session, as when pi never started.
-const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => {
+// piTools 'missing': the pi launch leaves no session, as when pi never started. piReply: session lines after the system one.
+const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = [] } = {}) => {
   write(path.join(root, '.orca-stack.json'), JSON.stringify(config))
   const calls = []
   const out = []
@@ -133,6 +133,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
           files.set(sessionFile, [
             JSON.stringify({ type: 'session', cwd: worktree }),
             '{}', '{}', '{}', JSON.stringify({ type: 'message', message: { role: 'system', content: '', sections: { tools: text } } }),
+            ...piReply.map(entry => JSON.stringify(entry)),
           ].join('\n'))
           modified.set(sessionFile, Date.now() + 1)
         }
@@ -1121,6 +1122,87 @@ describe('launchers', () => {
   })
 })
 
+// As pi recorded it in traslado-programado-sys revision-107-pi on 2026-11-04: the first reply is an error turn.
+const PI_AUTH = 'Failed to authenticate: OAuth session expired and could not be refreshed'
+const PI_FOREGROUND = 'Your process ends when your turn ends, and background jobs die with it: run every verification (the configured suite and focused tests) in the foreground and wait for it to finish before you commit and push.'
+const piAuthReply = { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: PI_AUTH }], stopReason: 'error', errorMessage: PI_AUTH } }
+
+describe('issue #295: pi launches report an auth failure', () => {
+  const workingReply = { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', name: 'read' }], stopReason: 'toolUse' } }
+  const reviewPr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) }
+  const terminalReads = env => env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'read').length
+
+  test('Rule 1: despachar and revisar report a pi launch that fails to authenticate, with the line and the CLAUDE_CONFIG_DIR used', async () => {
+    write(layout(home).config, JSON.stringify({ agentes: { pi: { claudeConfigDir: '~/.claude-pi' } } }))
+    for (const [kind, n, over] of [['ticket', '7', {}], ['review', '9', reviewPr]]) {
+      const env = fakeIo(over, { piReply: [piAuthReply] })
+      await assert.rejects(run(kind, { n, agent: 'pi' }, env), error =>
+        error.message.includes(PI_AUTH) && error.message.includes(`CLAUDE_CONFIG_DIR: ${path.join(home, '.claude-pi')}`), kind)
+      assert.ok(!env.out.some(line => line.includes('✔ pi despachado')), kind)
+    }
+    // A relaunch with the same --session-id appends to the old file: an earlier turn that worked does not hide the failure.
+    const earlier = { ...workingReply, timestamp: '2026-01-01T00:00:00.000Z' }
+    const reused = fakeIo({}, { piReply: [earlier, { ...piAuthReply, timestamp: new Date(Date.now() + 60000).toISOString() }] })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, reused), error => error.message.includes(PI_AUTH))
+    assert.ok(!reused.out.some(line => line.includes('✔ pi despachado')))
+    // Without agentes.pi.claudeConfigDir the message says the variable was not set by the stack.
+    write(layout(home).config, JSON.stringify({}))
+    const unset = fakeIo({}, { piReply: [piAuthReply] })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, unset), error =>
+      error.message.includes(PI_AUTH) && error.message.includes('CLAUDE_CONFIG_DIR: sin fijar (agentes.pi.claudeConfigDir'))
+    assert.ok(!unset.out.some(line => line.includes('✔ pi despachado')))
+  })
+
+  test('Rule 2: a pi launch that authenticates is reported as today, with no wait beyond the #198 window', async () => {
+    const quoted = { type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: `The ticket quotes ${PI_AUTH}` }], stopReason: 'stop' } }
+    for (const piReply of [[workingReply], [workingReply, quoted], []]) {
+      const env = fakeIo({}, { piReply })
+      await run('ticket', { n: '7', agent: 'pi' }, env)
+      assert.ok(env.out.some(line => line.startsWith(`✔ pi despachado en ${worktree}. Brief: `)))
+      assert.equal(terminalReads(env), 0)
+      // A reply already in the session ends the check at once; with no reply yet it gives up after #198's two pauses.
+      assert.deepEqual(env.sleeps.filter(ms => ms === 5000), piReply.length ? [] : [5000, 5000])
+    }
+  })
+
+  test('Rule 3: claude, codex and agy keep their screen checks and never read a pi session', async () => {
+    for (const agent of ['claude', 'codex', 'agy']) {
+      const env = fakeIo({}, { piReply: [piAuthReply] })
+      const read = env.io.readFile
+      const sessionReads = []
+      env.io.readFile = file => { if (file.endsWith('.jsonl')) sessionReads.push(file); return read(file) }
+      await run('ticket', { n: '7', agent }, env)
+      assert.equal(terminalReads(env), 6, agent)
+      assert.deepEqual(env.sleeps.filter(ms => ms === 5000), [5000, 5000], agent)
+      assert.deepEqual(sessionReads, [], agent)
+      assert.ok(env.out.some(line => line.includes(`✔ ${agent} despachado`)), agent)
+      assert.ok(!env.out.some(line => /autenticar|CLAUDE_CONFIG_DIR/.test(line)), agent)
+    }
+  })
+
+  test('Rule 4: the ticket and review briefs generated for pi carry the foreground rule; claude, codex and agy briefs do not', async () => {
+    for (const agent of ['pi', 'claude', 'codex', 'agy']) {
+      const ticket = fakeIo()
+      await run('ticket', { n: '7', agent }, ticket)
+      const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: `Implementador: ${agent === 'agy' ? 'codex' : 'agy'}`, number: 9 }) })
+      await run('review', { n: '9', agent }, review)
+      const briefs = [ticket.written.find(([file]) => file.endsWith('proj-7.md'))?.[1], review.written.find(([file]) => file.endsWith(`proj-revision-9-${agent}.md`))?.[1]]
+      for (const [i, brief] of briefs.entries()) {
+        assert.ok(brief, `${agent} brief ${i} is written`)
+        assert.equal(brief.includes(PI_FOREGROUND), agent === 'pi', `${agent} brief ${i}`)
+      }
+    }
+  })
+
+  test('Preserve: README, the manual and despachar --help describe the pi auth check', () => {
+    for (const file of ['README.md', path.join('docs', 'manual.md'), path.join('src', 'cli.mjs')]) {
+      const text = readFileSync(path.join(PACKAGE_ROOT, file), 'utf8').replace(/\s+/g, ' ')
+      assert.match(text, /Failed to authenticate/, file)
+      assert.match(text, /CLAUDE_CONFIG_DIR`? usado/, file)
+    }
+  })
+})
+
 describe('issue #277: pi workers run as an interactive TUI', () => {
   const base = { mode: 'ticket', config: {}, home: 'C:\\Users\\me', briefPath: 'C:\\b.md', session: 'proj-7', skills: 'C:\\skills', agent: 'pi' }
   // Orca's managed pi extension (~/.pi/agent/extensions/orca-agent-status.ts) reports pi's state through these.
@@ -1492,8 +1574,8 @@ describe('rebote', () => {
     reviews: [{ body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, concreta, implementaci\u00F3n): fix it.\n\n## SUGERENCIAS\n(none)', url: 'https://example.test/review/1' }],
     comments: [], ...overrides,
   })
-  const bounceEnv = (pull = pr(), extra = {}, config = PROJECT) => {
-    const env = fakeIo({ 'gh pr': json(pull), 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`), 'git status': okRes(''), ...extra }, { config })
+  const bounceEnv = (pull = pr(), extra = {}, config = PROJECT, piReply = []) => {
+    const env = fakeIo({ 'gh pr': json(pull), 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`), 'git status': okRes(''), ...extra }, { config, piReply })
     const original = env.io.sh
     env.io.sh = (cmd, args, opts) => {
       if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return okRes(`${pull.headRefOid}\n`)
@@ -1524,6 +1606,30 @@ describe('rebote', () => {
     await assert.rejects(reboteCommand({}, '12', env.io), error =>
       error.message.includes('agy') && error.message.includes('term_1') && error.message.includes(quota))
     assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+  })
+
+  test('issue #295 Rule 1: rebote does not post its marker when the relaunched pi fails to authenticate', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: pi' }), {}, PROJECT, [piAuthReply])
+    env.io.gentleSkills = () => 'C:\\pi\\skills'
+    env.io.now = () => 100
+    env.io.modifiedAt = () => 101
+    await assert.rejects(reboteCommand({}, '12', env.io), error =>
+      error.message.includes(PI_AUTH) && error.message.includes('CLAUDE_CONFIG_DIR: '))
+    assert.ok(!env.out.some(line => line.includes('\u2714 pi despachado')))
+    assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+  })
+
+  test('issue #295 Rule 4: the bounce brief carries the foreground rule only when the author is pi', async () => {
+    for (const agent of ['pi', 'claude', 'codex', 'agy']) {
+      const env = bounceEnv(pr({ body: `Implementador: ${agent}` }))
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      env.io.now = () => 100
+      env.io.modifiedAt = () => 101
+      await reboteCommand({}, '12', env.io)
+      const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+      assert.ok(brief, agent)
+      assert.equal(brief.includes(PI_FOREGROUND), agent === 'pi', agent)
+    }
   })
 
   test('Rule 1: relaunches author with current blockers and posts Rebote only after launch', async () => {

@@ -343,6 +343,26 @@ describe('orca-stack reanudar (#214)', () => {
     assert.ok(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create' && call.args.some(arg => /; pi --no-skills /.test(arg))))
   })
 
+  test('issue #295 Preserve: relaunching an exited pi worker that authenticates still succeeds, and one that cannot is refused', async () => {
+    const AUTH = 'Failed to authenticate: OAuth session expired and could not be refreshed'
+    for (const [reply, okLaunch] of [[{ role: 'assistant', content: [{ type: 'toolCall' }], stopReason: 'toolUse' }, true], [{ role: 'assistant', content: [{ type: 'text', text: AUTH }], stopReason: 'error', errorMessage: AUTH }, false]]) {
+      const h = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
+      h.io.gentleSkills = () => '/pi/skills'
+      const sessionDir = path.join('/home', '.pi', 'agent', 'sessions', 'wt')
+      const session = path.join(sessionDir, '2026-11-09T00-00-00-000Z_s.jsonl')
+      h.io.listFiles = dir => (dir === path.dirname(sessionDir) ? [sessionDir] : dir === sessionDir ? [session] : [])
+      h.io.modifiedAt = () => Number.MAX_SAFE_INTEGER
+      h.files[session] = [JSON.stringify({ type: 'session', cwd: WT }), '{}', '{}', '{}', JSON.stringify({ type: 'message', message: { role: 'system', content: '<tools>\n- read' } }), JSON.stringify({ type: 'message', message: reply })].join('\n')
+      if (okLaunch) {
+        assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+        assert.ok(h.outputs.some(line => line.startsWith('\u2714 pi despachado')), h.outputs.join('\n'))
+      } else {
+        await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error => error.message.includes(AUTH) && error.message.includes('CLAUDE_CONFIG_DIR: '))
+        assert.ok(!h.outputs.some(line => line.startsWith('\u2714 pi despachado')))
+      }
+    }
+  })
+
   test('Rule 7: terminal or Orca identity wins without consulting the original brief', async () => {
     const identified = harness({ state: 'done', agent: 'codex', brief: undefined })
     assert.equal(await reanudarCommand({}, ISSUE, URL, identified.io), 0)

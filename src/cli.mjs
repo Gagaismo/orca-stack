@@ -107,6 +107,8 @@ Con --dry-run muestra el plan y el brief y no escribe nada.
 Imprime \`Rama: <rama>\` con la rama que devolvió Orca; en --dry-run aclara que Orca define la rama al crear el worktree.
 Después de confirmar el inicio, despachar, revisar y rebote leen tres veces la pantalla, salvo pi, con pausas de 5 segundos;
 fallan ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell. No detectan prompts de bash ni cmd.exe.
+Con pi leen la sesión nueva de Pi con las mismas pausas y fallan si su primera respuesta es "Failed to authenticate",
+con esa línea y el CLAUDE_CONFIG_DIR usado.
 
 Con pi, --perfil-pi <nombre> (o agentes.pi.perfil en la config; el flag gana) fija para ese worktree uno de los perfiles de
 ~/.pi/gentle-ai/profiles.json: escribe .pi/gentle-ai/profile.json en el worktree (fuera de git, vía info/exclude) y lanza pi con el

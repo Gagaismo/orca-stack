@@ -13,7 +13,7 @@ You are the reviewer ({{AGENT}}) of PR #{{PR}}. You work alone in this worktree 
 
 ```
 {{VERIFICATION}}
-```
+```{{PI_FOREGROUND}}
 
 ## What to review
 
