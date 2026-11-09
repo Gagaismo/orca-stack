@@ -1141,11 +1141,16 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (continuar && nota !== undefined) throw new Error('--nota no vale con --continuar: el autor sigue con el brief del rebote.')
   if (continuar) return await continueBounce({ n, pr, agent, root, repo, config, commonDir, perfilPi, dryRun }, io)
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
-  // As puente-gentle's reviewsOf: the first five lines, and a Commit: sha abbreviated to 7+ characters still names the head.
+  // As puente-gentle's reviewsOf and rddRequestsOf: the first five lines, a sha abbreviated to 7+ characters still names
+  // the head, and only an RDD review main asked for (an `RDD: <sha> (<lentes>)` marker with the same lenses) counts.
+  const namesHead = commit => commit !== undefined && (commit.toLowerCase() === sha.toLowerCase() || (commit.length >= 7 && sha.toLowerCase().startsWith(commit.toLowerCase())))
+  const lensKey = text => text.split(',').map(lens => lens.trim().toLowerCase()).filter(Boolean).sort().join(',')
+  const asked = new Set(allReviews.flatMap(item => [...reviewBody(item).matchAll(/^\s*RDD:\s*(\S+)\s*\(([^()]*)\)\s*$/gim)]
+    .filter(match => namesHead(match[1])).map(match => lensKey(match[2]))))
   if (rdd && allReviews.some(item => {
     const head = reviewBody(item).trimStart().split(/\r?\n/).slice(0, 5).join('\n')
-    const commit = /^\s*Commit:\s*(\S+)\s*$/mi.exec(head)?.[1]?.toLowerCase()
-    return /^\s*Revisor:\s*pi \(RDD:[^)]*\)/mi.test(head) && commit !== undefined && (commit === sha.toLowerCase() || (commit.length >= 7 && sha.toLowerCase().startsWith(commit)))
+    const lensesOf = /^\s*Revisor:\s*pi \(RDD:([^()]*)\)\s*$/mi.exec(head)?.[1]
+    return lensesOf !== undefined && namesHead(/^\s*Commit:\s*(\S+)\s*$/mi.exec(head)?.[1]) && asked.has(lensKey(lensesOf))
   })) throw new Error(`Ya hay un review RDD de pi sobre ${sha}.`)
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const conflictMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote conflicto:\s*(\S+)\s*$/gim)].map(match => match[1]))
@@ -1287,8 +1292,10 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   }
 
   const name = `${repo}-pr-${n}-rebote`
-  const session = `${name}-${(io.now ?? Date.now)()}`
-  const briefPath = path.join(io.home, 'orca', 'briefs', `${name}.md`)
+  // An RDD bounce keeps its brief and session apart, so `--continuar` never resumes it in place of a findings bounce.
+  const stem = rdd ? `${name}-rdd` : name
+  const session = `${stem}-${(io.now ?? Date.now)()}`
+  const briefPath = path.join(io.home, 'orca', 'briefs', `${stem}.md`)
   const skills = agent === 'pi' ? io.gentleSkills(io.home) : null
   if (agent === 'pi' && !skills) throw new Error('No encuentro las skills de gentle-pi (Pi ni npm global): corr\u00E9 `orca-stack global`.')
   if (profile) for (const line of piProfileLines(profile)) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}${line}`)
@@ -1296,7 +1303,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   // `--continuar` reads it back to relaunch pi with the same --session-id; written before the launch, which may fail.
   if (!dryRun) {
     io.mkdirp(path.dirname(briefPath))
-    io.writeFile(path.join(io.home, 'orca', 'briefs', `${name}.session`), `${session}\n`)
+    io.writeFile(path.join(io.home, 'orca', 'briefs', `${stem}.session`), `${session}\n`)
   }
   const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
   const brief = rdd ? withProfileLines(render(readAsset('stack', 'brief-rdd.md'), {
@@ -1336,9 +1343,10 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   say(`${dryRun ? '[simulaci\u00F3n] ' : ''}brief -> ${briefPath}`)
   await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })
   if (rdd) say(`${dryRun ? '[simulación] ' : ''}RDD: ${sha} (${lenses.join(', ')})`)
-  if (!dryRun && !rdd) {
-    const markerPath = path.join(io.home, 'orca', 'briefs', `${name}-comment.md`)
-    const markersToPost = [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, reviewBlockers.length > 0 ? `Ronda: ${round}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null, conflict ? `Rebote conflicto: ${sha}` : null].filter(Boolean)
+  if (!dryRun) {
+    const markerPath = path.join(io.home, 'orca', 'briefs', `${stem}-comment.md`)
+    // The RDD marker is main's request, the only one puente-gentle accepts an RDD review of pi's own PR for (#338).
+    const markersToPost = rdd ? [`RDD: ${sha} (${lenses.join(', ')})`] : [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, reviewBlockers.length > 0 ? `Ronda: ${round}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null, conflict ? `Rebote conflicto: ${sha}` : null].filter(Boolean)
     io.writeFile(markerPath, `${markersToPost.join('\n')}\n`)
     // The author is already running: a lost marker would let the next rebote bounce again, so retry and then fail loud.
     // A retry after a comment that did post only duplicates the marker, which every counter reads as a set.

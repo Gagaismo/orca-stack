@@ -544,12 +544,26 @@ export const reviewsOf = (bodies: string[], headRefOid: string): Review[] =>
     return [review]
   })
 
+// The lens sets main asked for on this commit: `orca-stack rebote <pr> --rdd <lentes>` posts `RDD: <sha> (<lentes>)`
+// (the sha may be abbreviated to 7+ characters). Each set is sorted, to compare it with a review's lenses.
+export const rddRequestsOf = (bodies: string[], headRefOid: string): string[][] =>
+  bodies.flatMap(body =>
+    body.split(/\r?\n/).flatMap(line => {
+      const match = /^RDD:\s*([0-9a-f]{7,40})\s*\(([^()]*)\)$/i.exec(line.trim())
+      if (match === null || !headRefOid.toLowerCase().startsWith(match[1].toLowerCase())) return []
+
+      return [match[2].split(',').map(lens => lens.trim().toLowerCase()).filter(lens => lens !== '').sort()]
+    }),
+  )
+
 // Why a PR touching a riesgo path cannot merge yet, or undefined. Every review counted is of the head commit.
 // - A review of the head commit with blockers stops it: on a riesgo path the human settles a blocker, not main.
 // - Implemented by pi: clean reviews from two model families other than pi's. A family comes from the model each
 //   reviewer has configured to review (familyOf); a reviewer whose model has no known family does not count.
-// - Implemented by pi with agentes.pi.review "rdd": a clean RDD review by pi with the risk lens is enough (#338).
-//   Otherwise an RDD review never counts, and a `Sin review:` comment never counts on a riesgo path.
+// - Implemented by pi with agentes.pi.review "rdd": only a clean RDD review by pi with the risk lens, which main asked
+//   for on this commit with those lenses (rddRequestsOf), clears it; reviews of other families do not replace it (#338).
+//   Outside that mode, or without main's request, an RDD review is not a review at all: it neither counts nor blocks.
+//   A `Sin review:` comment never counts on a riesgo path.
 // - Implemented by anyone else: a clean pi review, the second review the contract asks for.
 export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackConfig, now: number): string | undefined => {
   const sha = facts.headRefOid.slice(0, 7)
@@ -561,7 +575,12 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
       `sin ella no sé quién puede revisarlo. Agregala con \`gh pr edit ${n} --body-file <archivo>\`.`
     )
   }
-  const reviews = reviewsOf(facts.bodies, facts.headRefOid)
+  const rdd = facts.implementer === 'pi' && config.agentes?.pi?.review === 'rdd'
+  const requests = rdd ? rddRequestsOf(facts.bodies, facts.headRefOid) : []
+  const requested = (review: Review): boolean =>
+    review.reviewer === 'pi' && requests.some(lenses => lenses.join(',') === [...(review.lenses ?? [])].sort().join(','))
+  const all = reviewsOf(facts.bodies, facts.headRefOid)
+  const reviews = all.filter(review => review.lenses === undefined || (rdd && requested(review)))
   const blocked = reviews.find(review => !review.clean)
   if (blocked !== undefined) {
     return (
@@ -570,10 +589,21 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
     )
   }
   const reviewers = [...new Set(reviews.filter(review => review.lenses === undefined).map(review => review.reviewer))]
-  const rdd = facts.implementer === 'pi' && config.agentes?.pi?.review === 'rdd'
-  const rddReviews = rdd ? reviews.filter(review => review.reviewer === 'pi' && review.lenses !== undefined) : []
+  const rddReviews = reviews.filter(review => review.lenses !== undefined)
   if (rddReviews.some(review => review.lenses?.includes('risk'))) {
     return undefined
+  }
+  if (rdd) {
+    const unrequested = all.some(review => review.reviewer === 'pi' && review.lenses !== undefined && !requested(review))
+      ? ' Un review RDD de pi que main no pidió con esas lentes sobre ese commit (el marcador `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`) no cuenta.'
+      : ''
+    const noRisk = rddReviews.length > 0 ? ' El review RDD de pi sobre ese commit no cuenta: no tiene la lente risk.' : ''
+    const sinReview = facts.bodies.some(body => /^\s*Sin review:/i.test(body)) ? ' Un comentario "Sin review:" no cuenta en una ruta de riesgo.' : ''
+
+    return (
+      `${prefix} y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit ${sha}, ` +
+      `y los reviews de otras familias no lo reemplazan. Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).${noRisk}${unrequested}${sinReview}`
+    )
   }
   if (facts.implementer !== 'pi') {
     return reviewers.includes('pi')
@@ -628,15 +658,6 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
   const cross =
     `faltan reviews limpios sobre el commit ${sha} de dos familias de modelo distintas ` +
     `que no sean la de pi (${own ?? '?'}). ${have}.${notCounted}${next}`
-  if (rdd) {
-    const noRisk = rddReviews.length > 0 ? ' El review RDD de pi sobre ese commit no cuenta: no tiene la lente risk.' : ''
-    const sinReview = facts.bodies.some(body => /^\s*Sin review:/i.test(body)) ? ' Un comentario "Sin review:" no cuenta en una ruta de riesgo.' : ''
-
-    return (
-      `${prefix} y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit ${sha}. ` +
-      `Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).${noRisk}${sinReview} Si no, ${cross}`
-    )
-  }
 
   return `${prefix} y lo escribió pi: ${cross}`
 }

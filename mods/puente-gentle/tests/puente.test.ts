@@ -16,8 +16,10 @@ import {
   riskyFile,
   parsePiArgs,
   parseStream,
+  rddRequestsOf,
   remember,
   reviewsOf,
+  riskDeny,
   segments,
 } from '../hooks/puente'
 import familias from './familias'
@@ -600,27 +602,29 @@ test('riesgo: the size rule still comes first and is unchanged', async ($, on) =
 const rddReview = (lenses: string, commit = OID, verdict = 'nada') => ({ body: `Revisor: pi (RDD: ${lenses})\nCommit: ${commit}\n\n## BLOQUEA\n${verdict}` })
 const RDD_USA = ['claude', 'agy', 'codex', 'pi']
 const rddFiles = (usa = RDD_USA) => riskFiles({ agentes: { usa, preguntarAntes: [], pi: { review: 'rdd' } } })
+// The marker `orca-stack rebote <pr> --rdd <lentes>` posts: main's request for an RDD review of that commit.
+const rddAsk = (lenses: string, commit = OID) => ({ body: `RDD: ${commit} (${lenses})` })
 const RDD_DENY =
-  'PR #7 toca una ruta de riesgo (package-lock.json) y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit abc1234. ' +
-  'Corré `orca-stack rebote 7 --rdd risk` (podés sumar lentes).'
-const RDD_CROSS =
-  ' Si no, faltan reviews limpios sobre el commit abc1234 de dos familias de modelo distintas que no sean la de pi (claude). ' +
-  'Hay 0. Corré `orca-stack revisar 7 agy` y `orca-stack revisar 7 codex`.'
+  'PR #7 toca una ruta de riesgo (package-lock.json) y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit abc1234, ' +
+  'y los reviews de otras familias no lo reemplazan. Corré `orca-stack rebote 7 --rdd risk` (podés sumar lentes).'
+const UNREQUESTED =
+  ' Un review RDD de pi que main no pidió con esas lentes sobre ese commit (el marcador `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`) no cuenta.'
 
 test('issue #338 Rule 10: in RDD mode a clean Revisor: pi (RDD: …) review with the risk lens lets a riesgo pi PR through; without risk, on an old commit or with blockers it does not', async ($, on) => {
   expect(reviewsOf([`Revisor: pi (RDD: Risk , reliability)\nCommit: ${OID}\n\n## BLOQUEA\nnada`], OID)).toEqual([
     { reviewer: 'pi', clean: true, lenses: ['risk', 'reliability'] },
   ])
-  let reviews: { body: string }[] = [rddReview('risk, reliability')]
+  expect(rddRequestsOf([`RDD: ${OID.slice(0, 7)} (reliability, Risk)`, 'RDD: 0000000 (risk)'], OID)).toEqual([['reliability', 'risk']])
+  let reviews: { body: string }[] = [rddAsk('risk, reliability'), rddReview('risk, reliability')]
   setup(on, piPr(() => reviews), {}, { files: rddFiles() })
   await boot($)
   const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
   expect(await merge()).toBeUndefined()
-  reviews = [rddReview('reliability')]
-  expect(await merge()).toBe(`${RDD_DENY} El review RDD de pi sobre ese commit no cuenta: no tiene la lente risk.${RDD_CROSS}`)
-  reviews = [rddReview('risk', '0000000')]
-  expect(await merge()).toBe(`${RDD_DENY}${RDD_CROSS}`)
-  reviews = [rddReview('risk', OID, '1. `package-lock.json:1` (introducido, test, implementación): x')]
+  reviews = [rddAsk('reliability'), rddReview('reliability')]
+  expect(await merge()).toBe(`${RDD_DENY} El review RDD de pi sobre ese commit no cuenta: no tiene la lente risk.`)
+  reviews = [rddAsk('risk', '0000000'), rddReview('risk', '0000000')]
+  expect(await merge()).toBe(RDD_DENY)
+  reviews = [rddAsk('risk'), rddReview('risk', OID, '1. `package-lock.json:1` (introducido, test, implementación): x')]
   expect(await merge()).toBe(
     'PR #7 toca una ruta de riesgo (package-lock.json) y el review de pi sobre el commit abc1234 tiene bloqueos. ' +
       'En una ruta de riesgo un bloqueo no se salda con "Decidido por main": corregilo y pedí un review nuevo, o pasale la decisión al humano.',
@@ -633,21 +637,70 @@ test('issue #338 Rule 10: a Sin review: comment never lets a riesgo pi PR throug
   setup(on, argv => pr(paths, { body: 'Implementador: pi', comments })(argv), {}, { files: rddFiles() })
   await boot($)
   const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
-  expect(await merge()).toBe(`${RDD_DENY} Un comentario "Sin review:" no cuenta en una ruta de riesgo.${RDD_CROSS}`)
+  expect(await merge()).toBe(`${RDD_DENY} Un comentario "Sin review:" no cuenta en una ruta de riesgo.`)
   paths = ['src/a.ts']
   expect(await merge()).toBeUndefined()
 })
 
 test('issue #338 Rule 8: in RDD mode a riesgo pi PR needs no cross review of another family on top of the RDD review with risk', async ($, on) => {
-  let reviews: { body: string }[] = [rddReview('risk')]
+  const reviews: { body: string }[] = [rddAsk('risk'), rddReview('risk')]
   setup(on, piPr(() => reviews), {}, { files: rddFiles(['claude', 'pi']) })
   await boot($)
   const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
   // Only claude and pi in use: no other family could review, and the RDD review with risk is enough.
   expect(await merge()).toBeUndefined()
-  // The two-family path still clears it in RDD mode.
-  reviews = [clean('agy'), clean('codex')]
+})
+
+test('issue #338 Rule 8: in RDD mode clean reviews from two other families do not replace the RDD review with risk', async ($, on) => {
+  setup(on, piPr(() => [clean('agy'), clean('codex')]), {}, { files: rddFiles() })
+  await boot($)
+  expect((await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny).toBe(RDD_DENY)
+  // The pure gate, as the reviewer wrote it: the two-family fallback does not authorize the merge.
+  const head = '0123456789abcdef0123456789abcdef01234567'
+  const review = (who: string) => `Revisor: ${who}\nCommit: ${head}\n\n## BLOQUEA\nnada`
+  const facts = { implementer: 'pi', headRefOid: head, files: ['secret.txt'], bodies: [review('codex'), review('agy')] }
+  const config = { agentes: { pi: { review: 'rdd' }, usa: ['pi', 'codex', 'agy'], modelos: { pi: 'claude-sonnet-4', codex: 'gpt-5', agy: 'gemini-2.5-pro' } } }
+  expect(riskDeny('1', 'secret.txt', facts, config as StackConfig, Date.now())).not.toBeUndefined()
+})
+
+test('issue #338 Rule 6: an RDD review main did not request on this commit with these lenses does not clear riesgo', async ($, on) => {
+  let reviews: { body: string }[] = [rddReview('risk')]
+  setup(on, piPr(() => reviews), {}, { files: rddFiles() })
+  await boot($)
+  const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
+  // No marker at all.
+  expect(await merge()).toBe(`${RDD_DENY}${UNREQUESTED}`)
+  // A marker for an older commit, or for other lenses, is not a request for this review.
+  reviews = [rddAsk('risk', '0000000'), rddReview('risk')]
+  expect(await merge()).toBe(`${RDD_DENY}${UNREQUESTED}`)
+  reviews = [rddAsk('risk, reliability'), rddReview('risk')]
+  expect(await merge()).toBe(`${RDD_DENY}${UNREQUESTED}`)
+  // An unrequested RDD review with blockers does not block either: it is not a review.
+  reviews = [rddReview('risk', OID, '1. `package-lock.json:1` (introducido, test, implementación): x')]
+  expect(await merge()).toBe(`${RDD_DENY}${UNREQUESTED}`)
+  // The pure gate, as the reviewer wrote it.
+  const head = '0123456789abcdef0123456789abcdef01234567'
+  const facts = { implementer: 'pi', headRefOid: head, files: ['secret.txt'], bodies: [`Revisor: pi (RDD: risk)\nCommit: ${head}\n\n## BLOQUEA\nnada`] }
+  const config = { agentes: { pi: { review: 'rdd' } } }
+  expect(riskDeny('1', 'secret.txt', facts, config as StackConfig, Date.now())).not.toBeUndefined()
+  expect(riskDeny('1', 'secret.txt', { ...facts, bodies: [...facts.bodies, `RDD: ${head} (risk)`] }, config as StackConfig, Date.now())).toBeUndefined()
+})
+
+test('issue #338 Rule 1: outside the RDD mode a Revisor: <agent> (RDD: …) line is not a review, so its blockers stop nothing', async ($, on) => {
+  const rddBlocked = { body: `Revisor: codex (RDD: risk)\nCommit: ${OID}\n\n## BLOQUEA\n1. x` }
+  let body = 'Implementador: codex'
+  const files = rddFiles()
+  setup(on, argv => pr(['package-lock.json'], { body, reviews: [clean('pi'), rddBlocked] })(argv), {}, { files })
+  await boot($)
+  const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
+  // A codex PR with a clean pi review merges, as before #338, even with a key in the repo.
   expect(await merge()).toBeUndefined()
+  // And in a repo without the key.
+  Object.assign(files, riskFiles({ agentes: { usa: RDD_USA, preguntarAntes: [] } }))
+  expect(await merge()).toBeUndefined()
+  // A pi PR in a repo without the key: the blocked RDD line is ignored too, and the two-family rule applies.
+  body = 'Implementador: pi'
+  expect(await merge()).toBe(`${PREFIX} Hay 0. Corré \`orca-stack revisar 7 agy\` y \`orca-stack revisar 7 codex\`.`)
 })
 
 test('issue #338 Rule 1: an RDD review counts neither for a riesgo PR by codex nor for a pi PR in a repo without agentes.pi.review rdd', async ($, on) => {

@@ -24,6 +24,19 @@ describe('#338 RDD review mode for pi PRs', () => {
     assert.ok(seven.includes('un `Sin review:` o un review RDD cuyo `Commit:` no es el `headRefOid` no cuenta'))
   })
 
+  test('Rules 4 and 7: the GitHub merge (web-flow) exception of step 7 never lets a Sin review: or an RDD review on an older head count', () => {
+    const seven = step(7)
+    assert.ok(!seven.includes('Los comentarios de (a) siguen contando con el'), 'the exception no longer covers every comment of (a)')
+    assert.ok(seven.includes('Salvo un `Sin review:` o un review RDD, que siempre tienen que nombrar el `headRefOid` actual (se repiten en cada head nuevo), los comentarios de (a) siguen contando con el `Commit:` anterior solo si el head nuevo es un merge hecho por GitHub'), seven)
+  })
+
+  test('Rules 5 and 6: MAIN.md step 6 says rebote --rdd posts the request puente-gentle needs, and how a START consent reaches the human and comes back', () => {
+    const six = step(6)
+    assert.ok(six.includes('`rebote --rdd` publica en el PR tu pedido, `RDD: <sha> (<lentes>)`, y `puente-gentle` solo cuenta un review RDD de pi con ese marcador sobre el mismo head y con las mismas lentes.'), six)
+    assert.ok(six.includes('Si START de RDD pide consentimiento, pi lo deja en un comentario `Consulta: pi` en el PR y se detiene; se lo pasás al humano, que lo responde en la terminal de pi, y retomás a pi con `orca-stack reanudar <issue> <url-del-comentario>`.'))
+    assert.ok(six.includes('Si la corrección acotada de RDD cambió el head, tu pedido no lo nombra'))
+  })
+
   test('Rule 5: MAIN.md step 6 asks for the RDD review with rebote --rdd and the Revisor: pi (RDD: <lentes>) format', () => {
     assert.ok(step(6).includes('Lo pedís con `orca-stack rebote <pr> --rdd <lentes>`'))
     assert.ok(step(6).includes('con `Revisor: pi (RDD: <lentes>)` y `Commit: <sha>`'))

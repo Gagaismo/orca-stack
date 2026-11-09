@@ -1682,15 +1682,36 @@ describe('rebote', () => {
   test('issue #338 Rule 5: rebote --rdd relaunches pi on a pi PR without findings with a brief naming the lenses and the Revisor: pi (RDD: <lentes>) publish format', async () => {
     const env = rddEnv()
     await reboteCommand({ rdd: 'risk,reliability' }, '12', env.io)
-    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote-rdd.md'))?.[1]
     assert.ok(brief)
     for (const text of ['Revisor: pi (RDD: risk, reliability)', 'Commit: ', '## BLOQUEA', '## SUGERENCIAS', 'gh pr review 12 --comment --body-file']) assert.ok(brief.includes(text), text)
     assert.ok(!brief.includes('{{'))
+    // START consent needs a human: pi leaves a Consulta: pi on the PR and stops; main resumes it with reanudar.
+    for (const text of [
+      "post a `Consulta: pi` comment on PR #12 with the envelope's headline, choices and `consentBinding`, and stop: end your turn.",
+      'main passes it to the human, who answers it in this pi terminal, and main resumes you with `orca-stack reanudar <issue> <comment-url>`',
+      "main's request is the `RDD: abc123 (risk, reliability)` comment `orca-stack rebote --rdd` posted on PR #12",
+    ]) assert.ok(brief.includes(text), text)
     assert.ok(env.calls.some(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create'))
-    assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
-    assert.ok(!env.written.some(([file]) => file.endsWith('-comment.md')))
     assert.ok(env.out.some(line => line.includes('RDD: abc123 (risk, reliability)')))
     assert.ok(!env.out.some(line => /^(\[simulación\] )?Rebote/.test(line)))
+  })
+
+  test('issue #338 Rule 6: rebote --rdd posts main\'s request RDD: <sha> (<lentes>) on the PR after the launch, and no Rebote* marker', async () => {
+    const env = rddEnv()
+    await reboteCommand({ rdd: 'risk,reliability' }, '12', env.io)
+    const comment = env.calls.findIndex(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+    const launch = env.calls.findIndex(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    assert.ok(launch >= 0 && comment > launch)
+    assert.equal(env.written.find(([file]) => file.endsWith('proj-pr-12-rebote-rdd-comment.md'))?.[1], 'RDD: abc123 (risk, reliability)\n')
+  })
+
+  test('issue #338: rebote --rdd keeps its brief and session apart, so a later --continuar resumes the findings bounce, not the RDD run', async () => {
+    const env = rddEnv()
+    await reboteCommand({ rdd: 'risk' }, '12', env.io)
+    const files = env.written.map(([file]) => path.basename(file))
+    assert.ok(files.includes('proj-pr-12-rebote-rdd.md') && files.includes('proj-pr-12-rebote-rdd.session'), files.join(', '))
+    assert.ok(!files.includes('proj-pr-12-rebote.md') && !files.includes('proj-pr-12-rebote.session'), files.join(', '))
   })
 
   test('issue #338 Rule 1: rebote --rdd refuses a PR by codex, agy or claude and a repo without agentes.pi.review rdd, with no side effects', async () => {
@@ -1719,16 +1740,28 @@ describe('rebote', () => {
     assert.deepEqual(env.written, [])
   })
 
-  test('issue #338 Rule 7: rebote --rdd refuses a head that already has an RDD review from pi', async () => {
-    const env = rddEnv(pr({ body: 'Implementador: pi\nCloses #7', reviews: [], comments: [{ body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada' }] }))
+  test('issue #338 Rule 7: rebote --rdd refuses a head that already has an RDD review from pi that main asked for', async () => {
+    const env = rddEnv(pr({ body: 'Implementador: pi\nCloses #7', reviews: [], comments: [{ body: 'RDD: abc123 (risk)' }, { body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada' }] }))
     await assert.rejects(reboteCommand({ rdd: 'risk' }, '12', env.io), error => error.message === 'Ya hay un review RDD de pi sobre abc123.')
     assert.deepEqual(env.writes(), [])
     assert.deepEqual(env.written, [])
     // A Commit: abbreviated to 7+ characters names the same head, as puente-gentle reads it.
     const sha = 'abc1234def5678'
-    const short = rddEnv(pr({ headRefOid: sha, body: 'Implementador: pi\nCloses #7', reviews: [{ body: 'Revisor: pi (RDD: risk, reliability)\nCommit: abc1234\n\n## BLOQUEA\nnada' }] }))
+    const short = rddEnv(pr({ headRefOid: sha, body: 'Implementador: pi\nCloses #7', reviews: [{ body: 'RDD: abc1234 (reliability, risk)' }, { body: 'Revisor: pi (RDD: risk, reliability)\nCommit: abc1234\n\n## BLOQUEA\nnada' }] }))
     await assert.rejects(reboteCommand({ rdd: 'risk' }, '12', short.io), error => error.message === `Ya hay un review RDD de pi sobre ${sha}.`)
     assert.deepEqual(short.written, [])
+  })
+
+  test('issue #338 Rule 6: an RDD review main did not ask for, or a request whose run never published, does not stop rebote --rdd', async () => {
+    for (const comments of [
+      [{ body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada' }],
+      [{ body: 'RDD: abc123 (risk, reliability)' }, { body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada' }],
+      [{ body: 'RDD: abc123 (risk)' }],
+    ]) {
+      const env = rddEnv(pr({ body: 'Implementador: pi\nCloses #7', reviews: [], comments }))
+      await reboteCommand({ rdd: 'risk' }, '12', env.io)
+      assert.ok(env.written.some(([file]) => file.endsWith('proj-pr-12-rebote-rdd.md')), JSON.stringify(comments))
+    }
   })
 
   test('Preserve: rebote without --rdd still refuses a PR with no blocking review on the head', async () => {

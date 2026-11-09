@@ -148,8 +148,8 @@ lo eligen y se escribe el pin; sin ninguno se niega como despachar, antes de mov
 Con --continuar retoma al autor que se cortó antes de pushear (por ejemplo, sin cuota): exige que el último marcador \`Rebote*\` sea del head, sin agente vivo y con el brief del rebote; acepta el worktree sucio, no publica marcador ni suma a los límites, y solo pi retoma la misma sesión (\`--session-id\`): claude, codex y agy arrancan una sesión nueva con el mismo brief. Si sigue sin cuota, falla con la hora de reset y no reintenta. No acepta --nota.
 Con --rdd <lentes> (de 1 a 4 distintas entre risk, resilience, readability, reliability, separadas por coma) le pide a pi un review RDD de su propio PR:
 solo con \`Implementador: pi\` y agentes.pi.review: "rdd" en la config. No exige review bloqueante ni mira CI o conflictos; el brief (brief-rdd.md)
-le pide publicar \`Revisor: pi (RDD: <lentes>)\` y \`Commit: <sha>\`. No publica marcador \`Rebote*\`: imprime \`RDD: <sha> (<lentes>)\`.
-Se niega si ya hay un review RDD de pi sobre el head, y no vale con --continuar.
+le pide publicar \`Revisor: pi (RDD: <lentes>)\` y \`Commit: <sha>\`. No publica marcador \`Rebote*\`: publica en el PR \`RDD: <sha> (<lentes>)\`, el pedido sin el que puente-gentle no cuenta el review.
+Se niega si ya hay sobre el head un review RDD de pi con ese pedido, y no vale con --continuar (su brief y su sesión van aparte: -rdd).
 `,
   'brief-revision': `orca-stack brief-revision <pr> --modelo <modelo> [--dry-run]
 
