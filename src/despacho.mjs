@@ -911,7 +911,6 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const sha = pr.headRefOid
   if (typeof sha !== 'string' || sha.trim() === '') throw new Error(`No pude obtener headRefOid del PR #${n}.`)
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
-  const markers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const conflictMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote conflicto:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const mergeable = String(pr.mergeable ?? '').toUpperCase()
@@ -983,8 +982,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   }).filter(([, answer]) => answer))
   const interpretations = flagged.filter(item => !settledBy.has(item))
   const reviewBlockers = blockers.filter(item => !interpretations.includes(item))
-  // A conflict-only or CI-only bounce does not spend the review bounce, so an older Rebote: marker does not refuse it.
-  if (markers.some(marker => marker !== sha) && !((conflict || failedChecks.length > 0) && reviewBlockers.length === 0)) throw new Error(`El head del PR avanz\u00F3 desde el rebote (${markers.at(-1)} -> ${sha}); lo que siga en pie lo decide main con Decidido por main.`)
+  // The review bounce is counted by each review's Commit: sha: only blockers on the current head count above,
+  // so a Rebote: marker of an older head refuses nothing, and a head that moved bounces on a review of its own.
   if (interpretations.length > 0 && failedChecks.length === 0 && !conflict) {
     const lines = interpretations.map(item => `${item.url ?? item.html_url ?? 'review'}: ${interpretationLines(blockingSection(reviewBody(item))).join(' ')}`)
     throw new Error(`Los bloqueos de interpretaci\u00F3n van al humano, no al autor:\n${lines.join('\n')}`)

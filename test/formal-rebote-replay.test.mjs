@@ -153,16 +153,12 @@ describe('replay: counterexamples of formal/rebote/Rebote.tla on the fixed rebot
     assert.equal(launches(second), 0, 'a second conflict bounce on the same head was launched')
   })
 
-  // Model: ReboteCommentFails, MainPostsOwed, Push, AuthorExits, ReviewPosts, Rebote refused (rebote-commentfail.cfg, ReviewBounceOnce).
-  test('replay: a review bounce whose marker comment failed is not repeated on a later head once main posts the printed marker', async () => {
-    const first = bounceEnv(pr(), commentFails)
-    const error = await failLoud(first)
-    assert.equal(launches(first), 1)
-    const marker = printedMarker(error)
-    assert.equal(marker.body, 'Rebote: abc123\n')
-    const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [marker], reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. still broken', url: 'https://example.test/review/2' }] }))
-    await assert.rejects(reboteCommand({}, '12', advanced.io), /avanzó desde el rebote/)
-    assert.equal(launches(advanced), 0, 'a second review bounce on a different head was launched')
+  // Model: ReviewPosts("impl"), Push, CIFinishes, Rebote refused (rebote.cfg, ReviewBounceOnItsOwnHead).
+  // broken-review-sha.cfg counts a blocking review of any head: the moved head bounces on the old review (#296 Rule 2).
+  test('replay: a blocking review of an older head does not bounce the head that moved', async () => {
+    const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', status: 'COMPLETED', conclusion: 'SUCCESS' }] }))
+    await assert.rejects(reboteCommand({}, '12', advanced.io), /no tiene un review bloqueante vigente en def456/)
+    assert.equal(launches(advanced), 0, 'the author was launched on a review of an older head')
   })
 
   // Model: ReviewPosts("interp"), HumanAnswers, ReviewPosts("interp"), Rebote (rebote.cfg, InterpretationNeverToAuthor).
@@ -188,10 +184,10 @@ describe('replay: counterexamples of formal/rebote/Rebote.tla on the fixed rebot
     assert.doesNotMatch(brief, /new disagreement/)
   })
 
-  // Control: with the marker posted by rebote itself, the same head advance is refused (the review-once guard, "El head del PR avanzó desde el rebote", works).
-  test('control: with the marker posted, the second review bounce on a later head is refused', async () => {
+  // Control: a blocking review on the moved head bounces it, whatever Rebote: marker an older head left (#296 Rule 1).
+  test('control: a blocking review on the head that moved bounces it after a review bounce on an older head', async () => {
     const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }], reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. still broken' }] }))
-    await assert.rejects(reboteCommand({}, '12', advanced.io), /avanzó desde el rebote/)
-    assert.equal(launches(advanced), 0)
+    assert.equal(await reboteCommand({}, '12', advanced.io), 0)
+    assert.equal(launches(advanced), 1)
   })
 })
