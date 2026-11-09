@@ -1462,11 +1462,11 @@ describe('rebote', () => {
     assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\n')
   })
 
-  test('Rule 2: permits same-head retry marker but refuses when head advanced', async () => {
+  test('Rule 2: permits same-head retry marker but refuses when head advanced without a review of its own', async () => {
     const same = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }))
     await reboteCommand({ dryRun: true }, '12', same.io)
     const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }] }))
-    await assert.rejects(reboteCommand({}, '12', advanced.io), /avanz\u00F3 desde el rebote.*Decidido por main/)
+    await assert.rejects(reboteCommand({}, '12', advanced.io), /no tiene un review bloqueante vigente en def456/)
   })
 
   test('Rule 3: interpretation blockers are listed and never relaunched', async () => {
@@ -1509,6 +1509,68 @@ describe('rebote', () => {
     const env = bounceEnv(pr({ headRefOid: 'def456', reviews: [{ body: 'Commit: abc123\n## BLOQUEA\n1. old finding' }], comments: [{ body: 'Rebote: abc123' }], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }] }))
     await reboteCommand({}, '12', env.io)
     assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: def456\n')
+  })
+
+  describe('issue 296: the review bounce is counted by the review sha', () => {
+    const launches = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create').length
+    const markerOf = env => env.written.find(([file]) => file.endsWith('-comment.md'))?.[1]
+    const reviewOn = (sha, finding = 'still broken') => ({ body: `Revisor: codex\nCommit: ${sha}\n\n## BLOQUEA\n1. \`src/app.mjs:1\` (introducido, concreta, implementación): ${finding}`, submittedAt: '2026-11-03T10:00:00Z', url: `https://example.test/review/${sha}` })
+
+    test('Rule 1: a blocking review on a head that moved since the last Rebote bounces that head', async () => {
+      const env = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('abc123', 'first round'), reviewOn('def456')], comments: [{ body: 'Rebote: abc123' }] }))
+      assert.equal(await reboteCommand({}, '12', env.io), 0)
+      assert.equal(launches(env), 1)
+      const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+      assert.match(brief, /still broken/)
+      assert.doesNotMatch(brief, /first round/)
+      assert.equal(markerOf(env), 'Rebote: def456\n')
+      // A third round: two earlier review bounces do not refuse a blocking review on the newest head.
+      const third = bounceEnv(pr({ headRefOid: 'fed789', reviews: [reviewOn('fed789')], comments: [{ body: 'Rebote: abc123' }, { body: 'Rebote: def456' }] }))
+      assert.equal(await reboteCommand({}, '12', third.io), 0)
+      assert.equal(markerOf(third), 'Rebote: fed789\n')
+    })
+
+    test('Rule 2: a review on an old head does not bounce the head that moved', async () => {
+      const env = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('abc123')], comments: [{ body: 'Rebote: abc123' }] }))
+      await assert.rejects(reboteCommand({}, '12', env.io), /^Error: El PR #12 no tiene un review bloqueante vigente en def456\.$/)
+      assert.equal(launches(env), 0)
+      assert.equal(markerOf(env), undefined)
+    })
+
+    test('Rule 3: on a moved head, an interpretation finding goes to the author with a later Respuesta del humano and is refused without it', async () => {
+      const review = { body: 'Revisor: codex\nCommit: def456\n\n## BLOQUEA\n2. `src/b.mjs:2` (introducido, concreta, interpretación): product disagreement', submittedAt: '2026-11-03T10:00:00Z', url: 'https://example.test/review/2' }
+      const answer = { body: 'Respuesta del humano: "keep the old wording"', createdAt: '2026-11-03T12:00:00Z', url: 'https://example.test/comment/6594475817' }
+      const answered = bounceEnv(pr({ headRefOid: 'def456', reviews: [review], comments: [{ body: 'Rebote: abc123' }, answer] }))
+      assert.equal(await reboteCommand({}, '12', answered.io), 0)
+      const brief = answered.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+      assert.match(brief, /product disagreement/)
+      assert.match(brief, /Interpretation settled by the human: https:\/\/example\.test\/comment\/6594475817/)
+      assert.equal(markerOf(answered), 'Rebote: def456\n')
+
+      const unanswered = bounceEnv(pr({ headRefOid: 'def456', reviews: [review], comments: [{ body: 'Rebote: abc123' }] }))
+      await assert.rejects(reboteCommand({}, '12', unanswered.io), /^Error: Los bloqueos de interpretación van al humano, no al autor:\nhttps:\/\/example\.test\/review\/2: 2\. `src\/b\.mjs:2`/)
+      assert.equal(launches(unanswered), 0)
+    })
+
+    test('Rule 4: a second bounce of the same review sha keeps its behavior: retried after the author exits, refused while it runs', async () => {
+      const comments = [{ body: 'Rebote: abc123' }, { body: 'Rebote: def456' }]
+      const retry = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('def456')], comments }))
+      assert.equal(await reboteCommand({}, '12', retry.io), 0)
+      assert.equal(markerOf(retry), 'Rebote: def456\n')
+      const live = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('def456')], comments }), { 'orca worktree': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'working' }] }] } }) })
+      await assert.rejects(reboteCommand({}, '12', live.io), /Hay un agente vivo en .*; cerralo antes de rebotar\./)
+      assert.equal(launches(live), 0)
+    })
+
+    test('PRESERVE: reboteCommand keeps its CI-only and conflict bounces on a head that moved after a review bounce', async () => {
+      const red = [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }]
+      const ci = bounceEnv(pr({ headRefOid: 'def456', reviews: [reviewOn('abc123')], comments: [{ body: 'Rebote: abc123' }], statusCheckRollup: red }))
+      assert.equal(await reboteCommand({}, '12', ci.io), 0)
+      assert.equal(markerOf(ci), 'Rebote CI: def456\n')
+      const both = bounceEnv(pr({ headRefOid: 'def456', mergeable: 'CONFLICTING', baseRefName: 'main', reviews: [reviewOn('def456')], comments: [{ body: 'Rebote: abc123' }] }))
+      assert.equal(await reboteCommand({}, '12', both.io), 0)
+      assert.equal(markerOf(both), 'Rebote: def456\nRebote conflicto: def456\n')
+    })
   })
 
   test('Rule 4: refuses absent current blocker and stale review commit', async () => {
@@ -2360,10 +2422,10 @@ describe('rebote', () => {
       await reboteCommand({}, '12', ci.io)
       assert.equal(markerOf(ci), 'Rebote CI: abc123\n')
 
-      // The review limit still applies when the conflict comes with review blockers on a new head.
-      const spentReview = conflictEnv(conflicting({ headRefOid: 'def456', reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. finding' }], comments: [{ body: 'Rebote: abc123' }] }))
-      await assert.rejects(reboteCommand({}, '12', spentReview.io), /avanzó desde el rebote/)
-      assert.equal(launches(spentReview).length, 0)
+      // A conflict with review blockers on a new head bounces both: the review limit is counted by the review sha (#296).
+      const newReview = conflictEnv(conflicting({ headRefOid: 'def456', reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. finding' }], comments: [{ body: 'Rebote: abc123' }] }))
+      await reboteCommand({}, '12', newReview.io)
+      assert.equal(markerOf(newReview), 'Rebote: def456\nRebote conflicto: def456\n')
     })
 
     test('Rule 10: contract step 8 and the manual say how main merges after a conflict bounce', () => {
@@ -2381,7 +2443,7 @@ describe('rebote', () => {
       const clean = { mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', baseRefName: 'main' }
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [] })).io), /no tiene un review bloqueante vigente en abc123\.$/)
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, statusCheckRollup: [{ __typename: 'CheckRun', name: 'still running', status: 'IN_PROGRESS' }] })).io), /pendientes/)
-      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }] })).io), /avanzó desde el rebote/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }] })).io), /no tiene un review bloqueante vigente en def456\.$/)
       for (const state of ['CLOSED', 'MERGED']) await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, state })).io), /no se puede rebotar/)
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, body: 'no author' })).io), /no tiene la línea "Implementador/)
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(clean), { 'git status': okRes(' M src/app.mjs\n') }).io), /está sucio/)
@@ -2828,21 +2890,13 @@ describe('rebote', () => {
       assert.equal(launchCount(env), 1)
     })
 
-    test('Rule 4b: replay - a review bounce whose first comment attempt fails leaves the marker, so a second review bounce on a later head is refused', async () => {
+    // Since #296 a Rebote: marker of an older head refuses nothing, so a later head's bounce no longer depends on it.
+    test('Rule 4b: replay - a review bounce whose first comment attempt fails still leaves the marker after one retry', async () => {
       const first = bounceEnv(pr(), commentAttempts([false, true]))
       assert.equal(await reboteCommand({}, '12', first.io), 0)
       assert.equal(launchCount(first), 1)
-      const posted = markerFile(first)[1]
-      assert.equal(posted, 'Rebote: abc123\n')
-      const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: posted }], reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. still broken', url: 'https://example.test/review/2' }] }))
-      await assert.rejects(reboteCommand({}, '12', advanced.io), /avanzó desde el rebote/)
-      assert.equal(launchCount(advanced), 0)
-    })
-
-    test('Rule 4c: replay control - with the marker posted, the second review bounce on a later head is refused', async () => {
-      const advanced = bounceEnv(pr({ headRefOid: 'def456', comments: [{ body: 'Rebote: abc123' }], reviews: [{ body: 'Commit: def456\n## BLOQUEA\n1. still broken' }] }))
-      await assert.rejects(reboteCommand({}, '12', advanced.io), /avanzó desde el rebote/)
-      assert.equal(launchCount(advanced), 0)
+      assert.equal(markerFile(first)[1], 'Rebote: abc123\n')
+      assert.equal(commentCalls(first).length, 2)
     })
 
     test('Rule 5: the manual and rebote --help mention the retry and the failure output', () => {
