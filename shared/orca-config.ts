@@ -19,7 +19,9 @@ export type StackConfig = {
     usa?: string[]
     preguntarAntes?: string[]
     modelos?: Record<string, unknown>
-    pi?: { perfil?: string; claudeConfigDir?: string } // perfil: gentle-pi profile name, or "preguntar" (the default)
+    // perfil: gentle-pi profile name, or "preguntar" (the default). review: "rdd" lets main choose no review or an
+    // RDD review run by pi for the PRs pi writes (#338).
+    pi?: { perfil?: string; claudeConfigDir?: string; review?: string }
   }
   guardia?: {
     bloquear?: BlockRule[]
