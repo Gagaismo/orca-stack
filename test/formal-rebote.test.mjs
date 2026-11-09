@@ -108,11 +108,12 @@ describe('formal/rebote (issue #311)', () => {
     assert.match(block, /^    runs-on: ubuntu-latest$/m)
     assert.match(block, /uses: actions\/setup-java@v4/)
     assert.ok(Number(/java-version: '(\d+)'/.exec(block)?.[1]) >= 11, 'Java 11 or later')
-    assert.ok(stepRun(block, 'Download tla2tools.jar 1.7.4').includes(JAR_URL))
-    assert.equal(stepRun(block, 'Verify tla2tools.jar checksum'), `echo "${JAR_SHA}  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --strict -`)
+    // scripts/fetch-tla2tools.sh downloads the jar and checks its pinned checksum (#346).
+    assert.equal(stepRun(block, 'Download and verify tla2tools.jar 1.7.4'), 'bash scripts/fetch-tla2tools.sh "$RUNNER_TEMP/tla2tools.jar"')
+    assert.match(read(path.join('scripts', 'fetch-tla2tools.sh')), new RegExp(`${JAR_URL}[\\s\\S]*echo "${JAR_SHA}  \\$jar" \\| sha256sum --check --strict -`))
     assert.equal(stepRun(block, 'Run TLC on every config'), 'TLA2TOOLS="$RUNNER_TEMP/tla2tools.jar" bash formal/rebote/check.sh')
-    const order = ['Download tla2tools.jar 1.7.4', 'Verify tla2tools.jar checksum', 'Run TLC on every config'].map(name => block.indexOf(`- name: ${name}`))
-    assert.deepEqual([...order].sort((a, b) => a - b), order, 'download, then checksum, then TLC')
+    const order = ['Download and verify tla2tools.jar 1.7.4', 'Run TLC on every config'].map(name => block.indexOf(`- name: ${name}`))
+    assert.deepEqual([...order].sort((a, b) => a - b), order, 'download and checksum, then TLC')
     assert.match(job('ci-ok'), /^      - formal$/m)
   })
 
@@ -120,7 +121,9 @@ describe('formal/rebote (issue #311)', () => {
     const dir = tempDir('formal-jar')
     try {
       writeFileSync(path.join(dir, 'tla2tools.jar'), 'not the release jar')
-      const run = spawnSync('bash', ['-e', '-c', stepRun(job('formal'), 'Verify tla2tools.jar checksum')], { encoding: 'utf8', env: { ...process.env, RUNNER_TEMP: dir } })
+      // The checksum line of scripts/fetch-tla2tools.sh, which the formal job runs (#346).
+      const check = read(path.join('scripts', 'fetch-tla2tools.sh')).split(/\r?\n/).find(line => line.includes('sha256sum'))
+      const run = spawnSync('bash', ['-e', '-c', `jar="$RUNNER_TEMP/tla2tools.jar"; ${check}`], { encoding: 'utf8', env: { ...process.env, RUNNER_TEMP: dir } })
       assert.notEqual(run.status, 0, run.stdout + run.stderr)
       assert.match(run.stdout + run.stderr, /FAILED/)
     } finally {
