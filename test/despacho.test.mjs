@@ -1188,6 +1188,14 @@ describe('issue #295: pi launches report an auth failure', () => {
       }
     }
   })
+
+  test('Preserve: README, the manual and despachar --help describe the pi auth check', () => {
+    for (const file of ['README.md', path.join('docs', 'manual.md'), path.join('src', 'cli.mjs')]) {
+      const text = readFileSync(path.join(PACKAGE_ROOT, file), 'utf8').replace(/\s+/g, ' ')
+      assert.match(text, /Failed to authenticate/, file)
+      assert.match(text, /CLAUDE_CONFIG_DIR`? usado/, file)
+    }
+  })
 })
 
 describe('issue #277: pi workers run as an interactive TUI', () => {
