@@ -373,7 +373,7 @@ describe('issue 196 brief hygiene', () => {
     assert.equal(verificationContent(review.written[0][1]), 'npm test')
 
     const source = readFileSync(path.join(PACKAGE_ROOT, 'src/despacho.mjs'), 'utf8')
-    assert.equal((source.match(/VERIFICATION: verificationBlock\(config\)/g) ?? []).length, 3)
+    assert.equal((source.match(/VERIFICATION: verificationBlock\(config\)/g) ?? []).length, 4)
   })
 
   test('Rule 8: ticket brief mentions root CODING_STANDARDS only when listed in the base tree', async () => {
@@ -1668,6 +1668,68 @@ describe('rebote', () => {
       assert.ok(brief, agent)
       assert.equal(brief.includes(PI_FOREGROUND), agent === 'pi', agent)
     }
+  })
+
+  const RDD_PROJECT = { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { ...PROJECT.agentes.pi, review: 'rdd' } } }
+  const rddEnv = (pull = pr({ body: 'Implementador: pi\nCloses #7', reviews: [] }), config = RDD_PROJECT) => {
+    const env = bounceEnv(pull, {}, config)
+    env.io.gentleSkills = () => 'C:\\pi\\skills'
+    env.io.now = () => 100
+    env.io.modifiedAt = () => 101
+    return env
+  }
+
+  test('issue #338 Rule 5: rebote --rdd relaunches pi on a pi PR without findings with a brief naming the lenses and the Revisor: pi (RDD: <lentes>) publish format', async () => {
+    const env = rddEnv()
+    await reboteCommand({ rdd: 'risk,reliability' }, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    assert.ok(brief)
+    for (const text of ['Revisor: pi (RDD: risk, reliability)', 'Commit: ', '## BLOQUEA', '## SUGERENCIAS', 'gh pr review 12 --comment --body-file']) assert.ok(brief.includes(text), text)
+    assert.ok(!brief.includes('{{'))
+    assert.ok(env.calls.some(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create'))
+    assert.ok(!env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+    assert.ok(!env.written.some(([file]) => file.endsWith('-comment.md')))
+    assert.ok(env.out.some(line => line.includes('RDD: abc123 (risk, reliability)')))
+    assert.ok(!env.out.some(line => /^(\[simulación\] )?Rebote/.test(line)))
+  })
+
+  test('issue #338 Rule 1: rebote --rdd refuses a PR by codex, agy or claude and a repo without agentes.pi.review rdd, with no side effects', async () => {
+    const cases = [
+      ...['codex', 'agy', 'claude'].map(agent => [agent, RDD_PROJECT, `--rdd solo vale para un PR de pi (Implementador: ${agent}).`]),
+      ['pi', PROJECT, '--rdd necesita agentes.pi.review: "rdd" en la config del repo.'],
+    ]
+    for (const [agent, config, message] of cases) {
+      const env = rddEnv(pr({ body: `Implementador: ${agent}\nCloses #7`, reviews: [] }), config)
+      await assert.rejects(reboteCommand({ rdd: 'risk' }, '12', env.io), error => error.message === message, agent)
+      assert.deepEqual(env.writes(), [], agent)
+      assert.deepEqual(env.written, [], agent)
+    }
+  })
+
+  test('issue #338 Rule 5: rebote --rdd refuses unknown, duplicate or empty lenses and --continuar', async () => {
+    for (const rdd of ['foo', 'risk,risk', '', 'risk,']) {
+      const env = rddEnv()
+      await assert.rejects(reboteCommand({ rdd }, '12', env.io), error => error.message === '--rdd necesita de 1 a 4 lentes distintas entre risk, resilience, readability, reliability.', rdd)
+      assert.deepEqual(env.writes(), [], rdd)
+      assert.deepEqual(env.written, [], rdd)
+    }
+    const env = rddEnv()
+    await assert.rejects(reboteCommand({ rdd: 'risk', continuar: true }, '12', env.io), /--rdd no vale con --continuar/)
+    assert.deepEqual(env.writes(), [])
+    assert.deepEqual(env.written, [])
+  })
+
+  test('issue #338 Rule 7: rebote --rdd refuses a head that already has an RDD review from pi', async () => {
+    const env = rddEnv(pr({ body: 'Implementador: pi\nCloses #7', reviews: [], comments: [{ body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada' }] }))
+    await assert.rejects(reboteCommand({ rdd: 'risk' }, '12', env.io), error => error.message === 'Ya hay un review RDD de pi sobre abc123.')
+    assert.deepEqual(env.writes(), [])
+    assert.deepEqual(env.written, [])
+  })
+
+  test('Preserve: rebote without --rdd still refuses a PR with no blocking review on the head', async () => {
+    const env = rddEnv()
+    await assert.rejects(reboteCommand({}, '12', env.io), /no tiene un review bloqueante vigente/)
+    assert.deepEqual(env.written, [])
   })
 
   test('Rule 1: relaunches author with current blockers and posts Rebote only after launch', async () => {

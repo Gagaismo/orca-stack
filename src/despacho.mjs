@@ -265,6 +265,7 @@ const piForeground = agent => agent === 'pi'
 
 // The RDD review mode (#338): opt-in per repo with agentes.pi.review "rdd", and only for PRs pi implements.
 export const rddMode = (config, agent) => agent === 'pi' && config?.agentes?.pi?.review === 'rdd'
+const RDD_LENSES = ['risk', 'resilience', 'readability', 'reliability']
 
 const rddAssessStep = (agent, piReview) => rddMode({ agentes: { pi: { review: piReview } } }, agent)
   ? '\n\nThis repo uses the RDD review mode for pi PRs (`agentes.pi.review: "rdd"`). After your last commit and before opening the PR, run `gentle_review` with `{"operation":"assess"}` on that commit and write under `## Merge Danger` three lines: `Tier: <the tier assess returned>`, `reviewDue: <true|false, as assess returned it>` and your ODD `Risk:` line. Do not start an RDD review yourself: main reads those lines and decides whether the PR gets no review or an RDD review, and an RDD review you run on your own before the PR does not count as its review.'
@@ -1097,6 +1098,13 @@ const continueBounce = async ({ n, pr, agent, root, repo, config, commonDir, per
 
 export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const { nota, confirmado = false, perfilPi, dryRun = false, continuar = false } = flags
+  // An RDD bounce asks pi for an RDD review of its own PR: it carries lenses, never findings.
+  const rdd = flags.rdd !== undefined
+  const lenses = rdd ? String(flags.rdd).split(',').map(lens => lens.trim().toLowerCase()) : []
+  if (rdd && (lenses.length > 4 || new Set(lenses).size !== lenses.length || lenses.some(lens => !RDD_LENSES.includes(lens)))) {
+    throw new Error(`--rdd necesita de 1 a 4 lentes distintas entre ${RDD_LENSES.join(', ')}.`)
+  }
+  if (rdd && continuar) throw new Error('--rdd no vale con --continuar: el autor sigue con el brief del rebote.')
   const say = io.out
   if (!/^\d+$/.test(String(n ?? ''))) throw new Error('Falta el n\u00FAmero de PR. Uso: orca-stack rebote <pr>.')
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
@@ -1124,6 +1132,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de relanzarlo. Si dijo que s\u00ED, repet\u00ED el comando con --confirmado.`)
   }
   if (perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
+  if (rdd && agent !== 'pi') throw new Error(`--rdd solo vale para un PR de pi (Implementador: ${agent}).`)
+  if (rdd && !rddMode(config, agent)) throw new Error('--rdd necesita agentes.pi.review: "rdd" en la config del repo.')
 
   const sha = pr.headRefOid
   if (typeof sha !== 'string' || sha.trim() === '') throw new Error(`No pude obtener headRefOid del PR #${n}.`)
@@ -1131,12 +1141,17 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (continuar && nota !== undefined) throw new Error('--nota no vale con --continuar: el autor sigue con el brief del rebote.')
   if (continuar) return await continueBounce({ n, pr, agent, root, repo, config, commonDir, perfilPi, dryRun }, io)
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
+  if (rdd && allReviews.some(item => {
+    const head = reviewBody(item).trimStart().split(/\r?\n/).slice(0, 3).join('\n')
+    return /^\s*Revisor:\s*pi \(RDD:[^)]*\)/mi.test(head) && /^\s*Commit:\s*(\S+)/mi.exec(head)?.[1] === sha
+  })) throw new Error(`Ya hay un review RDD de pi sobre ${sha}.`)
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const conflictMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote conflicto:\s*(\S+)\s*$/gim)].map(match => match[1]))
   // A review round is one reviewed head: a marker posted twice by a retry, or a relaunch on the same head, is not a new round.
   const reviewMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const round = new Set(reviewMarkers.filter(marker => marker !== sha)).size + 1
-  const mergeable = String(pr.mergeable ?? '').toUpperCase()
+  // An RDD bounce skips the CI, conflict and blocker analysis: there are no findings to send.
+  const mergeable = rdd ? '' : String(pr.mergeable ?? '').toUpperCase()
   if (mergeable === 'UNKNOWN') throw new Error(`GitHub todavía está calculando si el PR #${n} se puede mergear; repetí el comando en unos segundos.`)
   // GitHub does not run pull_request workflows while a PR conflicts, so its CI gate (pending, cancelled) is skipped.
   const conflict = mergeable === 'CONFLICTING'
@@ -1144,7 +1159,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (conflict && conflictMarkers.includes(sha)) throw new Error(`El PR #${n} ya rebotó por conflicto en ${sha} y el autor no pusheó nada desde entonces; mirá su worktree antes de repetir.`)
   // Only checks from the latest run of each workflow count; a cancelled run with an unlisted replacement is pending.
   // statusCheckRollup is the head commit's rollup, so every check in it belongs to headRefOid.
-  const latest = latestChecks(Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : [])
+  const latest = rdd ? [] : latestChecks(Array.isArray(pr.statusCheckRollup) ? pr.statusCheckRollup : [])
   const analysis = analyzeChecks(latest)
   const checks = latest.map(({ check }) => check)
   const checkName = check => check.name ?? check.context ?? 'Unnamed check'
@@ -1192,7 +1207,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
       throw new Error(`Ya hubo dos rebotes de CI distintos para el PR #${n}; la CI sigue roja en ${sha}. Pasalo al humano para resolverlo.`)
     }
   }
-  const blockers = allReviews.filter(item => {
+  const blockers = rdd ? [] : allReviews.filter(item => {
     const body = reviewBody(item)
     return blockingBody(body) && /^\s*Commit:\s*(\S+)/mi.exec(body)?.[1] === sha
   })
@@ -1215,7 +1230,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     const answer = settledBy.get(item)
     return `${item.url ?? item.html_url ?? 'Review'}\n${blockingSection(reviewBody(item))}${answer ? `\nInterpretation settled by the human: ${answer.url ?? '(no link available)'}` : ''}`
   }).join('\n\n')
-  if (reviewBlockers.length === 0 && failedChecks.length === 0 && !conflict) {
+  if (!rdd && reviewBlockers.length === 0 && failedChecks.length === 0 && !conflict) {
     const behind = String(pr.mergeStateStatus ?? '').toUpperCase() === 'BEHIND'
     throw new Error(`El PR #${n} no tiene un review bloqueante vigente en ${sha}.${behind ? ` Est\u00E1 atr\u00E1s de ${base} sin conflicto: main lo pone al d\u00EDa con \`gh pr update-branch ${n}\`.` : ''}`)
   }
@@ -1282,7 +1297,19 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     io.writeFile(path.join(io.home, 'orca', 'briefs', `${name}.session`), `${session}\n`)
   }
   const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
-  const brief = withProfileLines(render(readAsset('stack', 'brief-rebote.md'), {
+  const brief = rdd ? withProfileLines(render(readAsset('stack', 'brief-rdd.md'), {
+    PR: String(n), SHA: sha,
+    AGENT: agent,
+    ISSUE: issue,
+    LENSES: lenses.join(', '),
+    REMOTE_HOST: remote.host,
+    REMOTE_REPO: remote.ownerRepo,
+    REMOTE_OPERATIONS: `read the PR, its diff and checks; push only the PR branch to \`origin\` for the bounded correction; comment on the PR; \`gh pr edit ${n} --body-file <file>\` for the PR body only.`,
+    VERIFICATION: verificationBlock(config),
+    PI_FOREGROUND: piForeground(agent),
+    FANOUT_INSTRUCTIONS: fanoutInstructions(agent, nota, true),
+    NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
+  }), profile) : withProfileLines(render(readAsset('stack', 'brief-rebote.md'), {
     PR: String(n), SHA: sha,
     AGENT: agent,
     ISSUE: issue,
@@ -1306,7 +1333,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   }
   say(`${dryRun ? '[simulaci\u00F3n] ' : ''}brief -> ${briefPath}`)
   await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })
-  if (!dryRun) {
+  if (rdd) say(`${dryRun ? '[simulación] ' : ''}RDD: ${sha} (${lenses.join(', ')})`)
+  if (!dryRun && !rdd) {
     const markerPath = path.join(io.home, 'orca', 'briefs', `${name}-comment.md`)
     const markersToPost = [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, reviewBlockers.length > 0 ? `Ronda: ${round}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null, conflict ? `Rebote conflicto: ${sha}` : null].filter(Boolean)
     io.writeFile(markerPath, `${markersToPost.join('\n')}\n`)
