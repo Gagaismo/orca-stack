@@ -1,6 +1,6 @@
 ---
 name: verify-rebote
-description: "Model-check the bounce limits of `orca-stack rebote` (review bounce once, CI bounce at most twice, conflict bounce once per head, interpretation findings never to the author). Use when a change touches `reboteCommand` in src/despacho.mjs, src/checks.mjs, the marker lines `Rebote:` / `Rebote CI:` / `Rebote conflicto:`, or step 8 of assets/stack/CONTRATO.md."
+description: "Model-check the bounce limits of `orca-stack rebote` (review bounce only on a head with its own blocking review, CI bounce at most twice, conflict bounce once per head, interpretation findings never to the author). Use when a change touches `reboteCommand` in src/despacho.mjs, src/checks.mjs, the marker lines `Rebote:` / `Rebote CI:` / `Rebote conflicto:`, or step 8 of assets/stack/CONTRATO.md."
 ---
 
 # verify-rebote
