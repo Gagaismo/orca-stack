@@ -585,9 +585,10 @@ describe('despachar: the TUI wait', () => {
   // agy's real folder-trust screen, as seen on 2026-11-08 (#298, #330): no "trust this folder?" anywhere.
   const AGY_TRUST = ['Antigravity CLI requires permission to read, edit, and execute files here.', '> Yes, I trust this folder', 'No, exit']
   // The trust screen for the first `trustReads` reads, then agy's TUI; a timeline of sleeps, Enters and brief sends.
-  const agyTrustIo = trustReads => {
+  const agyTrustIo = (trustReads, over = {}) => {
     let reads = 0
     const env = fakeIo({
+      ...over,
       'orca terminal read': () => {
         reads += 1
         return json({ result: { terminal: { tail: reads <= trustReads ? AGY_TRUST : ['agy ready'] } } })
@@ -634,6 +635,18 @@ describe('despachar: the TUI wait', () => {
     assert.equal(timeline.filter(step => step === 'enter').length, 3)
     assert.ok(!timeline.includes('brief'))
     assert.ok(!env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('issue 330 Rule 3 (revisar): agy still on the trust screen asks to paste the exact brief line, not to run reanudar', async () => {
+    const { env, timeline } = agyTrustIo(Infinity, { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), error => {
+      const briefPath = env.written.find(([file]) => /revision-9-agy\.md$/.test(file))[0]
+      assert.equal(error.message, `agy sigue en la pantalla de confianza de la carpeta y no recibió el brief. Elegí "Yes, I trust this folder" en la terminal term_1 y pegá en la terminal esta línea: Read and follow the brief in ${briefPath}`)
+      assert.ok(!error.message.includes('reanudar'))
+      return true
+    })
+    assert.equal(timeline.filter(step => step === 'enter').length, 3)
+    assert.ok(!timeline.includes('brief'))
   })
 
   test('issue 330 Rule 5: codex keeps its trust error and claude its launch; neither gets a bare Enter', async () => {

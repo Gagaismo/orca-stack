@@ -361,7 +361,7 @@ const checkPostLaunchScreen = async (io, handle, agent) => {
 const AGY_TRUST = /trust this folder\?|requires permission to read, edit, and execute files here|Yes, I trust this folder/i
 const AGY_TRUST_ENTERS = 3
 
-const waitForTui = async (io, handle, agent, root, issue = '<issue>', tries = 45) => {
+const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45) => {
   let last = null
   let stable = 0
   let enters = 0
@@ -381,7 +381,9 @@ const waitForTui = async (io, handle, agent, root, issue = '<issue>', tries = 45
     }
     // Enter picks "Yes, I trust this folder", but agy can draw the menu before it takes input: confirm until it clears.
     if (agent === 'agy' && AGY_TRUST.test(text)) {
-      if (enters >= AGY_TRUST_ENTERS) throw new Error(`agy sigue en la pantalla de confianza de la carpeta y no recibió el brief. Elegí "Yes, I trust this folder" en la terminal ${handle} y corré orca-stack reanudar ${issue} <url-del-comentario>.`)
+      // A review has no issue for reanudar to find its worktree by: the way back is pasting the brief line by hand.
+      const next = issue === undefined ? `pegá en la terminal esta línea: ${prompt}` : `corré orca-stack reanudar ${issue} <url-del-comentario>.`
+      if (enters >= AGY_TRUST_ENTERS) throw new Error(`agy sigue en la pantalla de confianza de la carpeta y no recibió el brief. Elegí "Yes, I trust this folder" en la terminal ${handle} y ${next}`)
       io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
       enters += 1
       stable = 0
@@ -490,9 +492,9 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
   if (agent !== 'pi') {
     const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
     if (!handle) throw new Error('orca terminal create no devolvi\u00f3 el handle de la terminal.')
-    const before = await waitForTui(io, handle, agent, repositoryRoot, issue)
-    if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
     const prompt = `Read and follow the brief in ${briefPath}`
+    const before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
+    if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
     const observed = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', '10', '--json'])
     let sent = observed
     let oldHost = false
