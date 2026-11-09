@@ -55,7 +55,7 @@ Esta sección es solo de `main` y está en `~/orca/stack/MAIN.md`.
 
 Revisa agy, salvo que el PR lo haya escrito agy: entonces revisa codex. Si codex está bloqueado o no tiene cuota, el PR espera a que codex vuelva. Una regla `guardia.bloquear` vigente cuenta como bloqueo: `despachar` y `revisar` se niegan a despachar a ese agente y dicen el motivo. Un revisor nunca corre un modelo de la misma familia que el autor: dos modelos de una familia comparten puntos ciegos. La familia sale del modelo que cada agente tiene en `agentes.modelos`, y `revisar` se niega cuando coinciden. pi es la excepción: corre sobre Claude, y al lado de claude aporta otra metodología. Un PR de codex lo revisa agy. Qué agentes están en uso en este repo lo dice `agentes` en `.orca-stack.json`; los que figuran en `preguntarAntes` se despachan solo con el OK del humano.
 
-Nadie revisa su propio PR y un worktree de ticket nunca revisa.
+Nadie revisa su propio PR y un worktree de ticket nunca revisa. Excepción: con `agentes.pi.review: "rdd"` en la config, el review RDD que pi corre sobre un PR suyo cuando `main` se lo pide (`orca-stack rebote <pr> --rdd <lentes>`) es un review de registro, porque revisores de contexto limpio miran un commit congelado. El autochequeo ODD de pi, o un RDD que pi corrió por su cuenta antes del PR sin que `main` lo pidiera, no cuentan.
 
 ### Modo `un-agente`
 
@@ -119,7 +119,7 @@ Cada regla del repo vive en un solo archivo; los demás apuntan a ella sin copia
 
 ### Review
 
-El review que cuenta es el cruzado: la skill `code-review` del brief y el review RDD de gentle-ai son autochequeos del autor y no lo reemplazan.
+El review que cuenta es el cruzado: la skill `code-review` del brief y el review RDD de gentle-ai son autochequeos del autor y no lo reemplazan, salvo el review RDD que pide `main` (ver Agentes).
 
 Los ejes, los tests derivados, la comprobación de que un test del autor falle sin el cambio y la limpieza de tests están en el brief de revisión que arman `orca-stack revisar` y `orca-stack brief-revision`.
 

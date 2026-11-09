@@ -491,19 +491,24 @@ export const implementerOf = (body: string): string | undefined =>
 
 // `gh pr view --json files,headRefOid,body,comments,reviews`: `gh pr review --comment` bodies live in `reviews`,
 // plain PR comments in `comments`. The PR body only says who implemented it; it is never a review.
+// Bodies come in the order they were posted (createdAt, submittedAt), so an RDD review can be told apart from one
+// posted before main's request; without a time on every item, comments then reviews, as gh lists them.
 export const prFacts = (stdout: string): PrFacts | undefined => {
   try {
     const data = JSON.parse(stdout) as {
       files?: { path?: unknown }[]
       headRefOid?: unknown
       body?: unknown
-      comments?: { body?: unknown }[]
-      reviews?: { body?: unknown }[]
+      comments?: { body?: unknown; createdAt?: unknown }[]
+      reviews?: { body?: unknown; submittedAt?: unknown }[]
     }
     if (typeof data.headRefOid !== 'string' || !Array.isArray(data.files)) {
       return undefined
     }
-    const bodies = [...(data.comments ?? []), ...(data.reviews ?? [])]
+    const posted: { body?: unknown; createdAt?: unknown; submittedAt?: unknown }[] = [...(data.comments ?? []), ...(data.reviews ?? [])]
+    const timeOf = (one: { createdAt?: unknown; submittedAt?: unknown }): number => Date.parse(String(one?.createdAt ?? one?.submittedAt ?? ''))
+    const ordered = posted.every(one => !Number.isNaN(timeOf(one))) ? [...posted].sort((a, b) => timeOf(a) - timeOf(b)) : posted
+    const bodies = ordered
       .map(one => one?.body)
       .filter((body): body is string => typeof body === 'string')
 
@@ -518,15 +523,17 @@ export const prFacts = (stdout: string): PrFacts | undefined => {
   }
 }
 
-export type Review = { reviewer: string; clean: boolean }
+export type Review = { reviewer: string; clean: boolean; lenses?: string[] }
 
 // The reviews of exactly this commit: `Revisor: <agent>` and `Commit: <sha>` among the first lines of one body (the
 // sha may be abbreviated to 7+ characters). Clean: the first non-empty line after `## BLOQUEA` is `nada`.
+// `Revisor: <agent> (RDD: <lens>, …)` is an RDD review and carries its lenses; any other suffix is not a review.
 export const reviewsOf = (bodies: string[], headRefOid: string): Review[] =>
   bodies.flatMap(body => {
     const lines = body.split(/\r?\n/).map(line => line.trim())
     const head = lines.slice(0, 5)
-    const reviewer = head.map(line => /^Revisor:\s*(\S+)$/i.exec(line)?.[1]).find(name => name !== undefined)
+    const named = head.map(line => /^Revisor:\s*(\S+)(?:\s+\(RDD:\s*([^()]*)\))?$/i.exec(line)).find(match => match !== null)
+    const reviewer = named?.[1]
     const commit = head.map(line => /^Commit:\s*([0-9a-f]{7,40})$/i.exec(line)?.[1]).find(sha => sha !== undefined)
     if (reviewer === undefined || commit === undefined || !headRefOid.toLowerCase().startsWith(commit.toLowerCase())) {
       return []
@@ -534,13 +541,43 @@ export const reviewsOf = (bodies: string[], headRefOid: string): Review[] =>
     const at = lines.findIndex(line => /^##\s*BLOQUEA\b/i.test(line))
     const verdict = at < 0 ? undefined : lines.slice(at + 1).find(line => line !== '')
 
-    return [{ reviewer: reviewer.toLowerCase(), clean: verdict?.toLowerCase() === 'nada' }]
+    const review: Review = { reviewer: reviewer.toLowerCase(), clean: verdict?.toLowerCase() === 'nada' }
+    if (named?.[2] !== undefined) {
+      review.lenses = named[2].split(',').map(lens => lens.trim().toLowerCase()).filter(lens => lens !== '')
+    }
+
+    return [review]
+  })
+
+// The lens set main asked for on this commit in one body, or undefined: `orca-stack rebote <pr> --rdd <lentes>` posts a
+// comment of its own whose first non-empty line is `RDD: <sha> (<lentes>)` (the sha may be abbreviated to 7+
+// characters). A body with a `Revisor:` line or a `## BLOQUEA` section is a review, and an `RDD:` line in it is no
+// request. The set is sorted, to compare it with a review's lenses. With one gh account for main and the workers, the
+// request is told by its form and its place in the thread, not by its author.
+export const rddRequestOf = (body: string, headRefOid: string): string[] | undefined => {
+  const lines = body.split(/\r?\n/).map(line => line.trim())
+  if (lines.some(line => /^Revisor:/i.test(line) || /^##\s*BLOQUEA\b/i.test(line))) return undefined
+  const match = /^RDD:\s*([0-9a-f]{7,40})\s*\(([^()]*)\)$/i.exec(lines.find(line => line !== '') ?? '')
+  if (match === null || !headRefOid.toLowerCase().startsWith(match[1].toLowerCase())) return undefined
+
+  return match[2].split(',').map(lens => lens.trim().toLowerCase()).filter(lens => lens !== '').sort()
+}
+
+export const rddRequestsOf = (bodies: string[], headRefOid: string): string[][] =>
+  bodies.flatMap(body => {
+    const lenses = rddRequestOf(body, headRefOid)
+    return lenses === undefined ? [] : [lenses]
   })
 
 // Why a PR touching a riesgo path cannot merge yet, or undefined. Every review counted is of the head commit.
 // - A review of the head commit with blockers stops it: on a riesgo path the human settles a blocker, not main.
 // - Implemented by pi: clean reviews from two model families other than pi's. A family comes from the model each
 //   reviewer has configured to review (familyOf); a reviewer whose model has no known family does not count.
+// - Implemented by pi with agentes.pi.review "rdd": only a clean RDD review by pi with the risk lens, which main asked
+//   for on this commit with those lenses before the review was posted (rddRequestsOf over the earlier bodies), clears
+//   it; reviews of other families do not replace it (#338).
+//   Outside that mode, or without main's request, an RDD review is not a review at all: it neither counts nor blocks.
+//   A `Sin review:` comment never counts on a riesgo path.
 // - Implemented by anyone else: a clean pi review, the second review the contract asks for.
 export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackConfig, now: number): string | undefined => {
   const sha = facts.headRefOid.slice(0, 7)
@@ -552,7 +589,12 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
       `sin ella no sé quién puede revisarlo. Agregala con \`gh pr edit ${n} --body-file <archivo>\`.`
     )
   }
-  const reviews = reviewsOf(facts.bodies, facts.headRefOid)
+  const rdd = facts.implementer === 'pi' && config.agentes?.pi?.review === 'rdd'
+  const requested = ({ review, at }: { review: Review; at: number }): boolean =>
+    review.reviewer === 'pi' &&
+    rddRequestsOf(facts.bodies.slice(0, at), facts.headRefOid).some(lenses => lenses.join(',') === [...(review.lenses ?? [])].sort().join(','))
+  const posted = facts.bodies.flatMap((body, at) => reviewsOf([body], facts.headRefOid).map(review => ({ review, at })))
+  const reviews = posted.filter(one => one.review.lenses === undefined || (rdd && requested(one))).map(({ review }) => review)
   const blocked = reviews.find(review => !review.clean)
   if (blocked !== undefined) {
     return (
@@ -560,7 +602,23 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
       'En una ruta de riesgo un bloqueo no se salda con "Decidido por main": corregilo y pedí un review nuevo, o pasale la decisión al humano.'
     )
   }
-  const reviewers = [...new Set(reviews.map(review => review.reviewer))]
+  const reviewers = [...new Set(reviews.filter(review => review.lenses === undefined).map(review => review.reviewer))]
+  const rddReviews = reviews.filter(review => review.lenses !== undefined)
+  if (rddReviews.some(review => review.lenses?.includes('risk'))) {
+    return undefined
+  }
+  if (rdd) {
+    const unrequested = posted.some(one => one.review.reviewer === 'pi' && one.review.lenses !== undefined && !requested(one))
+      ? ' Un review RDD de pi que main no pidió antes, con esas lentes y sobre ese commit (el comentario `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`), no cuenta.'
+      : ''
+    const noRisk = rddReviews.length > 0 ? ' El review RDD de pi sobre ese commit no cuenta: no tiene la lente risk.' : ''
+    const sinReview = facts.bodies.some(body => /^\s*Sin review:/i.test(body)) ? ' Un comentario "Sin review:" no cuenta en una ruta de riesgo.' : ''
+
+    return (
+      `${prefix} y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit ${sha}, ` +
+      `y los reviews de otras familias no lo reemplazan. Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).${noRisk}${unrequested}${sinReview}`
+    )
+  }
   if (facts.implementer !== 'pi') {
     return reviewers.includes('pi')
       ? undefined
@@ -611,10 +669,11 @@ export const riskDeny = (n: string, file: string, facts: PrFacts, config: StackC
       : ` Corré ${picks.map(agent => `\`orca-stack revisar ${n} ${agent}\``).join(' y ')}.` +
         picks.filter(agent => ask.includes(agent)).map(agent => ` ${agent} está en preguntarAntes: pedile el OK al humano y agregá --confirmado.`).join('')
 
-  return (
-    `${prefix} y lo escribió pi: faltan reviews limpios sobre el commit ${sha} de dos familias de modelo distintas ` +
+  const cross =
+    `faltan reviews limpios sobre el commit ${sha} de dos familias de modelo distintas ` +
     `que no sean la de pi (${own ?? '?'}). ${have}.${notCounted}${next}`
-  )
+
+  return `${prefix} y lo escribió pi: ${cross}`
 }
 
 export const clock = (at: number): string => {

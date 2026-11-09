@@ -40,6 +40,7 @@ Opciones:
   --nota <texto>   (despachar, revisar, rebote) Texto que se agrega al brief.
   --confirmado     (despachar, revisar, rebote, reanudar) El humano dijo que s\u00ED a un agente de agentes.preguntarAntes.
   --continuar      (rebote) Retoma al autor de un rebote que se cortó antes de pushear (por ejemplo, sin cuota): mismo worktree, misma sesión de pi, sin marcador nuevo.
+  --rdd <lentes>   (rebote) Le pide a pi un review RDD de su propio PR con esas lentes (risk, resilience, readability, reliability), sin hallazgos ni marcador Rebote.
   --perfil-pi <nombre> (despachar, revisar, rebote, reanudar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver --help del comando).
   --modelo <modelo>  (brief-revision) Modelo del subagente revisor.
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
@@ -125,7 +126,7 @@ Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en l
 (línea \`Implementador:\`) o si el agente usa un modelo de la misma familia (según \`agentes.modelos\`; pi y claude pueden revisarse entre sí).
 Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, sin agentes ni terminales en done, y su HEAD anterior alcanza el nuevo head del PR; rechaza el mismo head, los commits locales y los perfiles de Pi distintos.
 `,
-  rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--continuar] [--dry-run]
+  rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--continuar] [--rdd <lentes>] [--dry-run]
 
 Relanza al autor indicado por \`Implementador:\` en el worktree existente de la rama del PR. Exige un review bloqueante
 vigente o checks fallidos sobre el head, worktree limpio y detenido en ese commit; los hallazgos de interpretaci\u00F3n (los que llevan \`interpretaci\u00F3n\` al final de su etiqueta, no en su texto) solo bloquean el rebote por review,
@@ -145,6 +146,10 @@ Con mergeable UNKNOWN se niega hasta que GitHub termine de calcular; un PR solo 
 Con pi usa el perfil que fija el worktree (.pi/gentle-ai/profile.json; --perfil-pi no lo cambia). Sin pin, --perfil-pi o agentes.pi.perfil
 lo eligen y se escribe el pin; sin ninguno se niega como despachar, antes de mover el worktree.
 Con --continuar retoma al autor que se cortó antes de pushear (por ejemplo, sin cuota): exige que el último marcador \`Rebote*\` sea del head, sin agente vivo y con el brief del rebote; acepta el worktree sucio, no publica marcador ni suma a los límites, y solo pi retoma la misma sesión (\`--session-id\`): claude, codex y agy arrancan una sesión nueva con el mismo brief. Si sigue sin cuota, falla con la hora de reset y no reintenta. No acepta --nota.
+Con --rdd <lentes> (de 1 a 4 distintas entre risk, resilience, readability, reliability, separadas por coma) le pide a pi un review RDD de su propio PR:
+solo con \`Implementador: pi\` y agentes.pi.review: "rdd" en la config. No exige review bloqueante ni mira CI o conflictos; el brief (brief-rdd.md)
+le pide publicar \`Revisor: pi (RDD: <lentes>)\` y \`Commit: <sha>\`. No publica marcador \`Rebote*\`: publica en el PR \`RDD: <sha> (<lentes>)\`, el pedido sin el que puente-gentle no cuenta el review.
+Se niega si ya hay sobre el head un review RDD de pi con ese pedido, y no vale con --continuar (su brief y su sesión van aparte: -rdd).
 `,
   'brief-revision': `orca-stack brief-revision <pr> --modelo <modelo> [--dry-run]
 
@@ -232,6 +237,10 @@ export const parseArgs = argv => {
       i += 1
     } else if (arg.startsWith('--perfil-pi=')) flags.perfilPi = arg.slice('--perfil-pi='.length)
     else if (arg === '--continuar') flags.continuar = true
+    else if (arg === '--rdd') {
+      flags.rdd = argv[i + 1] ?? ''
+      i += 1
+    } else if (arg.startsWith('--rdd=')) flags.rdd = arg.slice('--rdd='.length)
     else if (arg === '--modelo') {
       flags.modelo = argv[i + 1] ?? ''
       i += 1

@@ -10,7 +10,10 @@
       "pi"
     ],
     "preguntarAntes": [
-    ]
+    ],
+    "pi": {
+      "review": "rdd"
+    }
   },
   "verificacion": {
     "suite": "npm run verify",
