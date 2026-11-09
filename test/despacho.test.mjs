@@ -1796,10 +1796,14 @@ describe('rebote', () => {
 
     test('issue #292 Rule 5: rebote --continuar refuses while an agent is live in the worktree', async () => {
       write(bounceBrief(), 'bounce brief\n')
-      const env = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), { ...dirty, 'orca worktree ps': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'working' }] }] } }) })
-      await assert.rejects(reboteCommand({ continuar: true }, '12', env.io), /Hay un agente vivo en .*; cerralo antes de rebotar\./)
-      assert.equal(creates(env).length, 0)
-      assert.ok(!commented(env))
+      // blocked and waiting are live too: the agent waits on a dialog (src/avisar.mjs LIVE).
+      for (const state of ['working', 'blocked', 'waiting']) {
+        const env = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), { ...dirty, 'orca worktree ps': json({ result: { worktrees: [{ path: worktree, agents: [{ state }] }] } }) })
+        await assert.rejects(reboteCommand({ continuar: true }, '12', env.io), /Hay un agente vivo en .*; cerralo antes de rebotar\./, state)
+        assert.equal(creates(env).length, 0, state)
+        assert.ok(!commented(env), state)
+        assert.ok(!env.out.some(line => line.includes('brief ->')), state)
+      }
     })
 
     test('issue #292 Rule 6: rebote --continuar fails with the reset time when the author is still out of quota, without retrying', async () => {
@@ -1827,7 +1831,16 @@ describe('rebote', () => {
       await assert.rejects(reboteCommand({ continuar: true }, '12', claude.io), error =>
         error.message.includes('claude sigue sin cuota (resets 4:30am)') && error.message.includes('orca-stack rebote 12 --continuar'))
       assert.equal(creates(claude).length, 1)
-      assert.ok(!commented(agy) && !commented(pi) && !commented(claude))
+      // A weekly limit names its reset day: the refusal keeps day and time.
+      let weeklyReads = 0
+      const weekly = bounceEnv(pr({ body: 'Implementador: claude', comments: [{ body: 'Rebote: abc123' }] }), {
+        ...dirty,
+        'orca terminal read': () => json({ result: { terminal: { tail: ++weeklyReads <= 3 ? ['ready'] : ['Weekly limit reached · resets Mon 9am'] } } }),
+      })
+      await assert.rejects(reboteCommand({ continuar: true }, '12', weekly.io), error =>
+        error.message.includes('claude sigue sin cuota (resets Mon 9am)') && error.message.includes('orca-stack rebote 12 --continuar'))
+      assert.equal(creates(weekly).length, 1)
+      assert.ok(!commented(agy) && !commented(pi) && !commented(claude) && !commented(weekly))
     })
 
     test('issue #292 Preserve: plain rebote still refuses a dirty worktree and writes the session file', async () => {

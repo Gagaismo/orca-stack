@@ -345,16 +345,18 @@ const ok = (res, what) => {
 
 export const shellPrompt = text => /(?:^|\n)\s*PS\s+[A-Za-z]:\\[^\n>]*>\s*$/im.test(text)
 
-const QUOTA = /quota (reached|exceeded)|usage limit|rate[- ]limit|Resets? in \d|hit your (?:session|usage) limit|\d+-hour limit reached/i
+// Any "<kind> limit reached" (session, 5-hour, weekly, Opus...) or a limit line naming its reset, not one wording per limit (#292).
+const QUOTA = /quota (reached|exceeded)|usage limit|rate[- ]limit|Resets? in \d|hit your (?:session|usage) limit|\blimit reached\b|\blimit\b.*\bresets?\s+\S/i
 
 export const quotaLine = lines => {
   if (!Array.isArray(lines)) return undefined
   return lines.slice(-15).find(line => QUOTA.test(String(line)))
 }
 
-// The reset time a usage-limit line names, as read: "resets 02:20:00" -> "resets 02:20", "Resets in 10h45m" -> "resets in 10h45m".
+// The reset time a usage-limit line names, as read: "resets 02:20:00" -> "resets 02:20", "Resets in 10h45m" -> "resets in 10h45m";
+// a weekly reset keeps its day: "resets Mon 9am", "resets Nov 12, 9am".
 export const quotaReset = line => {
-  const match = /\bresets?\s+(in\s+\d[\dhms]*|(?:at\s+)?\d{1,2}(?::\d{2})?(?:\s*[ap]m)?)/i.exec(String(line ?? ''))
+  const match = /\bresets?\s+(in\s+\d[\dhms]*|(?:at\s+)?(?:[A-Z][a-z]{2,8}\.?(?:\s+\d{1,2})?,?\s+(?:at\s+)?)?\d{1,2}(?::\d{2})?(?:\s*[ap]m)?)/i.exec(String(line ?? ''))
   return match ? `resets ${match[1].trim()}` : undefined
 }
 
@@ -1022,12 +1024,15 @@ const bounceProfile = (io, { agent, worktree, perfilPi, config, commonDir }) => 
   }
 }
 
+// Orca's live agent states: working (older Orca: running/active), or blocked/waiting on a dialog; only done is not live.
+const LIVE_AGENT = /^(working|running|active|blocked|waiting)$/i
+
 const refuseLiveAgent = (io, worktree) => {
   const ps = io.sh('orca', ['worktree', 'ps', '--json'])
   if (ps.status !== 0) throw new Error(`Orca no contesta (orca worktree ps): ${(ps.stderr || ps.stdout).trim()}`)
   const rows = parseJson(ps, 'orca worktree ps').result?.worktrees ?? []
   const row = rows.find(item => samePath(item.path ?? '', worktree))
-  if ((row?.agents ?? []).some(item => /^(working|running|active)$/i.test(item.state ?? item.status ?? ''))) {
+  if ((row?.agents ?? []).some(item => LIVE_AGENT.test(item.state ?? item.status ?? ''))) {
     throw new Error(`Hay un agente vivo en ${worktree}; cerralo antes de rebotar.`)
   }
 }
