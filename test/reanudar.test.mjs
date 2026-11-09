@@ -335,6 +335,30 @@ describe('orca-stack reanudar (#214)', () => {
     }
   })
 
+  test('issue #341 Rule 4: reanudar resumes the recorded idle gentle-pi 4.7.0 screen and refuses the recorded busy one', async () => {
+    // Recorded with `orca terminal read --screen` from Gentle Shell (gentle-pi 4.7.0, pi 1.5.0) on 2026-11-09; one personal path anonymized.
+    const recorded = name => readFileSync(path.join(PACKAGE_ROOT, 'test', 'fixtures', 'pi-screens', `gentle-pi-4.7.0-${name}.txt`), 'utf8').replace(/\n$/, '').split('\n')
+    const idle = pinned(harness({ agent: 'pi', screen: recorded('idle') }))
+    assert.equal(await reanudarCommand({}, ISSUE, URL, idle.io), 0)
+    assert.deepEqual(idle.sends().map(send => send.args.slice(2)), [['--terminal', 'term-1', '--text', LINE, '--enter', '--wait-submit', '10', '--json']])
+
+    const busy = pinned(harness({ agent: 'pi', screen: recorded('busy') }))
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, busy.io), error => {
+      assert.equal(error.message, `No veo a Pi en reposo en la pantalla de term-1 (#${ISSUE}): no reanudo.`)
+      return true
+    })
+    assert.equal(busy.sends().length, 0)
+  })
+
+  test('issue #341 Rule 4: reanudar refuses a busy pi whose transcript quotes an idle frame: only the current frame counts', async () => {
+    const quoted = pinned(harness({ agent: 'pi', screen: ['The idle frame reads:', '─ ✿ waiting for input ─── INSERT ─', '─ ✾ implementing… ─── INSERT ─', '›   type, or / for commands', 'status'] }))
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, quoted.io), error => {
+      assert.equal(error.message, `No veo a Pi en reposo en la pantalla de term-1 (#${ISSUE}): no reanudo.`)
+      return true
+    })
+    assert.equal(quoted.sends().length, 0)
+  })
+
   test('issue #277 Rule 3: relaunching an exited pi worker refuses when no new pi session appears', async () => {
     const h = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
     h.io.gentleSkills = () => '/pi/skills'

@@ -15,18 +15,25 @@ const COMMENT_URL = /^https:\/\/[^/\s]+\/([^/\s]+\/[^/\s]+)\/(?:issues|pull)\/(\
 const LIVE = ['working', 'blocked', 'waiting']
 // Positive signals, per agent: if a release changes one, avisar refuses instead of typing into an unknown screen.
 // Claude's spinner while a turn runs ("✢ Churning… (1m 2s · ↓ 3k tokens)"); a settled turn reads "✻ Baked for 2m 5s".
-// Pi's Gentle Shell prompt frame while it works ("╭─ ❀ implementing… ──╮": a spinning petal and the ODD phase, or
-// "working…"); idle, the petal stands alone ("╭─ ✿ ─────╮").
+// Pi's Gentle Shell prompt frame while it works: a spinning petal and the ODD phase, or "working…". Since gentle-pi
+// 4.7.0 the frame is a rule ("─ ❀ implementing… ─── INSERT ─") and idle reads "─ ✿ waiting for input ─── INSERT ─";
+// before, a box ("╭─ ❀ implementing… ──╮"), with the petal standing alone when idle ("╭─ ✿ ─────╮").
+// The transcript may quote either frame, so Pi is judged on its current frame alone: the last frame line on screen.
 // Codex and agy workers share the spinner pattern.
 const SPINNER = /^\s*[·✢✳✶✻✽]\s+\S[^\n]*…\s*\(\d+[smh]/mu
+const PI_FRAME = /^\s*╭?─ [✿❀❁✾] /u
+const PI_BUSY = /^\s*╭?─ [✿❀❁✾] [a-z]+… /u
+const PI_IDLE = /^\s*(?:╭─ ✿ ─+╮\s*$|─ ✿ waiting for input ─)/u
+const piFrame = screen => screen.slice(-SPINNER_LINES).findLast(line => PI_FRAME.test(line)) ?? ''
+const spinning = screen => SPINNER.test(screen.slice(-SPINNER_LINES).join('\n'))
 const TURN_RUNNING = {
-  claude: SPINNER,
-  pi: /^\s*╭─ [✿❀❁✾] [a-z]+… /mu,
-  codex: SPINNER,
-  agy: SPINNER,
-  antigravity: SPINNER,
+  claude: spinning,
+  pi: screen => PI_BUSY.test(piFrame(screen)),
+  codex: spinning,
+  agy: spinning,
+  antigravity: spinning,
 }
-export const PI_IDLE = /^\s*╭─ ✿ ─+╮\s*$/mu
+export const piIdle = screen => PI_IDLE.test(piFrame(screen))
 const DIALOG = /trust this folder\?|Do you want to proceed\?|Esc to cancel/i
 // The spinner and dialogs render at the bottom; the transcript above them may quote the same words.
 export const SPINNER_LINES = 25
@@ -169,7 +176,7 @@ export const avisarCommand = async (flags = {}, item, url, io = defaultIo()) => 
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
   if (shellPrompt(lastLine)) throw new Error(`La terminal ${handle} de #${n} muestra un shell prompt: el worker ya no está en su TUI. No aviso.`)
   if (isDialog(screen)) throw new Error(`La terminal ${handle} de #${n} muestra un diálogo: no aviso encima.`)
-  if (!TURN_RUNNING[target.identity].test(screen.slice(-SPINNER_LINES).join('\n'))) throw new Error(`No veo el turno en curso en la pantalla de ${handle} (#${n}): pudo haber terminado. No aviso.`)
+  if (!TURN_RUNNING[target.identity](screen)) throw new Error(`No veo el turno en curso en la pantalla de ${handle} (#${n}): pudo haber terminado. No aviso.`)
   // Read the state again right before sending: it shrinks the window in which the turn settles or a dialog opens.
   const now = paneAgents(rowAt(worktreeRows(io), worktree.path)).get(paneKey(target.terminal))?.state
   if (now !== 'working') throw new Error(`El agente de ${handle} cambió a ${now ?? 'sin estado'} mientras lo revisaba: no aviso.`)

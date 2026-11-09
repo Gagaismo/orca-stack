@@ -1,0 +1,46 @@
+ ✿ ~\orca\workspaces\orca-stack\orca-stack-334  ~\orca\workspaces\orca-stack\orca-stack-334
+❀ todo · update
+Error: no task #7                                                                                                                                                                     ▎
+                                                                                                                                                                                      ▎ ▾ AGENTS                             1 done
+🧠 update #4056 …                                                                                                                                                                     ▎ ✓ 1 done · /gentle:agents
+↳ ✓ updated #4056                                                                                                                                                                     ▎
+ The task error says there's no task #7, so the ids may not match what I expected. I'll pull up the list first, then clear it, since everything is already done.                      ▎
+                                                                                                                                                                                      ▎ ▾ CHANGES                             clean
+❀ todo · clear                                                                                                                                                                        ▎ no captured changes          /gentle:changes
+Cleared 7 tasks                                                                                                                                                                       ▎
+ I need to write the final summary in Spanish, and I should be upfront that npm run verify failed with 5 failures that were already there before my changes.                          ▎
+                                                                                                                                                                                      ▎ ▾ STATS                           $3.63 sub
+ Las tres tareas de #334 están hechas y abrí el PR #340 (https://github.com/Gagaismo/orca-stack/pull/340). npm run verify no quedó en verde: npm test falla en 5 tests que ya         ▎ profile OpusFull (local)
+ fallaban igual en la base 6908623. Por lo que vi, la causa es de esta máquina y no de la rama (detalle en Tests).                                                                    ▎ spent  $3.63 sub           78 turns · 18m58s
+                                                                                                                                                                                      ▎ tokens in 156 · out 41k
+ Qué cambió                                                                                                                                                                           ▎ cache  98% hit · 9.9M read
+ 1. init sin MAIN.md (src/init.mjs): sigue escribiendo el bloque y, si falta ~/orca/stack/MAIN.md, avisa en una línea: ⚠ falta ~/orca/stack/MAIN.md, con las reglas de main a las     ▎ tools  86 calls · 2 failed
+    que apunta el bloque: corré `orca-stack global` . En ese caso ya no imprime "el bloque orca-stack ahora lleva el contrato de trabajo completo". Si MAIN.md está instalado, no     ▎ agents 3 runs · 1.9M · $2.09 sub
+    avisa.                                                                                                                                                                            ▎ claude-opus-5-5   78 turns · 10M · $3.63 sub
+ 2. Citas viejas: las tres que nombra el ticket ahora apuntan a MAIN.md.                                                                                                              ▎
+     - ORCA-STACK.md: las reglas para escribir tickets, paso 2 de "Ciclo de main".
+     - El mensaje de guardia-despacho para remover un worktree: "Permisos".                                                                                                           ▎
+     - La postura Medium de marchas: las señales de "Arena y swarm".                                                                                                                  ▎ ▾ INTEGRATIONS                            2
+ 3. Consultas a Pi: hoy Pi no tiene ningún puntero a MAIN.md. Ni el marco, ni el mensaje, ni la precarga lo nombran, y el entorno de la consulta borra ORCA_STACK_POLICY_PATH. El     ▎ - permissions no permission prompts; private
+    bloque de AGENTS.md le pide leerlo solo a main. Ahora, en una consulta con pr, ## Precarga agrega una línea con la ruta de MAIN.md cuando el archivo existe. Las consultas        ▎   paths stay blocked
+    con solo issue y las libres no cambian.                                                                                                                                           ▎ - 🧠 orca-stack · ✓ updated #4056
+                                                                                                                                                                                      ▎
+ Tests
+ - Hay tests nuevos para las tres reglas. Vi fallar los de las Reglas 2 y 3 antes del cambio.
+ - Pasan test/init.test.mjs (21), test/main-citations.test.mjs, puente-gentle (61), marchas (56) y guardia-despacho (58).
+ - npm run test:mods pasa en todos los mods.
+ - npm test da 931 tests: 923 pasan y 5 fallan. Un subagente comprobó en un clon aparte de la base que esos 5 fallan igual ahí. Vienen de un orca-stack global instalado con npm
+   bajo fnm, en la carpeta de Node que los tests ponen en el PATH: global no lo pisa. Se arregla con npm rm -g orca-stack en ese Node.
+ - Un test que ya existía en test/global.test.mjs esperaba la cita vieja; lo actualicé para que espere MAIN.md.
+ Review
+ - La ronda 1 la hizo un subagente de solo lectura, porque la skill code-review no está instalada en Pi. No encontró bloqueos.
+ - Apliqué una sugerencia: el aviso usa la ruta ~/orca/stack/MAIN.md, porque en Windows salía ~\orca\.... La ronda 2 cubrió solo esas 3 líneas y la hice yo mismo, sin subagente.
+ Riesgo pendiente
+ - Fuera del alcance del ticket: los niveles K1-K7, K9 y K11 de ORCA-STACK.md todavía citan "CONTRATO.md — Ciclo de main" y "— Arena y swarm", secciones que ahora solo apuntan a
+   MAIN.md. Conviene un ticket aparte.
+ - Sin reproducir: si la comprobación de que existe MAIN.md falla con un error, la consulta entera se cae, igual que con las otras comprobaciones de archivos del mod.
+ Las dos cosas quedaron en ## Desvíos del ticket del PR. También tildé T1 a T3 en el issue: no tenían casillas, así que las marqué como - [x] T<n>:.
+ TPS 36.1 tok/s. out 41.134, in 156, cache r/w 9.922.166/163.890, total 10.127.346, 1139.6s
+─ ✿ waiting for input ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── INSERT ─
+›   type, or / for commands
+ Gagaismo/orca-stack-334 │ 💥 SUPER-YOLO                                                                  claude-opus-5-5 · high · OpusFull (local) │ ctx ▰▱▱▱▱▱▱▱ 18% │ $3.63 sub │ usage 5h ▰▰▰▰▱▱▱▱ 56% · week ▰▱▱▱▱▱▱▱ 12% · alt+u
