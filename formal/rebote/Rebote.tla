@@ -179,6 +179,15 @@ ReboteCommentFails ==
     /\ owed' = WithMarkers(owed)
     /\ UNCHANGED mk
 
+\* `rebote <pr> --continuar` (#292, continueBounce): relaunches the author of the bounce whose last marker is on the
+\* head (heads only grow, so that is h being marked), with no live agent. It posts no marker and is no bounce: it changes
+\* none of the launch histories the promises count, so no limit can move.
+Continue ==
+    /\ ~alive
+    /\ h \in mk["R"] \cup mk["CI"] \cup mk["C"]
+    /\ alive' = TRUE
+    /\ UNCHANGED <<head, ci, merge, rev, settled, open, mk, owed, lauR, lauCI, lauC, leaked>>
+
 Next ==
     \/ Push
     \/ CIFinishes
@@ -190,6 +199,7 @@ Next ==
     \/ ReviewPosts("interp")
     \/ Rebote
     \/ ReboteCommentFails
+    \/ Continue
 
 Spec == Init /\ [][Next]_vars
 
