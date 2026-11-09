@@ -181,6 +181,8 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
   ci-verde #<n> PR #<pr> <sha>       todos los checks del head terminaron en verde
   ci-roja #<n> PR #<pr> <sha>: ...   un check terminado falló, venció o se canceló (los lista); uno por corrida,
                                      también si un gh run rerun --failed vuelve a fallar en el mismo head
+  review-publicado #<pr> <agente> <sha> bloquea=<n>  review publicado en el PR
+  head-nuevo #<pr> <sha>             camb\u00F3 el head del PR
   pr-en-conflicto #<n> PR #<pr> <sha>
                                      el PR quedó en conflicto con la base; uno por head (rebote, con el worker detenido)
   pr-mergeado #<n> PR #<pr> <sha>    el PR se mergeó y main no registró ese merge
