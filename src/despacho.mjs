@@ -961,6 +961,9 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const conflictMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote conflicto:\s*(\S+)\s*$/gim)].map(match => match[1]))
+  // A review round is one reviewed head: a marker posted twice by a retry, or a relaunch on the same head, is not a new round.
+  const reviewMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote:\s*(\S+)\s*$/gim)].map(match => match[1]))
+  const round = new Set(reviewMarkers.filter(marker => marker !== sha)).size + 1
   const mergeable = String(pr.mergeable ?? '').toUpperCase()
   if (mergeable === 'UNKNOWN') throw new Error(`GitHub todavía está calculando si el PR #${n} se puede mergear; repetí el comando en unos segundos.`)
   // GitHub does not run pull_request workflows while a PR conflicts, so its CI gate (pending, cancelled) is skipped.
@@ -1130,6 +1133,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     VERIFICATION: verificationBlock(config),
     PI_FOREGROUND: piForeground(agent),
     BODY_PRECHECK_STEP: reboteBodyPrecheckStep(config.verificacion?.cuerpoPR),
+    // A bounce fixes the class of each finding, not only the line the reviewer named.
+    DEFECT_CLASS_STEP: reviewBlockers.length > 0 ? '\n- For each review finding, name its defect class, fix every instance of that class in the diff, not only the reported line, and say in your PR comment which other instances of that class you checked.' : '',
     FANOUT_INSTRUCTIONS: fanoutInstructions(agent, nota, true),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
   }), profile)
@@ -1141,7 +1146,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })
   if (!dryRun) {
     const markerPath = path.join(io.home, 'orca', 'briefs', `${name}-comment.md`)
-    const markersToPost = [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null, conflict ? `Rebote conflicto: ${sha}` : null].filter(Boolean)
+    const markersToPost = [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, reviewBlockers.length > 0 ? `Ronda: ${round}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null, conflict ? `Rebote conflicto: ${sha}` : null].filter(Boolean)
     io.writeFile(markerPath, `${markersToPost.join('\n')}\n`)
     // The author is already running: a lost marker would let the next rebote bounce again, so retry and then fail loud.
     // A retry after a comment that did post only duplicates the marker, which every counter reads as a set.
@@ -1165,7 +1170,12 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
       ].join('\n'))
     }
   }
-  if (reviewBlockers.length > 0) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote: ${sha}`)
+  if (reviewBlockers.length > 0) {
+    say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote: ${sha}`)
+    say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Ronda: ${round}`)
+    // Only printed, never posted: the contract's signal is for main, and it does not stop this bounce.
+    if (round >= 2) say(`Ronda ${round} de review con bloqueos: el contrato pide un swarm de diagn\u00F3stico desde la segunda ronda o el segundo bounce del mismo hallazgo (MAIN.md, Arena y swarm, Se\u00F1ales); este rebote sigue igual.`)
+  }
   if (failedChecks.length > 0) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote CI: ${sha}`)
   if (conflict) say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Rebote conflicto: ${sha}`)
   return 0
