@@ -221,11 +221,11 @@ const advance = (issue, seen, before, merges) => {
     reported.add(comment.id)
   }
   if (reported.size) entry.reviews = [...reported]
+  if (!fresh && entry.head && entry.head !== pr.headRefOid) lines.push(`head-nuevo #${pr.number} ${pr.headRefOid.slice(0, 7)}`)
   if (pr.state === 'OPEN') {
     delete entry.fin
     if (fresh) lines.push(event('pr-abierto', issue, pr, pr.headRefOid))
     if (entry.head !== pr.headRefOid) {
-      if (entry.head) lines.push(`head-nuevo #${pr.number} ${pr.headRefOid.slice(0, 7)}`)
       entry.head = pr.headRefOid
       delete entry.ci
       delete entry.corrida
@@ -357,7 +357,9 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     let endedNow = false
     for (const issue of targets) {
       const step = advance(issue, world[issue], cursor[issue], merges)
-      lines.push(...step.lines)
+      for (const line of step.lines) {
+        if (!/^(review-publicado|head-nuevo) /.test(line) || !lines.includes(line)) lines.push(line)
+      }
       if (step.entry.fin && !cursor[issue]?.fin) endedNow = true
       next[issue] = step.entry
     }

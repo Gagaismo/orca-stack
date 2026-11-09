@@ -1105,6 +1105,9 @@ describe('orca-stack vigilar (#299)', () => {
     h.world.prs[0].headRefOid = DEF
     await once(h, ['7'])
     assert.ok(h.out.includes('head-nuevo #70 def5678'))
+    h.world.prs[0] = pr(70, { state: 'MERGED', head: ABC })
+    await once(h, ['7'])
+    assert.ok(h.out.includes('head-nuevo #70 abc1234'))
   })
 
   test('Rule 3: review and head events survive a rearm without repetition', async () => {
@@ -1113,8 +1116,8 @@ describe('orca-stack vigilar (#299)', () => {
     await once(h, ['7'])
     world.prs[0].headRefOid = DEF
     await once(h, ['7'])
-    assert.ok(h.out.includes('review-publicado #70 agy abc1234 bloquea=0'))
-    assert.ok(h.out.includes('head-nuevo #70 def5678'))
+    assert.equal(h.out.filter(line => line === 'review-publicado #70 agy abc1234 bloquea=0').length, 1)
+    assert.equal(h.out.filter(line => line === 'head-nuevo #70 def5678').length, 1)
     const rearmed = harness(world)
     rearmed.files[CURSOR] = JSON.stringify(h.cursor())
     await once(rearmed, ['7'])
