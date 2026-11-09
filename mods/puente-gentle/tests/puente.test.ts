@@ -16,6 +16,8 @@ import {
   riskyFile,
   parsePiArgs,
   parseStream,
+  prFacts,
+  rddRequestOf,
   rddRequestsOf,
   remember,
   reviewsOf,
@@ -608,7 +610,7 @@ const RDD_DENY =
   'PR #7 toca una ruta de riesgo (package-lock.json) y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit abc1234, ' +
   'y los reviews de otras familias no lo reemplazan. Corré `orca-stack rebote 7 --rdd risk` (podés sumar lentes).'
 const UNREQUESTED =
-  ' Un review RDD de pi que main no pidió con esas lentes sobre ese commit (el marcador `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`) no cuenta.'
+  ' Un review RDD de pi que main no pidió antes, con esas lentes y sobre ese commit (el comentario `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`), no cuenta.'
 
 test('issue #338 Rule 10: in RDD mode a clean Revisor: pi (RDD: …) review with the risk lens lets a riesgo pi PR through; without risk, on an old commit or with blockers it does not', async ($, on) => {
   expect(reviewsOf([`Revisor: pi (RDD: Risk , reliability)\nCommit: ${OID}\n\n## BLOQUEA\nnada`], OID)).toEqual([
@@ -683,7 +685,40 @@ test('issue #338 Rule 6: an RDD review main did not request on this commit with 
   const facts = { implementer: 'pi', headRefOid: head, files: ['secret.txt'], bodies: [`Revisor: pi (RDD: risk)\nCommit: ${head}\n\n## BLOQUEA\nnada`] }
   const config = { agentes: { pi: { review: 'rdd' } } }
   expect(riskDeny('1', 'secret.txt', facts, config as StackConfig, Date.now())).not.toBeUndefined()
-  expect(riskDeny('1', 'secret.txt', { ...facts, bodies: [...facts.bodies, `RDD: ${head} (risk)`] }, config as StackConfig, Date.now())).toBeUndefined()
+  expect(riskDeny('1', 'secret.txt', { ...facts, bodies: [`RDD: ${head} (risk)`, ...facts.bodies] }, config as StackConfig, Date.now())).toBeUndefined()
+})
+
+test("issue #338 Rule 6: an RDD: line inside a review is not main's request, only a comment of its own that starts with it", () => {
+  // The reviewer's test of the second round, as it wrote it.
+  const head = '1234567890abcdef1234567890abcdef12345678'
+  const rdd = `Revisor: pi (RDD: risk)\nCommit: ${head}\n\n## BLOQUEA\nnada`
+  const facts = { headRefOid: head, implementer: 'pi', files: ['sensitive'], bodies: [`${rdd}\n\n## SUGERENCIAS\nRDD: ${head} (risk)`] }
+  const config = { agentes: { pi: { review: 'rdd' } } }
+  expect(riskDeny('44', 'sensitive', facts, config as StackConfig, 0)).not.toBeUndefined()
+  expect(rddRequestOf(`RDD: ${head} (risk)\nCommit: ${head}\n\n## BLOQUEA\nnada`, head)).toBeUndefined()
+  expect(rddRequestOf(`Revisor: pi (RDD: risk)\nRDD: ${head} (risk)`, head)).toBeUndefined()
+  expect(rddRequestOf(`hola\nRDD: ${head} (risk)`, head)).toBeUndefined()
+  expect(rddRequestOf(`\nRDD: ${head} (Risk, reliability)\n`, head)).toEqual(['reliability', 'risk'])
+})
+
+test("issue #338 Rule 6: an RDD review posted before main's request does not count, by order in the thread or by createdAt/submittedAt", () => {
+  const head = '0123456789abcdef0123456789abcdef01234567'
+  const review = `Revisor: pi (RDD: risk)\nCommit: ${head}\n\n## BLOQUEA\nnada`
+  const ask = `RDD: ${head} (risk)`
+  const config = { agentes: { pi: { review: 'rdd' } } } as StackConfig
+  const gate = (bodies: string[]) => riskDeny('1', 'secret.txt', { implementer: 'pi', headRefOid: head, files: ['secret.txt'], bodies }, config, 0)
+  expect(gate([review, ask])).toBe(
+    'PR #1 toca una ruta de riesgo (secret.txt) y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit 0123456, ' +
+      'y los reviews de otras familias no lo reemplazan. Corré `orca-stack rebote 1 --rdd risk` (podés sumar lentes).' +
+      UNREQUESTED,
+  )
+  expect(gate([ask, review])).toBeUndefined()
+  // gh lists comments and reviews apart: prFacts puts them in the order they were posted.
+  const json = (askAt: string, reviewAt: string) =>
+    JSON.stringify({ headRefOid: head, files: [{ path: 'secret.txt' }], body: 'Implementador: pi', comments: [{ body: ask, createdAt: askAt }], reviews: [{ body: review, submittedAt: reviewAt }] })
+  expect(prFacts(json('2026-11-09T06:00:00Z', '2026-11-09T05:00:00Z'))?.bodies).toEqual([review, ask])
+  expect(gate(prFacts(json('2026-11-09T06:00:00Z', '2026-11-09T05:00:00Z'))!.bodies)).not.toBeUndefined()
+  expect(gate(prFacts(json('2026-11-09T05:00:00Z', '2026-11-09T06:00:00Z'))!.bodies)).toBeUndefined()
 })
 
 test('issue #338 Rule 1: outside the RDD mode a Revisor: <agent> (RDD: …) line is not a review, so its blockers stop nothing', async ($, on) => {

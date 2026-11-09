@@ -1141,16 +1141,26 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (continuar && nota !== undefined) throw new Error('--nota no vale con --continuar: el autor sigue con el brief del rebote.')
   if (continuar) return await continueBounce({ n, pr, agent, root, repo, config, commonDir, perfilPi, dryRun }, io)
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
-  // As puente-gentle's reviewsOf and rddRequestsOf: the first five lines, a sha abbreviated to 7+ characters still names
-  // the head, and only an RDD review main asked for (an `RDD: <sha> (<lentes>)` marker with the same lenses) counts.
+  // As puente-gentle's prFacts, reviewsOf and rddRequestOf: comments and reviews in the order they were posted, the
+  // first five lines, a sha abbreviated to 7+ characters still names the head, and an RDD review counts only after
+  // main's request with the same lenses: a comment of its own whose first non-empty line is `RDD: <sha> (<lentes>)`
+  // and that is not a review (no `Revisor:` line, no `## BLOQUEA`).
   const namesHead = commit => commit !== undefined && (commit.toLowerCase() === sha.toLowerCase() || (commit.length >= 7 && sha.toLowerCase().startsWith(commit.toLowerCase())))
   const lensKey = text => text.split(',').map(lens => lens.trim().toLowerCase()).filter(Boolean).sort().join(',')
-  const asked = new Set(allReviews.flatMap(item => [...reviewBody(item).matchAll(/^\s*RDD:\s*(\S+)\s*\(([^()]*)\)\s*$/gim)]
-    .filter(match => namesHead(match[1])).map(match => lensKey(match[2]))))
-  if (rdd && allReviews.some(item => {
+  const timeOf = item => Date.parse(String(item?.createdAt ?? item?.submittedAt ?? ''))
+  const posted = [...(pr.comments ?? []), ...(pr.reviews ?? [])]
+  const timeline = posted.every(item => !Number.isNaN(timeOf(item))) ? [...posted].sort((a, b) => timeOf(a) - timeOf(b)) : posted
+  const requestOf = body => {
+    const lines = body.split(/\r?\n/).map(line => line.trim())
+    if (lines.some(line => /^Revisor:/i.test(line) || /^##\s*BLOQUEA\b/i.test(line))) return undefined
+    const match = /^RDD:\s*(\S+)\s*\(([^()]*)\)$/i.exec(lines.find(line => line !== '') ?? '')
+    return match !== null && namesHead(match[1]) ? lensKey(match[2]) : undefined
+  }
+  if (rdd && timeline.some((item, at) => {
     const head = reviewBody(item).trimStart().split(/\r?\n/).slice(0, 5).join('\n')
     const lensesOf = /^\s*Revisor:\s*pi \(RDD:([^()]*)\)\s*$/mi.exec(head)?.[1]
-    return lensesOf !== undefined && namesHead(/^\s*Commit:\s*(\S+)\s*$/mi.exec(head)?.[1]) && asked.has(lensKey(lensesOf))
+    return lensesOf !== undefined && namesHead(/^\s*Commit:\s*(\S+)\s*$/mi.exec(head)?.[1]) &&
+      timeline.slice(0, at).some(earlier => requestOf(reviewBody(earlier)) === lensKey(lensesOf))
   })) throw new Error(`Ya hay un review RDD de pi sobre ${sha}.`)
   const ciMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote CI:\s*(\S+)\s*$/gim)].map(match => match[1]))
   const conflictMarkers = allReviews.flatMap(item => [...reviewBody(item).matchAll(/^Rebote conflicto:\s*(\S+)\s*$/gim)].map(match => match[1]))

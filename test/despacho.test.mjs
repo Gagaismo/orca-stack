@@ -1750,6 +1750,13 @@ describe('rebote', () => {
     const short = rddEnv(pr({ headRefOid: sha, body: 'Implementador: pi\nCloses #7', reviews: [{ body: 'RDD: abc1234 (reliability, risk)' }, { body: 'Revisor: pi (RDD: risk, reliability)\nCommit: abc1234\n\n## BLOQUEA\nnada' }] }))
     await assert.rejects(reboteCommand({ rdd: 'risk' }, '12', short.io), error => error.message === `Ya hay un review RDD de pi sobre ${sha}.`)
     assert.deepEqual(short.written, [])
+    // gh lists comments and reviews apart: the order that counts is createdAt and submittedAt.
+    const timed = (askAt, reviewAt) => rddEnv(pr({ body: 'Implementador: pi\nCloses #7', comments: [{ body: 'RDD: abc123 (risk)', createdAt: askAt }], reviews: [{ body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada', submittedAt: reviewAt }] }))
+    const asked = timed('2026-11-09T05:00:00Z', '2026-11-09T06:00:00Z')
+    await assert.rejects(reboteCommand({ rdd: 'risk' }, '12', asked.io), error => error.message === 'Ya hay un review RDD de pi sobre abc123.')
+    const before = timed('2026-11-09T06:00:00Z', '2026-11-09T05:00:00Z')
+    await reboteCommand({ rdd: 'risk' }, '12', before.io)
+    assert.ok(before.written.some(([file]) => file.endsWith('proj-pr-12-rebote-rdd.md')))
   })
 
   test('issue #338 Rule 6: an RDD review main did not ask for, or a request whose run never published, does not stop rebote --rdd', async () => {
@@ -1757,6 +1764,11 @@ describe('rebote', () => {
       [{ body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada' }],
       [{ body: 'RDD: abc123 (risk, reliability)' }, { body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada' }],
       [{ body: 'RDD: abc123 (risk)' }],
+      // An RDD: line inside a review, anywhere in it, is not main's request.
+      [{ body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada\n\n## SUGERENCIAS\nRDD: abc123 (risk)' }],
+      [{ body: 'RDD: abc123 (risk)\nCommit: abc123\n\n## BLOQUEA\nnada' }, { body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada' }],
+      // A review posted before the request does not answer it.
+      [{ body: 'Revisor: pi (RDD: risk)\nCommit: abc123\n\n## BLOQUEA\nnada' }, { body: 'RDD: abc123 (risk)' }],
     ]) {
       const env = rddEnv(pr({ body: 'Implementador: pi\nCloses #7', reviews: [], comments }))
       await reboteCommand({ rdd: 'risk' }, '12', env.io)
