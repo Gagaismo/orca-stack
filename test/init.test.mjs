@@ -47,7 +47,24 @@ describe('init', () => {
     assert.ok(read(path.join(repo, '.gitignore')).split(/\r?\n/).includes('.orca-stack.local.json'))
   })
 
+  test('Rule 1: without ~/orca/stack/MAIN.md, init writes the block and warns once naming the file and orca-stack global', () => {
+    const result = run()
+    assert.equal(result.status, 0, result.out)
+    assert.ok(read(path.join(repo, 'AGENTS.md')).includes('<!-- orca-stack:begin -->'))
+    const warnings = result.out.split(/\r?\n/).filter(line => line.includes('MAIN.md'))
+    assert.deepEqual(warnings, [`⚠ falta ~/orca/stack/MAIN.md, con las reglas de main a las que apunta el bloque: corré \`orca-stack global\``])
+    assert.doesNotMatch(result.out, /contrato de trabajo completo/)
+  })
+
+  test('Rule 1: with ~/orca/stack/MAIN.md installed, init prints no MAIN.md warning', () => {
+    write(path.join(home, 'orca', 'stack', 'MAIN.md'), '## Orca stack: reglas de `main`\n')
+    const result = run()
+    assert.equal(result.status, 0, result.out)
+    assert.doesNotMatch(result.out, /MAIN\.md/)
+  })
+
   test('AGENTS.md carries the full work contract and the policy lines; the contract is the same in every project', () => {
+    write(path.join(home, 'orca', 'stack', 'MAIN.md'), '## Orca stack: reglas de `main`\n')
     const result = run()
     assert.match(result.out, /el bloque orca-stack ahora lleva el contrato de trabajo completo/)
     const text = read(path.join(repo, 'AGENTS.md'))

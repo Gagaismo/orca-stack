@@ -352,7 +352,7 @@ const find = (removal: Removal, list: Worktree[]): Worktree[] => {
   }
 }
 
-const PERMISSION = 'Remover un worktree necesita el OK del humano (CONTRATO.md, "Permisos").'
+const PERMISSION = 'Remover un worktree necesita el OK del humano (~/orca/stack/MAIN.md, "Permisos").'
 
 export const unmergedReason = (branch: string, commits: string[]): string =>
   `La rama ${branch} tiene ${commits.length} commit(s) que no están en ningún remoto: ${commits.slice(0, 5).join(' | ')}. ` +

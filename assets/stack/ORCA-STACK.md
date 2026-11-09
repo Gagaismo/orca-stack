@@ -102,8 +102,8 @@ the Ponytail reviewer role keeps only its Lean findings and passes any
 non-Lean *Must fix* to main in one line. `ponytail-audit` is
 opt-in and repo-wide.
 
-Ticket authoring rules are defined in the project's `AGENTS.md` contract. `main`
-follows that contract when writing tickets; do not copy a second version here.
+Ticket authoring rules are defined in `~/orca/stack/MAIN.md` ("Ciclo de `main`", step 2).
+`main` follows them when writing tickets; do not copy a second version here.
 
 ## Communication contract
 

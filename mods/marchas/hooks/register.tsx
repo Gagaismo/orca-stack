@@ -112,7 +112,7 @@ const posture = (gear: Gear): string => {
     ],
     medium: [
       'Trabaj\u00e1 seg\u00fan ODD y el contrato.',
-      'Propon\u00e9 arena o swarm cuando un requisito muestre se\u00f1ales de la secci\u00f3n "Arena y swarm" del contrato.',
+      'Propon\u00e9 arena o swarm cuando un requisito muestre se\u00f1ales de la secci\u00f3n "Arena y swarm" de ~/orca/stack/MAIN.md.',
     ],
     proactive: [
       'Mir\u00e1 m\u00e1s all\u00e1 del pedido. Antes de actuar, hac\u00e9 que subagentes exploren su entorno (llamadores, vecinos, issues abiertos relacionados; primero ADRs y glosario, Engram como pista) para que riesgos y oportunidades aparezcan antes de causar problemas, y reserv\u00e1 tu contexto para orquestar; deleg\u00e1 temprano las unidades independientes.',
