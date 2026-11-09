@@ -187,6 +187,28 @@ describe('avisar', () => {
     }
   })
 
+  // Screens recorded with `orca terminal read --screen` from Gentle Shell (gentle-pi 4.7.0, pi 1.5.0) on 2026-11-09:
+  // busy is the #297 worker mid-turn ("─ ✾ implementing… ─"), idle the #334 worker after its PR ("─ ✿ waiting for input ─"); the one personal path is anonymized.
+  const piScreen = name => readFileSync(path.join(PACKAGE_ROOT, 'test', 'fixtures', 'pi-screens', `gentle-pi-4.7.0-${name}.txt`), 'utf8').replace(/\n$/, '').split('\n')
+  const piWorker = screen => fakeIo({ terminals: [terminal('term_pi', { identity: 'pi', title: 'pi' })], agents: [agent('term_pi', 'working', 'pi')], screens: { term_pi: screen } })
+
+  test('issue #341 Rule 1: a pi worker mid-turn on the recorded gentle-pi 4.7.0 screen gets the line', async () => {
+    const env = piWorker(piScreen('busy'))
+    assert.equal(await avisarCommand({}, '42', URL42, env.io), 0)
+    assert.equal(env.sends().length, 1)
+    assert.deepEqual(env.sends()[0].slice(3), ['--terminal', 'term_pi', '--text', LINE42, '--enter', '--wait-submit', '10', '--json'])
+    assert.ok(env.outputs.includes(`✔ Aviso enviado a term_pi (#42): ${LINE42}`))
+  })
+
+  test('issue #341 Rule 2: an idle pi on the recorded gentle-pi 4.7.0 screen is refused with the current message and gets nothing', async () => {
+    const env = piWorker(piScreen('idle'))
+    await assert.rejects(() => avisarCommand({}, '42', URL42, env.io), error => {
+      assert.equal(error.message, 'No veo el turno en curso en la pantalla de term_pi (#42): pudo haber terminado. No aviso.')
+      return true
+    })
+    assert.equal(env.sends().length, 0)
+  })
+
   test('Rule 1: avisar on a codex or agy worker sends the one-line pointer to its terminal', async () => {
     const prUrl = 'https://github.com/Gagaismo/orca-stack/pull/57#issuecomment-2002'
     for (const identity of ['codex', 'agy', 'antigravity']) {

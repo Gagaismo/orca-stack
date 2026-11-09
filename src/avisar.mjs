@@ -15,18 +15,19 @@ const COMMENT_URL = /^https:\/\/[^/\s]+\/([^/\s]+\/[^/\s]+)\/(?:issues|pull)\/(\
 const LIVE = ['working', 'blocked', 'waiting']
 // Positive signals, per agent: if a release changes one, avisar refuses instead of typing into an unknown screen.
 // Claude's spinner while a turn runs ("✢ Churning… (1m 2s · ↓ 3k tokens)"); a settled turn reads "✻ Baked for 2m 5s".
-// Pi's Gentle Shell prompt frame while it works ("╭─ ❀ implementing… ──╮": a spinning petal and the ODD phase, or
-// "working…"); idle, the petal stands alone ("╭─ ✿ ─────╮").
+// Pi's Gentle Shell prompt frame while it works: a spinning petal and the ODD phase, or "working…". Since gentle-pi
+// 4.7.0 the frame is a rule ("─ ❀ implementing… ─── INSERT ─") and idle reads "─ ✿ waiting for input ─── INSERT ─";
+// before, a box ("╭─ ❀ implementing… ──╮"), with the petal standing alone when idle ("╭─ ✿ ─────╮").
 // Codex and agy workers share the spinner pattern.
 const SPINNER = /^\s*[·✢✳✶✻✽]\s+\S[^\n]*…\s*\(\d+[smh]/mu
 const TURN_RUNNING = {
   claude: SPINNER,
-  pi: /^\s*╭─ [✿❀❁✾] [a-z]+… /mu,
+  pi: /^\s*╭?─ [✿❀❁✾] [a-z]+… /mu,
   codex: SPINNER,
   agy: SPINNER,
   antigravity: SPINNER,
 }
-export const PI_IDLE = /^\s*╭─ ✿ ─+╮\s*$/mu
+export const PI_IDLE = /^\s*(?:╭─ ✿ ─+╮\s*$|─ ✿ waiting for input ─)/mu
 const DIALOG = /trust this folder\?|Do you want to proceed\?|Esc to cancel/i
 // The spinner and dialogs render at the bottom; the transcript above them may quote the same words.
 export const SPINNER_LINES = 25
