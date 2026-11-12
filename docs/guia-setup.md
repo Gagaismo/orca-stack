@@ -48,7 +48,7 @@ Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el mét
 - [ ] Claude Code instalado.
 - [ ] En Windows, Go 1.25.10 o más nuevo en el `PATH` (el `postinstall` de gentle-pi compila con Go).
 - [ ] Orca, Engram, gentle-ai y Pi instalados. Si falta alguno, `global` lo detecta y te imprime el comando oficial.
-- [ ] Pi 1.2.0 o más nuevo (gentle-pi 4.7.0 no arranca con uno anterior; el stack se probó con Pi `1.5.0`) y Engram 3.4.0 o más nuevo (con uno anterior, Gentle Shell deja la memoria apagada).
+- [ ] Pi 1.2.0 o más nuevo (gentle-pi 4.7.0 no arranca con uno anterior; el stack se probó con Pi `1.5.2`) y Engram 3.4.0 o más nuevo (con uno anterior, Gentle Shell deja la memoria apagada).
 - [ ] Opcional, solo para la skill `statechart` (dibuja y verifica modelos TLA+): Node 22.18 a 22.x, Node 23.6 o más nuevo, Bun 1.1.5 o más nuevo, o Deno 2.0 o más nuevo, y `mise` en el `PATH`. La primera corrida descarga TLC y Java con mise y necesita red; con `TLA2TOOLS` (ruta a `tla2tools.jar`) y `JAVA` (un `java` 11 o más nuevo) se saltea mise. En Windows nativo no corre, porque arranca `/bin/sh`: usala desde WSL o un contenedor. `doctor` avisa (⚠, nunca ✖) si falta algo de esto.
 
 ### Instalar
@@ -65,8 +65,8 @@ npx github:Gagaismo/orca-stack#v0.18.0 doctor
 ```
 
 - `global` respalda todo lo que toca en `~/.orca-stack/backups/<fecha>/` y anota lo que instaló en `~/.orca-stack/state.json`. `remove` lo deshace.
-- Si Pi, gentle-pi, pi-claude-bridge o gentle-engram faltan o están en otra versión, `global` instala la versión fijada **aunque no uses `--force`** (`pi install npm:gentle-pi@4.7.0`, `npm i -g gentle-pi@4.7.0`, `pi install npm:pi-claude-bridge@0.11.0` y `pi install npm:gentle-engram@0.7.0`). Si querés conservar tus versiones de Pi, agregá `--skip-pi`.
-- Un Pi anterior a `1.5.0` se actualiza con `pi update --self` (va a la última versión) y, si sigue anterior, `global` no instala los paquetes y falla; si falta Pi, lo instala con `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.5.0` (sin `npm`, imprime el instalador oficial y sigue sin Pi); un Pi más nuevo no se toca, solo avisa. Si `pi update --self` no lo deja en `1.5.0` o más nuevo, actualizá Pi con el comando oficial que imprime y volvé a correrlo.
+- Si Pi, gentle-pi, pi-claude-bridge o gentle-engram faltan o están en otra versión, `global` instala la versión fijada **aunque no uses `--force`** (`pi install npm:gentle-pi@4.7.0`, `npm i -g gentle-pi@4.7.0`, `pi install npm:pi-claude-bridge@0.12.0` y `pi install npm:gentle-engram@0.7.0`). Si querés conservar tus versiones de Pi, agregá `--skip-pi`.
+- Un Pi anterior a `1.5.2` se actualiza con `pi update --self` (va a la última versión) y, si sigue anterior, `global` no instala los paquetes y falla; si falta Pi, lo instala con `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.5.2` (sin `npm`, imprime el instalador oficial y sigue sin Pi); un Pi más nuevo no se toca, solo avisa. Si `pi update --self` no lo deja en `1.5.2` o más nuevo, actualizá Pi con el comando oficial que imprime y volvé a correrlo.
 - Los workers de pi y la consulta a Gentle Shell comparten tu memoria de Engram (`~/.engram`, el servidor global): `gentle-engram` les da las herramientas de memoria y orca-stack no les fija `ENGRAM_DATA_DIR`, que desde gentle-pi 4.4.0 apaga la memoria.
 - Gentle Shell se actualiza volviendo a correr `global`. Desde gentle-pi 4.2.0, `gentle-shell update` reinstala solo el paquete global dueño del Pi que corre, y si no puede probar qué paquete global es dueño de Pi, no toca nada.
 - Al final, `global` sugiere `doctor` e `init` sin la etiqueta de versión. Usalos con `#v0.18.0`.

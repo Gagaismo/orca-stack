@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { INSTALL_HINTS, PINNED, PI_MIN_VERSION, PI_PACKAGES } from '../src/constants.mjs'
+import { compareVersions } from '../src/drift.mjs'
 import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
 let home
@@ -154,7 +155,7 @@ const fakeBin = ({ pi = true } = {}) => {
       "fs.appendFileSync(process.env.FAKE_LOG, name + ' ' + args.join(' ') + '\\n')",
       "const versionFile = require('path').join(__dirname, 'pi-version')",
       "const shim = n => process.platform === 'win32' ? [n + '.cmd', '@node \"%~dp0tool.js\" ' + n + ' %*\\r\\n'] : [n, '#!/bin/sh\\nexec node \"' + __filename + '\" ' + n + ' \"$@\"\\n']",
-      "if (name === 'pi' && args[0] === '--version') console.log(fs.existsSync(versionFile) ? fs.readFileSync(versionFile, 'utf8') : process.env.FAKE_PI_VERSION || '1.5.0')",
+      "if (name === 'pi' && args[0] === '--version') console.log(fs.existsSync(versionFile) ? fs.readFileSync(versionFile, 'utf8') : process.env.FAKE_PI_VERSION || '1.5.2')",
       "if (name === 'pi' && args[0] === 'update' && process.env.FAKE_PI_UPDATE_TO) fs.writeFileSync(versionFile, process.env.FAKE_PI_UPDATE_TO)",
       "if (name === 'npm' && args[0] === 'install' && args.some(a => a.startsWith('@earendil-works/pi-coding-agent@'))) { const [file, body] = shim('pi'); fs.writeFileSync(require('path').join(__dirname, file), body, { mode: 0o755 }); fs.writeFileSync(versionFile, args.at(-1).split('@').at(-1)) }",
       "if (name === 'pi' && args[0] === 'install' && process.env.FAKE_PI_FAIL) { console.error('npm error boom'); process.exit(1) }",
@@ -196,7 +197,7 @@ describe('4. Pi packages the user already had are never recorded as ours', () =>
     assert.match(result.out, /ejecuto: pi install npm:gentle-pi@4\.7\.0 \(ya tenías la 3\.0\.0/)
     assert.match(result.out, /ejecuto: npm i -g gentle-pi@4\.7\.0/)
     const state = JSON.parse(read(path.join(home, '.orca-stack', 'state.json')))
-    assert.deepEqual(state.pi.packagesInstalled, ['pi-claude-bridge@0.11.0', 'gentle-engram@0.7.0'])
+    assert.deepEqual(state.pi.packagesInstalled, ['pi-claude-bridge@0.12.0', 'gentle-engram@0.7.0'])
     assert.equal(state.pi.npmGlobalInstalled, false)
 
     const removed = cli(home, ['remove', '--with-pi'], { env: fake.env() })
@@ -217,7 +218,7 @@ describe('4. Pi packages the user already had are never recorded as ours', () =>
   })
 })
 
-describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engram 0.7.0 (#304, #321); Pi floor and Engram 3.4.0 (#115)', () => {
+describe('6. Pi 1.5.2, gentle-pi 4.7.0, pi-claude-bridge 0.12.0 and gentle-engram 0.7.0 (#304, #321); Pi floor and Engram 3.4.0 (#115)', () => {
   const piModules = name => path.join(home, '.pi', 'agent', 'npm', 'node_modules', name, 'package.json')
   const doctorLines = out => out.split(/\r?\n/).map(line => line.trim())
 
@@ -231,11 +232,11 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
     assert.match(log, /^npm i -g gentle-pi@4\.7\.0$/m)
   })
 
-  test('issue 304 rule 2a: Pi 1.4.0 → ejecuto: pi update --self → 1.5.0 → packages installed; doctor still only warns on 1.4.0', () => {
-    assert.equal(PINNED.pi, '1.5.0')
+  test('issue 304 rule 2a: Pi 1.4.0 → ejecuto: pi update --self → 1.5.2 → packages installed; doctor still only warns on 1.4.0', () => {
+    assert.equal(PINNED.pi, '1.5.2')
     assert.equal(PI_MIN_VERSION, '1.2.0')
     const fake = fakeBin()
-    const result = cli(home, ['global'], { env: fake.env({ FAKE_PI_VERSION: '1.4.0', FAKE_PI_UPDATE_TO: '1.5.0' }) })
+    const result = cli(home, ['global'], { env: fake.env({ FAKE_PI_VERSION: '1.4.0', FAKE_PI_UPDATE_TO: '1.5.2' }) })
     assert.equal(result.status, 0, result.out)
     assert.match(result.out, /ejecuto: pi update --self/)
     assert.doesNotMatch(result.out, /aviso: Pi/)
@@ -249,15 +250,15 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
     assert.ok(!JSON.parse(read(path.join(home, '.orca-stack', 'state.json'))).pi.piInstalled)
     cleanup(path.join(home, 'fake-bin', 'pi-version'))
     const doctor = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env({ FAKE_PI_VERSION: '1.4.0' }) }).out)
-    assert.ok(doctor.includes('⚠ pi 1.4.0 - el stack se probó con 1.5.0'), doctor.join('\n'))
+    assert.ok(doctor.includes('⚠ pi 1.4.0 - el stack se probó con 1.5.2'), doctor.join('\n'))
     assert.ok(!doctor.some(text => text.startsWith('✖ pi ')), doctor.join('\n'))
   })
 
-  test('issue 304 rule 2a: Pi 1.4.0 that pi update --self leaves older than 1.5.0 fails with the install hints and installs no package', () => {
+  test('issue 304 rule 2a: Pi 1.4.0 that pi update --self leaves older than 1.5.2 fails with the install hints and installs no package', () => {
     const fake = fakeBin()
     const result = cli(home, ['global'], { env: fake.env({ FAKE_PI_VERSION: '1.4.0' }) })
     assert.equal(result.status, 1, result.out)
-    assert.match(result.out, /✖ Pi 1\.4\.0 sigue siendo anterior a 1\.5\.0 después de pi update --self/)
+    assert.match(result.out, /✖ Pi 1\.4\.0 sigue siendo anterior a 1\.5\.2 después de pi update --self/)
     for (const line of INSTALL_HINTS.pi) {
       assert.ok(result.out.includes(line), line)
     }
@@ -268,19 +269,19 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
 
   test('issue 304 rule 2a: Pi 1.1.0, below the 1.2.0 floor, is updated too and then gets the packages', () => {
     const fake = fakeBin()
-    const result = cli(home, ['global'], { env: fake.env({ FAKE_PI_VERSION: '1.1.0', FAKE_PI_UPDATE_TO: '1.5.0' }) })
+    const result = cli(home, ['global'], { env: fake.env({ FAKE_PI_VERSION: '1.1.0', FAKE_PI_UPDATE_TO: '1.5.2' }) })
     assert.equal(result.status, 0, result.out)
     const log = readFileSync(fake.log, 'utf8')
     assert.ok(log.includes('pi update --self\n') && log.indexOf('pi update --self') < log.indexOf('pi install npm:gentle-pi@4.7.0'), log)
   })
 
-  test('issue 304 rule 2b: Pi missing → npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.5.0, then the packages; recorded for remove', () => {
+  test('issue 304 rule 2b: Pi missing → npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.5.2, then the packages; recorded for remove', () => {
     const fake = fakeBin({ pi: false })
     const result = cli(home, ['global'], { env: fake.env() })
     assert.equal(result.status, 0, result.out)
-    assert.match(result.out, /ejecuto: npm install -g --ignore-scripts @earendil-works\/pi-coding-agent@1\.5\.0/)
+    assert.match(result.out, /ejecuto: npm install -g --ignore-scripts @earendil-works\/pi-coding-agent@1\.5\.2/)
     const log = readFileSync(fake.log, 'utf8')
-    assert.match(log, /^npm install -g --ignore-scripts @earendil-works\/pi-coding-agent@1\.5\.0$/m)
+    assert.match(log, /^npm install -g --ignore-scripts @earendil-works\/pi-coding-agent@1\.5\.2$/m)
     assert.match(log, /^pi install npm:gentle-pi@4\.7\.0$/m)
     assert.match(log, /^pi install npm:gentle-engram@0\.7\.0$/m)
     assert.equal(JSON.parse(read(path.join(home, '.orca-stack', 'state.json'))).pi.piInstalled, true)
@@ -303,9 +304,9 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
 
   test('issue 304 rule 2c: Pi 1.6.0 is never downgraded; global keeps the soft warning and installs the packages', () => {
     const fake = fakeBin()
-    const result = cli(home, ['global'], { env: fake.env({ FAKE_PI_VERSION: '1.6.0', FAKE_PI_UPDATE_TO: '1.5.0' }) })
+    const result = cli(home, ['global'], { env: fake.env({ FAKE_PI_VERSION: '1.6.0', FAKE_PI_UPDATE_TO: '1.5.2' }) })
     assert.equal(result.status, 0, result.out)
-    assert.match(result.out, /aviso: Pi 1\.6\.0 instalado; este stack se probó con 1\.5\.0\./)
+    assert.match(result.out, /aviso: Pi 1\.6\.0 instalado; este stack se probó con 1\.5\.2\./)
     const log = readFileSync(fake.log, 'utf8')
     assert.doesNotMatch(log, /^pi update/m)
     assert.doesNotMatch(log, /pi-coding-agent/)
@@ -314,12 +315,12 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
 
   test('issue 304 rule 2d: --dry-run prints the update or install line and runs nothing; --skip-pi touches nothing', () => {
     const old = fakeBin()
-    const dry = cli(home, ['global', '--dry-run'], { env: old.env({ FAKE_PI_VERSION: '1.4.0', FAKE_PI_UPDATE_TO: '1.5.0' }) })
+    const dry = cli(home, ['global', '--dry-run'], { env: old.env({ FAKE_PI_VERSION: '1.4.0', FAKE_PI_UPDATE_TO: '1.5.2' }) })
     assert.equal(dry.status, 0, dry.out)
     assert.match(dry.out, /ejecuto: pi update --self/)
     assert.doesNotMatch(readFileSync(old.log, 'utf8'), /^(pi update|pi install|npm i)/m)
 
-    const skipped = cli(home, ['global', '--skip-pi'], { env: old.env({ FAKE_PI_VERSION: '1.4.0', FAKE_PI_UPDATE_TO: '1.5.0' }) })
+    const skipped = cli(home, ['global', '--skip-pi'], { env: old.env({ FAKE_PI_VERSION: '1.4.0', FAKE_PI_UPDATE_TO: '1.5.2' }) })
     assert.equal(skipped.status, 0, skipped.out)
     assert.doesNotMatch(readFileSync(old.log, 'utf8'), /^pi (update|install)/m)
 
@@ -328,16 +329,16 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
     const missing = fakeBin({ pi: false })
     const dryMissing = cli(home, ['global', '--dry-run'], { env: missing.env() })
     assert.equal(dryMissing.status, 0, dryMissing.out)
-    assert.match(dryMissing.out, /ejecuto: npm install -g --ignore-scripts @earendil-works\/pi-coding-agent@1\.5\.0/)
+    assert.match(dryMissing.out, /ejecuto: npm install -g --ignore-scripts @earendil-works\/pi-coding-agent@1\.5\.2/)
     assert.doesNotMatch(existsSync(missing.log) ? readFileSync(missing.log, 'utf8') : '', /^(npm install|pi )/m)
   })
 
-  test('issue 321 rule 3: pins pi-claude-bridge 0.11.0 and global installs it', () => {
-    assert.equal(PINNED.claudeBridge, '0.11.0')
+  test('issue 321 rule 3: pins pi-claude-bridge 0.12.0 and global installs it', () => {
+    assert.equal(PINNED.claudeBridge, '0.12.0')
     const fake = fakeBin()
     const result = cli(home, ['global'], { env: fake.env() })
     assert.equal(result.status, 0, result.out)
-    assert.match(readFileSync(fake.log, 'utf8'), /^pi install npm:pi-claude-bridge@0\.11\.0$/m)
+    assert.match(readFileSync(fake.log, 'utf8'), /^pi install npm:pi-claude-bridge@0\.12\.0$/m)
   })
 
   test('issue 321 rule 3: PI_PACKAGES has gentle-engram 0.7.0 and global runs pi install npm:gentle-engram@0.7.0', () => {
@@ -365,7 +366,7 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
   test('issue 321 rule 1: README and docs/guia-setup.md name the new versions and the shared ~/.engram memory', () => {
     for (const doc of ['README.md', path.join('docs', 'guia-setup.md')]) {
       const text = read(path.join(ROOT, doc))
-      for (const needle of ['pi install npm:gentle-pi@4.7.0', 'npm i -g gentle-pi@4.7.0', 'pi-claude-bridge@0.11.0', 'gentle-engram@0.7.0', 'Pi `1.5.0`']) {
+      for (const needle of ['pi install npm:gentle-pi@4.7.0', 'npm i -g gentle-pi@4.7.0', 'pi-claude-bridge@0.12.0', 'gentle-engram@0.7.0', 'Pi `1.5.2`']) {
         assert.ok(text.includes(needle), `${doc}: ${needle}`)
       }
       assert.match(text, /workers de pi y la consulta[^\n]*comparten[^\n]*`~\/\.engram`/, doc)
@@ -374,8 +375,8 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
     }
   })
 
-  test('issue 321 rule 1: PINNED holds gentle-pi 4.7.0, pi-claude-bridge 0.11.0, gentle-engram 0.7.0 and Pi 1.5.0, and no other pin of them is written anywhere', () => {
-    assert.deepEqual(PINNED, { pi: '1.5.0', gentlePi: '4.7.0', claudeBridge: '0.11.0', gentleEngram: '0.7.0' })
+  test('issue 321 rule 1: PINNED holds gentle-pi 4.7.0, pi-claude-bridge 0.12.0, gentle-engram 0.7.0 and Pi 1.5.2, and no other pin of them is written anywhere', () => {
+    assert.deepEqual(PINNED, { pi: '1.5.2', gentlePi: '4.7.0', claudeBridge: '0.12.0', gentleEngram: '0.7.0' })
     const pinned = { 'gentle-pi': PINNED.gentlePi, 'pi-claude-bridge': PINNED.claudeBridge, 'gentle-engram': PINNED.gentleEngram }
     const files = git(ROOT, 'ls-files', '--', 'src', 'docs', 'README.md', 'test').stdout.split('\n').filter(Boolean)
     assert.ok(files.includes('README.md') && files.includes('src/constants.mjs'), files.join('\n'))
@@ -390,18 +391,62 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
     assert.match(help.out, /Pi anterior a 1\.2\.0 no instala gentle-pi y falla: gentle-pi 4\.7\.0 no arranca con él/)
   })
 
-  test('issue 321 rule 2: doctor shows ✔ for gentle-pi 4.7.0 and pi-claude-bridge 0.11.0 and ⚠ naming the pinned version for any other', () => {
+  test('issue 321 rule 2: doctor shows ✔ for gentle-pi 4.7.0 and pi-claude-bridge 0.12.0 and ⚠ naming the pinned version for any other', () => {
     const fake = fakeBin()
     write(piModules('gentle-pi'), '{"version":"4.7.0"}')
-    write(piModules('pi-claude-bridge'), '{"version":"0.11.0"}')
+    write(piModules('pi-claude-bridge'), '{"version":"0.12.0"}')
     const pinned = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env() }).out)
     assert.ok(pinned.includes('✔ gentle-pi 4.7.0'), pinned.join('\n'))
-    assert.ok(pinned.includes('✔ pi-claude-bridge 0.11.0'), pinned.join('\n'))
+    assert.ok(pinned.includes('✔ pi-claude-bridge 0.12.0'), pinned.join('\n'))
     write(piModules('gentle-pi'), '{"version":"4.6.9"}')
     write(piModules('pi-claude-bridge'), '{"version":"0.10.9"}')
     const older = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env() }).out)
     assert.ok(older.includes('⚠ gentle-pi 4.6.9 - esperado 4.7.0'), older.join('\n'))
-    assert.ok(older.includes('⚠ pi-claude-bridge 0.10.9 - esperado 0.11.0'), older.join('\n'))
+    assert.ok(older.includes('⚠ pi-claude-bridge 0.10.9 - esperado 0.12.0'), older.join('\n'))
+  })
+
+  test('issue 353 rule 1: PINNED holds Pi 1.5.2 and pi-claude-bridge 0.12.0, and no 1.5.0 or 0.11.0 pin is left in src, README or docs', () => {
+    assert.deepEqual(PINNED, { pi: '1.5.2', gentlePi: '4.7.0', claudeBridge: '0.12.0', gentleEngram: '0.7.0' })
+    const files = git(ROOT, 'ls-files', '--', 'src', 'docs', 'README.md').stdout.split('\n').filter(Boolean)
+    assert.ok(files.includes('README.md') && files.includes('src/constants.mjs'), files.join('\n'))
+    const stale = []
+    for (const file of files) {
+      read(path.join(ROOT, file)).split(/\r?\n/).forEach((line, index) => {
+        // `\b` skips release tags such as `orca-stack#v0.11.0`: they name orca-stack's own version, not a pin.
+        if (/\b(?:1\.5\.0|0\.11\.0)\b/.test(line)) stale.push(`${file}:${index + 1}: ${line.trim()}`)
+      })
+    }
+    assert.deepEqual(stale, [])
+  })
+
+  test('issue 353 rule 2: doctor shows ✔ pi 1.5.2 and ✔ pi-claude-bridge 0.12.0, and warns on Pi 1.5.0 and pi-claude-bridge 0.11.0 naming the pins', () => {
+    const fake = fakeBin()
+    write(piModules('pi-claude-bridge'), '{"version":"0.12.0"}')
+    const pinned = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env({ FAKE_PI_VERSION: '1.5.2' }) }).out)
+    assert.ok(pinned.some(text => text.startsWith('✔ pi 1.5.2')), pinned.join('\n'))
+    assert.ok(pinned.includes('✔ pi-claude-bridge 0.12.0'), pinned.join('\n'))
+    write(piModules('pi-claude-bridge'), '{"version":"0.11.0"}')
+    const older = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env({ FAKE_PI_VERSION: '1.5.0' }) }).out)
+    assert.ok(older.includes('⚠ pi 1.5.0 - el stack se probó con 1.5.2'), older.join('\n'))
+    assert.ok(older.includes('⚠ pi-claude-bridge 0.11.0 - esperado 0.12.0'), older.join('\n'))
+  })
+
+  test('issue 353 rule 3: Pi 1.5.0 is updated with pi update --self; left at 1.5.1 it fails naming 1.5.2 and installs no package', () => {
+    const fake = fakeBin()
+    const result = cli(home, ['global'], { env: fake.env({ FAKE_PI_VERSION: '1.5.0', FAKE_PI_UPDATE_TO: '1.5.1' }) })
+    assert.equal(result.status, 1, result.out)
+    assert.match(result.out, /ejecuto: pi update --self/)
+    assert.match(result.out, /✖ Pi 1\.5\.1 sigue siendo anterior a 1\.5\.2 después de pi update --self/)
+    const log = readFileSync(fake.log, 'utf8')
+    assert.match(log, /^pi update --self$/m)
+    assert.doesNotMatch(log, /^(pi install|npm i -g)/m)
+  })
+
+  test('issue 353 rule 4: PINNED.pi is at least 1.5.1, the peer floor of pi-claude-bridge 0.12.0', () => {
+    // pi-claude-bridge 0.12.0 declares peerDependencies @earendil-works/pi-ai and pi-coding-agent >=1.5.1:
+    // pinning Pi below that would install a bridge that cannot run on it.
+    assert.equal(PINNED.claudeBridge, '0.12.0')
+    assert.ok(compareVersions(PINNED.pi, '1.5.1') >= 0, `PINNED.pi ${PINNED.pi} is below 1.5.1, the peer range of pi-claude-bridge 0.12.0`)
   })
 
   test('issue 115 rule 2: with Pi 1.1.0, global installs no gentle-pi and fails naming both versions and the Pi install hint', () => {
@@ -433,13 +478,13 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
   test('global (preserved): already at the pinned versions it installs nothing and says ya está instalado', () => {
     const fake = fakeBin()
     write(piModules('gentle-pi'), '{"version":"4.7.0"}')
-    write(piModules('pi-claude-bridge'), '{"version":"0.11.0"}')
+    write(piModules('pi-claude-bridge'), '{"version":"0.12.0"}')
     write(piModules('gentle-engram'), '{"version":"0.7.0"}')
     write(path.join(home, 'npm-global', 'gentle-pi', 'package.json'), '{"version":"4.7.0"}')
     const result = cli(home, ['global'], { env: fake.env() })
     assert.equal(result.status, 0, result.out)
     assert.match(result.out, /gentle-pi@4\.7\.0 ya está instalado/)
-    assert.match(result.out, /pi-claude-bridge@0\.11\.0 ya está instalado/)
+    assert.match(result.out, /pi-claude-bridge@0\.12\.0 ya está instalado/)
     assert.match(result.out, /gentle-engram@0\.7\.0 ya está instalado/)
     assert.match(result.out, /gentle-pi@4\.7\.0 global ya está instalado/)
     assert.doesNotMatch(readFileSync(fake.log, 'utf8'), /^(pi install|npm i -g)/m)
@@ -448,9 +493,9 @@ describe('6. Pi 1.5.0, gentle-pi 4.7.0, pi-claude-bridge 0.11.0 and gentle-engra
   test('doctor (preserved): the pinned Pi passes, a newer one only warns, and a missing engram still warns', () => {
     const fake = fakeBin()
     const pinned = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env() }).out)
-    assert.ok(pinned.some(text => text.startsWith('✔ pi 1.5.0')), pinned.join('\n'))
+    assert.ok(pinned.some(text => text.startsWith('✔ pi 1.5.2')), pinned.join('\n'))
     const newer = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env({ FAKE_PI_VERSION: '1.6.0' }) }).out)
-    assert.ok(newer.includes('⚠ pi 1.6.0 - el stack se probó con 1.5.0'), newer.join('\n'))
+    assert.ok(newer.includes('⚠ pi 1.6.0 - el stack se probó con 1.5.2'), newer.join('\n'))
     const pathKey = Object.keys(process.env).find(key => key.toLowerCase() === 'path')
     const noEngram = doctorLines(cli(home, ['doctor', '--offline', '--skip-pi'], { env: { [pathKey]: path.join(home, 'missing-path') } }).out)
     assert.ok(noEngram.includes('⚠ engram - no se encontró (memoria persistente)'), noEngram.join('\n'))
