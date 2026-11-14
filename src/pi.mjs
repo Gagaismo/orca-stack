@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs'
 import path from 'node:path'
 
 import { INSTALL_HINTS, PINNED, PI_MIN_VERSION, PI_NPM_PACKAGE, PI_PACKAGES } from './constants.mjs'
@@ -36,6 +36,39 @@ export const installedPackageVersion = (modulesDir, name) => {
 }
 
 export const piModulesDir = L => path.join(L.piAgent, 'npm', 'node_modules')
+
+// Folder of gentle-shell's self-contained install (gentle-shell 4.8.0 docs/bundled-install.md): %LOCALAPPDATA%\gentle-shell on
+// Windows, ~/.gentle-shell elsewhere. Under ORCA_STACK_HOME the real LOCALAPPDATA is never read, as in orcaDataDir.
+export const bundledShellDir = L =>
+  process.platform === 'win32'
+    ? path.join((!process.env.ORCA_STACK_HOME && process.env.LOCALAPPDATA) || path.join(L.home, 'AppData', 'Local'), 'gentle-shell')
+    : path.join(L.home, '.gentle-shell')
+
+// `current` names the installed version as `<gentle-shell>-<pi>`, e.g. `4.8.0-1.5.2`: {shell, pi}, or null for any other text.
+export const parseBundledCurrent = text => {
+  const match = /^(\d+\.\d+\.\d+)-(\d+\.\d+\.\d+)$/.exec(String(text ?? '').trim())
+
+  return match ? { shell: match[1], pi: match[2] } : null
+}
+
+// The self-contained install: null when its `current` is absent, else { dir, file, shell, pi } with shell null when
+// `current` is unreadable. `current` is a text file on Windows and a symlink to versions/<id> elsewhere. Never throws.
+export const readBundledShell = L => {
+  const dir = bundledShellDir(L)
+  const file = path.join(dir, 'current')
+  let text
+  try {
+    text = lstatSync(file).isSymbolicLink() ? path.basename(readlinkSync(file)) : readFileSync(file, 'utf8')
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
+      return null
+    }
+    text = ''
+  }
+  const parsed = parseBundledCurrent(text)
+
+  return { dir, file, shell: parsed?.shell ?? null, pi: parsed?.pi ?? null }
+}
 
 export const npmGlobalRoot = () => {
   const npm = which('npm')
@@ -151,7 +184,7 @@ const installPi = ctx => {
 }
 
 // Installs Pi when it is missing or older than the pin, its packages through Pi's own mechanism and gentle-pi globally
-// (for the gentle-shell bin).
+// (for the gentle-shell bin), unless gentle-shell's self-contained install provides that bin (#359).
 export const setupPi = (ctx, { skipPi }) => {
   const L = ctx.L
   ctx.say('\nPi (Gentle Shell)')
@@ -186,6 +219,16 @@ export const setupPi = (ctx, { skipPi }) => {
     }
   }
 
+  const bundled = readBundledShell(L)
+  if (bundled?.shell) {
+    if (compareVersions(bundled.shell, PINNED.gentlePi) >= 0) {
+      ctx.say(`  encontré gentle-shell ${bundled.shell} autocontenido en ${bundled.dir}: no instalo gentle-pi global con npm`)
+    } else {
+      ctx.fail(`gentle-shell ${bundled.shell} autocontenido es anterior a ${PINNED.gentlePi}: ejecutá gentle-shell upgrade`)
+    }
+
+    return
+  }
   const npm = which('npm')
   if (!npm) {
     ctx.say('  npm no está en el PATH: no pude instalar gentle-pi global (el comando gentle-shell).')
