@@ -37,6 +37,48 @@ export const installedPackageVersion = (modulesDir, name) => {
 
 export const piModulesDir = L => path.join(L.piAgent, 'npm', 'node_modules')
 
+const REMOTE_SOURCE = /^(npm:|git:|git\+|https?:|ssh:)/
+
+// Packages Pi loads from a local checkout (the user's own fork), by package name (#362). Pi resolves a relative
+// entry from the folder of the settings.json that holds it. An unreadable file or entry counts as none.
+export const localPiPackages = L => {
+  const found = new Map()
+  let packages
+  try {
+    packages = JSON.parse(readFileSync(path.join(L.piAgent, 'settings.json'), 'utf8')).packages
+  } catch {
+    return found
+  }
+  for (const entry of Array.isArray(packages) ? packages : []) {
+    const source = typeof entry === 'string' ? entry : entry?.source
+    if (typeof source !== 'string' || REMOTE_SOURCE.test(source)) {
+      continue
+    }
+    const dir = path.resolve(L.piAgent, source)
+    try {
+      const { name, version } = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))
+      if (typeof name === 'string' && !found.has(name)) {
+        found.set(name, { dir, version: typeof version === 'string' ? version : null })
+      }
+    } catch {
+      // Not a package: Pi loads it as a plain extension file or folder, nothing to compare.
+    }
+  }
+
+  return found
+}
+
+// What global and doctor say about a local checkout: its version against the pinned one.
+export const describeCheckout = (pkg, checkout) => {
+  const older = checkout.version !== null && compareVersions(checkout.version, pkg.version) < 0
+
+  return {
+    label: `${pkg.name} ${checkout.version ?? '(sin versión)'}`,
+    older,
+    note: older ? `anterior a ${pkg.version}: actualizá tu checkout` : null,
+  }
+}
+
 // Folder of gentle-shell's self-contained install (gentle-shell 4.8.0 docs/bundled-install.md): %LOCALAPPDATA%\gentle-shell on
 // Windows, ~/.gentle-shell elsewhere. Under ORCA_STACK_HOME the real LOCALAPPDATA is never read, as in orcaDataDir.
 export const bundledShellDir = L =>
@@ -198,7 +240,15 @@ export const setupPi = (ctx, { skipPi }) => {
   if (!bin) {
     return
   }
+  const local = localPiPackages(L)
   for (const pkg of PI_PACKAGES) {
+    const checkout = local.get(pkg.name)
+    if (checkout) {
+      // The user's own checkout of the package: installing the npm one would load both (#362).
+      const { label, note } = describeCheckout(pkg, checkout)
+      ctx.say(`  ${label}: uso tu checkout local en ${checkout.dir}${note ? ` (${note})` : ''}`)
+      continue
+    }
     const have = installedPackageVersion(piModulesDir(L), pkg.name)
     if (have === pkg.version) {
       ctx.say(`  ${pkg.name}@${pkg.version} ya está instalado`)
