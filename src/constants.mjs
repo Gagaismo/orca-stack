@@ -3,7 +3,7 @@
 // PINNED.pi stays at or above 1.5.1: pi-claude-bridge 0.12.0 declares that peer range for pi-ai and pi-coding-agent (#353).
 export const PINNED = {
   pi: '1.5.2',
-  gentlePi: '4.7.0',
+  gentlePi: '4.8.0',
   claudeBridge: '0.12.0',
   gentleEngram: '0.7.0',
 }
