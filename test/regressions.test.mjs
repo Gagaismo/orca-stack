@@ -615,3 +615,73 @@ describe('7. gentle-shell 4.8.0 and its self-contained install (#359)', () => {
     assert.ok(old.includes('⚠ comando gentle-shell - 4.6.0 autocontenido es anterior a 4.8.0: ejecutá gentle-shell upgrade'), old.join('\n'))
   })
 })
+
+describe('8. a local gentle-pi checkout in Pi packages (#362)', () => {
+  const doctorLines = out => out.split(/\r?\n/).map(line => line.trim())
+  const settingsFile = () => path.join(home, '.pi', 'agent', 'settings.json')
+  const checkout = (name, version) => {
+    const dir = path.join(home, 'src', 'gentle-shell')
+    write(path.join(dir, 'package.json'), JSON.stringify(version === undefined ? { name } : { name, version }))
+    return dir
+  }
+  const declare = (...packages) => write(settingsFile(), JSON.stringify({ packages }))
+  const installs = fake => (existsSync(fake.log) ? readFileSync(fake.log, 'utf8') : '')
+
+  test('issue 362 rule 1: global leaves a local gentle-pi checkout alone, says so, warns when it is older, and still installs the other packages', () => {
+    const fake = fakeBin()
+    const dir = checkout('gentle-pi', '4.8.0')
+    declare(dir, 'npm:pi-claude-bridge')
+    const current = cli(home, ['global'], { env: fake.env() })
+    assert.equal(current.status, 0, current.out)
+    assert.doesNotMatch(installs(fake), /^pi install npm:gentle-pi@/m)
+    assert.match(installs(fake), /^pi install npm:pi-claude-bridge@/m)
+    assert.ok(current.out.includes(`gentle-pi 4.8.0: uso tu checkout local en ${dir}`), current.out)
+    assert.ok(!current.out.includes('anterior a 4.8.0: actualizá tu checkout'), current.out)
+
+    rmSync(fake.log, { force: true })
+    checkout('gentle-pi', '4.7.0')
+    // A relative entry resolves from the folder that holds settings.json, as Pi does.
+    declare(path.relative(path.dirname(settingsFile()), dir))
+    const older = cli(home, ['global'], { env: fake.env() })
+    assert.equal(older.status, 0, older.out)
+    assert.doesNotMatch(installs(fake), /^pi install npm:gentle-pi@/m)
+    assert.ok(older.out.includes(`gentle-pi 4.7.0: uso tu checkout local en ${dir} (anterior a 4.8.0: actualizá tu checkout)`), older.out)
+  })
+
+  test('issue 362 rule 2: a local entry that is not gentle-pi, has no package.json, or an unreadable settings.json keeps today\'s pi install', () => {
+    const fake = fakeBin()
+    const cases = [
+      () => declare(checkout('pi-foo', '1.0.0')),
+      () => declare(path.join(home, 'src', 'nothing-here')),
+    ]
+    for (const [index, arrange] of cases.entries()) {
+      rmSync(path.join(home, 'src'), { recursive: true, force: true })
+      rmSync(fake.log, { force: true })
+      arrange()
+      const result = cli(home, ['global'], { env: fake.env() })
+      assert.equal(result.status, 0, `case ${index}: ${result.out}`)
+      assert.doesNotMatch(result.out, /TypeError|at .*\.mjs:\d+/, `case ${index}`)
+      assert.match(installs(fake), new RegExp(`^pi install npm:gentle-pi@${PINNED.gentlePi.replaceAll('.', '\.')}$`, 'm'), `case ${index}`)
+      assert.ok(!result.out.includes('uso tu checkout local'), `case ${index}`)
+    }
+    // An unreadable settings.json still stops global before any write, as it already did.
+    write(settingsFile(), 'basura')
+    const broken = cli(home, ['global'], { env: fake.env() })
+    assert.equal(broken.status, 1, broken.out)
+    assert.match(broken.out, /settings\.json: JSON inválido .*No lo toqué/)
+    assert.doesNotMatch(broken.out, /TypeError|at .*\.mjs:\d+/)
+  })
+
+  test('issue 362 rule 3: doctor passes an up-to-date local gentle-pi checkout without the npm copy, and warns when it is older', () => {
+    const fake = fakeBin()
+    const dir = checkout('gentle-pi', '4.8.0')
+    declare(dir)
+    const current = cli(home, ['doctor', '--offline'], { env: fake.env() })
+    assert.ok(doctorLines(current.out).includes(`✔ gentle-pi 4.8.0 - checkout local en ${dir}`), current.out)
+    assert.ok(!doctorLines(current.out).some(line => line.startsWith('✖ gentle-pi')), current.out)
+
+    checkout('gentle-pi', '4.7.0')
+    const older = cli(home, ['doctor', '--offline'], { env: fake.env() })
+    assert.ok(doctorLines(older.out).includes(`⚠ gentle-pi 4.7.0 - checkout local en ${dir}; anterior a 4.8.0: actualizá tu checkout`), older.out)
+  })
+})

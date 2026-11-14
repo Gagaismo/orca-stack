@@ -15,7 +15,7 @@ import { knownSddLeftovers } from './sdd-cleanup.mjs'
 import { removeAnyBlock } from './marker.mjs'
 import { checkPathCommand } from './path-command.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
-import { installedPackageVersion, npmGlobalRoot, piBinary, piModulesDir, piTooOld, readBundledShell, resolveGentleSkills } from './pi.mjs'
+import { describeCheckout, installedPackageVersion, localPiPackages, npmGlobalRoot, piBinary, piModulesDir, piTooOld, readBundledShell, resolveGentleSkills } from './pi.mjs'
 import { codexCodemodeStatus, piCodemodeStatus } from './codemode.mjs'
 import { parseSettings } from './settings.mjs'
 import { assetPath, listDirs, wrapperFile } from './templates.mjs'
@@ -404,7 +404,14 @@ export const doctorCommand = async flags => {
     } else {
       add(version === PINNED.pi ? 'ok' : 'warn', `pi ${version ?? '(versión ilegible)'}`, version === PINNED.pi ? tilde(bin, home) : `el stack se probó con ${PINNED.pi}`)
     }
+    const local = localPiPackages(L)
     for (const pkg of PI_PACKAGES) {
+      const checkout = local.get(pkg.name)
+      if (checkout) {
+        const { label, older, note } = describeCheckout(pkg, checkout)
+        add(older ? 'warn' : 'ok', label, `checkout local en ${checkout.dir}${note ? `; ${note}` : ''}`)
+        continue
+      }
       const have = installedPackageVersion(piModulesDir(L), pkg.name)
       if (have === null) {
         add('fail', `${pkg.name}`, `no está instalado en Pi (esperado ${pkg.version})`)
