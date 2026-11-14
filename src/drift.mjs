@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
-import { INSTALL_HINTS, MATT_MIN_VERSION, MATT_REQUIRED_SKILLS } from './constants.mjs'
+import { GRILL_SKILLS, INSTALL_HINTS, MATT_MIN_VERSION, MATT_REQUIRED_SKILLS } from './constants.mjs'
 import { hasLegacyOrchestratorMode, isLazyBlock, orchestratorMode, rddMode, readPersonalConfig, sddBlock, trimReviewSections } from './gentle.mjs'
+import { assetPath } from './templates.mjs'
 import { which } from './util.mjs'
 
 const readJson = file => {
@@ -62,12 +63,24 @@ export const driftWarnings = L => {
     })
   }
   const shipped = matt ? pluginSkills(matt.installPath) : []
-  const duplicated = shipped.filter(name => existsSync(path.join(L.claudeSkills, name)))
+  // orca-stack's grill skills shadow the plugin's short names on purpose.
+  const duplicated = shipped.filter(name => !GRILL_SKILLS.includes(name) && existsSync(path.join(L.claudeSkills, name)))
   if (duplicated.length > 0) {
     found.push({
       label: 'skills duplicadas en ~/.claude/skills',
       detail: `${duplicated.join(', ')} también las trae el plugin y quedan dos veces en el contexto: \`npx skills remove ${duplicated.join(' ')} -g -a claude-code -y\``,
     })
+  }
+  for (const [root, shown] of [[L.claudeSkills, '~/.claude/skills'], [L.agentsSkills, '~/.agents/skills']]) {
+    for (const name of GRILL_SKILLS) {
+      const file = path.join(root, name, 'SKILL.md')
+      if (existsSync(file) && !readFileSync(file).equals(readFileSync(assetPath('skills', name, 'SKILL.md')))) {
+        found.push({
+          label: `skill ${name} en ${shown}`,
+          detail: 'difiere de la que trae orca-stack (`npx skills update` pudo traer la de Matt Pocock): corré `orca-stack global`',
+        })
+      }
+    }
   }
   const missing = MATT_REQUIRED_SKILLS.filter(name => !existsSync(path.join(L.agentsSkills, name, 'SKILL.md')))
   if (missing.length > 0) {

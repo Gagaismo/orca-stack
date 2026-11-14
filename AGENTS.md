@@ -156,7 +156,7 @@ Sin bloqueos, `## BLOQUEA` dice `nada`. Sin CI, el revisor corre la suite comple
 | La interfaz de un módulo o dónde va un seam | `codebase-design` |
 | Un paso que solo puede hacer un humano | `wizard` |
 
-En Claude se invocan con `/mattpocock-skills:<skill>`, con el slash al principio del mensaje. En agy y codex se piden en prosa. `grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano. Si una invocación no toma, abrí el `SKILL.md` por ruta y seguilo.
+En Claude se invocan con `/mattpocock-skills:<skill>`, con el slash al principio del mensaje; `grill-with-docs` y `grill-me` son de orca-stack (solo preguntan lo que el agente no puede resolver sin el humano) y se invocan como `/grill-with-docs` y `/grill-me`. En agy y codex se piden en prosa. `grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano. Si una invocación no toma, abrí el `SKILL.md` por ruta y seguilo.
 
 ### Avances
 

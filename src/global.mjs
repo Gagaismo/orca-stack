@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
 
-import { INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
+import { GRILL_SKILLS, INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
 import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestratorMode, rddMode, readPersonalConfig, refreshLazyPointer, restoreBlock, sddBlock, trimReviewSections } from './gentle.mjs'
 import { cleanupKnownSdd } from './sdd-cleanup.mjs'
@@ -69,16 +69,27 @@ const installSkills = ctx => {
   for (const root of [ctx.L.claudeSkills, ctx.L.agentsSkills]) {
     for (const name of names) {
       const dir = assetPath('skills', name)
+      // Matt's copies of the grill skills are replaced (with a backup), not skipped: orca-stack's version is the one meant to run.
+      const replaceForeign = GRILL_SKILLS.includes(name)
+      const write = (file, content, options = {}) => {
+        const data = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8')
+        const foreign = replaceForeign && !ctx.state.files[file] && existsSync(file) && !readFileSync(file).equals(data)
+        if (foreign) {
+          ctx.act(`  ↻ ${ctx.show(file)} no era de orca-stack (probablemente la copia de Matt Pocock): la reemplazo, con respaldo`)
+        }
+
+        return ctx.writeOwned(file, data, foreign ? { ...options, force: true } : options)
+      }
       for (const rel of listFiles(dir)) {
         const file = path.join(root, name, ...rel.split('/'))
         if (rel.endsWith('.md')) {
-          ctx.writeOwned(file, render(readFileSync(path.join(dir, rel), 'utf8'), vars))
+          write(file, render(readFileSync(path.join(dir, rel), 'utf8'), vars))
           continue
         }
         // Other files go out byte for byte; a script with a shebang (statechart's launcher) stays runnable.
         const data = readFileSync(path.join(dir, rel))
         const executable = !isWindows() && data.subarray(0, 2).toString() === '#!'
-        const status = ctx.writeOwned(file, data, { mode: executable ? 0o755 : undefined })
+        const status = write(file, data, { mode: executable ? 0o755 : undefined })
         // writeOwned applies the mode only when it writes; an unchanged copy may have lost its executable bit.
         if (executable && status !== 'skipped' && !ctx.dryRun && existsSync(file)) {
           chmodSync(file, 0o755)
