@@ -15,7 +15,7 @@ import { knownSddLeftovers } from './sdd-cleanup.mjs'
 import { removeAnyBlock } from './marker.mjs'
 import { checkPathCommand } from './path-command.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
-import { installedPackageVersion, piBinary, piModulesDir, piTooOld, resolveGentleSkills } from './pi.mjs'
+import { installedPackageVersion, npmGlobalRoot, piBinary, piModulesDir, piTooOld, readBundledShell, resolveGentleSkills } from './pi.mjs'
 import { codexCodemodeStatus, piCodemodeStatus } from './codemode.mjs'
 import { parseSettings } from './settings.mjs'
 import { assetPath, listDirs, wrapperFile } from './templates.mjs'
@@ -412,7 +412,25 @@ export const doctorCommand = async flags => {
         add(have === pkg.version ? 'ok' : 'warn', `${pkg.name} ${have}`, have === pkg.version ? '' : `esperado ${pkg.version}`)
       }
     }
-    add(which('gentle-shell') ? 'ok' : 'warn', 'comando gentle-shell', which('gentle-shell') ? '' : 'falta `npm i -g gentle-pi@' + PINNED.gentlePi + '`')
+    // gentle-shell's self-contained install counts even before its bin reaches this terminal's PATH (#359).
+    const bundled = readBundledShell(L)
+    if (bundled?.shell) {
+      if (compareVersions(bundled.shell, PINNED.gentlePi) >= 0) {
+        add('ok', 'comando gentle-shell', `${bundled.shell} autocontenido en ${tilde(bundled.dir, home)}`)
+      } else {
+        add('warn', 'comando gentle-shell', `${bundled.shell} autocontenido es anterior a ${PINNED.gentlePi}: ejecutá gentle-shell upgrade`)
+      }
+      const root = npmGlobalRoot()
+      const globalVersion = root ? installedPackageVersion(root, 'gentle-pi') : null
+      if (globalVersion) {
+        add('warn', `gentle-pi ${globalVersion} global de npm`, 'puede tapar en el PATH al gentle-shell autocontenido: ejecutá `npm uninstall -g gentle-pi`')
+      }
+    } else {
+      if (bundled) {
+        add('warn', 'gentle-shell autocontenido', `no pude leer la versión de ${bundled.file}`)
+      }
+      add(which('gentle-shell') ? 'ok' : 'warn', 'comando gentle-shell', which('gentle-shell') ? '' : 'falta `npm i -g gentle-pi@' + PINNED.gentlePi + '`')
+    }
     const skills = resolveGentleSkills(L)
     if (skills) {
       add('ok', 'skills de gentle-pi (como las resuelve puente-gentle)', `${tilde(skills.dir, home)} [${skills.source}]`)
