@@ -41,7 +41,7 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 
 Los workers de pi y la consulta a Gentle Shell comparten tu memoria de Engram (`~/.engram`, el servidor global de Engram) gracias a `gentle-engram`: orca-stack no les fija `ENGRAM_DATA_DIR`, porque desde gentle-pi 4.4.0 cualquier selección explícita de Engram apaga la memoria.
 
-Gentle Shell se actualiza volviendo a correr `global` con la versión nueva de orca-stack. Desde gentle-pi 4.2.0, `gentle-shell update` reinstala solo el paquete global dueño del Pi que corre, y si no puede probar qué paquete global es dueño de Pi, no toca nada. Si ya tenés gentle-shell autocontenido (`gentle-shell upgrade` desde la 4.8.0: `%LOCALAPPDATA%gentle-shell` en Windows, `~/.gentle-shell` en macOS y Linux) en `4.8.0` o más nuevo, `global` no corre `npm i -g gentle-pi`, para no taparlo en el PATH; si es anterior, falla y te pide `gentle-shell upgrade`.
+Gentle Shell se actualiza volviendo a correr `global` con la versión nueva de orca-stack. Desde gentle-pi 4.2.0, `gentle-shell update` reinstala solo el paquete global dueño del Pi que corre, y si no puede probar qué paquete global es dueño de Pi, no toca nada. Si ya tenés gentle-shell autocontenido (`gentle-shell upgrade` desde la 4.8.0: `%LOCALAPPDATA%\gentle-shell` en Windows, `~/.gentle-shell` en macOS y Linux) en `4.8.0` o más nuevo, `global` no corre `npm i -g gentle-pi`, para no taparlo en el PATH; si es anterior, falla y te pide `gentle-shell upgrade`.
 
 Los wrappers se llaman distinto del binario real a propósito: así nunca se llaman a sí mismos. Cada uno fija los marcadores `ORCA_STACK_*`, busca el binario real en el `PATH`, pasa los argumentos tal cual y devuelve su código de salida.
 
