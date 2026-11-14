@@ -44,6 +44,8 @@ export const LEGACY_END = '<!-- /orca-stack:auto -->'
 // Oldest version of the Matt Pocock plugin the work contract works with, and the skills it relies on.
 export const MATT_MIN_VERSION = '1.3.1'
 export const MATT_REQUIRED_SKILLS = ['pr', 'implement-spec', 'retro']
+// Skills orca-stack ships under Matt's names: `global` replaces his copies (with a backup) and the short name is meant to shadow his plugin.
+export const GRILL_SKILLS = ['grilling', 'grill-me', 'grill-with-docs']
 
 export const PROJECT_CONFIG = '.orca-stack.json'
 export const PROJECT_LOCAL_CONFIG = '.orca-stack.local.json'
