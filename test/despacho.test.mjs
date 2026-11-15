@@ -5,7 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
+import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief, revisarCommand } from '../src/despacho.mjs'
 import { main, parseArgs } from '../src/cli.mjs'
 import { isConsultaComment } from '../src/consultas.mjs'
 import { layout } from '../src/util.mjs'
@@ -141,12 +141,14 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = 
       }
       if (args[0] === 'terminal' && args[1] === 'send' && args.includes('--wait-submit')) return json({ result: { submission: 'submitted', turnStarted: true } })
       if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'], latestCursor: calls.length } } })
+      // A worktree Orca lists with no open terminals (main-autonomo S8 lists them before reusing a worktree).
+      if (args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: [] } })
       return okRes()
     },
   }
-  // Calls that change something: every gh issue edit, orca worktree create, terminal create/send, git fetch.
+  // Calls that change something: every gh issue edit, orca worktree create, terminal create/send/close, git fetch.
   const writes = () =>
-    calls.filter(c => (c[0] === 'gh' && c[2] === 'edit') || (c[0] === 'orca' && (c[2] === 'create' || c[2] === 'send')) || (c[0] === 'git' && c[1] === 'fetch'))
+    calls.filter(c => (c[0] === 'gh' && c[2] === 'edit') || (c[0] === 'orca' && (c[2] === 'create' || c[2] === 'send' || c[2] === 'close')) || (c[0] === 'git' && c[1] === 'fetch'))
 
   return { io, calls, out, written, writes, sleeps }
 }
@@ -469,10 +471,17 @@ describe('revisar: one worktree per reviewer', () => {
     assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
   })
 
-  test('Rule 3: a done review terminal blocks reuse and names the terminal to close', async () => {
-    const { env } = reusable({ agents: [{ state: 'done', paneKey: 'pane-review-9-agy' }] })
-    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /terminal pane-review-9-agy .*sigue abierta en done; cerrala/)
-    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  // main-autonomo S8 replaces the old refusal: revisar closes a done review terminal itself and reuses the worktree.
+  test('Rule 3 (S8): a done review terminal is closed by revisar, which names it and reuses the worktree', async () => {
+    const reviewWorktree = path.join(path.dirname(root), 'revision-9-agy')
+    const { env } = reusable({
+      agents: [{ state: 'done', paneKey: 'tab-a:leaf-a' }],
+      over: { 'orca terminal list': json({ result: { terminals: [{ handle: 'term_done', tabId: 'tab-a', leafId: 'leaf-a', worktreePath: reviewWorktree }] } }) },
+    })
+    assert.equal(await run('review', { n: '9', agent: 'agy' }, env), 0)
+    assert.ok(env.calls.some(call => call.join(' ') === 'orca terminal close --terminal term_done --json'))
+    assert.ok(env.out.includes(`Cerré la terminal term_done (done) de ${reviewWorktree}.`))
+    assert.ok(env.calls.some(call => call.join(' ') === 'git checkout --detach bbb222'))
   })
 
   test('Rule 4: the same PR head cannot be reviewed twice by one reviewer', async () => {
@@ -3641,4 +3650,223 @@ describe('rebote', () => {
   })
 })
 
+describe('main-autonomo T1: launcher false negatives', () => {
+  const WORKING = '\u2022 Working (12s \u2022 esc to interrupt)'
+  const BANNER = '\u26A0 5h limit: 50% left \u00B7 resets at 00:57'
+  const EMPTY = '\u26A0 5h limit: 0% left \u00B7 resets at 00:57'
+  const HIT = "\u25A0 You've hit your usage limit. Try again at 00:57."
+  const screen = lines => () => json({ result: { terminal: { tail: lines } } })
+  const reviewPr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }) }
+  const bouncePr = (overrides = {}) => ({
+    state: 'OPEN', headRefName: 'feat/fix', headRefOid: 'abc123', body: 'Implementador: codex', statusCheckRollup: [],
+    reviews: [{ body: 'Revisor: agy\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, concreta, implementaci\u00F3n): fix it.', url: 'https://example.test/review/1' }],
+    comments: [], ...overrides,
+  })
+  const bounceIo = (pull = bouncePr(), extra = {}, config = PROJECT) => {
+    const env = fakeIo({ 'gh pr': json(pull), 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`), 'git status': okRes(''), ...extra }, { config })
+    const original = env.io.sh
+    env.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes(`${pull.headRefOid}\n`) : original(cmd, args, opts)
+    env.io.now = () => 100
+    env.io.modifiedAt = () => 101
+    return env
+  }
+  const closes = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'close')
+  const creates = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+  const consentFile = () => path.join(root, '.git', 'orca-stack', 'rdd-consentimiento.json')
+  const consentWrites = env => env.written.filter(([file]) => file === consentFile())
 
+  describe('S4: the codex quota banner', () => {
+    test('quotaLine treats "N% left" with N>0 as information and keeps 0% left and the hard phrases as quota', () => {
+      assert.equal(quotaLine([WORKING, BANNER]), undefined)
+      assert.equal(quotaLine([WORKING, '\u26A0 Weekly limit: 3% left \u00B7 resets in 2d']), undefined)
+      assert.equal(quotaLine([WORKING, EMPTY]), EMPTY)
+      assert.equal(quotaLine([WORKING, HIT]), HIT)
+      // PRESERVE: the #292 wordings still count.
+      for (const line of ['Weekly limit reached \u00B7 resets Mon 9am', "You've hit your session limit \u00B7 resets 4:30am", '\u26A0 Individual quota reached\u2026 Resets in 10h45m19s']) assert.equal(quotaLine(['ready', line]), line)
+    })
+
+    test('despachar, revisar and rebote succeed when codex shows Working and the 50% banner', async () => {
+      const ticket = fakeIo({ 'orca terminal read': screen([WORKING, BANNER]) })
+      assert.equal(await run('ticket', { n: '7', agent: 'codex' }, ticket), 0)
+      assert.ok(ticket.out.some(line => line.startsWith(`\u2714 codex despachado en ${worktree}`)))
+      const review = fakeIo({ ...reviewPr, 'orca terminal read': screen([WORKING, BANNER]) })
+      assert.equal(await run('review', { n: '9', agent: 'codex' }, review), 0)
+      const bounce = bounceIo(bouncePr(), { 'orca terminal read': screen([WORKING, BANNER]) })
+      assert.equal(await reboteCommand({}, '12', bounce.io), 0)
+      assert.ok(bounce.out.includes('Rebote: abc123'))
+    })
+
+    test('negative: 0% left or "You\'ve hit your usage limit" still fails with the quota message', async () => {
+      for (const line of [EMPTY, HIT]) {
+        const env = fakeIo({ 'orca terminal read': screen([WORKING, line]) })
+        await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), error =>
+          error.message === `La terminal de codex (term_1) muestra un l\u00edmite de cuota; el turno no est\u00e1 ejecut\u00e1ndose: ${line}`)
+        assert.ok(!env.out.some(l => l.includes('\u2714 codex despachado')))
+      }
+    })
+  })
+
+  describe('S8: revisar and rebote close done terminals and empty shells themselves', () => {
+    const reviewWorktree = () => path.join(path.dirname(root), 'revision-9-agy')
+    const terminalsOf = wt => [
+      { handle: 'term_done', tabId: 'tab-a', leafId: 'leaf-a', worktreePath: wt },
+      { handle: 'term_shell', tabId: 'tab-b', leafId: 'leaf-b', worktreePath: wt },
+      { handle: 'term_other', tabId: 'tab-c', leafId: 'leaf-c', worktreePath: wt },
+    ]
+    const reads = { term_shell: ['PS C:\\x>'], term_other: ['node server.js', 'listening on 3000'] }
+    const readByHandle = args => json({ result: { terminal: { tail: reads[args[args.indexOf('--terminal') + 1]] ?? ['ready'] } } })
+    const reviewEnv = agents => {
+      const wt = reviewWorktree()
+      return fakeIo({
+        'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
+        'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${wt}\nHEAD aaa111\nbranch refs/heads/revision-9-agy\n`),
+        'git status': okRes(''),
+        'git rev-parse HEAD': okRes('aaa111\n'),
+        'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+        'orca worktree ps': json({ result: { worktrees: [{ path: wt, agents }] } }),
+        'orca terminal list': json({ result: { terminals: terminalsOf(wt) } }),
+        'orca terminal read': readByHandle,
+      })
+    }
+
+    test('revisar closes the done terminal and the empty shell, prints both, leaves a busy terminal and reviews', async () => {
+      const env = reviewEnv([{ state: 'done', paneKey: 'tab-a:leaf-a' }])
+      assert.equal(await run('review', { n: '9', agent: 'agy' }, env), 0)
+      assert.deepEqual(closes(env).map(call => call.slice(3)), [['--terminal', 'term_done', '--json'], ['--terminal', 'term_shell', '--json']])
+      assert.ok(env.out.includes(`Cerr\u00e9 la terminal term_done (done) de ${reviewWorktree()}.`))
+      assert.ok(env.out.includes(`Cerr\u00e9 la terminal term_shell (shell vac\u00eda) de ${reviewWorktree()}.`))
+      assert.equal(creates(env).length, 1)
+    })
+
+    test('revisar --dry-run names what it would close and closes nothing', async () => {
+      const env = reviewEnv([{ state: 'done', paneKey: 'tab-a:leaf-a' }])
+      assert.equal(await run('review', { n: '9', agent: 'agy', dryRun: true }, env), 0)
+      assert.equal(closes(env).length, 0)
+      assert.ok(env.out.includes(`[simulaci\u00f3n] Cerrar\u00eda la terminal term_done (done) de ${reviewWorktree()}.`))
+    })
+
+    test('revisar refuses a working, running, active, blocked or waiting agent and closes nothing', async () => {
+      for (const state of ['working', 'running', 'active', 'blocked', 'waiting']) {
+        const env = reviewEnv([{ state, paneKey: 'tab-a:leaf-a' }])
+        await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), error => error.message === `Orca ya tiene un worktree para revision-9-agy con un agente vivo: ${reviewWorktree()}.`, state)
+        assert.equal(closes(env).length, 0, state)
+        assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'), state)
+        assert.deepEqual(env.writes(), [], state)
+      }
+    })
+
+    test('rebote closes the done terminal and the empty shell of the PR worktree before relaunching the author', async () => {
+      const env = bounceIo(bouncePr(), {
+        'orca worktree ps': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'done', paneKey: 'tab-a:leaf-a' }] }] } }),
+        'orca terminal list': json({ result: { terminals: terminalsOf(worktree) } }),
+        'orca terminal read': readByHandle,
+      })
+      assert.equal(await reboteCommand({}, '12', env.io), 0)
+      assert.deepEqual(closes(env).map(call => call[4]), ['term_done', 'term_shell'])
+      assert.ok(env.out.includes(`Cerr\u00e9 la terminal term_done (done) de ${worktree}.`))
+      assert.ok(env.out.includes(`Cerr\u00e9 la terminal term_shell (shell vac\u00eda) de ${worktree}.`))
+      const close = env.calls.findIndex(call => call[0] === 'orca' && call[2] === 'close')
+      const create = env.calls.findIndex(call => call[0] === 'orca' && call[2] === 'create')
+      assert.ok(close >= 0 && close < create)
+    })
+
+    test('rebote refuses a live agent with its message and closes nothing', async () => {
+      for (const state of ['working', 'blocked', 'waiting']) {
+        const env = bounceIo(bouncePr(), {
+          'orca worktree ps': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'done', paneKey: 'tab-a:leaf-a' }, { state, paneKey: 'tab-c:leaf-c' }] }] } }),
+          'orca terminal list': json({ result: { terminals: terminalsOf(worktree) } }),
+          'orca terminal read': readByHandle,
+        })
+        await assert.rejects(reboteCommand({}, '12', env.io), error => error.message === `Hay un agente vivo en ${worktree}; cerralo antes de rebotar.`, state)
+        assert.equal(closes(env).length, 0, state)
+        assert.equal(creates(env).length, 0, state)
+        assert.ok(!env.calls.some(call => call[0] === 'gh' && call[2] === 'comment'), state)
+      }
+    })
+  })
+
+  describe('S3: the RDD consent policy file', () => {
+    const RDD_PROJECT = { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { ...PROJECT.agentes.pi, review: 'rdd' } } }
+    const withConsent = (config, agent, value) => ({ ...config, agentes: { ...config.agentes, [agent]: { ...config.agentes[agent], rddConsentimiento: value } } })
+    const piBounce = (config = RDD_PROJECT) => {
+      const env = bounceIo(bouncePr({ body: 'Implementador: pi\nCloses #7', reviews: [] }), {}, config)
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      return env
+    }
+
+    test('despachar writes {"version":1,"granted":[]} in the worktree git dir by default and with "politica"', async () => {
+      for (const config of [PROJECT, withConsent(PROJECT, 'codex', 'politica')]) {
+        const env = fakeIo({}, { config })
+        await run('ticket', { n: '7', agent: 'codex' }, env)
+        assert.deepEqual(consentWrites(env).map(([, text]) => text), ['{"version":1,"granted":[]}\n'])
+        assert.ok(env.calls.some(call => call.join(' ') === 'git rev-parse --path-format=absolute --git-dir'))
+        assert.ok(env.out.includes(`Consentimiento RDD (pol\u00edtica): ${consentFile()} = {"version":1,"granted":[]}`))
+      }
+    })
+
+    test('negative: with "humano" despachar writes no consent file; --dry-run writes none either', async () => {
+      const human = fakeIo({}, { config: withConsent(PROJECT, 'codex', 'humano') })
+      await run('ticket', { n: '7', agent: 'codex' }, human)
+      assert.deepEqual(consentWrites(human), [])
+      assert.ok(!human.out.some(line => line.startsWith('Consentimiento RDD')))
+      const dry = fakeIo()
+      await run('ticket', { n: '7', agent: 'codex', dryRun: true }, dry)
+      assert.deepEqual(consentWrites(dry), [])
+    })
+
+    test('an unknown rddConsentimiento value is refused before any side effect', async () => {
+      const env = fakeIo({}, { config: withConsent(PROJECT, 'codex', 'siempre') })
+      await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), error => error.message === 'agentes.codex.rddConsentimiento tiene que ser "politica" o "humano", no "siempre".')
+      assert.deepEqual(env.writes(), [])
+      assert.deepEqual(env.written, [])
+    })
+
+    test('rebote writes granted [] and rebote --rdd writes granted [<headRefOid>]', async () => {
+      const bounce = bounceIo()
+      await reboteCommand({}, '12', bounce.io)
+      assert.deepEqual(consentWrites(bounce).map(([, text]) => text), ['{"version":1,"granted":[]}\n'])
+      const rdd = piBounce()
+      await reboteCommand({ rdd: 'risk' }, '12', rdd.io)
+      assert.deepEqual(consentWrites(rdd).map(([, text]) => text), ['{"version":1,"granted":["abc123"]}\n'])
+      assert.ok(rdd.out.includes(`Consentimiento RDD (pol\u00edtica): ${consentFile()} = {"version":1,"granted":["abc123"]}`))
+    })
+
+    test('negative: rebote --rdd with "humano" writes nothing', async () => {
+      const env = piBounce(withConsent(RDD_PROJECT, 'pi', 'humano'))
+      await reboteCommand({ rdd: 'risk' }, '12', env.io)
+      assert.deepEqual(consentWrites(env), [])
+      assert.equal(creates(env).length, 1)
+    })
+  })
+
+  describe('S12: revisar --rutas', () => {
+    test('the review brief lists only the given paths and the run says it is partial by design', async () => {
+      const env = fakeIo({ ...reviewPr, 'git ls-tree -r': okRes('src/app.ts\nsrc/b.ts\nREADME.md\n') })
+      assert.equal(await revisarCommand({ rutas: 'src/app.ts, src/b.ts' }, '9', 'codex', env.io), 0)
+      const brief = env.written.find(([file]) => file.endsWith('proj-revision-9-codex.md'))?.[1]
+      assert.match(brief, /\n## Partial review by design\n\nmain asked for a review of these paths only \(`revisar --rutas`\)/)
+      assert.ok(brief.includes('\n- `src/app.ts`\n- `src/b.ts`\n'))
+      assert.ok(!brief.includes('`README.md`'))
+      assert.ok(env.out.includes('Review parcial por dise\u00f1o: src/app.ts, src/b.ts'))
+    })
+
+    test('without --rutas the brief has no partial section', async () => {
+      const env = fakeIo(reviewPr)
+      await revisarCommand({}, '9', 'codex', env.io)
+      assert.doesNotMatch(env.written[0][1], /Partial review by design/)
+      assert.ok(!env.out.some(line => line.startsWith('Review parcial')))
+    })
+
+    test('an empty --rutas, a missing path or --rutas on despachar is refused before any side effect', async () => {
+      const empty = fakeIo(reviewPr)
+      await assert.rejects(revisarCommand({ rutas: ' , ' }, '9', 'codex', empty.io), error => error.message === '--rutas necesita al menos una ruta: --rutas <ruta,ruta>.')
+      assert.deepEqual(empty.writes(), [])
+      const missing = fakeIo(reviewPr)
+      await assert.rejects(revisarCommand({ rutas: 'src/nope.ts' }, '9', 'codex', missing.io), /El brief cita rutas que no existen en origin\/feat[\s\S]*src\/nope\.ts/)
+      assert.deepEqual(missing.writes(), [])
+      const ticket = fakeIo()
+      await assert.rejects(dispatch('ticket', { n: '7', agent: 'codex', rutas: 'src/app.ts' }, ticket.io), error => error.message === '--rutas solo vale para revisar.')
+      assert.deepEqual(ticket.writes(), [])
+    })
+  })
+})
