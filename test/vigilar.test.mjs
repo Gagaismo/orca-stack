@@ -309,10 +309,11 @@ describe('orca-stack vigilar (#195)', () => {
       'pr-abierto #8 PR #80 abc1234',
     ])
 
-    // A new head commit starts a new cycle: pending emits only the head event.
+    // A new head commit starts a new cycle: pending emits only the head event. Watching #7 alone is another batch, so
+    // it is told once that PR #70 is open (S9).
     h.world.prs = [pr(70, { head: DEF, checks: PENDING })]
     await once(h, ['7'])
-    assert.deepEqual(drain(h), ['head-nuevo #70 def5678'])
+    assert.deepEqual(drain(h), ['head-nuevo #70 def5678', 'pr-abierto #7 PR #70 def5678'])
 
     // Green, red after a re-run, then green again on the same head commit: each change is emitted once.
     for (const checks of [GREEN, GREEN, [check('ci-ok', 'FAILURE')], [check('ci-ok', 'SUCCESS')]]) {
@@ -373,7 +374,7 @@ describe('orca-stack vigilar (#195)', () => {
     h.world.now = T0 + 5 * MINUTE
     await once(h, ['7', '8'])
     assert.deepEqual(drain(h), [])
-    assert.deepEqual(h.cursor()['7'], { pr: 70, head: ABC, fin: 'main' })
+    assert.deepEqual(h.cursor()['7'], { pr: 70, abiertoPara: ['7,8'], head: ABC, fin: 'main' })
 
     // The record has expired by now: the item stays ended by main and no late pr-mergeado appears.
     h.world.now = T0 + 45 * MINUTE
@@ -575,7 +576,7 @@ describe('orca-stack vigilar (#195)', () => {
       for (const flag of ['--cada <segundos>', '--una-vez', '--consultas', '--merge-de-main <pr>']) {
         assert.ok(output.split('\n').some(line => line.trimStart().startsWith(flag) && line.includes('(vigilar)')), flag)
       }
-      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar)'))
+      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, limpiar)'))
       output = ''
       assert.equal(await main(['vigilar', '--help']), 0)
       assert.ok(output.includes('review-publicado #<pr> <agente> <sha> bloquea=<n>'))
@@ -678,9 +679,9 @@ describe('orca-stack vigilar (#206)', () => {
       'tanda-cerrada #1 #2',
     ])
     assert.deepEqual(h.cursor(), {
-      1: { pr: 10, head: ABC, ci: 'verde', fin: 'mergeado' },
-      2: { pr: 20, head: ABC, fin: 'mergeado' },
-      3: { pr: 30, head: ABC },
+      1: { pr: 10, abiertoPara: ['1,2'], head: ABC, ci: 'verde', fin: 'mergeado' },
+      2: { pr: 20, abiertoPara: ['1,2'], head: ABC, fin: 'mergeado' },
+      3: { pr: 30, abiertoPara: ['3'], head: ABC },
     })
 
     // B re-armed on 3 resumes from its own entry and prints nothing again.
@@ -962,7 +963,7 @@ describe('orca-stack vigilar (#254)', () => {
 
     // A cursor PR past the list's --limit is read with gh pr view and the same fields.
     const viewed = harness({ prs: [pr251({ mergeable: 'CONFLICTING' })], hidden: [251] })
-    viewed.files[CURSOR] = JSON.stringify({ 250: { pr: 251, head: DF9 } })
+    viewed.files[CURSOR] = JSON.stringify({ 250: { pr: 251, head: DF9, abiertoPara: ['250'] } })
     await once(viewed, ['250'])
     assert.ok(readsMergeable(viewed, 'gh pr view 251'))
     assert.deepEqual(viewed.out, ['pr-en-conflicto #250 PR #251 df9e86a'])
@@ -1142,5 +1143,70 @@ describe('orca-stack vigilar (#299)', () => {
     const h = harness({ prs: [pr(70, { checks: GREEN })] })
     await once(h, ['7'])
     assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
+  })
+})
+
+describe('orca-stack vigilar (main-autonomo S9, #365)', () => {
+  const BOM = String.fromCharCode(0xfeff)
+  const reviews = h => h.out.filter(line => line.startsWith('review-publicado'))
+
+  test('S9: a review body led by a BOM gives the same review-publicado as one without it', async () => {
+    const h = harness({ prs: [{ ...pr(70), comments: [{ id: 'c1', body: `${BOM}Revisor: codex\nCommit: ${ABC}\n\n## BLOQUEA\nnada` }] }] })
+    await once(h, ['7'])
+    assert.deepEqual(reviews(h), ['review-publicado #70 codex abc1234 bloquea=0'])
+  })
+
+  test('S9: Commit: with the sha in backticks counts; a quoted `> Revisor:` body is not a review', async () => {
+    const h = harness({ prs: [{ ...pr(70), comments: [
+      { id: 'c1', body: `Revisor: agy\nCommit: \`${ABC}\`\n\n## BLOQUEA\n1. Falta un test` },
+      { id: 'c2', body: `> Revisor: codex\n> Commit: ${ABC}\n\nCito el review de arriba.` },
+    ] }] })
+    await once(h, ['7'])
+    assert.deepEqual(reviews(h), ['review-publicado #70 agy abc1234 bloquea=1'])
+  })
+
+  test('S9: Fixes #N, Closes: #N, lowercase and mid-line closing keywords link a PR; Refs #N and #NN do not', async () => {
+    const bodies = { 71: 'Fixes #7', 72: 'Closes: #8', 73: 'closes #9', 74: 'This PR resolves #10 today.' }
+    const linkedPrs = Object.entries(bodies).map(([n, body]) => pr(Number(n), { branch: `b${n}`, closes: [], body }))
+    const decoys = [pr(80, { branch: 'b80', closes: [], body: 'Refs #11' }), pr(81, { branch: 'b81', closes: [], body: 'Closes #110' })]
+    const h = harness({ prs: [...linkedPrs, ...decoys] })
+    await once(h, ['7', '8', '9', '10', '11'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #71 abc1234', 'pr-abierto #8 PR #72 abc1234', 'pr-abierto #9 PR #73 abc1234', 'pr-abierto #10 PR #74 abc1234'])
+  })
+
+  test('S9: a PR an older monitor already knew gives pr-abierto once to a monitor of another batch, never again on rearm', async () => {
+    const h = harness({ prs: [pr(70)], issues: { 8: 'OPEN' } })
+    await once(h, ['7', '8'])
+    assert.deepEqual(drain(h), ['pr-abierto #7 PR #70 abc1234'])
+
+    const other = harness({ prs: [pr(70)] })
+    other.files[CURSOR] = h.files[CURSOR]
+    await once(other, ['7'])
+    assert.deepEqual(drain(other), ['pr-abierto #7 PR #70 abc1234'])
+    await once(other, ['7'])
+    assert.deepEqual(drain(other), [])
+
+    // The first batch, re-armed with its own arguments on the shared cursor, resumes without repeating.
+    const rearmed = harness({ prs: [pr(70)], issues: { 8: 'OPEN' } })
+    rearmed.files[CURSOR] = other.files[CURSOR]
+    await once(rearmed, ['7', '8'])
+    assert.deepEqual(rearmed.out, [])
+  })
+
+  test('S9: a cursor written before this fix (pr known, no record of who was told) gives pr-abierto once', async () => {
+    const h = harness({ prs: [pr(70)] })
+    h.files[CURSOR] = JSON.stringify({ 7: { pr: 70, head: ABC } })
+    await once(h, ['7'])
+    assert.deepEqual(drain(h), ['pr-abierto #7 PR #70 abc1234'])
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+  })
+
+  test('S9: --consultas reads the linked PR too, so a Consulta: on PR #70 is reported', async () => {
+    const h = harness({ prs: [pr(70)], comments: { 70: [{ ...CONSULTA, id: 'IC_pr', body: `${BOM}Consulta: pi — ¿consentimiento RDD?` }] } })
+    await once(h, ['7'], { consultas: true })
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'consulta nueva en #70'])
+    assert.ok(h.calls.includes('gh issue view 7 --json comments'))
+    assert.ok(h.calls.includes('gh issue view 70 --json comments'))
   })
 })

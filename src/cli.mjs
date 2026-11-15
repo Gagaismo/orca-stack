@@ -3,8 +3,10 @@ import { PINNED, PI_MIN_VERSION } from './constants.mjs'
 import { consultasCommand } from './consultas.mjs'
 import { briefRevisionCommand, despacharCommand, reboteCommand, revisarCommand } from './despacho.mjs'
 import { doctorCommand } from './doctor.mjs'
+import { estadoCommand } from './estado.mjs'
 import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
+import { limpiarCommand } from './limpiar.mjs'
 import { removeCommand } from './remove.mjs'
 import { reanudarCommand } from './reanudar.mjs'
 import { sesionesCommand } from './sesiones.mjs'
@@ -31,9 +33,11 @@ Comandos:
   avisar    Le toca el timbre a un worker con el turno en curso: una línea con la URL de la respuesta de main.
   reanudar  Reanuda un worker detenido con una respuesta de main o relanza su trabajo en el mismo worktree.
   vigilar   Vigila los PRs de una tanda para el Monitor: solo emite eventos, retoma donde quedó e ignora los merges de main.
+  estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
+  limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar) Muestra cada acci\u00F3n sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
@@ -52,6 +56,9 @@ Opciones:
   --una-vez        (vigilar) Consulta una sola vez y sale.
   --consultas      (vigilar) En cada vuelta corre también el chequeo de \`consultas\` para los mismos items.
   --merge-de-main <pr> (vigilar) Registra que main está por mergear <pr> y sale, sin imprimir nada.
+  --json           (estado) Imprime un objeto JSON por PR (un arreglo si son varios) y sale con 0 solo si están listos.
+  --terminal <handle> (reanudar) Reanuda el agente de esa terminal de Orca cuando el worktree tiene varios en done.
+  --rutas <a,b>    (revisar) El review lee solo esas rutas y lo declara en ## Cobertura.
   -v, --version    Muestra la versión.
   -h, --help       Muestra esta ayuda (también \`orca-stack <comando> --help\`).
 
@@ -109,6 +116,9 @@ Con --dry-run muestra el plan y el brief y no escribe nada.
 Imprime \`Rama: <rama>\` con la rama que devolvió Orca; en --dry-run aclara que Orca define la rama al crear el worktree.
 Después de confirmar el inicio, despachar, revisar y rebote leen tres veces la pantalla, salvo pi, con pausas de 5 segundos;
 fallan ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell. No detectan prompts de bash ni cmd.exe.
+El banner de codex que dice cuánto queda (⚠ 5h limit: 50% left · resets at 00:57) no cuenta como cuota, salvo con 0% left.
+Con agentes.<agente>.rddConsentimiento "politica" (por defecto) escribe en el git dir del worktree orca-stack/rdd-consentimiento.json
+con {"version":1,"granted":[]}: el consentimiento de RDD sobre el candidato propio es declined. Con "humano" no lo escribe.
 Con pi leen la sesión nueva de Pi con las mismas pausas y fallan si su primera respuesta es "Failed to authenticate",
 con esa línea y el CLAUDE_CONFIG_DIR usado.
 
@@ -120,11 +130,14 @@ Sin flag y sin agentes.pi.perfil, o con "preguntar", se niega antes de tocar nad
 activo global. agentes.pi.perfil: "global" usa ese perfil activo a propósito. Imprime "perfil de Pi: <nombre> (fuente: flag | config |
 pin | global)" y el brief guarda la misma línea.
 `,
-  revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
+  revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--rutas <a,b>] [--dry-run]
 
 Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
 (línea \`Implementador:\`) o si el agente usa un modelo de la misma familia (según \`agentes.modelos\`; pi y claude pueden revisarse entre sí).
-Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, sin agentes ni terminales en done, y su HEAD anterior alcanza el nuevo head del PR; rechaza el mismo head, los commits locales y los perfiles de Pi distintos.
+Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, sin un agente trabajando, y su HEAD anterior alcanza el nuevo head del PR; rechaza el mismo head, los commits locales y los perfiles de Pi distintos.
+Las terminales en done y las shells vacías de ese worktree las cierra sola antes de reutilizarlo, y dice cuáles cerró.
+Con --rutas <a,b> (rutas separadas por coma) el review lee solo esas rutas y lista en ## Cobertura lo que leyó (Leído:) y lo que no (Sin leer:);
+ese review cuenta para el paso 7 solo si ninguna ruta de Sin leer: es de riesgo.
 `,
   rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--continuar] [--rdd <lentes>] [--dry-run]
 
@@ -150,6 +163,9 @@ Con --rdd <lentes> (de 1 a 4 distintas entre risk, resilience, readability, reli
 solo con \`Implementador: pi\` y agentes.pi.review: "rdd" en la config. No exige review bloqueante ni mira CI o conflictos; el brief (brief-rdd.md)
 le pide publicar \`Revisor: pi (RDD: <lentes>)\` y \`Commit: <sha>\`. No publica marcador \`Rebote*\`: publica en el PR \`RDD: <sha> (<lentes>)\`, el pedido sin el que puente-gentle no cuenta el review.
 Se niega si ya hay sobre el head un review RDD de pi con ese pedido, y no vale con --continuar (su brief y su sesión van aparte: -rdd).
+Cierra sola las terminales en done y las shells vacías del worktree, y dice cuáles cerró; se niega solo con un agente trabajando.
+Con agentes.<agente>.rddConsentimiento "politica" (por defecto) escribe el consentimiento RDD del worktree: granted para el head con --rdd,
+declined sin él. Con "humano" no lo escribe.
 `,
   'brief-revision': `orca-stack brief-revision <pr> --modelo <modelo> [--dry-run]
 
@@ -173,7 +189,7 @@ Se niega si el comentario no es de la cuenta del stack (\`gh api user\`), no est
 informa la falla y no reenvía.
 Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
 `,
-  reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--dry-run]
+  reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--terminal <handle>] [--dry-run]
 
 Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una línea con la URL de la respuesta; si ya salió,
 lo relanza en su worktree existente con el brief original y la URL al principio. Exige que la respuesta sea un comentario real
@@ -183,7 +199,35 @@ Usa --confirmado solo después de que el humano haya confirmado relanzar un agen
 Un worker de pi se relanza con el modelo y el thinking del orquestador del perfil que fija su worktree (.pi/gentle-ai/profile.json).
 Sin pin y sin agentes.pi.perfil se niega como despachar. Si el pin nombra un perfil que ya no existe, repetí con --perfil-pi <nombre>:
 el flag elige el perfil y reescribe el pin.
+Con --terminal <handle> reanuda el agente de esa terminal de Orca cuando el worktree tiene varios agentes en done.
 Con --dry-run muestra qué enviaría o lanzaría sin escribir el brief ni tocar la terminal.
+`,
+  estado: `orca-stack estado [<pr>...] [--json]
+
+De solo lectura: para cada PR (sin argumentos, cada PR abierto sobre ramaBase; uno mergeado o cerrado, solo si lo nombrás)
+lee una vez \`gh pr view <n> --json number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state\`
+y dice qué le falta para el paso 7 de MAIN.md sobre su head actual:
+  (a) un review sin bloqueos de alguien que no sea el Implementador:, o Verificado por main: / Decidido por main:, o, con
+      agentes.pi.review "rdd" y un PR de pi, un review RDD de pi pedido con RDD: o un Sin review: (con ## Evidencia);
+  (b) que esos comentarios lleven Commit: igual al head (el sha puede ir entre backticks);
+  (c) que cada check termine en SUCCESS, SKIPPED o NEUTRAL y ninguno siga pendiente;
+  (d) en una ruta de riesgo, el segundo review que exige puente-gentle.
+Un review con ## Cobertura cuenta solo si ninguna ruta de Sin leer: es de riesgo; uno que se declara parcial sin
+## Cobertura no cuenta. Con migraciones {"glob","numero"} en la config, cada migración que agrega el PR tiene que tener un
+número mayor que la más alta de origin/<base> (hace git fetch origin <base>); si no, imprime el comentario de review que
+main publica para rebotarlo.
+Sin --json imprime una línea por PR:
+  #<pr> <issue> <implementador> head=<sha7> ci=<green|red|pending> review=<quién@sha|missing|stale> riesgo=<yes|no> falta=<...>
+Con --json imprime {"pr":<n>,"head":"<sha de 40>","ok":<bool>,"falta":[…],"merge":<texto o null>} con un PR pedido, o un
+arreglo con varios; "merge" copia la clave merge de la config sin juzgarla. Sale con 0 solo si todos están ok.
+`,
+  limpiar: `orca-stack limpiar [--dry-run]
+
+Para cada worktree de este repo (salvo el checkout principal) cuyo PR se mergeó o se cerró, buscado por su rama o por
+su nombre revision-<pr>-<agente>: cierra sus terminales (orca terminal close --worktree path:<ruta> --all) y lo saca
+(orca worktree rm --worktree path:<ruta>, sin --force ni --delete-branch). Omite e informa los worktrees con cambios sin
+commitear o con un agente trabajando; nunca borra ramas remotas. Es idempotente: una segunda corrida no saca nada.
+Con --dry-run muestra qué sacaría sin tocar nada.
 `,
   vigilar: `orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]
 orca-stack vigilar --merge-de-main <pr>
@@ -251,6 +295,13 @@ export const parseArgs = argv => {
     else if (arg === '--with-pi') flags.withPi = true
     else if (arg === '--una-vez') flags.unaVez = true
     else if (arg === '--consultas') flags.consultas = true
+    else if (arg === '--json') flags.json = true
+    else if (arg === '--terminal' || arg === '--rutas') {
+      flags[arg.slice(2)] = argv[i + 1] ?? ''
+      i += 1
+    } else if (arg.startsWith('--terminal=') || arg.startsWith('--rutas=')) {
+      flags[arg.slice(2, arg.indexOf('='))] = arg.slice(arg.indexOf('=') + 1)
+    }
     else if (arg === '--cada' || arg === '--merge-de-main') {
       flags[arg === '--cada' ? 'cada' : 'mergeDeMain'] = argv[i + 1] ?? ''
       i += 1
@@ -280,6 +331,16 @@ export const parseArgs = argv => {
   }
   if (flags.humano !== undefined && (flags.humano === '' || flags.humano.startsWith('--'))) {
     throw new Error('--humano necesita un nombre.')
+  }
+  // Options that belong to one command only: any other command keeps refusing them, as before they existed.
+  for (const [flag, owner] of [['json', 'estado'], ['terminal', 'reanudar'], ['rutas', 'revisar']]) {
+    if (flags[flag] !== undefined && rest[0] !== undefined && rest[0] !== owner) throw new Error(`Opción desconocida: --${flag}`)
+  }
+  if (flags.terminal !== undefined && (flags.terminal.trim() === '' || flags.terminal.startsWith('--'))) {
+    throw new Error('--terminal necesita el handle de una terminal de Orca (orca terminal list).')
+  }
+  if (flags.rutas !== undefined && (flags.rutas.split(',').every(one => one.trim() === '') || flags.rutas.startsWith('--'))) {
+    throw new Error('--rutas necesita una o más rutas separadas por coma.')
   }
 
   return { command: rest[0], flags, rest }
@@ -339,6 +400,10 @@ export const main = async (argv, io) => {
         return await reanudarCommand(flags, rest[1], rest[2])
       case 'vigilar':
         return await vigilarCommand(flags, rest.slice(1))
+      case 'estado':
+        return await estadoCommand(flags, rest.slice(1), io)
+      case 'limpiar':
+        return await limpiarCommand(flags, io)
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 
