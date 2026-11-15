@@ -3,6 +3,7 @@ import path from 'node:path'
 import { describe, test } from 'node:test'
 
 import { renderBrief } from '../src/despacho.mjs'
+import { render } from '../src/templates.mjs'
 import { read } from './helpers.mjs'
 
 // main-autonomo S2, S3, S11, S12, S13, S14: the policy and the briefs describe what estado, limpiar, the RDD consent policy
@@ -37,6 +38,11 @@ describe('main-autonomo: policy and briefs', () => {
     for (const reason of ['`lens_context_budget_exceeded`', '`correction_context_budget_exceeded`']) assert.ok(six.includes(reason), reason)
     assert.ok(six.includes('pasás ese PR a dos reviews limpios de dos familias de modelo distintas que no sean la de pi'), six)
     assert.ok(six.includes('sin preguntarle al humano'), six)
+    assert.ok(six.includes('lleva la línea `RDD fuera de presupuesto: <sha> (<motivo>)`'), six)
+    assert.ok(six.includes('Vale también en un PR que toca `riesgo`'), six)
+    assert.ok(six.includes('el comentario se publicó después de tu pedido `RDD: <head> (<lentes>)`'), six)
+    assert.ok(six.includes('ese marcador sobre otro head, anterior a tu pedido, sin pedido o dentro de un review no cuenta, y una sola familia tampoco'), six)
+    assert.ok(!six.includes('ese merge se lo pasás al humano'), six)
   })
 
   test('S1/S11/S12: step 7 checks with estado, merges with one pinned command, and covers partial reviews and migrations', () => {
@@ -79,7 +85,10 @@ describe('main-autonomo: policy and briefs', () => {
     const rdd = flat(asset('brief-rdd.md'))
     assert.ok(rdd.includes('the orca-stack policy answer for main\'s `RDD: {{SHA}}` request is `granted`'), rdd)
     for (const reason of ['`lens_context_budget_exceeded`', '`correction_context_budget_exceeded`']) assert.ok(rdd.includes(reason), reason)
-    assert.ok(rdd.includes('post a `Consulta: {{AGENT}}` comment on PR #{{PR}} with that stop reason, and stop'), rdd)
+    assert.ok(rdd.includes('whose first line is `Consulta: {{AGENT}}` and which has exactly this line, with the stop reason RDD returned: `RDD fuera de presupuesto: {{SHA}} (<stop reason>)`. Then stop: end your turn.'), rdd)
+    assert.ok(rdd.includes('also on a `riesgo` path'), rdd)
+    const rendered = flat(render(asset('brief-rdd.md'), { AGENT: 'pi', PR: '7', ISSUE: '42', SHA: 'abc1234', LENSES: 'risk' }))
+    assert.ok(rendered.includes('first line is `Consulta: pi` and which has exactly this line, with the stop reason RDD returned: `RDD fuera de presupuesto: abc1234 (<stop reason>)`'), rendered)
   })
 
   test('S12: the review brief requires ## Cobertura, partial reviews list unread riesgo paths, layers over 1500 lines, UTF-8 without BOM', () => {

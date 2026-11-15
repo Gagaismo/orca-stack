@@ -24,7 +24,7 @@ const parse = res => {
 }
 
 // shortcut: everything from here to riskDeny mirrors mods/puente-gentle/hooks/puente.ts (globToRegExp, riskyFile,
-// implementerOf, prFacts, reviewsOf, rddRequestOf, riskDeny) because the CLI cannot import the TypeScript mod. The two
+// implementerOf, prFacts, reviewsOf, rddRequestOf, rddBudgetStopped, riskDeny) because the CLI cannot import the TypeScript mod. The two
 // copies must decide the same; the only additions here are the BOM-tolerant marker reading (#365) and S12's coverage.
 
 // Minimal glob: * and ? stay inside one path segment, ** crosses segments, `**/` may match nothing, a trailing / means
@@ -100,6 +100,21 @@ const rddRequestsOf = (bodies, head) => bodies.flatMap(body => {
   const lenses = rddRequestOf(body, head)
   return lenses === undefined ? [] : [lenses]
 })
+// main-autonomo S2: pi's `Consulta: pi` comment with a line `RDD fuera de presupuesto: <sha> (<stop reason>)` naming this
+// head, posted after main's `RDD: <sha> (…)` request for it. A body that is a review is never this comment.
+const budgetStopOf = (body, head) => {
+  const lines = markerLines(body)
+  if (lines.some(line => /^Revisor:/i.test(line) || /^##\s*BLOQUEA\b/i.test(line))) return false
+  if (!/^Consulta:\s*pi\b/i.test(lines.find(line => line !== '') ?? '')) return false
+
+  return lines.some(line => namesCommit(/^RDD fuera de presupuesto:\s*`?([0-9a-f]{7,40})`?\s*\([^()]+\)$/i.exec(line.trim())?.[1], head))
+}
+const rddBudgetStopped = (bodies, head) => bodies.some((body, at) => budgetStopOf(body, head) && rddRequestsOf(bodies.slice(0, at), head).length > 0)
+const rddMissing = (n, sha) =>
+  `falta un review RDD limpio de pi con la lente risk sobre el commit ${sha} ` +
+  'o, si el RDD no entró en el presupuesto, dos reviews limpios de dos familias distintas de la de pi; eso último cuenta solo con un comentario "Consulta: pi" ' +
+  `con la línea "RDD fuera de presupuesto: ${sha} (<motivo>)" publicado después de tu pedido RDD: sobre ese commit, y sin él los reviews de otras familias no lo reemplazan. ` +
+  `Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).`
 const sameLenses = (a, b) => [...(a ?? [])].sort().join(',') === [...(b ?? [])].sort().join(',')
 
 // S12: a review counts only when it read every riesgo path. A `## Cobertura` section lists `Sin leer:` paths (on its line,
@@ -156,17 +171,14 @@ const riskDeny = (n, file, facts, config, now) => {
   const reviewers = [...new Set(counting.filter(review => review.lenses === undefined).map(review => review.reviewer))]
   const rddReviews = counting.filter(review => review.lenses !== undefined)
   if (rddReviews.some(review => review.lenses.includes('risk'))) return undefined
-  if (rdd) {
+  if (rdd && !rddBudgetStopped(facts.bodies, facts.head)) {
     const unrequested = posted.some(one => one.reviewer === 'pi' && one.lenses !== undefined && !requested(one))
       ? ' Un review RDD de pi que main no pidió antes, con esas lentes y sobre ese commit (el comentario `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`), no cuenta.'
       : ''
     const noRisk = rddReviews.length > 0 ? ' El review RDD de pi sobre ese commit no cuenta: no tiene la lente risk.' : ''
     const sinReview = facts.bodies.some(body => /^Sin review:/i.test(normalizeBody(body))) ? ' Un comentario "Sin review:" no cuenta en una ruta de riesgo.' : ''
 
-    return (
-      `${prefix} y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit ${sha}, ` +
-      `y los reviews de otras familias no lo reemplazan. Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).${noRisk}${unrequested}${sinReview}`
-    )
+    return `${prefix} y lo escribió pi en modo RDD: ${rddMissing(n, sha)}${noRisk}${unrequested}${sinReview}`
   }
   if (facts.implementer !== 'pi') {
     return reviewers.includes('pi')

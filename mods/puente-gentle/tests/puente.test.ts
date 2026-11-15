@@ -606,9 +606,12 @@ const RDD_USA = ['claude', 'agy', 'codex', 'pi']
 const rddFiles = (usa = RDD_USA) => riskFiles({ agentes: { usa, preguntarAntes: [], pi: { review: 'rdd' } } })
 // The marker `orca-stack rebote <pr> --rdd <lentes>` posts: main's request for an RDD review of that commit.
 const rddAsk = (lenses: string, commit = OID) => ({ body: `RDD: ${commit} (${lenses})` })
-const RDD_DENY =
-  'PR #7 toca una ruta de riesgo (package-lock.json) y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit abc1234, ' +
-  'y los reviews de otras familias no lo reemplazan. Corré `orca-stack rebote 7 --rdd risk` (podés sumar lentes).'
+const rddDeny = (n: string, file: string, sha: string) =>
+  `PR #${n} toca una ruta de riesgo (${file}) y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit ${sha} ` +
+  'o, si el RDD no entró en el presupuesto, dos reviews limpios de dos familias distintas de la de pi; eso último cuenta solo con un comentario "Consulta: pi" ' +
+  `con la línea "RDD fuera de presupuesto: ${sha} (<motivo>)" publicado después de tu pedido RDD: sobre ese commit, y sin él los reviews de otras familias no lo reemplazan. ` +
+  `Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).`
+const RDD_DENY = rddDeny('7', 'package-lock.json', 'abc1234')
 const UNREQUESTED =
   ' Un review RDD de pi que main no pidió antes, con esas lentes y sobre ese commit (el comentario `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`), no cuenta.'
 
@@ -665,6 +668,59 @@ test('issue #338 Rule 8: in RDD mode clean reviews from two other families do no
   expect(riskDeny('1', 'secret.txt', facts, config as StackConfig, Date.now())).not.toBeUndefined()
 })
 
+// pi's comment when the RDD main asked for stops on its context budget (main-autonomo S2).
+const budgetStop = (commit = OID, extra = '') => ({
+  body: `\uFEFFConsulta: pi\n\nEl RDD se detuvo.\nRDD fuera de presupuesto: ${commit} (lens_context_budget_exceeded)${extra}`,
+})
+
+test('main-autonomo S2: in RDD mode, after main\'s RDD: request, a Consulta: pi with RDD fuera de presupuesto: on the head lets two clean reviews of two other families clear riesgo', async ($, on) => {
+  let comments: { body: string }[] = [rddAsk('risk'), budgetStop('abc1234')]
+  let reviews: { body: string }[] = [clean('agy'), clean('codex')]
+  setup(on, argv => pr(['package-lock.json'], { body: 'Implementador: pi', comments, reviews })(argv), {}, { files: rddFiles() })
+  await boot($)
+  const merge = async () => (await $.tool.call({ tool: 'Bash', command: 'gh pr merge 7' } as never)).deny
+  expect(await merge()).toBeUndefined()
+  // One family is not enough: the deny is the two-family one, as outside RDD mode.
+  reviews = [clean('agy')]
+  expect(await merge()).toBe(`${PREFIX} Hay 1 (gemini). Corré \`orca-stack revisar 7 codex\`.`)
+  reviews = [clean('agy'), clean('codex')]
+  // The marker on an older head, posted before the request, without a request, or inside a review does not count.
+  comments = [rddAsk('risk'), budgetStop('0000000')]
+  expect(await merge()).toBe(RDD_DENY)
+  comments = [rddAsk('risk'), budgetStop(OID, '\n\n## BLOQUEA\nnada')]
+  expect(await merge()).toBe(RDD_DENY)
+  comments = [budgetStop()]
+  expect(await merge()).toBe(RDD_DENY)
+})
+
+test('main-autonomo S2: the budget marker counts only after the request, in thread order or by createdAt, and only on the head', () => {
+  const head = '0123456789abcdef0123456789abcdef01234567'
+  const review = (who: string) => `Revisor: ${who}\nCommit: ${head}\n\n## BLOQUEA\nnada`
+  const ask = `RDD: ${head} (risk)`
+  const stop = `\uFEFF\nConsulta: pi\nRDD fuera de presupuesto: ${head.slice(0, 7)} (correction_context_budget_exceeded)`
+  const config = { agentes: { pi: { review: 'rdd' }, usa: ['pi', 'codex', 'agy'] } } as StackConfig
+  const gate = (bodies: string[]) => riskDeny('1', 'secret.txt', { implementer: 'pi', headRefOid: head, files: ['secret.txt'], bodies }, config, 0)
+  expect(gate([ask, stop, review('codex'), review('agy')])).toBeUndefined()
+  expect(gate([stop, ask, review('codex'), review('agy')])).toBe(rddDeny('1', 'secret.txt', '0123456'))
+  expect(gate([ask, `Consulta: pi\nRevisor: codex\nRDD fuera de presupuesto: ${head} (lens_context_budget_exceeded)`, review('codex'), review('agy')])).toBe(
+    rddDeny('1', 'secret.txt', '0123456'),
+  )
+  // The first non-empty line must be Consulta: pi.
+  expect(gate([ask, `Nota\nConsulta: pi\nRDD fuera de presupuesto: ${head} (lens_context_budget_exceeded)`, review('codex'), review('agy')])).toBe(
+    rddDeny('1', 'secret.txt', '0123456'),
+  )
+  const json = (askAt: string, stopAt: string) =>
+    JSON.stringify({
+      headRefOid: head,
+      files: [{ path: 'secret.txt' }],
+      body: 'Implementador: pi',
+      comments: [{ body: stop, createdAt: stopAt }, { body: ask, createdAt: askAt }],
+      reviews: [{ body: review('codex'), submittedAt: '2026-11-09T07:00:00Z' }, { body: review('agy'), submittedAt: '2026-11-09T07:01:00Z' }],
+    })
+  expect(gate(prFacts(json('2026-11-09T05:00:00Z', '2026-11-09T06:00:00Z'))!.bodies)).toBeUndefined()
+  expect(gate(prFacts(json('2026-11-09T06:00:00Z', '2026-11-09T05:00:00Z'))!.bodies)).toBe(rddDeny('1', 'secret.txt', '0123456'))
+})
+
 test('issue #338 Rule 6: an RDD review main did not request on this commit with these lenses does not clear riesgo', async ($, on) => {
   let reviews: { body: string }[] = [rddReview('risk')]
   setup(on, piPr(() => reviews), {}, { files: rddFiles() })
@@ -707,11 +763,7 @@ test("issue #338 Rule 6: an RDD review posted before main's request does not cou
   const ask = `RDD: ${head} (risk)`
   const config = { agentes: { pi: { review: 'rdd' } } } as StackConfig
   const gate = (bodies: string[]) => riskDeny('1', 'secret.txt', { implementer: 'pi', headRefOid: head, files: ['secret.txt'], bodies }, config, 0)
-  expect(gate([review, ask])).toBe(
-    'PR #1 toca una ruta de riesgo (secret.txt) y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit 0123456, ' +
-      'y los reviews de otras familias no lo reemplazan. Corré `orca-stack rebote 1 --rdd risk` (podés sumar lentes).' +
-      UNREQUESTED,
-  )
+  expect(gate([review, ask])).toBe(`${rddDeny('1', 'secret.txt', '0123456')}${UNREQUESTED}`)
   expect(gate([ask, review])).toBeUndefined()
   // gh lists comments and reviews apart: prFacts puts them in the order they were posted.
   const json = (askAt: string, reviewAt: string) =>
