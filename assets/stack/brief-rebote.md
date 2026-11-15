@@ -21,6 +21,7 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 - Do not edit `.github/workflows/` unless the ticket asks for it.
 - If a failure depends on the environment, make the test hermetic.
 - If you are blocked, ask with a `Consulta:` comment on PR #{{PR}}.
+- If RDD asks for consent on your own candidate (an RDD you would start before you push), the orca-stack policy answer is `declined`: pi's Gentle Shell answers it by itself from the policy file orca-stack wrote in this worktree's git dir, and any other agent answers `declined` itself; never ask the human. This holds while `agentes.{{AGENT}}.rddConsentimiento` in .orca-stack.json is absent or `"politica"` (the default); with `"humano"`, ask with a `Consulta: {{AGENT}}` comment on PR #{{PR}} instead.
 - Run the configured verification:
 
 ```text

@@ -78,6 +78,7 @@ After posting a Consulta:, the next action is a tool call on work that is not bl
 - Smallest correct change: no unrelated cleanup, no new dependencies, no speculative abstractions.
 - If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket.
 - Do not review PRs, do not merge, do not spawn other workers.
+- If RDD asks for consent on your own candidate (an RDD you would start before the PR), the orca-stack policy answer is `declined`: pi's Gentle Shell answers it by itself from the policy file orca-stack wrote in this worktree's git dir, and any other agent answers `declined` itself; never ask the human. This holds while `agentes.{{AGENT}}.rddConsentimiento` in .orca-stack.json is absent or `"politica"` (the default); with `"humano"`, ask with a `Consulta: {{AGENT}}` comment on the issue instead.
 - Fan-out: {{FANOUT_INSTRUCTIONS}}
 - Finish with a summary: what you did, what you found, tests run, remaining risk.
 - The ticket touches a command, lifecycle step or loop that can run again after a crash, retry or rerun: read `~/.claude/skills/principle-make-operations-idempotent/SKILL.md`.
