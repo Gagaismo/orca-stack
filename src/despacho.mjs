@@ -1098,11 +1098,17 @@ export const rddConsentPolicy = (config, agent) => {
 export const RDD_CONSENT_REL = ['orca-stack', 'rdd-consentimiento.json']
 
 // Written in the worktree's own git dir (a linked worktree has one per worktree), so it never shows in git status.
-export const writeRddConsent = (io, worktree, granted) => {
+// keepExisting (reanudar): a resumed worker keeps the file it has, so a head main granted for an RDD review that
+// paused on a Consulta: is still granted when it resumes.
+export const writeRddConsent = (io, worktree, granted, { keepExisting = false } = {}) => {
   const res = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir'], { cwd: worktree })
   const gitDir = res.status === 0 ? res.stdout.split(/\r?\n/)[0].trim() : ''
   if (gitDir === '') throw new Error(`No pude leer el git dir de ${worktree} (git rev-parse --git-dir): ${(res.stderr || res.stdout || String(res.error ?? '')).trim()}`)
   const file = path.join(path.resolve(worktree, gitDir), ...RDD_CONSENT_REL)
+  if (keepExisting && io.exists(file)) {
+    io.out(`Consentimiento RDD (política): dejo ${file} como está.`)
+    return file
+  }
   const text = JSON.stringify({ version: 1, granted })
   io.mkdirp(path.dirname(file))
   io.writeFile(file, `${text}\n`)

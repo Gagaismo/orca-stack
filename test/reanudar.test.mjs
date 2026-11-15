@@ -847,6 +847,15 @@ describe('main-autonomo T1: reanudar picks the worker and trusts what orca-stack
     assert.equal(relaunch.files[consent], '{"version":1,"granted":[]}\n')
   })
 
+  test('S3: reanudar keeps an existing policy file, so main\'s granted head survives a paused RDD review', async () => {
+    const consent = path.join(ROOT, '.git', 'orca-stack', 'rdd-consentimiento.json')
+    const h = harness()
+    h.files[consent] = '{"version":1,"granted":["abc1234def"]}\n'
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.files[consent], '{"version":1,"granted":["abc1234def"]}\n')
+    assert.ok(h.outputs.includes(`Consentimiento RDD (política): dejo ${consent} como está.`))
+  })
+
   test('S3 negative: with "humano" reanudar writes no consent file', withRoot({ agentes: { usa: ['codex'], preguntarAntes: [], codex: { rddConsentimiento: 'humano' } } }, async root => {
     const h = harness({ root })
     assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)

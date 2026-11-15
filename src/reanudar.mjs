@@ -206,7 +206,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (flags.perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
   const consent = rddConsentPolicy(config, agent)
   // main-autonomo S3: the worker's own candidate is declined; written just before the line or the relaunch reaches it.
-  const writeConsent = () => { if (consent === 'politica') writeRddConsent(io, row.path, []) }
+  const writeConsent = () => { if (consent === 'politica') writeRddConsent(io, row.path, [], { keepExisting: true }) }
   // Like rebote: the worktree pin decides, so the orchestrator follows the same profile as the subagents. --perfil-pi
   // replaces a pin that can no longer be honored; with neither (and no config), a relaunch fails closed. Sending a line
   // to a paused pi launches nothing, so it needs no profile; a --perfil-pi there is still checked and rewrites the pin,
