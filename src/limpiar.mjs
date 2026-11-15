@@ -30,7 +30,7 @@ const prOf = ({ row, branch }, prs, root, io) => {
   if (!named) return undefined
   const listed = prs.find(pr => String(pr.number) === named)
   if (listed) return listed
-  const res = io.sh('gh', ['pr', 'view', named, '--json', 'number,state,headRefName'], { cwd: root })
+  const res = io.sh('gh', ['pr', 'view', named, '--json', 'number,state,headRefName,headRefOid'], { cwd: root })
 
   return res.status === 0 ? parse(res) : undefined
 }
@@ -39,7 +39,7 @@ export const limpiarCommand = async (flags = {}, io = defaultIo()) => {
   const warn = io.err ?? (message => console.error(message))
   const { root } = getCommonDir(io)
   const ours = repoWorktrees(root, io).filter(({ row }) => !samePath(row.path, root))
-  const res = io.sh('gh', ['pr', 'list', '--state', 'all', '--limit', '200', '--json', 'number,state,headRefName'], { cwd: root })
+  const res = io.sh('gh', ['pr', 'list', '--state', 'all', '--limit', '200', '--json', 'number,state,headRefName,headRefOid'], { cwd: root })
   const prs = res.status === 0 ? parse(res) : undefined
   if (!Array.isArray(prs)) throw new Error(`No pude listar los PRs con gh pr list: ${detail(res)}. No toqué nada.`)
 
@@ -64,6 +64,16 @@ export const limpiarCommand = async (flags = {}, io = defaultIo()) => {
     }
     if (status.stdout.trim() !== '') {
       io.out(`Omito ${where} (${why}): tiene cambios sin commitear.`)
+      continue
+    }
+    // A closed (or squash-merged) PR can leave local commits nobody pushed: remove the worktree only when its HEAD is
+    // the PR head GitHub keeps, or is reachable from some remote branch.
+    const head = io.sh('git', ['rev-parse', 'HEAD'], { cwd: where })
+    const sha = head.status === 0 ? head.stdout.trim() : ''
+    const remote = sha === '' ? undefined : io.sh('git', ['branch', '-r', '--contains', 'HEAD'], { cwd: where })
+    const kept = sha !== '' && (sha === pr.headRefOid || (remote?.status === 0 && remote.stdout.trim() !== ''))
+    if (!kept) {
+      io.out(`Omito ${where} (${why}): su HEAD ${sha || '(desconocido)'} no está en ninguna rama remota ni es el head del PR; pusheá o descartá esos commits a mano.`)
       continue
     }
     if (flags.dryRun) {

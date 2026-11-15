@@ -28,6 +28,8 @@ const harness = (world) => {
         return okRes(world.worktrees.map(one => `worktree ${one.path}\nHEAD 1\nbranch refs/heads/${one.branch}\n`).join('\n'))
       }
       if (cmd === 'git' && args[0] === 'status') return okRes((world.dirty ?? []).includes(cwd) ? ' M src/a.mjs\n' : '')
+      if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return okRes(`${(world.heads ?? {})[cwd] ?? 'h-pushed'}\n`)
+      if (cmd === 'git' && args[0] === 'branch' && args.includes('--contains')) return okRes((world.unpushed ?? []).includes(cwd) ? '' : '  origin/main\n')
       if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'ps') {
         return json({ ok: true, result: { worktrees: world.worktrees.map(one => ({ path: one.path, repo: 'orca-stack', linkedIssue: one.linkedIssue ?? null, agents: one.agents })) } })
       }
@@ -143,5 +145,31 @@ describe('orca-stack limpiar (S13)', () => {
     const h = harness({ worktrees: [wt('/repo', 'main')], prs: [] })
     assert.equal(await main(['limpiar', '--dry-run'], h.io), 0)
     assert.deepEqual(h.out, ['Nada para limpiar.'])
+  })
+
+  test('S13 data safety: a worktree whose HEAD is in no remote branch and is not the PR head keeps its commits and is skipped; one at the PR head is removed', async () => {
+    const world = {
+      worktrees: [
+        wt('/repo', 'main'),
+        wt('/wt/orca-stack-21', 'Gagaismo/orca-stack-21', { linkedIssue: 21 }),
+        wt('/wt/orca-stack-22', 'Gagaismo/orca-stack-22', { linkedIssue: 22 }),
+      ],
+      unpushed: ['/wt/orca-stack-21', '/wt/orca-stack-22'],
+      heads: { '/wt/orca-stack-21': 'aaa111', '/wt/orca-stack-22': 'bbb222' },
+      prs: [
+        { number: 210, state: 'CLOSED', headRefName: 'Gagaismo/orca-stack-21', headRefOid: 'old999' },
+        { number: 220, state: 'MERGED', headRefName: 'Gagaismo/orca-stack-22', headRefOid: 'bbb222' },
+      ],
+    }
+    const h = harness(world)
+    const code = await limpiarCommand({}, h.io)
+
+    assert.equal(code, 0)
+    assert.deepEqual(h.out, [
+      'Omito /wt/orca-stack-21 (PR #210 cerrado): su HEAD aaa111 no está en ninguna rama remota ni es el head del PR; pusheá o descartá esos commits a mano.',
+      'Cerré las terminales y saqué /wt/orca-stack-22 (PR #220 mergeado).',
+    ])
+    assert.deepEqual(mutations(h), ['orca terminal close --worktree path:/wt/orca-stack-22 --all --json', 'orca worktree rm --worktree path:/wt/orca-stack-22 --json'])
+    assert.deepEqual(world.worktrees.map(one => one.path), ['/repo', '/wt/orca-stack-21'])
   })
 })
