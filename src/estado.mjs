@@ -8,7 +8,7 @@ import { closedIssues } from './vigilar.mjs'
 // `orca-stack estado`: MAIN.md step 7 on the current head of each PR, read once (S1, #366). Its `--json` output is the
 // attestation Gentle Shell's merge guard reads: keep its shape stable.
 const USAGE = 'Uso: orca-stack estado [<pr>...] [--json]'
-export const PR_VIEW_FIELDS = 'number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state'
+export const PR_VIEW_FIELDS = 'number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state,url'
 const CHECK_GREEN = ['SUCCESS', 'SKIPPED', 'NEUTRAL']
 const EMPTY_LIST = new Set(['', '-', 'nada', 'ninguno', 'ninguna'])
 
@@ -331,13 +331,16 @@ const reviewBody = (head, fixes) =>
 // #377: a repo that merges on green CI without reviews says so with `"reviewParaMerge": false`. The Gentle Shell guard
 // trusts this attestation, so the key is read only from the .orca-stack.json committed on the PR's base branch on
 // GitHub, never from the (agent-writable) checkout; any failure keeps the full step 7.
-export const reviewWaived = (base, root, io) => {
-  const res = io.sh('gh', ['api', '-H', 'Accept: application/vnd.github.raw+json', `repos/{owner}/{repo}/contents/.orca-stack.json?ref=${base}`], { cwd: root })
-  if (res.status !== 0) return false
+// The repository comes from the PR's own url, so the config read and the PR read cannot point at different repos.
+export const baseConfigOf = (pr, base, root, io) => {
+  const repo = /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(String(pr.url ?? ''))?.[1] ?? '{owner}/{repo}'
+  const res = io.sh('gh', ['api', '-H', 'Accept: application/vnd.github.raw+json', `repos/${repo}/contents/.orca-stack.json?ref=${encodeURIComponent(base)}`], { cwd: root })
+  if (res.status !== 0) return undefined
   try {
-    return JSON.parse(res.stdout)?.reviewParaMerge === false
+    const parsed = JSON.parse(res.stdout)
+    return isPlain(parsed) ? parsed : undefined
   } catch {
-    return false
+    return undefined
   }
 }
 
@@ -351,7 +354,11 @@ const evaluate = (pr, config, root, io, now, ctx) => {
 
   const implementer = implementerOf(pr.body)
   const rdd = implementer === 'pi' && config.agentes?.pi?.review === 'rdd'
-  const riesgo = Array.isArray(config.riesgo) ? config.riesgo : []
+  // #377: the waiver and, while it applies, the committed riesgo come from the base branch on GitHub (an agent can empty
+  // riesgo in its checkout, not on the protected base).
+  const committed = baseConfigOf(pr, pr.baseRefName || config.ramaBase || 'main', root, io)
+  const waived = committed?.reviewParaMerge === false
+  const riesgo = [...new Set([...(Array.isArray(config.riesgo) ? config.riesgo : []), ...(waived && Array.isArray(committed.riesgo) ? committed.riesgo : [])])]
   const files = (pr.files ?? []).map(file => file?.path).filter(file => typeof file === 'string')
   const risky = riskyFile(files, riesgo)
   const bodies = bodiesOf(pr)
@@ -370,7 +377,6 @@ const evaluate = (pr, config, root, io, now, ctx) => {
   const sinOnHead = sinReview.filter(mark => namesCommit(mark.commit, head))
 
   // (a) and (b); with #377's waiver only an unsettled blocker on the head and ## Evidencia remain.
-  const waived = reviewWaived(pr.baseRefName || config.ramaBase || 'main', root, io)
   if (waived) {
     for (const one of onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))) falta.push(`(a) el review de ${one.reviewer} sobre ${sha7} tiene bloqueos`)
     if (!/^##\s*Evidencia\b/im.test(normalizeBody(pr.body))) falta.push('(a) reviewParaMerge: false en la base necesita ## Evidencia en el body del PR')

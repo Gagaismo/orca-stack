@@ -89,7 +89,7 @@ describe('orca-stack estado (S1, #366)', () => {
     assert.equal(await estado(h, ['70'], { json: true }), 0)
     assert.deepEqual(h.out, [JSON.stringify({ pr: 70, head: HEAD, ok: true, falta: [], merge: MERGE })])
     assert.deepEqual(h.err, [])
-    assert.ok(h.calls.includes('gh pr view 70 --json number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state'))
+    assert.ok(h.calls.includes('gh pr view 70 --json number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state,url'))
 
     const human = harness(world)
     assert.equal(await estado(human, ['70']), 0)
@@ -366,6 +366,15 @@ describe('orca-stack estado: reviewParaMerge (#377)', () => {
     const hRisky = harness(risky, { riesgo: ['auth/**'] })
     assert.equal(await estado(hRisky, ['85'], { json: true }), 1)
     assert.ok(one(hRisky).falta.some(item => item.startsWith('(d) ')), hRisky.out[0])
+  })
+
+  test('#377 Rule 2 hardening: the config is read from the PR\'s own repository with the base escaped, and with the waiver the committed riesgo also counts', async () => {
+    const pr = { ...prData(87, { body: EVIDENCIA, files: ['auth/store.go'] }), url: 'https://github.com/Owner/Repo/pull/87', baseRefName: 'a&ref=main' }
+    const world = { prs: [pr], baseConfig: JSON.stringify({ reviewParaMerge: false, riesgo: ['auth/**'] }) }
+    const h = harness(world, { riesgo: [] })
+    assert.equal(await estado(h, ['87'], { json: true }), 1)
+    assert.deepEqual(world.apiCalls, ['api -H Accept: application/vnd.github.raw+json repos/Owner/Repo/contents/.orca-stack.json?ref=a%26ref%3Dmain'])
+    assert.ok(one(h).falta.some(item => item.startsWith('(d) ')), 'emptying riesgo in the local checkout does not drop the committed riesgo review')
   })
 
   test('#377 Rule 4: gh api failing or returning invalid JSON keeps the full step 7 and does not error', async () => {
