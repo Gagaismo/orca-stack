@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
@@ -37,7 +37,8 @@ describe('S3: rdd-consentimiento.json', () => {
     const { io, out } = ioFor()
     const file = writeRddConsent(io, repo, [])
     const expected = path.join(repo, '.git', 'orca-stack', 'rdd-consentimiento.json')
-    assert.equal(path.resolve(file), path.resolve(expected))
+    // realpath: on Windows the temp dir can come as an 8.3 short name (RUNNER~1) while git prints the long one.
+    assert.equal(realpathSync.native(file), realpathSync.native(expected))
     assert.equal(readFileSync(expected, 'utf8'), '{"version":1,"granted":[]}\n')
     assert.deepEqual(out, [`Consentimiento RDD (política): ${file} = {"version":1,"granted":[]}`])
   })
