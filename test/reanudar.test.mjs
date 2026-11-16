@@ -862,4 +862,65 @@ describe('main-autonomo T1: reanudar picks the worker and trusts what orca-stack
     assert.equal(h.sends().length, 1)
     assert.ok(!Object.keys(h.files).some(file => file.endsWith('rdd-consentimiento.json')))
   }))
+
+  // #357 (main-autonomo-2 S1): a paused agy behind its "esc to dismiss" splash, recorded on 2026-11-14 (Antigravity CLI 1.5.9).
+  const SPLASH = ['\u{2503} Introducing Gemini 4 Hydrogen', '\u{2503} Our daily driver for rapid coding and dependable agentic execution!', '\u{2503} esc to dismiss']
+  const AGY_PROMPT = ['Antigravity CLI 1.5.9', 'Gemini 4 Hydrogen (High)', '>']
+  const ESC = '\u{1b}'
+  const S1_LINE = `agy no recibi\u{f3} el brief. Peg\u{e1} en la terminal term-1 esta l\u{ed}nea: Read and follow the brief in ${BRIEF_PATH}`
+  const agyHarness = ({ escs = 1, send } = {}) => {
+    const h = harness({ agent: 'agy', screen: SPLASH, ...(send ? { send } : {}) })
+    const original = h.io.sh
+    let sentEscs = 0
+    h.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send' && args[args.indexOf('--text') + 1] === ESC) {
+        sentEscs += 1
+        h.calls.push({ cmd, args })
+        return ok('')
+      }
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
+        h.calls.push({ cmd, args })
+        return json({ result: { terminal: { tail: sentEscs >= escs ? AGY_PROMPT : SPLASH } } })
+      }
+      return original(cmd, args, opts)
+    }
+    const escSends = () => h.sends().filter(({ args }) => args[args.indexOf('--text') + 1] === ESC)
+    const lineSends = () => h.sends().filter(({ args }) => args[args.indexOf('--text') + 1] === LINE)
+    const attempted = () => Object.keys(h.files).some(file => file.endsWith('reanudar.json'))
+    return { ...h, escSends, lineSends, attempted }
+  }
+
+  test('S1: reanudar dismisses agy\'s splash with Esc and sends the resume line once to the empty prompt', async () => {
+    const h = agyHarness()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.deepEqual(h.escSends().map(({ args }) => args), [['terminal', 'send', '--terminal', 'term-1', '--text', ESC]])
+    assert.equal(h.lineSends().length, 1)
+    assert.ok(h.sends().indexOf(h.escSends()[0]) < h.sends().indexOf(h.lineSends()[0]))
+  })
+
+  test('S1 negative: a splash that stays after 3 Escs fails with the line to paste, sends no resume line and records no attempt', async () => {
+    const h = agyHarness({ escs: Infinity })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error => error.message === S1_LINE)
+    assert.equal(h.escSends().length, 3)
+    assert.equal(h.lineSends().length, 0)
+    assert.equal(h.attempted(), false)
+  })
+
+  test('S1: agy with no delivery receipt fails with exactly the line to paste and never resends', async () => {
+    const h = agyHarness({ send: ok('') })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error => error.message === S1_LINE)
+    assert.equal(h.lineSends().length, 1)
+    assert.equal(h.attempted(), true)
+    // The attempt is recorded: a second run with the same comment sends nothing.
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /Ya intenté reanudar con el comentario 6205678817/)
+    assert.equal(h.lineSends().length, 1)
+  })
+
+  test('S1 PRESERVE: codex with no delivery receipt keeps the no-resend guard message and gets no Esc', async () => {
+    const h = harness({ send: ok('') })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error =>
+      error.message === 'No hay recibo de entrega de orca terminal send en term-1: la l\u{ed}nea pudo haber llegado. No la reenv\u{ed}o; revis\u{e1} la terminal antes de volver a reanudar.')
+    assert.equal(h.sends().length, 1)
+    assert.equal(h.sends()[0].args[h.sends()[0].args.indexOf('--text') + 1], LINE)
+  })
 })

@@ -1,15 +1,14 @@
-import path from 'node:path'
-
 import { isPending, isStatus, latestChecks } from './checks.mjs'
 import { getCommonDir } from './consultas.mjs'
 import { FAMILIES, blockOf, defaultIo, familyOf, loadConfig } from './despacho.mjs'
 import { commitOf, markerLines, markerValue, namesCommit, normalizeBody } from './marcas.mjs'
+import { baseMigrations, migrationSpec, openReservations, orderBlockers, rawNumberOf } from './migraciones.mjs'
 import { closedIssues } from './vigilar.mjs'
 
 // `orca-stack estado`: MAIN.md step 7 on the current head of each PR, read once (S1, #366). Its `--json` output is the
 // attestation Gentle Shell's merge guard reads: keep its shape stable.
 const USAGE = 'Uso: orca-stack estado [<pr>...] [--json]'
-export const PR_VIEW_FIELDS = 'number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state'
+export const PR_VIEW_FIELDS = 'number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state,url'
 const CHECK_GREEN = ['SUCCESS', 'SKIPPED', 'NEUTRAL']
 const EMPTY_LIST = new Set(['', '-', 'nada', 'ninguno', 'ninguna'])
 
@@ -241,59 +240,111 @@ const ciOf = rollup => {
   return { ci: 'green' }
 }
 
-// The folder a migrations glob lists, up to its first wildcard segment.
-const globDir = glob => {
-  const fixed = []
-  for (const segment of glob.split('/')) {
-    if (/[*?[]/.test(segment)) break
-    fixed.push(segment)
-  }
-
-  return fixed.join('/') || '.'
-}
-
 // S11: every migration the PR adds (matches `migraciones.glob` and is not on origin/<base>) must have a number above the
-// highest one on origin/<base>; goose rejects them by merge order.
-const migrationsOf = (pr, files, base, config, root, io) => {
+// highest one on origin/<base>; goose rejects them by merge order. main-autonomo-2 S2: and it waits for every other open
+// PR, or open reservation of another issue, that holds a lower number than this PR's lowest added one.
+const migrationsOf = (pr, files, base, config, root, io, ctx) => {
   const spec = config.migraciones
   if (!isPlain(spec) || typeof spec.glob !== 'string' || typeof spec.numero !== 'string') return { falta: [], fixes: [] }
   const pattern = globToRegExp(spec.glob)
   const ours = files.filter(file => pattern.test(file))
   if (ours.length === 0) return { falta: [], fixes: [] }
-  let numero
+  let parsed
   try {
-    numero = new RegExp(spec.numero)
-  } catch {
-    return { falta: [`migraciones.numero no es una expresión regular válida: ${spec.numero}`], fixes: [] }
+    parsed = migrationSpec(config)
+  } catch (error) {
+    return { falta: [error.message], fixes: [] }
   }
   const fetched = io.sh('git', ['fetch', 'origin', base], { cwd: root })
-  const listed = fetched.status === 0 ? io.sh('git', ['ls-tree', '-r', '--name-only', `origin/${base}`, '--', globDir(spec.glob)], { cwd: root }) : fetched
-  if (listed.status !== 0) return { falta: [`no pude leer las migraciones de origin/${base}: ${detail(listed)}`], fixes: [] }
-  const onBase = listed.stdout.split(/\r?\n/).map(line => line.trim()).filter(file => file && pattern.test(file))
-  const numberOf = file => numero.exec(path.posix.basename(file))?.[1]
-  const numbers = onBase.map(numberOf).filter(n => n !== undefined && /^\d+$/.test(n)).map(Number)
-  if (numbers.length === 0) return { falta: [], fixes: [] }
-  const max = Math.max(...numbers)
+  const listed = fetched.status === 0 ? baseMigrations(parsed, base, root, io) : { error: detail(fetched) }
+  if (listed.error !== undefined) return { falta: [`no pude leer las migraciones de origin/${base}: ${listed.error}`], fixes: [] }
+  const onBase = listed.files
+  const numbers = onBase.map(file => rawNumberOf(parsed, file)).filter(n => n !== undefined).map(Number)
+  const added = ours.filter(one => !onBase.includes(one)).sort()
   const falta = []
   const fixes = []
-  let next = max
-  for (const file of ours.filter(one => !onBase.includes(one)).sort()) {
-    const raw = numberOf(file)
-    if (raw === undefined || !/^\d+$/.test(raw) || Number(raw) > max) continue
-    next += 1
-    const item = `migración ${file} (${Number(raw)}) no es mayor que ${max} en ${base}`
-    falta.push(item)
-    fixes.push(`${item}: renumerala a ${String(next).padStart(raw.length, '0')} (renombrá el archivo y lo que lo nombre) para que corra después de las de ${base}.`)
+  if (numbers.length > 0) {
+    const max = Math.max(...numbers)
+    let next = max
+    for (const file of added) {
+      const raw = rawNumberOf(parsed, file)
+      if (raw === undefined || Number(raw) > max) continue
+      next += 1
+      const item = `migración ${file} (${Number(raw)}) no es mayor que ${max} en ${base}`
+      falta.push(item)
+      fixes.push(`${item}: renumerala a ${String(next).padStart(raw.length, '0')} (renombrá el archivo y lo que lo nombre) para que corra después de las de ${base}.`)
+    }
   }
 
+  const numbered = added.flatMap(file => {
+    const raw = rawNumberOf(parsed, file)
+    return raw === undefined ? [] : [{ file, numero: Number(raw) }]
+  })
+  if (numbered.length === 0) return { falta, fixes }
+  const mine = numbered.reduce((low, one) => (one.numero < low.numero ? one : low))
+  const open = ctx.openPrs()
+  if (open.error !== undefined) return { falta: [...falta, `no pude listar los PRs abiertos para ordenar las migraciones: ${open.error}`], fixes }
+  const reservations = ctx.reservations()
+  if (reservations.error !== undefined) return { falta: [...falta, reservations.error], fixes }
+  const others = open.prs.map(one => ({
+    number: one?.number,
+    body: one?.body,
+    added: (one?.files ?? [])
+      .map(file => file?.path)
+      .filter(file => typeof file === 'string' && parsed.pattern.test(file) && !onBase.includes(file))
+      .map(file => rawNumberOf(parsed, file))
+      .filter(raw => raw !== undefined)
+      .map(Number),
+  }))
+  const selfIssue = closedIssues(pr.body)[0]
+  falta.push(...orderBlockers({ mine, selfIssue, selfPr: pr.number, others, reservas: reservations.reservas }))
+
   return { falta, fixes }
+}
+
+// The other open PRs and the open reservations, read once per estado run and only when a PR adds a migration.
+const migrationContext = (commonDir, root, io) => {
+  let prs
+  let reservas
+  return {
+    openPrs: () => {
+      if (prs === undefined) {
+        const res = io.sh('gh', ['pr', 'list', '--state', 'open', '--json', 'number,headRefName,body,files', '--limit', '100'], { cwd: root })
+        const listed = res.status === 0 ? parse(res) : undefined
+        prs = Array.isArray(listed) ? { prs: listed } : { error: detail(res) || 'gh pr list no devolvió una lista' }
+      }
+
+      return prs
+    },
+    reservations: () => {
+      if (reservas === undefined) reservas = openReservations({ commonDir, root, io })
+
+      return reservas
+    },
+  }
 }
 
 const reviewBody = (head, fixes) =>
   `Revisor: main (migraciones)\nCommit: ${head}\n\n## BLOQUEA\n${fixes.map((fix, i) => `${i + 1}. ${fix}`).join('\n')}\n\n## SUGERENCIAS\nnada`
 
 // One PR against MAIN.md step 7 on its current head.
-const evaluate = (pr, config, root, io, now) => {
+// #377: a repo that merges on green CI without reviews says so with `"reviewParaMerge": false`. The Gentle Shell guard
+// trusts this attestation, so the key is read only from the .orca-stack.json committed on the PR's base branch on
+// GitHub, never from the (agent-writable) checkout; any failure keeps the full step 7.
+// The repository comes from the PR's own url, so the config read and the PR read cannot point at different repos.
+export const baseConfigOf = (pr, base, root, io) => {
+  const repo = /github\.com\/([^/]+\/[^/]+)\/pull\//.exec(String(pr.url ?? ''))?.[1] ?? '{owner}/{repo}'
+  const res = io.sh('gh', ['api', '-H', 'Accept: application/vnd.github.raw+json', `repos/${repo}/contents/.orca-stack.json?ref=${encodeURIComponent(base)}`], { cwd: root })
+  if (res.status !== 0) return undefined
+  try {
+    const parsed = JSON.parse(res.stdout)
+    return isPlain(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const evaluate = (pr, config, root, io, now, ctx) => {
   const n = pr.number
   const head = String(pr.headRefOid ?? '').toLowerCase()
   const sha7 = head.slice(0, 7)
@@ -303,7 +354,11 @@ const evaluate = (pr, config, root, io, now) => {
 
   const implementer = implementerOf(pr.body)
   const rdd = implementer === 'pi' && config.agentes?.pi?.review === 'rdd'
-  const riesgo = Array.isArray(config.riesgo) ? config.riesgo : []
+  // #377: the waiver and, while it applies, the committed riesgo come from the base branch on GitHub (an agent can empty
+  // riesgo in its checkout, not on the protected base).
+  const committed = baseConfigOf(pr, pr.baseRefName || config.ramaBase || 'main', root, io)
+  const waived = committed?.reviewParaMerge === false
+  const riesgo = [...new Set([...(Array.isArray(config.riesgo) ? config.riesgo : []), ...(waived && Array.isArray(committed.riesgo) ? committed.riesgo : [])])]
   const files = (pr.files ?? []).map(file => file?.path).filter(file => typeof file === 'string')
   const risky = riskyFile(files, riesgo)
   const bodies = bodiesOf(pr)
@@ -321,8 +376,11 @@ const evaluate = (pr, config, root, io, now) => {
   const sinReview = marks('Sin review', rdd)
   const sinOnHead = sinReview.filter(mark => namesCommit(mark.commit, head))
 
-  // (a) and (b)
-  if (implementer === undefined || !FAMILIES.agents.includes(implementer)) {
+  // (a) and (b); with #377's waiver only an unsettled blocker on the head and ## Evidencia remain.
+  if (waived) {
+    for (const one of onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))) falta.push(`(a) el review de ${one.reviewer} sobre ${sha7} tiene bloqueos`)
+    if (!/^##\s*Evidencia\b/im.test(normalizeBody(pr.body))) falta.push('(a) reviewParaMerge: false en la base necesita ## Evidencia en el body del PR')
+  } else if (implementer === undefined || !FAMILIES.agents.includes(implementer)) {
     falta.push('(a) el body del PR no tiene una línea Implementador: <agente>')
   } else {
     const unsettled = onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))
@@ -358,7 +416,7 @@ const evaluate = (pr, config, root, io, now) => {
   }
 
   // S11
-  const migrations = migrationsOf(pr, files, pr.baseRefName || config.ramaBase || 'main', config, root, io)
+  const migrations = migrationsOf(pr, files, pr.baseRefName || config.ramaBase || 'main', config, root, io, ctx)
   falta.push(...migrations.falta)
 
   const shown = onHead.map(one => `${one.lenses ? `${one.reviewer}(RDD:${[...one.lenses].sort().join(',')})` : one.reviewer}@${sha7}${one.clean ? '' : ':bloquea'}`)
@@ -386,8 +444,9 @@ export const estadoCommand = async (flags = {}, items = [], io = defaultIo()) =>
   const warn = io.err ?? (message => console.error(message))
   const raw = (items ?? []).map(item => String(item).trim().replace(/^#/, ''))
   if (raw.some(item => !/^\d+$/.test(item))) throw new Error(USAGE)
-  const { root } = getCommonDir(io)
+  const { commonDir, root } = getCommonDir(io)
   const config = loadConfig(io.home, root)
+  const ctx = migrationContext(commonDir, root, io)
   let numbers = [...new Set(raw.map(item => Number(item)))]
   if (numbers.length === 0) {
     const base = config.ramaBase
@@ -408,7 +467,7 @@ export const estadoCommand = async (flags = {}, items = [], io = defaultIo()) =>
     const pr = res.status === 0 ? parse(res) : undefined
     if (!isPlain(pr) || typeof pr.headRefOid !== 'string') throw new Error(`No pude leer el PR #${n} con gh pr view: ${detail(res)}`)
 
-    return evaluate(pr, config, root, io, now)
+    return evaluate(pr, config, root, io, now, ctx)
   })
   if (flags.json) {
     // One PR named: one object (the guard's attestation); several, or every open one: an array.

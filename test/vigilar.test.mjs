@@ -103,6 +103,9 @@ const harness = (world = {}) => {
         return json({ state: (world.issues ?? {})[args[2]] ?? 'OPEN' })
       }
       if (cmd === 'gh' && args[0] === 'api' && args[1] === 'user') return world.userDown ? fail(world.userDown) : json({ login: 'stack-bot' })
+      // GitHub's sub-issues REST endpoint answers with the sub-issues as a list of issues.
+      const sub = cmd === 'gh' && args[0] === 'api' ? /^repos\/\{owner\}\/\{repo\}\/issues\/(\d+)\/sub_issues\?per_page=100$/.exec(args[1] ?? '') : null
+      if (sub) return world.ghDown ? fail(world.ghDown) : json(((world.subIssues ?? {})[sub[1]] ?? []).map(number => ({ number, state: 'open', title: `t${number}` })))
       return fail(`unexpected call: ${cmd} ${args.join(' ')}`)
     },
   }
@@ -576,7 +579,7 @@ describe('orca-stack vigilar (#195)', () => {
       for (const flag of ['--cada <segundos>', '--una-vez', '--consultas', '--merge-de-main <pr>']) {
         assert.ok(output.split('\n').some(line => line.trimStart().startsWith(flag) && line.includes('(vigilar)')), flag)
       }
-      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, limpiar)'))
+      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar)'))
       output = ''
       assert.equal(await main(['vigilar', '--help']), 0)
       assert.ok(output.includes('review-publicado #<pr> <agente> <sha> bloquea=<n>'))
@@ -1202,11 +1205,116 @@ describe('orca-stack vigilar (main-autonomo S9, #365)', () => {
     assert.deepEqual(h.out, [])
   })
 
+  test('PRESERVE S3: a batch watcher never reads sub-issues', async () => {
+    const h = harness({ prs: [pr(70)] })
+    await once(h, ['7'])
+    assert.deepEqual(drain(h), ['pr-abierto #7 PR #70 abc1234'])
+    assert.equal(h.calls.some(call => call.includes('sub_issues')), false)
+  })
+
   test('S9: --consultas reads the linked PR too, so a Consulta: on PR #70 is reported', async () => {
     const h = harness({ prs: [pr(70)], comments: { 70: [{ ...CONSULTA, id: 'IC_pr', body: `${BOM}Consulta: pi — ¿consentimiento RDD?` }] } })
     await once(h, ['7'], { consultas: true })
     assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'consulta nueva en #70'])
     assert.ok(h.calls.includes('gh issue view 7 --json comments'))
     assert.ok(h.calls.includes('gh issue view 70 --json comments'))
+  })
+})
+
+describe('orca-stack vigilar --paraguas (S3, #370)', () => {
+  const umbrella = (h, flags = {}) => vigilarCommand({ paraguas: '29', unaVez: true, ...flags }, [], h.io)
+  const EVENT = 'planificacion-publicada #29 #63,#64,#65,#66'
+
+  test('Rule 1: four sub-issues from one to-tickets run give one event, once the batch stops growing', async () => {
+    const h = harness({ subIssues: { 29: [63, 64] } })
+    await umbrella(h)
+    assert.deepEqual(drain(h), [])
+    h.world.subIssues[29] = [63, 64, 65, 66]
+    await umbrella(h)
+    assert.deepEqual(drain(h), [])
+    await umbrella(h)
+    assert.deepEqual(drain(h), [EVENT])
+    await umbrella(h)
+    assert.deepEqual(h.out, [])
+    assert.ok(h.calls.includes('gh api repos/{owner}/{repo}/issues/29/sub_issues?per_page=100'))
+  })
+
+  test('Rule 1: a later batch gives its own event with only the new sub-issues', async () => {
+    const h = harness({ subIssues: { 29: [63, 64, 65, 66] } })
+    await umbrella(h)
+    await umbrella(h)
+    assert.deepEqual(drain(h), [EVENT])
+    h.world.subIssues[29] = [63, 64, 65, 66, 80, 79]
+    await umbrella(h)
+    await umbrella(h)
+    assert.deepEqual(h.out, ['planificacion-publicada #29 #79,#80'])
+  })
+
+  test('Rule 2 negative: grilling turns (comments, umbrella edits) with no sub-issues emit nothing', async () => {
+    const h = harness({ subIssues: { 29: [] }, comments: { 29: [{ id: 'IC_9', author: { login: 'stack-bot' }, body: 'Edité GLOSSARY.md' }] } })
+    for (let i = 0; i < 3; i += 1) await umbrella(h)
+    assert.deepEqual(h.out, [])
+    assert.equal(h.calls.some(call => call.includes('comments')), false)
+  })
+
+  test('Rule 3 negative: an issue that is not a sub-issue of the umbrella emits nothing', async () => {
+    // #90 is a follow-up bug in the repo: it is on the umbrella's own sub-issue list only if someone links it.
+    const h = harness({ subIssues: { 29: [], 90: [] }, issues: { 90: 'OPEN' } })
+    for (let i = 0; i < 3; i += 1) await umbrella(h)
+    assert.deepEqual(h.out, [])
+  })
+
+  test('a re-armed monitor resumes from the cursor and does not re-emit', async () => {
+    const h = harness({ subIssues: { 29: [63, 64, 65, 66] } })
+    await umbrella(h)
+    await umbrella(h)
+    assert.deepEqual(drain(h), [EVENT])
+    const rearmed = harness({ subIssues: { 29: [63, 64, 65, 66] } })
+    rearmed.files[CURSOR] = h.files[CURSOR]
+    await umbrella(rearmed)
+    await umbrella(rearmed)
+    assert.deepEqual(rearmed.out, [])
+    // The umbrella's entry shares vigilar.json with the batch items and does not touch them.
+    h.files[CURSOR] = JSON.stringify({ ...h.cursor(), 7: { pr: 70, head: ABC } })
+    await umbrella(h)
+    assert.deepEqual(h.cursor()[7], { pr: 70, head: ABC })
+  })
+
+  test('--dry-run reads once and writes no cursor', async () => {
+    const h = harness({ subIssues: { 29: [63] } })
+    await umbrella(h, { unaVez: false, dryRun: true })
+    await umbrella(h, { unaVez: false, dryRun: true })
+    assert.equal(CURSOR in h.files, false)
+    assert.deepEqual(h.out, [])
+  })
+
+  test('looping, it emits the batch and ends on its own when the umbrella is closed', async () => {
+    const h = harness({
+      subIssues: { 29: [63, 64, 65, 66] },
+      script: [() => {}, world => { world.issues = { 29: 'CLOSED' } }],
+    })
+    assert.equal(await vigilarCommand({ paraguas: '29', cada: '5' }, [], h.io), 0)
+    assert.deepEqual(h.out, [EVENT])
+    assert.deepEqual(h.sleeps, [5000, 5000])
+    assert.ok(h.err.includes('vigilar: el paraguas #29 está cerrado; no queda nada que vigilar.'))
+  })
+
+  test('three polls in a row that cannot read GitHub say vigilar-ciego once', async () => {
+    const h = harness({ ghDown: 'HTTP 502' })
+    for (let i = 0; i < 4; i += 1) await vigilarCommand({ paraguas: '29', unaVez: true }, [], h.io)
+    // Each --una-vez run starts its own failure count: only a looping watcher reaches three.
+    assert.deepEqual(h.out, [])
+    const looping = harness({ ghDown: 'HTTP 502', script: [() => {}, () => {}, world => { delete world.ghDown; world.issues = { 29: 'CLOSED' } }] })
+    await vigilarCommand({ paraguas: '29', cada: '1' }, [], looping.io)
+    assert.deepEqual(looping.out, ['vigilar-ciego: gh issue view falló (HTTP 502)'])
+  })
+
+  test('negative: --paraguas takes one umbrella number and no batch items', async () => {
+    const usage = 'Uso: orca-stack vigilar --paraguas <n> [--cada <segundos>] [--una-vez] [--dry-run], con el número de un solo issue paraguas y sin otros items.'
+    for (const [flags, items] of [[{ paraguas: 'x' }, []], [{ paraguas: '' }, []], [{ paraguas: '29' }, ['7']], [{ paraguas: '29', consultas: true }, []]]) {
+      const h = harness()
+      await assert.rejects(vigilarCommand({ unaVez: true, ...flags }, items, h.io), error => error.message === usage, JSON.stringify([flags, items]))
+      assert.deepEqual(h.calls, [])
+    }
   })
 })

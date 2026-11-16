@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync, readFileSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { after, before, describe, test } from 'node:test'
 
@@ -37,6 +38,11 @@ const harness = (world = {}, config = {}) => {
     now: () => Date.parse('2026-11-15T12:00:00Z'),
     out: line => out.push(line),
     err: line => err.push(line),
+    exists: existsSync,
+    readFile: file => readFileSync(file, 'utf8'),
+    writeFile: (file, text) => write(file, text),
+    mkdirp: () => {},
+    rename: renameSync,
     sh: (cmd, args) => {
       calls.push([cmd, ...args].join(' '))
       if (cmd === 'git' && args.includes('--git-common-dir')) return okRes(`${root}/.git\n${root}/.git\n${root}\n`)
@@ -46,7 +52,15 @@ const harness = (world = {}, config = {}) => {
         const found = (world.prs ?? []).find(one => String(one.number) === args[2])
         return found ? json(found) : fail(`no pull requests found for branch "${args[2]}"`)
       }
+      if (cmd === 'gh' && args[0] === 'api') {
+        if (world.baseConfig === undefined) return fail('gh: Not Found (HTTP 404)')
+        world.apiCalls = [...(world.apiCalls ?? []), args.join(' ')]
+        return okRes(world.baseConfig)
+      }
+      if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list' && args.includes('all')) return json(world.allPrs ?? [])
+      if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list' && args.includes('number,headRefName,body,files')) return world.openDown ? fail(world.openDown) : json((world.prs ?? []).filter(one => one.state === 'OPEN'))
       if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list') return json((world.prs ?? []).filter(one => one.state === 'OPEN').map(one => ({ number: one.number })))
+      if (cmd === 'gh' && args[0] === 'issue' && args[1] === 'view') return json({ state: (world.issueStates ?? {})[args[2]] ?? 'OPEN' })
       return fail(`unexpected call: ${cmd} ${args.join(' ')}`)
     },
   }
@@ -75,7 +89,7 @@ describe('orca-stack estado (S1, #366)', () => {
     assert.equal(await estado(h, ['70'], { json: true }), 0)
     assert.deepEqual(h.out, [JSON.stringify({ pr: 70, head: HEAD, ok: true, falta: [], merge: MERGE })])
     assert.deepEqual(h.err, [])
-    assert.ok(h.calls.includes('gh pr view 70 --json number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state'))
+    assert.ok(h.calls.includes('gh pr view 70 --json number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state,url'))
 
     const human = harness(world)
     assert.equal(await estado(human, ['70']), 0)
@@ -302,5 +316,159 @@ describe('orca-stack estado (S1, #366)', () => {
     const h = harness({ prs: [prData(70, { reviews: [review('agy', HEAD)] })] })
     assert.equal(await main(['estado', '70', '--json'], h.io), 0)
     assert.deepEqual(h.out, [JSON.stringify({ pr: 70, head: HEAD, ok: true, falta: [], merge: MERGE })])
+  })
+})
+
+describe('orca-stack estado: reviewParaMerge (#377)', () => {
+  before(() => {
+    root = tempDir('estado-377-root')
+    home = tempDir('estado-377-home')
+  })
+  after(() => {
+    cleanup(root)
+    cleanup(home)
+  })
+  const EVIDENCIA = ['Implementador: claude', '', '## Evidencia', '', '| Rule | Test |', '| --- | --- |', '| R1 | `x` |', ''].join('\n')
+  const WAIVED = JSON.stringify({ ramaBase: 'main', reviewParaMerge: false })
+
+  test('#377 Rule 1/2: reviewParaMerge false on the base branch on GitHub, green CI and ## Evidencia: ok with no review, read with gh api on the PR base', async () => {
+    const world = { prs: [prData(80, { body: EVIDENCIA })], baseConfig: WAIVED }
+    const h = harness(world)
+    assert.equal(await estado(h, ['80'], { json: true }), 0)
+    assert.deepEqual(one(h), { pr: 80, head: HEAD, ok: true, falta: [], merge: MERGE })
+    assert.deepEqual(world.apiCalls, ['api -H Accept: application/vnd.github.raw+json repos/{owner}/{repo}/contents/.orca-stack.json?ref=main'])
+  })
+
+  test('#377 Rule 2 negative: a local .orca-stack.json saying false does not waive the review when the base on GitHub does not', async () => {
+    const world = { prs: [prData(81, { body: EVIDENCIA })], baseConfig: JSON.stringify({ ramaBase: 'main' }) }
+    const h = harness(world, { reviewParaMerge: false })
+    assert.equal(await estado(h, ['81'], { json: true }), 1)
+    assert.deepEqual(one(h).falta, [`(a) falta un review sin bloqueos sobre ${HEAD.slice(0, 7)} de alguien que no sea claude`])
+  })
+
+  test('#377 Rule 3 negative: with the waiver, red CI, a body without ## Evidencia, a blocking review on the head and an uncovered riesgo path still give ok:false', async () => {
+    const red = { prs: [prData(82, { body: EVIDENCIA, checks: [run('test', 'FAILURE')] })], baseConfig: WAIVED }
+    const hRed = harness(red)
+    assert.equal(await estado(hRed, ['82'], { json: true }), 1)
+    assert.ok(one(hRed).falta.some(item => item.startsWith('(c) ')), hRed.out[0])
+
+    const bare = { prs: [prData(83, { body: 'Implementador: claude' })], baseConfig: WAIVED }
+    const hBare = harness(bare)
+    assert.equal(await estado(hBare, ['83'], { json: true }), 1)
+    assert.deepEqual(one(hBare).falta, ['(a) reviewParaMerge: false en la base necesita ## Evidencia en el body del PR'])
+
+    const blocked = { prs: [prData(84, { body: EVIDENCIA, reviews: [review('codex', HEAD, { verdict: '- src/a.mjs:3 rompe X' })] })], baseConfig: WAIVED }
+    const hBlocked = harness(blocked)
+    assert.equal(await estado(hBlocked, ['84'], { json: true }), 1)
+    assert.deepEqual(one(hBlocked).falta, [`(a) el review de codex sobre ${HEAD.slice(0, 7)} tiene bloqueos`])
+
+    const risky = { prs: [prData(85, { body: EVIDENCIA.replace('claude', 'codex'), files: ['auth/store.go'] })], baseConfig: JSON.stringify({ ramaBase: 'main', reviewParaMerge: false, riesgo: ['auth/**'] }) }
+    const hRisky = harness(risky, { riesgo: ['auth/**'] })
+    assert.equal(await estado(hRisky, ['85'], { json: true }), 1)
+    assert.ok(one(hRisky).falta.some(item => item.startsWith('(d) ')), hRisky.out[0])
+  })
+
+  test('#377 Rule 2 hardening: the config is read from the PR\'s own repository with the base escaped, and with the waiver the committed riesgo also counts', async () => {
+    const pr = { ...prData(87, { body: EVIDENCIA, files: ['auth/store.go'] }), url: 'https://github.com/Owner/Repo/pull/87', baseRefName: 'a&ref=main' }
+    const world = { prs: [pr], baseConfig: JSON.stringify({ reviewParaMerge: false, riesgo: ['auth/**'] }) }
+    const h = harness(world, { riesgo: [] })
+    assert.equal(await estado(h, ['87'], { json: true }), 1)
+    assert.deepEqual(world.apiCalls, ['api -H Accept: application/vnd.github.raw+json repos/Owner/Repo/contents/.orca-stack.json?ref=a%26ref%3Dmain'])
+    assert.ok(one(h).falta.some(item => item.startsWith('(d) ')), 'emptying riesgo in the local checkout does not drop the committed riesgo review')
+  })
+
+  test('#377 Rule 4: gh api failing or returning invalid JSON keeps the full step 7 and does not error', async () => {
+    for (const baseConfig of [undefined, '{not json']) {
+      const world = { prs: [prData(86, { body: EVIDENCIA })], baseConfig }
+      const h = harness(world)
+      assert.equal(await estado(h, ['86'], { json: true }), 1)
+      assert.deepEqual(one(h).falta, [`(a) falta un review sin bloqueos sobre ${HEAD.slice(0, 7)} de alguien que no sea claude`])
+    }
+  })
+})
+
+describe('main-autonomo-2 S2: estado orders migrations by reservation', () => {
+  const CONFIG = { migraciones: { glob: 'db/migrations/*.sql', numero: String.raw`^(\d+)_` } }
+  const BASE = ['db/migrations/00011_users.sql', 'db/migrations/00012_roles.sql']
+  const registry = () => path.join(root, '.git', 'orca-stack', 'migraciones.json')
+  const reserved = reservas => write(registry(), JSON.stringify({ reservas }))
+  const pr = (number, issue, files) => prData(number, { body: `Implementador: codex\n\nCloses #${issue}`, files, reviews: [review('agy', HEAD)] })
+  before(() => {
+    root = tempDir('estado-mig-root')
+    home = tempDir('estado-mig-home')
+  })
+  after(() => {
+    cleanup(root)
+    cleanup(home)
+  })
+
+  test('S2: another open PR adding a lower migration makes this one wait for its merge; the lower one is ok; one gh pr list for both', async () => {
+    reserved({ 7: { numero: 14, texto: '00014' }, 8: { numero: 13, texto: '00013' } })
+    const world = { baseFiles: BASE, prs: [pr(70, 7, ['db/migrations/00014_cuotas.sql', 'src/a.mjs']), pr(71, 8, ['db/migrations/00013_pagos.sql'])] }
+    const h = harness(world, CONFIG)
+    assert.equal(await estado(h, ['70', '71'], { json: true }), 1)
+    const [first, second] = JSON.parse(h.out[0])
+    assert.deepEqual(first.falta, ['migración db/migrations/00014_cuotas.sql (14): esperá el merge de #71 (migración 13 reservada antes)'])
+    assert.equal(first.ok, false)
+    assert.deepEqual(second.falta, [])
+    assert.equal(second.ok, true)
+    assert.equal(h.calls.filter(call => call === 'gh pr list --state open --json number,headRefName,body,files --limit 100').length, 1)
+    assert.deepEqual(h.err, [])
+
+    const human = harness(world, CONFIG)
+    assert.equal(await estado(human, ['70']), 1)
+    assert.deepEqual(human.out, ['#70 #7 codex head=abc1234 ci=green review=agy@abc1234 riesgo=no falta=migración db/migrations/00014_cuotas.sql (14): esperá el merge de #71 (migración 13 reservada antes)'])
+  })
+
+  test('S2: an open reservation of another issue with a lower number blocks even before that issue has a PR', async () => {
+    reserved({ 7: { numero: 14, texto: '00014' }, 9: { numero: 13, texto: '00013' } })
+    const h = harness({ baseFiles: BASE, prs: [pr(70, 7, ['db/migrations/00014_cuotas.sql'])] }, CONFIG)
+    assert.equal(await estado(h, ['70'], { json: true }), 1)
+    assert.deepEqual(one(h).falta, ['migración db/migrations/00014_cuotas.sql (14): esperá el merge de #9 (migración 13 reservada antes)'])
+  })
+
+  test('S2 negative: a reservation of a closed issue is released from the registry and does not block', async () => {
+    reserved({ 7: { numero: 14, texto: '00014' }, 9: { numero: 13, texto: '00013' } })
+    const h = harness({ baseFiles: BASE, issueStates: { 9: 'CLOSED' }, prs: [pr(70, 7, ['db/migrations/00014_cuotas.sql'])] }, CONFIG)
+    assert.equal(await estado(h, ['70'], { json: true }), 0)
+    assert.deepEqual(one(h).falta, [])
+    assert.deepEqual(Object.keys(JSON.parse(readFileSync(registry(), 'utf8')).reservas), ['7'])
+  })
+
+  test('S2 negative: its own reservation, a higher one and a PR adding no migration never block; the out-of-order check stays', async () => {
+    reserved({ 7: { numero: 2, texto: '00002' }, 8: { numero: 15, texto: '00015' } })
+    const h = harness({ baseFiles: BASE, prs: [pr(70, 7, ['db/migrations/00014_cuotas.sql']), pr(71, 8, ['src/b.mjs'])] }, CONFIG)
+    assert.equal(await estado(h, ['70'], { json: true }), 0)
+    assert.deepEqual(one(h).falta, [])
+
+    reserved({})
+    const late = harness({ baseFiles: BASE, prs: [pr(70, 7, ['db/migrations/00012_cuotas.sql']), pr(71, 8, ['src/b.mjs'])] }, CONFIG)
+    assert.equal(await estado(late, ['70']), 1)
+    assert.deepEqual(late.out, [
+      '#70 #7 codex head=abc1234 ci=green review=agy@abc1234 riesgo=no falta=migración db/migrations/00012_cuotas.sql (12) no es mayor que 12 en main',
+      'Comentario para publicar en el PR #70 (gh pr comment 70 --body-file <archivo>), para rebotarlo con orca-stack rebote 70:',
+      `Revisor: main (migraciones)\nCommit: ${HEAD}\n\n## BLOQUEA\n1. migración db/migrations/00012_cuotas.sql (12) no es mayor que 12 en main: renumerala a 00013 (renombrá el archivo y lo que lo nombre) para que corra después de las de main.\n\n## SUGERENCIAS\nnada`,
+    ])
+  })
+
+  test('S2 negative: without migraciones there is no reservation lookup and no new falta', async () => {
+    reserved({ 9: { numero: 1, texto: '00001' } })
+    const h = harness({ baseFiles: BASE, prs: [pr(70, 7, ['db/migrations/00014_cuotas.sql']), pr(71, 8, ['db/migrations/00013_pagos.sql'])] })
+    assert.equal(await estado(h, ['70'], { json: true }), 0)
+    assert.deepEqual(one(h).falta, [])
+    assert.ok(!h.calls.some(call => call.startsWith('gh pr list') || call.startsWith('gh issue') || call.startsWith('git ls-tree')), h.calls.join('\n'))
+  })
+
+  test('S2: open PRs that cannot be listed, or an unreadable registry, are named instead of passing', async () => {
+    reserved({})
+    const down = harness({ baseFiles: BASE, openDown: 'gh: HTTP 502', prs: [pr(70, 7, ['db/migrations/00014_cuotas.sql'])] }, CONFIG)
+    assert.equal(await estado(down, ['70'], { json: true }), 1)
+    assert.deepEqual(one(down).falta, ['no pude listar los PRs abiertos para ordenar las migraciones: gh: HTTP 502'])
+
+    write(registry(), 'not json')
+    const broken = harness({ baseFiles: BASE, prs: [pr(70, 7, ['db/migrations/00014_cuotas.sql'])] }, CONFIG)
+    assert.equal(await estado(broken, ['70'], { json: true }), 1)
+    assert.deepEqual(one(broken).falta, [`no pude leer el registro de migraciones ${registry()}`])
+    assert.equal(readFileSync(registry(), 'utf8'), 'not json')
   })
 })

@@ -138,7 +138,7 @@ shells of the worktree they reuse themselves, and refuse only while an agent wor
 RDD consent for a dispatched worker comes from orca-stack's policy, `agentes.<agent>.rddConsentimiento` in the
 merged config: `"politica"` (the default) answers `declined` on the worker's own candidate and `granted` on main's
 `RDD:` request for that head, without asking the human; `"humano"` keeps asking the human through a `Consulta:`.
-`migraciones` in `.orca-stack.json`, `{ "glob": "<dir>/*.sql", "numero": "^(\\d+)_" }`, makes `orca-stack estado` require
+`reviewParaMerge: false` in `.orca-stack.json` (read only from the copy committed on the PR's base branch on GitHub, never from the checkout) makes `orca-stack estado` drop the step-7 review requirement for repos that merge on green CI; CI, `## Evidencia`, unsettled blockers on the head, migrations and `riesgo` reviews still count (#377). `migraciones` in `.orca-stack.json`, `{ "glob": "<dir>/*.sql", "numero": "^(\\d+)_" }`, makes `orca-stack estado` require
 that every migration a PR adds has a number above the highest one on its base branch.
 
 Reference, the launcher each agent gets as the `--command` of `orca terminal create`. They are written for the Orca

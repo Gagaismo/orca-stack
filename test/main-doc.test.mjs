@@ -87,6 +87,22 @@ describe('issue 325: main-only rules move to MAIN.md', () => {
     assert.doesNotMatch(contract, /\n### Despacho\n/)
   })
 
+  test('S3 (#370): Despacho has the planning-session rule: planificar, vigilar --paraguas, the docs PR and tickets waiting for it', () => {
+    const despacho = section(main, '### Despacho')
+    const rule = paragraphs(despacho).find(unit => unit.startsWith('**Sesión de planificación.**')) ?? ''
+    for (const text of [
+      'main corre `orca-stack planificar <paraguas>`, nunca en su checkout ni con `git worktree add`',
+      'worktree de Orca (con tarjeta) en `docs/<slug>` desde `origin/<ramaBase>`',
+      'La sesión la maneja el humano',
+      'commitea solo docs en esa rama y la pushea',
+      'publica los tickets como sub-issues del paraguas',
+      'arma un Monitor con `orca-stack vigilar --paraguas <n>`',
+      '`planificacion-publicada #<n> #<a>,#<b>`, no "waiting for input"',
+      'main abre el PR de orquestación desde `docs/<slug>`',
+      'los tickets que citan un ADR de esa rama esperan ese merge para despacharse',
+    ]) assert.ok(rule.includes(text), text)
+  })
+
   test('R7: CONTRATO.md is at most 24576 bytes', () => {
     assert.ok(contractFits(contract), `CONTRATO.md is ${Buffer.byteLength(contract, 'utf8')} bytes`)
   })

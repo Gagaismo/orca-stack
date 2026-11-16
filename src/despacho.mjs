@@ -130,7 +130,7 @@ const shQuote = text => `'${text.replace(/'/g, "'\\''")}'`
 
 // The command typed into the Orca terminal. `win` is the target shell, not the host: PowerShell on win32 (Orca's
 // terminal there), POSIX elsewhere. Paths follow it.
-export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking }) => {
+export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive = false }) => {
   const { model, effort } = modelFor(config, agent, mode)
   const P = win ? path.win32 : path.posix
   const wrapper = P.join(home, ...SCRIPTS_REL, wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
@@ -146,24 +146,25 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   // may wait on a person: the dialog tools are left out and --no-approve skips the project-trust prompt (untrusted, as
   // `pi -p` left it). The stack markers are cleared so they do not leak into Gentle Shell.
   const q = win ? psQuote : shQuote
-  const prompt = `Read and carry out the brief in ${briefPath}. Unattended: never wait for user input.`
+  // #370: a planning session is interactive: the human drives it, so it keeps the dialog tools and no autonomy marker.
+  const prompt = interactive ? `Read the brief in ${briefPath} and follow it; the human drives this session.` : `Read and carry out the brief in ${briefPath}. Unattended: never wait for user input.`
   const tools = PI_TOOLS[mode] ? ` --tools ${q(PI_TOOLS[mode])}` : ''
   // With a profile the orchestrator is the profile's own, not whatever the global settings.json says (a pin never moves it).
   const piFlags = piModel ? ` --model ${q(piModel)}${PI_THINKING.includes(piThinking) ? ` --thinking ${piThinking}` : ''}` : ''
-  const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve --exclude-tools ${q(PI_DIALOG_TOOLS)}${piFlags}${tools} ${q(prompt)}`
+  const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve${interactive ? '' : ` --exclude-tools ${q(PI_DIALOG_TOOLS)}`}${piFlags}${tools} ${q(prompt)}`
   // No ENGRAM_DATA_DIR: since gentle-pi 4.4.0 any explicit Engram selection turns memory off; the worker shares the
   // human's global Engram server instead (#304).
   // main-autonomo S3: Gentle Shell answers RDD consent from the policy file only when the pi process itself carries
   // GENTLE_PI_ORCA_RDD_POLICY=1. The agent's own bash calls cannot change its host's environment, so this is the trust
   // anchor the review asked for; it is always cleared first so a value inherited from the terminal never leaks in.
   const policy = rddConsentPolicy(config, 'pi') === 'politica'
-  const set = [['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(policy ? [['GENTLE_PI_ORCA_RDD_POLICY', '1']] : []), ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
-  const cleared = [...STACK_VARS_CLEARED, 'GENTLE_PI_ORCA_RDD_POLICY']
+  const set = [...(interactive ? [] : [['GENTLE_PI_AUTONOMOUS_MODE', '1']]), ...(policy && !interactive ? [['GENTLE_PI_ORCA_RDD_POLICY', '1']] : []), ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
+  const cleared = [...STACK_VARS_CLEARED, 'GENTLE_PI_ORCA_RDD_POLICY', ...(interactive ? ['GENTLE_PI_AUTONOMOUS_MODE'] : [])]
   if (win) {
     return [`Remove-Item ${cleared.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
   }
 
-  return [`unset ${cleared.join(' ')}`, `export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`, cmd].join('; ')
+  return [`unset ${cleared.join(' ')}`, ...(set.length > 0 ? [`export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`] : []), cmd].join('; ')
 }
 
 // Repo-relative paths a brief cites in inline backticks: contains a slash or ends in a known extension, no spaces, not a
@@ -313,6 +314,7 @@ export const renderBrief = (kind, vars, nota) => {
     FANOUT_INSTRUCTIONS: fanoutInstructions(vars.AGENT, nota),
     PI_FOREGROUND: piForeground(vars.AGENT),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
+    MIGRACION: vars.MIGRACION ? `\n- If this ticket adds a migration, number it ${vars.MIGRACION} (reserved by orca-stack); if it needs more than one, ask with a \`Consulta:\`.` : '',
   })
 }
 
@@ -400,6 +402,43 @@ const checkPostLaunchScreen = async (io, handle, agent) => {
 // and execute files here." over the "Yes, I trust this folder" / "No, exit" menu.
 const AGY_TRUST = /trust this folder\?|requires permission to read, edit, and execute files here|Yes, I trust this folder/i
 const AGY_TRUST_ENTERS = 3
+
+// agy 1.5.x draws a one-time banner ("Auto is now the default agent mode") or splash ("Introducing Gemini 4 Hydrogen")
+// over its prompt, ending in "esc to dismiss" (#357): Orca reads it as a permission prompt and the brief never arrives.
+const AGY_DISMISS = /esc to dismiss/i
+const AGY_DISMISS_TRIES = 3
+const AGY_EMPTY_PROMPT = /^[\s│┃|]*>[\s│┃|]*$/
+const AGY_DIALOG = /trust this folder\?|Do you want to proceed\?/i
+const SCREEN_LINES = 15
+const screenLines = res => {
+  if (res.status !== 0) return []
+  let tail
+  try { tail = JSON.parse(res.stdout)?.result?.terminal?.tail } catch { return [] }
+  return Array.isArray(tail) ? tail.map(String) : typeof tail === 'string' ? tail.split(/\r?\n/) : []
+}
+const bottomOf = lines => lines.slice(-SCREEN_LINES).join('\n')
+const showsSplash = lines => AGY_DISMISS.test(bottomOf(lines))
+const showsDialog = lines => AGY_DIALOG.test(bottomOf(lines)) || AGY_TRUST.test(bottomOf(lines))
+const readyForInput = lines => !showsSplash(lines) && !showsDialog(lines) && lines.slice(-SCREEN_LINES).some(line => AGY_EMPTY_PROMPT.test(line))
+
+// What a human does when agy did not get its brief: the exact line, typed into the named terminal.
+export const agyNotDelivered = (handle, briefPath) => `agy no recibió el brief. Pegá en la terminal ${handle} esta línea: Read and follow the brief in ${briefPath}`
+
+// With the splash on screen: Esc (a raw ESC byte, no Enter) every 2 s while it stays, at most 3 times, until the empty
+// `>` prompt shows with no dialog or trust screen; otherwise nothing is sent and the human gets the line to paste.
+// Returns the screen lines to send over (unchanged when there was no splash).
+export const dismissAgySplash = async (io, handle, lines, briefPath) => {
+  if (!showsSplash(lines)) return lines
+  let screen = lines
+  for (let i = 0; i < AGY_DISMISS_TRIES; i += 1) {
+    if (showsSplash(screen)) io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', '\u001b'])
+    await io.sleep(2000)
+    screen = screenLines(io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json']))
+    if (readyForInput(screen)) return screen
+    if (showsDialog(screen)) break
+  }
+  throw new Error(agyNotDelivered(handle, briefPath))
+}
 
 const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45) => {
   let last = null
@@ -548,9 +587,9 @@ const checkPiAuth = async (io, file, configDir, after) => {
   }
 }
 
-export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue }) => {
+export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue, interactive = false }) => {
   const say = io.out
-  const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking })
+  const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive })
   const act = (cmd, argv, opts = {}) => {
     say(`${dryRun ? '[simulaci\u00f3n] ' : ''}${cmd} ${argv.map(a => (/\s|"/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
 
@@ -569,8 +608,11 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
     if (!handle) throw new Error('orca terminal create no devolvi\u00f3 el handle de la terminal.')
     const prompt = `Read and follow the brief in ${briefPath}`
-    const before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
+    let before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
     if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
+    if (agent === 'agy') before = (await dismissAgySplash(io, handle, before.split('\n'), briefPath)).join('\n')
+    // agy's own failures after the send all mean one thing to the human: the brief did not arrive (#357).
+    const fail = message => new Error(agent === 'agy' ? agyNotDelivered(handle, briefPath) : message)
     const observed = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', '10', '--json'])
     let sent = observed
     let oldHost = false
@@ -578,11 +620,17 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
       oldHost = true
       sent = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter'])
     }
+    if (sent.status !== 0 && agent === 'agy') throw fail()
     ok(sent, 'orca terminal send')
     let started = false
     if (!oldHost) {
-      const receipt = parseJson(sent, 'orca terminal send')
-      if (receipt.ok === false) throw new Error(`orca terminal send no inici\u00f3 el turno: ${receipt.error?.message ?? JSON.stringify(receipt)}`)
+      let receipt
+      try {
+        receipt = parseJson(sent, 'orca terminal send')
+      } catch (error) {
+        throw fail(error.message)
+      }
+      if (receipt.ok === false) throw fail(`orca terminal send no inici\u00f3 el turno: ${receipt.error?.message ?? JSON.stringify(receipt)}`)
       started = submittedTurn(receipt)
     }
     if (!started) started = worktreeAgentStarted(io, worktree)
@@ -590,7 +638,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
       const screen = await screenAfterSend(io, handle, before)
       if (screen && !shellPrompt(screen) && !/trust this folder\?/i.test(screen)) started = true
     }
-    if (!started) throw new Error(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
+    if (!started) throw fail(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
     await checkPostLaunchScreen(io, handle, agent)
   } else {
     const { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
@@ -859,6 +907,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
 
   let fetchedOrigin = false
   let hasCodingStandards = false
+  let migration
   const briefFor = branch => renderBrief(kind, {
     REPO: repo,
     REMOTE_HOST: remote.host,
@@ -870,7 +919,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     CUERPO_PR: config.verificacion?.cuerpoPR,
     PI_REVIEW: config.agentes?.pi?.review,
     HAS_CODING_STANDARDS: hasCodingStandards,
-    ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
+    ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n), MIGRACION: migration?.texto }),
     ...(review ? {
       DELTA_INSTRUCTIONS: previousHead ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : 'This is the first review round; review the full PR.',
       PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
@@ -909,6 +958,14 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   if (!dryRun && !fetchedOrigin) {
     const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
     if (fetched.status !== 0) throw new Error(`git fetch origin falló, no asigné ni creé nada: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
+  }
+  // main-autonomo-2 S2: the migration number is reserved after the fetch and before the issue is assigned; a second
+  // dispatch of the same issue gets the number it already holds. Loaded here only: migraciones.mjs reaches estado.mjs,
+  // which imports this module.
+  if (!review && config.migraciones !== undefined) {
+    const { reserve } = await import('./migraciones.mjs')
+    migration = reserve({ issue: n, config, base, commonDir, root, io, dryRun })
+    if (migration) say(dryRun ? `[simulación] Migración que reservaría para #${n}: ${migration.texto}` : `Migración ${migration.reused ? 'ya reservada' : 'reservada'} para #${n}: ${migration.texto}`)
   }
   const left = { assigned: false, worktree: null, brief: null }
   if (!review) {

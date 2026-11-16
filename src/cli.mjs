@@ -12,6 +12,7 @@ import { reanudarCommand } from './reanudar.mjs'
 import { sesionesCommand } from './sesiones.mjs'
 import { vigilarCommand } from './vigilar.mjs'
 import { packageVersion } from './util.mjs'
+import { planificarCommand } from './planificar.mjs'
 
 const USAGE = `orca-stack ${packageVersion()}: instala el stack de agentes (política de Orca, skills, wrappers, Pi + Gentle Shell y mods de Claude Code).
 
@@ -33,11 +34,12 @@ Comandos:
   avisar    Le toca el timbre a un worker con el turno en curso: una línea con la URL de la respuesta de main.
   reanudar  Reanuda un worker detenido con una respuesta de main o relanza su trabajo en el mismo worktree.
   vigilar   Vigila los PRs de una tanda para el Monitor: solo emite eventos, retoma donde quedó e ignora los merges de main.
+  planificar Abre la sesión de planificación de un issue paraguas: worktree de Orca en docs/<slug> y pi con el brief de planificación.
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
   limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
@@ -45,7 +47,7 @@ Opciones:
   --confirmado     (despachar, revisar, rebote, reanudar) El humano dijo que s\u00ED a un agente de agentes.preguntarAntes.
   --continuar      (rebote) Retoma al autor de un rebote que se cortó antes de pushear (por ejemplo, sin cuota): mismo worktree, misma sesión de pi, sin marcador nuevo.
   --rdd <lentes>   (rebote) Le pide a pi un review RDD de su propio PR con esas lentes (risk, resilience, readability, reliability), sin hallazgos ni marcador Rebote.
-  --perfil-pi <nombre> (despachar, revisar, rebote, reanudar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver --help del comando).
+  --perfil-pi <nombre> (despachar, revisar, rebote, reanudar, planificar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver --help del comando).
   --modelo <modelo>  (brief-revision) Modelo del subagente revisor.
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
   --limite <n>     (sesiones) Cuántas sesiones mostrar (por defecto: 10).
@@ -56,6 +58,7 @@ Opciones:
   --una-vez        (vigilar) Consulta una sola vez y sale.
   --consultas      (vigilar) En cada vuelta corre también el chequeo de \`consultas\` para los mismos items.
   --merge-de-main <pr> (vigilar) Registra que main está por mergear <pr> y sale, sin imprimir nada.
+  --paraguas <n>   (vigilar) Vigila los sub-issues del issue paraguas <n>: un evento por cada tanda nueva de tickets publicada.
   --json           (estado) Imprime un objeto JSON por PR (un arreglo si son varios) y sale con 0 solo si están listos.
   --terminal <handle> (reanudar) Reanuda el agente de esa terminal de Orca cuando el worktree tiene varios en done.
   --rutas <a,b>    (revisar) El review lee solo esas rutas y lo declara en ## Cobertura.
@@ -231,6 +234,7 @@ Con --dry-run muestra qué sacaría sin tocar nada.
 `,
   vigilar: `orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]
 orca-stack vigilar --merge-de-main <pr>
+orca-stack vigilar --paraguas <n> [--cada <segundos>] [--una-vez] [--dry-run]
 
 Vigila los PRs de los issues <n...> de una tanda, hecho para correr bajo el Monitor: stdout lleva solo eventos, uno
 por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 60) lee \`gh pr list --state all\` y emite:
@@ -257,6 +261,26 @@ chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor en Pr
 nada en stdout. main lo corre justo antes de cada intento de \`gh pr merge <pr>\`, también después de
 \`gh pr update-branch\`: un merge de ese head hecho dentro de los 30 minutos siguientes al registro no emite
 pr-mergeado, aunque el watcher lo vea más tarde. Con un PR ya mergeado o cerrado sale con 1 y no registra nada.
+
+--paraguas <n> vigila una sesión de planificación (\`orca-stack planificar <n>\`): cada --cada segundos lee los sub-issues
+del issue paraguas con \`gh api repos/{owner}/{repo}/issues/<n>/sub_issues\` y emite
+  planificacion-publicada #<n> #<a>,#<b>,…   una tanda nueva de sub-issues, cuando dejó de crecer entre dos vueltas
+                                             seguidas (to-tickets los crea de a uno)
+Nada por comentarios, ediciones ni issues que no son sub-issues del paraguas. Guarda lo avisado en vigilar.json (clave
+paraguas:<n>): rearmado, no repite; los sub-issues que el paraguas ya tenía al correr planificar no cuentan como nuevos.
+Sale con 0 cuando el paraguas se cierra. No acepta otros items ni --consultas.
+`,
+  planificar: `orca-stack planificar <issue-paraguas> [--perfil-pi <nombre>] [--dry-run]
+
+Desde el checkout principal, con el setup completo. Lee el paraguas con \`gh issue view <n> --json number,title,state,body\`
+y se niega, antes de tocar nada, si está cerrado o si su título está vacío (o no deja un slug). Hace git fetch origin, crea
+con \`orca worktree create\` un worktree de Orca <repo>-planificacion-<n> (con su tarjeta, enlazado al paraguas) en la rama
+docs/<slug> (el slug sale del título) desde origin/<ramaBase>, escribe el brief en ~/orca/briefs/<repo>-planificacion-<n>.md y
+lanza pi ahí en modo interactivo: la sesión la maneja el humano (grill-with-docs, to-spec, to-tickets), commitea solo docs en
+esa rama y la pushea, y publica los tickets como sub-issues del paraguas. Confirma que la sesión de pi arrancó.
+Marca como ya avisados los sub-issues que el paraguas tenía, para \`orca-stack vigilar --paraguas <n>\`.
+El perfil de Pi se elige como en despachar (--perfil-pi o agentes.pi.perfil). Se niega si ya hay un worktree en esa rama.
+Con --dry-run muestra el plan y el brief y no crea nada.
 `,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
@@ -302,6 +326,10 @@ export const parseArgs = argv => {
     } else if (arg.startsWith('--terminal=') || arg.startsWith('--rutas=')) {
       flags[arg.slice(2, arg.indexOf('='))] = arg.slice(arg.indexOf('=') + 1)
     }
+    else if (arg === '--paraguas') {
+      flags.paraguas = argv[i + 1] ?? ''
+      i += 1
+    } else if (arg.startsWith('--paraguas=')) flags.paraguas = arg.slice('--paraguas='.length)
     else if (arg === '--cada' || arg === '--merge-de-main') {
       flags[arg === '--cada' ? 'cada' : 'mergeDeMain'] = argv[i + 1] ?? ''
       i += 1
@@ -333,11 +361,14 @@ export const parseArgs = argv => {
     throw new Error('--humano necesita un nombre.')
   }
   // Options that belong to one command only: any other command keeps refusing them, as before they existed.
-  for (const [flag, owner] of [['json', 'estado'], ['terminal', 'reanudar'], ['rutas', 'revisar']]) {
+  for (const [flag, owner] of [['json', 'estado'], ['terminal', 'reanudar'], ['rutas', 'revisar'], ['paraguas', 'vigilar']]) {
     if (flags[flag] !== undefined && rest[0] !== undefined && rest[0] !== owner) throw new Error(`Opción desconocida: --${flag}`)
   }
   if (flags.terminal !== undefined && (flags.terminal.trim() === '' || flags.terminal.startsWith('--'))) {
     throw new Error('--terminal necesita el handle de una terminal de Orca (orca terminal list).')
+  }
+  if (flags.paraguas !== undefined && (flags.paraguas.trim() === '' || flags.paraguas.startsWith('--'))) {
+    throw new Error('--paraguas necesita el número del issue paraguas.')
   }
   if (flags.rutas !== undefined && (flags.rutas.split(',').every(one => one.trim() === '') || flags.rutas.startsWith('--'))) {
     throw new Error('--rutas necesita una o más rutas separadas por coma.')
@@ -400,6 +431,8 @@ export const main = async (argv, io) => {
         return await reanudarCommand(flags, rest[1], rest[2])
       case 'vigilar':
         return await vigilarCommand(flags, rest.slice(1))
+      case 'planificar':
+        return await planificarCommand(flags, rest[1], io)
       case 'estado':
         return await estadoCommand(flags, rest.slice(1), io)
       case 'limpiar':

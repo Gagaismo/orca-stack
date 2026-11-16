@@ -342,9 +342,93 @@ const recordMainMerge = (pr, flags, io, warn) => {
   return 0
 }
 
+// --paraguas (#370): a planning session publishes its tickets as sub-issues of the umbrella. Only that list is read, so
+// comments, edits and issues that are not sub-issues never give an event. to-tickets creates them one by one: a batch is
+// told once it stopped growing for one poll. Its entry lives in vigilar.json under its own key, next to the batch items.
+const PARAGUAS_USAGE = 'Uso: orca-stack vigilar --paraguas <n> [--cada <segundos>] [--una-vez] [--dry-run], con el número de un solo issue paraguas y sin otros items.'
+const umbrellaKey = n => `paraguas:${n}`
+const subIssueNumbers = (io, root, n) => {
+  const list = ghJson(io, root, ['api', `repos/{owner}/{repo}/issues/${n}/sub_issues?per_page=100`])
+  if (!Array.isArray(list)) throw new Blind(`gh api sub_issues de #${n} no devolvió una lista`)
+
+  return [...new Set(list.map(issue => issue?.number).filter(Number.isInteger))].sort((a, b) => a - b)
+}
+const sameList = (a, b) => Array.isArray(b) && a.length === b.length && a.every((value, i) => value === b[i])
+
+// The planning session starts with the sub-issues the umbrella already had marked as told, so a watcher armed after
+// `orca-stack planificar` only reports the batches the session publishes.
+export const markUmbrellaBaseline = (n, io, warn) => {
+  const { commonDir, root } = getCommonDir(io)
+  const cursorPath = path.join(commonDir, ...CURSOR_REL)
+  const known = subIssueNumbers(io, root, n)
+  const cursor = readJson(cursorPath, io, warn)
+  const told = [...new Set([...(cursor[umbrellaKey(n)]?.avisados ?? []), ...known])].sort((a, b) => a - b)
+  writeJson(cursorPath, { ...cursor, [umbrellaKey(n)]: { avisados: told, pendientes: [] } }, io)
+
+  return known
+}
+
+const watchUmbrella = async (flags, items, io, warn) => {
+  const raw = String(flags.paraguas ?? '').trim().replace(/^#/, '')
+  if (!/^\d+$/.test(raw) || (items ?? []).length > 0 || flags.consultas) throw new Error(PARAGUAS_USAGE)
+  const n = String(Number(raw))
+  const every = flags.cada === undefined ? 60 : Number(flags.cada)
+  if (!Number.isInteger(every) || every < 1) throw new Error(`--cada necesita un número entero de segundos, 1 o más: ${flags.cada}`)
+  const { commonDir, root } = getCommonDir(io)
+  const cursorPath = path.join(commonDir, ...CURSOR_REL)
+  const key = umbrellaKey(n)
+  let entry = readJson(cursorPath, io, warn)[key] ?? {}
+  let failures = 0
+
+  // Returns true once the umbrella is closed.
+  const poll = () => {
+    let state
+    let numbers
+    try {
+      state = ghJson(io, root, ['issue', 'view', n, '--json', 'state']).state
+      numbers = subIssueNumbers(io, root, n)
+    } catch (error) {
+      if (!(error instanceof Blind)) throw error
+      failures += 1
+      warn(`vigilar: no pude leer GitHub (${failures} ${failures === 1 ? 'vez' : 'veces'} seguidas): ${error.message}`)
+      if (failures === BLIND_AFTER) io.out(`vigilar-ciego: ${error.message}`)
+
+      return false
+    }
+    failures = 0
+    const told = new Set(entry.avisados ?? [])
+    const fresh = numbers.filter(number => !told.has(number))
+    const next = { avisados: [...told].sort((a, b) => a - b), pendientes: fresh }
+    if (fresh.length > 0 && sameList(fresh, entry.pendientes)) {
+      io.out(`planificacion-publicada #${n} ${fresh.map(number => `#${number}`).join(',')}`)
+      next.avisados = [...told, ...fresh].sort((a, b) => a - b)
+      next.pendientes = []
+    }
+    if (!flags.dryRun && JSON.stringify(next) !== JSON.stringify(entry)) {
+      try {
+        writeJson(cursorPath, { ...readJson(cursorPath, io, warn), [key]: next }, io)
+      } catch (error) {
+        warn(`vigilar: no pude escribir ${cursorPath}: ${error.message}`)
+      }
+    }
+    entry = next
+    const closed = String(state ?? '').toUpperCase() === 'CLOSED'
+    if (closed) warn(`vigilar: el paraguas #${n} está cerrado; no queda nada que vigilar.`)
+
+    return closed
+  }
+
+  if (!flags.unaVez && !flags.dryRun) io.watchParent?.()
+  for (;;) {
+    if (poll() || flags.unaVez || flags.dryRun) return 0
+    await io.sleep(every * 1000)
+  }
+}
+
 export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) => {
   const warn = io.err ?? (message => console.error(message))
   if (flags.mergeDeMain !== undefined) return recordMainMerge(flags.mergeDeMain, flags, io, warn)
+  if (flags.paraguas !== undefined) return watchUmbrella(flags, items, io, warn)
   const raw = (items ?? []).map(item => String(item).trim().replace(/^#/, ''))
   if (raw.length === 0 || raw.some(item => !/^\d+$/.test(item))) throw new Error(USAGE)
   const targets = [...new Set(raw.map(item => String(Number(item))))]

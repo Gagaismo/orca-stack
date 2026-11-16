@@ -1093,6 +1093,16 @@ describe('launchers', () => {
     }
   })
 
+  test('#370: an interactive pi launch (planning session) drops the unattended prompt, the dialog-tool exclusion and the autonomy and RDD-policy variables', () => {
+    const ps = launcherFor({ ...base, agent: 'pi', config: {}, interactive: true })
+    assert.ok(ps.endsWith("pi --no-skills --skill 'C:\\skills' --session-id proj-7 --no-approve 'Read the brief in C:\\b.md and follow it; the human drives this session.'"), ps)
+    assert.ok(!ps.includes('Unattended') && !ps.includes('--exclude-tools'), ps)
+    assert.ok(!ps.includes("$env:GENTLE_PI_AUTONOMOUS_MODE = '1'") && !ps.includes("$env:GENTLE_PI_ORCA_RDD_POLICY = '1'"), ps)
+    assert.ok(ps.includes('Env:GENTLE_PI_AUTONOMOUS_MODE') && ps.includes('Env:GENTLE_PI_ORCA_RDD_POLICY'), 'both are cleared, so the terminal cannot leak them')
+    const sh = launcherFor({ ...base, agent: 'pi', win: false, config: {}, interactive: true, home: '/h', briefPath: '/b.md', skills: '/s' })
+    assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && !sh.includes('export ') && sh.includes('GENTLE_PI_AUTONOMOUS_MODE'), sh)
+  })
+
   test('S3: pi is launched with GENTLE_PI_ORCA_RDD_POLICY=1 under politica (the default), and without it under humano', () => {
     const ps = launcherFor({ ...base, agent: 'pi', config: {} })
     assert.ok(ps.includes("$env:GENTLE_PI_ORCA_RDD_POLICY = '1'"), ps)
@@ -3880,5 +3890,198 @@ describe('main-autonomo T1: launcher false negatives', () => {
       await assert.rejects(dispatch('ticket', { n: '7', agent: 'codex', rutas: 'src/app.ts' }, ticket.io), error => error.message === '--rutas solo vale para revisar.')
       assert.deepEqual(ticket.writes(), [])
     })
+  })
+})
+
+// #357 (main-autonomo-2 S1): agy 1.5.x draws a one-time banner or splash over its prompt that ends in "esc to dismiss".
+describe('agy: banner and splash before the brief (#357)', () => {
+  // Recorded on 2026-11-12 (Antigravity CLI 1.5.7, #356) and 2026-11-14 (1.5.9, centro-estudiantes-tuc #49).
+  const BANNER_157 = ['Antigravity CLI 1.5.7', 'Gemini 4 Hydrogen (High)', 'Auto is now the default agent mode', 'Press Shift+Tab to switch agent modes', 'esc to dismiss', '>']
+  const SPLASH_159 = ['┃ Introducing Gemini 4 Hydrogen', '┃ Our daily driver for rapid coding and dependable agentic execution!', '┃ esc to dismiss']
+  const PROMPT = ['Antigravity CLI 1.5.9', 'Gemini 4 Hydrogen (High)', '>']
+  const ESC = '\u001b'
+  const isEsc = args => args[0] === 'terminal' && args[1] === 'send' && args[args.indexOf('--text') + 1] === ESC
+  const isBrief = args => args[0] === 'terminal' && args[1] === 'send' && String(args[args.indexOf('--text') + 1] ?? '').startsWith('Read and follow the brief in ')
+  // The splash stays until `escs` Escapes reached agy; `after` is the screen once it is gone.
+  const splashIo = ({ splash = SPLASH_159, escs = 1, after = PROMPT, over = {}, envFor = fakeIo } = {}) => {
+    let sentEscs = 0
+    const timeline = []
+    const env = envFor({
+      ...over,
+      'orca terminal read': () => {
+        const tail = sentEscs >= escs ? after : splash
+        timeline.push(`read ${tail === splash ? 'splash' : 'prompt'}`)
+        return json({ result: { terminal: { tail } } })
+      },
+    })
+    const { sh, sleep } = env.io
+    env.io.sleep = async ms => { timeline.push(`sleep ${ms}`); return sleep(ms) }
+    env.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && isEsc(args)) { sentEscs += 1; timeline.push('esc') }
+      if (cmd === 'orca' && isBrief(args)) timeline.push('brief')
+      return sh(cmd, args, opts)
+    }
+    const escCalls = () => env.calls.filter(c => c[0] === 'orca' && isEsc(c.slice(1)))
+    const briefCalls = () => env.calls.filter(c => c[0] === 'orca' && isBrief(c.slice(1)))
+    return { env, timeline, escCalls, briefCalls }
+  }
+  const briefOf = env => env.written.find(([file]) => file.endsWith('.md') && !file.endsWith('.review.md'))[0]
+  const s1 = (briefPath, handle = 'term_1') => `agy no recibió el brief. Pegá en la terminal ${handle} esta línea: Read and follow the brief in ${briefPath}`
+
+  test('S1: despachar dismisses the 1.5.7 banner with one Esc, confirms the empty prompt and sends the brief once', async () => {
+    const { env, timeline, escCalls, briefCalls } = splashIo({ splash: BANNER_157 })
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    assert.deepEqual(escCalls(), [['orca', 'terminal', 'send', '--terminal', 'term_1', '--text', ESC]])
+    assert.equal(briefCalls().length, 1)
+    const esc = timeline.indexOf('esc')
+    assert.deepEqual(timeline.slice(esc, esc + 4), ['esc', 'sleep 2000', 'read prompt', 'brief'])
+    assert.ok(env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('S1: revisar sends Esc every 2 s while the 1.5.9 splash stays, at most 3, and the brief only once it is gone', async () => {
+    const { env, timeline, escCalls, briefCalls } = splashIo({ escs: 3, over: { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) } })
+    await run('review', { n: '9', agent: 'agy' }, env)
+    assert.equal(escCalls().length, 3)
+    for (const i of timeline.flatMap((step, i) => step === 'esc' ? [i] : [])) assert.equal(timeline[i + 1], 'sleep 2000')
+    assert.ok(timeline.indexOf('brief') > timeline.lastIndexOf('esc'))
+    assert.equal(timeline[timeline.indexOf('brief') - 1], 'read prompt')
+    assert.equal(briefCalls().length, 1)
+    assert.ok(env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('S1: rebote dismisses the splash before it sends the bounce brief', async () => {
+    const pull = { state: 'OPEN', headRefName: 'feat/fix', headRefOid: 'abc123', body: 'Implementador: agy', statusCheckRollup: [], comments: [],
+      reviews: [{ body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, concreta, implementación): fix it.\n\n## SUGERENCIAS\n(none)', url: 'https://example.test/review/1' }] }
+    const envFor = over => {
+      const env = fakeIo({ 'gh pr': json(pull), 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`), 'git status': okRes(''), ...over })
+      const original = env.io.sh
+      env.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('abc123\n') : original(cmd, args, opts)
+      return env
+    }
+    const { env, timeline, escCalls, briefCalls } = splashIo({ envFor })
+    await reboteCommand({}, '12', env.io)
+    assert.equal(escCalls().length, 1)
+    assert.ok(timeline.indexOf('esc') < timeline.indexOf('brief'))
+    assert.equal(briefCalls().length, 1)
+    assert.ok(briefCalls()[0].at(-5).endsWith('proj-pr-12-rebote.md'))
+  })
+
+  test('S1 negative: a splash still on screen after 3 Escs fails with the line to paste and never sends the brief', async () => {
+    const { env, escCalls, briefCalls } = splashIo({ escs: Infinity })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), error => {
+      assert.equal(error.message, s1(briefOf(env)))
+      return true
+    })
+    assert.equal(escCalls().length, 3)
+    assert.equal(briefCalls().length, 0)
+    assert.ok(!env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('S1 negative: a dialog or the trust screen after the Esc gets no brief', async () => {
+    for (const after of [['Do you want to proceed?', '> 1. Yes', '2. No'], ['Antigravity CLI requires permission to read, edit, and execute files here.', '> Yes, I trust this folder', 'No, exit']]) {
+      const { env, briefCalls } = splashIo({ after })
+      await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), error => {
+        assert.equal(error.message, s1(briefOf(env)))
+        return true
+      })
+      assert.equal(briefCalls().length, 0, after[0])
+    }
+  })
+
+  test('S1: when the brief still does not arrive after the Esc, agy fails with exactly the line to paste, sent once', async () => {
+    const refused = splashIo({ over: { 'orca terminal send': args => args.includes('--wait-submit') ? { status: 1, stdout: '', stderr: 'agent_prompt_blocked: Re-issue the exact command with --retry-request req-1' } : okRes() } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, refused.env), error => {
+      assert.equal(error.message, s1(briefOf(refused.env)))
+      return true
+    })
+    assert.equal(refused.briefCalls().length, 1)
+    const unobserved = splashIo({ over: { 'orca terminal send': args => args.includes('--wait-submit') ? json({ result: { inputAccepted: true, turnStarted: false } }) : okRes() } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, unobserved.env), error => {
+      assert.equal(error.message, s1(briefOf(unobserved.env)))
+      return true
+    })
+    assert.equal(unobserved.briefCalls().length, 1)
+    assert.ok(!unobserved.env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('S1 PRESERVE: claude and codex never get an Esc, even with "esc to dismiss" on screen', async () => {
+    for (const agent of ['claude', 'codex']) {
+      const { env, escCalls, briefCalls } = splashIo({ escs: Infinity })
+      await run('ticket', { n: '7', agent }, env)
+      assert.equal(escCalls().length, 0, agent)
+      assert.equal(briefCalls().length, 1, agent)
+    }
+  })
+})
+
+describe('main-autonomo-2 S2: despachar reserves the migration number', () => {
+  const MIGRACIONES = { ...PROJECT, migraciones: { glob: 'db/migrations/*.sql', numero: '^(\\d+)_' } }
+  const LINE = n => `- If this ticket adds a migration, number it ${n} (reserved by orca-stack); if it needs more than one, ask with a \`Consulta:\`.`
+  const registry = () => path.join(root, '.git', 'orca-stack', 'migraciones.json')
+  const briefPath = () => path.join(home, 'orca', 'briefs', 'proj-7.md')
+  // origin/main holds 00011 and 00012; issues not named in `states` are open; `prs` answers gh pr list --state all.
+  const migrationIo = ({ states = {}, prs = [], config = MIGRACIONES } = {}) => fakeIo({
+    'git ls-tree': args => okRes(args.includes('--') ? 'db/migrations/00011_users.sql\ndb/migrations/00012_roles.sql\n' : 'src/app.ts\n'),
+    'gh issue': args => (args[1] === 'view' && args[4] === 'state' ? json({ state: states[args[2]] ?? 'OPEN' }) : null),
+    'gh pr': args => (args[1] === 'list' ? json(prs) : null),
+  }, { config })
+  const briefOf = env => env.written.filter(([file]) => file === briefPath()).at(-1)?.[1]
+
+  test('S2: the first dispatch reserves max(origin/main, open reservations) + 1, padded, and the brief names it', async () => {
+    write(registry(), JSON.stringify({ reservas: { 9: { numero: 13, texto: '00013', at: '2026-11-15T00:00:00.000Z' } } }))
+    const env = migrationIo()
+    assert.equal(await run('ticket', { n: '7', agent: 'agy' }, env), 0)
+    const saved = JSON.parse(readFileSync(registry(), 'utf8'))
+    assert.deepEqual(Object.keys(saved.reservas).sort(), ['7', '9'])
+    assert.equal(saved.reservas['7'].numero, 14)
+    assert.equal(saved.reservas['7'].texto, '00014')
+    assert.ok(env.out.includes('Migración reservada para #7: 00014'), env.out.join('\n'))
+    assert.ok(briefOf(env).includes(`not a paraphrase of it.\n${LINE('00014')}\n`), briefOf(env))
+    assert.ok(env.calls.some(c => c.join(' ') === 'git ls-tree -r --name-only origin/main -- db/migrations'))
+  })
+
+  test('S2 negative: dispatching the same issue twice keeps its first number', async () => {
+    write(registry(), JSON.stringify({ reservas: { 7: { numero: 13, texto: '00013', at: '2026-11-15T00:00:00.000Z' }, 9: { numero: 20, texto: '00020', at: '2026-11-15T00:00:00.000Z' } } }))
+    const before = readFileSync(registry(), 'utf8')
+    const env = migrationIo()
+    assert.equal(await run('ticket', { n: '7', agent: 'agy' }, env), 0)
+    assert.equal(readFileSync(registry(), 'utf8'), before)
+    assert.ok(env.out.includes('Migración ya reservada para #7: 00013'), env.out.join('\n'))
+    assert.ok(briefOf(env).includes(LINE('00013')))
+  })
+
+  test('S2 negative: --dry-run says what it would reserve and writes no registry', async () => {
+    const env = migrationIo()
+    assert.equal(await run('ticket', { n: '7', agent: 'agy', dryRun: true }, env), 0)
+    assert.equal(existsSync(registry()), false)
+    assert.ok(env.out.includes('[simulación] Migración que reservaría para #7: 00013'), env.out.join('\n'))
+    assert.ok(env.out.some(line => line.includes(LINE('00013'))))
+  })
+
+  test('S2 negative: a reservation of a closed issue, or of a merged PR, is released and its number is free again', async () => {
+    write(registry(), JSON.stringify({ reservas: { 8: { numero: 13, texto: '00013', at: 'x' }, 9: { numero: 14, texto: '00014', at: 'x' }, 10: { numero: 15, texto: '00015', at: 'x' } } }))
+    const env = migrationIo({ states: { 8: 'CLOSED' }, prs: [{ number: 40, state: 'MERGED', body: 'Closes #9' }, { number: 41, state: 'CLOSED', body: 'Closes #10' }, { number: 42, state: 'OPEN', body: 'Closes #10' }] })
+    assert.equal(await run('ticket', { n: '7', agent: 'agy' }, env), 0)
+    const saved = JSON.parse(readFileSync(registry(), 'utf8'))
+    assert.deepEqual(Object.keys(saved.reservas).sort(), ['10', '7'])
+    assert.equal(saved.reservas['7'].numero, 16)
+  })
+
+  test('S2 negative: without migraciones nothing is reserved and the brief is byte-identical to today', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    assert.equal(existsSync(registry()), false)
+    assert.ok(!env.calls.some(c => c[0] === 'gh' && c[1] === 'pr'))
+    const brief = briefOf(env)
+    assert.ok(!brief.includes('migration'))
+    assert.ok(brief.includes('not a paraphrase of it.\n\n## Verification'))
+    assert.ok(!brief.includes('{{'))
+  })
+
+  test('S2: an unreadable registry refuses the dispatch before assigning anything', async () => {
+    write(registry(), 'not json')
+    const env = migrationIo()
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), /No reservo número de migración: no pude leer el registro de migraciones/)
+    assert.ok(!env.calls.some(c => c[0] === 'gh' && c[2] === 'edit'))
   })
 })
