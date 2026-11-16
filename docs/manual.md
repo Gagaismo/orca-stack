@@ -101,6 +101,7 @@ Reglas que sostienen todo lo demás:
 | `vigilar` | Monitor de una tanda de PRs | Checkout principal |
 | `estado` | Qué le falta a cada PR para el paso 7, de solo lectura (con `--json`, la atestación) | Checkout principal |
 | `limpiar` | Cierra terminales y saca worktrees de PRs mergeados o cerrados | Checkout principal |
+| `planificar` | Abre una sesión de planificación interactiva en su propio worktree `docs/<slug>` | Checkout principal |
 | `sesiones` | Lista sesiones recientes de Claude, Pi y agy (entrada de `/retro`) | Cualquier carpeta |
 
 **Opciones generales.** `--dry-run` muestra cada acción sin escribir nada (vale en `global`, `init`, `remove`, `despachar`, `revisar`, `rebote`, `brief-revision`, `consultas`, `avisar`, `reanudar`, `vigilar` y `limpiar`). `--help` por comando da el detalle.
@@ -165,7 +166,7 @@ Agentes válidos: `claude`, `agy`, `codex`, `pi`. Orden de lo que hace:
 2. Hace `git fetch origin` y comprueba que **cada ruta que cita el brief exista** en `origin/<ramaBase>` y no esté ignorada por git. Si falta una, aborta sin asignar ni crear nada.
 3. Asigna el issue (el assignee es el cerrojo: no lo asignes a mano), crea el worktree con `orca worktree create`, escribe el brief en `~/orca/briefs/`, lanza el agente en una terminal de Orca y le manda el brief.
 4. Imprime `Rama: <rama>` con el nombre que devolvió Orca.
-5. Lee la pantalla tres veces (pausas de 5 segundos, salvo con pi) y falla ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell.
+5. Lee la pantalla tres veces (pausas de 5 segundos, salvo con pi) y falla ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell. Con agy, antes de mandar el brief cierra con Esc un aviso `esc to dismiss` (el banner `Auto is now the default agent mode` o el splash `Introducing Gemini 4 Hydrogen`), hasta 3 veces con 2 segundos entre intentos, y manda solo a un prompt `>` vacío; si igual no llega, falla con `agy no recibió el brief. Pegá en la terminal <handle> esta línea: Read and follow the brief in <ruta>` (#357).
 
 Pi se lanza como TUI interactiva, como los demás agentes, con el brief como primer mensaje: `pi --no-skills --skill <skills de gentle-pi> --session-id <id> --no-approve --exclude-tools ask_user_choice,ask_user_question "<brief>"`. Orca lo muestra en su tarjeta con los mismos estados que claude y codex, y un turno que espera una verificación en segundo plano sigue cuando esta termina. Nada espera a una persona: quedan afuera las herramientas de diálogo y `--no-approve` saltea el aviso de confianza del proyecto. En vez de leer la pantalla, el comando espera la sesión nueva de Pi en ese worktree y se niega si no aparece. Después lee esa sesión hasta tres veces, con pausas de 5 segundos, esperando la primera respuesta de Pi: si es un error `Failed to authenticate` (por ejemplo, un token vencido en la carpeta de `agentes.pi.claudeConfigDir`), falla con esa línea y el `CLAUDE_CONFIG_DIR` usado, y no imprime `✔ pi despachado`. Los briefs de pi (ticket, revisión y rebote) agregan una regla que los demás agentes no reciben: el proceso termina con el turno, los trabajos en segundo plano mueren con él, y toda verificación corre en primer plano y termina antes del commit y el push.
 
