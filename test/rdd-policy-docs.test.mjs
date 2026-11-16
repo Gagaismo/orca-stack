@@ -16,7 +16,7 @@ const cycle = main.split('\n### Ciclo de `main`\n')[1].split('\n### ')[0]
 const step = n => cycle.split(/\r?\n/).find(line => line.startsWith(`${n}. `)) ?? ''
 const AGENTS = ['claude', 'codex', 'agy', 'pi']
 const OWN = 'If RDD asks for consent on your own candidate ('
-const DECLINED = 'the orca-stack policy answer is `declined`: pi\'s Gentle Shell answers it by itself from the policy file orca-stack wrote in this worktree\'s git dir, and any other agent answers `declined` itself; never ask the human.'
+const DECLINED = 'the orca-stack policy answer is `declined`: pi\'s Gentle Shell answers it by itself (orca-stack launched it with `GENTLE_PI_ORCA_RDD_POLICY=1` and wrote the policy file in this worktree\'s git dir), and any other agent answers `declined` itself; never ask the human.'
 
 describe('main-autonomo: policy and briefs', () => {
   test('S1/S9: step 5 runs estado on every monitor event and at the start of every turn; vigilar stays the event source', () => {

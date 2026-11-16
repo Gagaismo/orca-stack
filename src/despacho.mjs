@@ -153,12 +153,17 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve --exclude-tools ${q(PI_DIALOG_TOOLS)}${piFlags}${tools} ${q(prompt)}`
   // No ENGRAM_DATA_DIR: since gentle-pi 4.4.0 any explicit Engram selection turns memory off; the worker shares the
   // human's global Engram server instead (#304).
-  const set = [['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
+  // main-autonomo S3: Gentle Shell answers RDD consent from the policy file only when the pi process itself carries
+  // GENTLE_PI_ORCA_RDD_POLICY=1. The agent's own bash calls cannot change its host's environment, so this is the trust
+  // anchor the review asked for; it is always cleared first so a value inherited from the terminal never leaks in.
+  const policy = rddConsentPolicy(config, 'pi') === 'politica'
+  const set = [['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(policy ? [['GENTLE_PI_ORCA_RDD_POLICY', '1']] : []), ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
+  const cleared = [...STACK_VARS_CLEARED, 'GENTLE_PI_ORCA_RDD_POLICY']
   if (win) {
-    return [`Remove-Item ${STACK_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
+    return [`Remove-Item ${cleared.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
   }
 
-  return [`unset ${STACK_VARS_CLEARED.join(' ')}`, `export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`, cmd].join('; ')
+  return [`unset ${cleared.join(' ')}`, `export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`, cmd].join('; ')
 }
 
 // Repo-relative paths a brief cites in inline backticks: contains a slash or ends in a known extension, no spaces, not a

@@ -1093,16 +1093,28 @@ describe('launchers', () => {
     }
   })
 
+  test('S3: pi is launched with GENTLE_PI_ORCA_RDD_POLICY=1 under politica (the default), and without it under humano', () => {
+    const ps = launcherFor({ ...base, agent: 'pi', config: {} })
+    assert.ok(ps.includes("$env:GENTLE_PI_ORCA_RDD_POLICY = '1'"), ps)
+    const sh = launcherFor({ ...base, agent: 'pi', win: false, config: { agentes: { pi: { rddConsentimiento: 'politica' } } } })
+    assert.ok(sh.includes("GENTLE_PI_ORCA_RDD_POLICY='1'"), sh)
+    const humano = launcherFor({ ...base, agent: 'pi', config: { agentes: { pi: { rddConsentimiento: 'humano' } } } })
+    assert.ok(!humano.includes('$env:GENTLE_PI_ORCA_RDD_POLICY ='), humano)
+    assert.ok(humano.includes('Env:GENTLE_PI_ORCA_RDD_POLICY'), 'an inherited value is cleared too')
+    const humanoSh = launcherFor({ ...base, agent: 'pi', win: false, config: { agentes: { pi: { rddConsentimiento: 'humano' } } } })
+    assert.ok(!humanoSh.includes("GENTLE_PI_ORCA_RDD_POLICY='1'") && humanoSh.includes('unset ORCA_STACK_AGENT') && humanoSh.includes('GENTLE_PI_ORCA_RDD_POLICY'), humanoSh)
+  })
+
   test('pi: clears the stack markers, sets autonomy and the Claude account', () => {
     const config = { piClaudeConfigDir: 'C:\\Users\\me\\.claude-pi' }
     const ps = launcherFor({ ...base, agent: 'pi', config })
     assert.ok(ps.startsWith('Remove-Item Env:ORCA_STACK_AGENT, Env:ORCA_STACK_MODE'))
-    assert.ok(ps.includes('Env:ORCA_STACK_CAVEMAN_LEVEL -ErrorAction SilentlyContinue'))
+    assert.ok(ps.includes('Env:ORCA_STACK_CAVEMAN_LEVEL, Env:GENTLE_PI_ORCA_RDD_POLICY -ErrorAction SilentlyContinue'))
     assert.ok(ps.includes("$env:GENTLE_PI_AUTONOMOUS_MODE = '1'") && ps.includes("$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\me\\.claude-pi'"))
     assert.ok(ps.endsWith("pi --no-skills --skill 'C:\\skills' --session-id proj-7 --no-approve --exclude-tools 'ask_user_choice,ask_user_question' 'Read and carry out the brief in C:\\b.md. Unattended: never wait for user input.'"))
     assert.ok(!ps.includes('--tools'), "a ticket keeps all of pi's tools: subagents, SDD, engram")
     const sh = launcherFor({ ...base, agent: 'pi', win: false, mode: 'review', home: '/h', briefPath: '/b.md', skills: '/s' })
-    assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && sh.includes("export GENTLE_PI_AUTONOMOUS_MODE='1';"))
+    assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && sh.includes("export GENTLE_PI_AUTONOMOUS_MODE='1' GENTLE_PI_ORCA_RDD_POLICY='1';"))
     assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode,mem_current_project,mem_context,mem_search,mem_get_observation'") && !sh.includes('CLAUDE_CONFIG_DIR'))
   })
 
