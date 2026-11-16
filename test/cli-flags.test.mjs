@@ -73,3 +73,55 @@ describe('orca-stack CLI flags of main-autonomo (S1, S5, S12, S13)', () => {
     }
   })
 })
+
+describe('orca-stack CLI of planning sessions (S3, #370)', () => {
+  test('--paraguas <n> is parsed for vigilar, in both spellings, and refused elsewhere', () => {
+    assert.equal(parseArgs(['vigilar', '--paraguas', '29']).flags.paraguas, '29')
+    assert.equal(parseArgs(['vigilar', '--paraguas=29', '--una-vez']).flags.paraguas, '29')
+    assert.deepEqual(parseArgs(['vigilar', '--paraguas', '29']).rest, ['vigilar'])
+    assert.throws(() => parseArgs(['vigilar', '--paraguas']), /^Error: --paraguas necesita el número del issue paraguas\.$/)
+    assert.throws(() => parseArgs(['vigilar', '--paraguas', '--una-vez']), /^Error: --paraguas necesita el número del issue paraguas\.$/)
+    assert.throws(() => parseArgs(['despachar', '5', 'codex', '--paraguas', '29']), /^Error: Opción desconocida: --paraguas$/)
+  })
+
+  test('PRESERVE: vigilar keeps parsing --cada, --una-vez and --merge-de-main', () => {
+    const { flags, rest } = parseArgs(['vigilar', '7', '8', '--cada', '30', '--una-vez'])
+    assert.equal(flags.cada, '30')
+    assert.equal(flags.unaVez, true)
+    assert.equal(flags.paraguas, undefined)
+    assert.deepEqual(rest, ['vigilar', '7', '8'])
+    assert.equal(parseArgs(['vigilar', '--merge-de-main', '70']).flags.mergeDeMain, '70')
+  })
+
+  test('help lists planificar and --paraguas, and planificar --help describes the session', () => {
+    const home = tempDir('cli-planificar')
+    try {
+      const usage = cli(home, ['--help'])
+      assert.equal(usage.status, 0)
+      assert.match(usage.stdout, /^ {2}planificar /m)
+      assert.match(usage.stdout, /--paraguas <n> +\(vigilar\)/)
+      assert.match(usage.stdout, /--dry-run +\([^)]*planificar/)
+      const help = cli(home, ['planificar', '--help'])
+      assert.equal(help.status, 0)
+      assert.match(help.stdout, /^orca-stack planificar <issue-paraguas> \[--perfil-pi <nombre>\] \[--dry-run\]/)
+      assert.match(help.stdout, /docs\/<slug>/)
+      assert.match(help.stdout, /vigilar --paraguas <n>/)
+      const vigilar = cli(home, ['vigilar', '--help'])
+      assert.match(vigilar.stdout, /orca-stack vigilar --paraguas <n>/)
+      assert.match(vigilar.stdout, /planificacion-publicada #<n> #<a>,#<b>/)
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test('planificar without an umbrella number exits 1 with the usage line', () => {
+    const home = tempDir('cli-planificar')
+    try {
+      const result = cli(home, ['planificar'], { cwd: ROOT })
+      assert.equal(result.status, 1)
+      assert.match(result.out, /Uso: orca-stack planificar <issue-paraguas> \[--perfil-pi <nombre>\] \[--dry-run\]\./)
+    } finally {
+      cleanup(home)
+    }
+  })
+})
