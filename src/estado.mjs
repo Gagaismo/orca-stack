@@ -1,9 +1,8 @@
-import path from 'node:path'
-
 import { isPending, isStatus, latestChecks } from './checks.mjs'
 import { getCommonDir } from './consultas.mjs'
 import { FAMILIES, blockOf, defaultIo, familyOf, loadConfig } from './despacho.mjs'
 import { commitOf, markerLines, markerValue, namesCommit, normalizeBody } from './marcas.mjs'
+import { baseMigrations, migrationSpec, openReservations, orderBlockers, rawNumberOf } from './migraciones.mjs'
 import { closedIssues } from './vigilar.mjs'
 
 // `orca-stack estado`: MAIN.md step 7 on the current head of each PR, read once (S1, #366). Its `--json` output is the
@@ -241,52 +240,88 @@ const ciOf = rollup => {
   return { ci: 'green' }
 }
 
-// The folder a migrations glob lists, up to its first wildcard segment.
-const globDir = glob => {
-  const fixed = []
-  for (const segment of glob.split('/')) {
-    if (/[*?[]/.test(segment)) break
-    fixed.push(segment)
-  }
-
-  return fixed.join('/') || '.'
-}
-
 // S11: every migration the PR adds (matches `migraciones.glob` and is not on origin/<base>) must have a number above the
-// highest one on origin/<base>; goose rejects them by merge order.
-const migrationsOf = (pr, files, base, config, root, io) => {
+// highest one on origin/<base>; goose rejects them by merge order. main-autonomo-2 S2: and it waits for every other open
+// PR, or open reservation of another issue, that holds a lower number than this PR's lowest added one.
+const migrationsOf = (pr, files, base, config, root, io, ctx) => {
   const spec = config.migraciones
   if (!isPlain(spec) || typeof spec.glob !== 'string' || typeof spec.numero !== 'string') return { falta: [], fixes: [] }
   const pattern = globToRegExp(spec.glob)
   const ours = files.filter(file => pattern.test(file))
   if (ours.length === 0) return { falta: [], fixes: [] }
-  let numero
+  let parsed
   try {
-    numero = new RegExp(spec.numero)
-  } catch {
-    return { falta: [`migraciones.numero no es una expresión regular válida: ${spec.numero}`], fixes: [] }
+    parsed = migrationSpec(config)
+  } catch (error) {
+    return { falta: [error.message], fixes: [] }
   }
   const fetched = io.sh('git', ['fetch', 'origin', base], { cwd: root })
-  const listed = fetched.status === 0 ? io.sh('git', ['ls-tree', '-r', '--name-only', `origin/${base}`, '--', globDir(spec.glob)], { cwd: root }) : fetched
-  if (listed.status !== 0) return { falta: [`no pude leer las migraciones de origin/${base}: ${detail(listed)}`], fixes: [] }
-  const onBase = listed.stdout.split(/\r?\n/).map(line => line.trim()).filter(file => file && pattern.test(file))
-  const numberOf = file => numero.exec(path.posix.basename(file))?.[1]
-  const numbers = onBase.map(numberOf).filter(n => n !== undefined && /^\d+$/.test(n)).map(Number)
-  if (numbers.length === 0) return { falta: [], fixes: [] }
-  const max = Math.max(...numbers)
+  const listed = fetched.status === 0 ? baseMigrations(parsed, base, root, io) : { error: detail(fetched) }
+  if (listed.error !== undefined) return { falta: [`no pude leer las migraciones de origin/${base}: ${listed.error}`], fixes: [] }
+  const onBase = listed.files
+  const numbers = onBase.map(file => rawNumberOf(parsed, file)).filter(n => n !== undefined).map(Number)
+  const added = ours.filter(one => !onBase.includes(one)).sort()
   const falta = []
   const fixes = []
-  let next = max
-  for (const file of ours.filter(one => !onBase.includes(one)).sort()) {
-    const raw = numberOf(file)
-    if (raw === undefined || !/^\d+$/.test(raw) || Number(raw) > max) continue
-    next += 1
-    const item = `migración ${file} (${Number(raw)}) no es mayor que ${max} en ${base}`
-    falta.push(item)
-    fixes.push(`${item}: renumerala a ${String(next).padStart(raw.length, '0')} (renombrá el archivo y lo que lo nombre) para que corra después de las de ${base}.`)
+  if (numbers.length > 0) {
+    const max = Math.max(...numbers)
+    let next = max
+    for (const file of added) {
+      const raw = rawNumberOf(parsed, file)
+      if (raw === undefined || Number(raw) > max) continue
+      next += 1
+      const item = `migración ${file} (${Number(raw)}) no es mayor que ${max} en ${base}`
+      falta.push(item)
+      fixes.push(`${item}: renumerala a ${String(next).padStart(raw.length, '0')} (renombrá el archivo y lo que lo nombre) para que corra después de las de ${base}.`)
+    }
   }
 
+  const numbered = added.flatMap(file => {
+    const raw = rawNumberOf(parsed, file)
+    return raw === undefined ? [] : [{ file, numero: Number(raw) }]
+  })
+  if (numbered.length === 0) return { falta, fixes }
+  const mine = numbered.reduce((low, one) => (one.numero < low.numero ? one : low))
+  const open = ctx.openPrs()
+  if (open.error !== undefined) return { falta: [...falta, `no pude listar los PRs abiertos para ordenar las migraciones: ${open.error}`], fixes }
+  const reservations = ctx.reservations()
+  if (reservations.error !== undefined) return { falta: [...falta, reservations.error], fixes }
+  const others = open.prs.map(one => ({
+    number: one?.number,
+    body: one?.body,
+    added: (one?.files ?? [])
+      .map(file => file?.path)
+      .filter(file => typeof file === 'string' && parsed.pattern.test(file) && !onBase.includes(file))
+      .map(file => rawNumberOf(parsed, file))
+      .filter(raw => raw !== undefined)
+      .map(Number),
+  }))
+  const selfIssue = closedIssues(pr.body)[0]
+  falta.push(...orderBlockers({ mine, selfIssue, selfPr: pr.number, others, reservas: reservations.reservas }))
+
   return { falta, fixes }
+}
+
+// The other open PRs and the open reservations, read once per estado run and only when a PR adds a migration.
+const migrationContext = (commonDir, root, io) => {
+  let prs
+  let reservas
+  return {
+    openPrs: () => {
+      if (prs === undefined) {
+        const res = io.sh('gh', ['pr', 'list', '--state', 'open', '--json', 'number,headRefName,body,files', '--limit', '100'], { cwd: root })
+        const listed = res.status === 0 ? parse(res) : undefined
+        prs = Array.isArray(listed) ? { prs: listed } : { error: detail(res) || 'gh pr list no devolvió una lista' }
+      }
+
+      return prs
+    },
+    reservations: () => {
+      if (reservas === undefined) reservas = openReservations({ commonDir, root, io })
+
+      return reservas
+    },
+  }
 }
 
 const reviewBody = (head, fixes) =>
@@ -306,7 +341,7 @@ export const reviewWaived = (base, root, io) => {
   }
 }
 
-const evaluate = (pr, config, root, io, now) => {
+const evaluate = (pr, config, root, io, now, ctx) => {
   const n = pr.number
   const head = String(pr.headRefOid ?? '').toLowerCase()
   const sha7 = head.slice(0, 7)
@@ -375,7 +410,7 @@ const evaluate = (pr, config, root, io, now) => {
   }
 
   // S11
-  const migrations = migrationsOf(pr, files, pr.baseRefName || config.ramaBase || 'main', config, root, io)
+  const migrations = migrationsOf(pr, files, pr.baseRefName || config.ramaBase || 'main', config, root, io, ctx)
   falta.push(...migrations.falta)
 
   const shown = onHead.map(one => `${one.lenses ? `${one.reviewer}(RDD:${[...one.lenses].sort().join(',')})` : one.reviewer}@${sha7}${one.clean ? '' : ':bloquea'}`)
@@ -403,8 +438,9 @@ export const estadoCommand = async (flags = {}, items = [], io = defaultIo()) =>
   const warn = io.err ?? (message => console.error(message))
   const raw = (items ?? []).map(item => String(item).trim().replace(/^#/, ''))
   if (raw.some(item => !/^\d+$/.test(item))) throw new Error(USAGE)
-  const { root } = getCommonDir(io)
+  const { commonDir, root } = getCommonDir(io)
   const config = loadConfig(io.home, root)
+  const ctx = migrationContext(commonDir, root, io)
   let numbers = [...new Set(raw.map(item => Number(item)))]
   if (numbers.length === 0) {
     const base = config.ramaBase
@@ -425,7 +461,7 @@ export const estadoCommand = async (flags = {}, items = [], io = defaultIo()) =>
     const pr = res.status === 0 ? parse(res) : undefined
     if (!isPlain(pr) || typeof pr.headRefOid !== 'string') throw new Error(`No pude leer el PR #${n} con gh pr view: ${detail(res)}`)
 
-    return evaluate(pr, config, root, io, now)
+    return evaluate(pr, config, root, io, now, ctx)
   })
   if (flags.json) {
     // One PR named: one object (the guard's attestation); several, or every open one: an array.

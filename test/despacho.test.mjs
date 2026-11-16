@@ -4013,3 +4013,75 @@ describe('agy: banner and splash before the brief (#357)', () => {
     }
   })
 })
+
+describe('main-autonomo-2 S2: despachar reserves the migration number', () => {
+  const MIGRACIONES = { ...PROJECT, migraciones: { glob: 'db/migrations/*.sql', numero: '^(\\d+)_' } }
+  const LINE = n => `- If this ticket adds a migration, number it ${n} (reserved by orca-stack); if it needs more than one, ask with a \`Consulta:\`.`
+  const registry = () => path.join(root, '.git', 'orca-stack', 'migraciones.json')
+  const briefPath = () => path.join(home, 'orca', 'briefs', 'proj-7.md')
+  // origin/main holds 00011 and 00012; issues not named in `states` are open; `prs` answers gh pr list --state all.
+  const migrationIo = ({ states = {}, prs = [], config = MIGRACIONES } = {}) => fakeIo({
+    'git ls-tree': args => okRes(args.includes('--') ? 'db/migrations/00011_users.sql\ndb/migrations/00012_roles.sql\n' : 'src/app.ts\n'),
+    'gh issue': args => (args[1] === 'view' && args[4] === 'state' ? json({ state: states[args[2]] ?? 'OPEN' }) : null),
+    'gh pr': args => (args[1] === 'list' ? json(prs) : null),
+  }, { config })
+  const briefOf = env => env.written.filter(([file]) => file === briefPath()).at(-1)?.[1]
+
+  test('S2: the first dispatch reserves max(origin/main, open reservations) + 1, padded, and the brief names it', async () => {
+    write(registry(), JSON.stringify({ reservas: { 9: { numero: 13, texto: '00013', at: '2026-11-15T00:00:00.000Z' } } }))
+    const env = migrationIo()
+    assert.equal(await run('ticket', { n: '7', agent: 'agy' }, env), 0)
+    const saved = JSON.parse(readFileSync(registry(), 'utf8'))
+    assert.deepEqual(Object.keys(saved.reservas).sort(), ['7', '9'])
+    assert.equal(saved.reservas['7'].numero, 14)
+    assert.equal(saved.reservas['7'].texto, '00014')
+    assert.ok(env.out.includes('Migración reservada para #7: 00014'), env.out.join('\n'))
+    assert.ok(briefOf(env).includes(`not a paraphrase of it.\n${LINE('00014')}\n`), briefOf(env))
+    assert.ok(env.calls.some(c => c.join(' ') === 'git ls-tree -r --name-only origin/main -- db/migrations'))
+  })
+
+  test('S2 negative: dispatching the same issue twice keeps its first number', async () => {
+    write(registry(), JSON.stringify({ reservas: { 7: { numero: 13, texto: '00013', at: '2026-11-15T00:00:00.000Z' }, 9: { numero: 20, texto: '00020', at: '2026-11-15T00:00:00.000Z' } } }))
+    const before = readFileSync(registry(), 'utf8')
+    const env = migrationIo()
+    assert.equal(await run('ticket', { n: '7', agent: 'agy' }, env), 0)
+    assert.equal(readFileSync(registry(), 'utf8'), before)
+    assert.ok(env.out.includes('Migración ya reservada para #7: 00013'), env.out.join('\n'))
+    assert.ok(briefOf(env).includes(LINE('00013')))
+  })
+
+  test('S2 negative: --dry-run says what it would reserve and writes no registry', async () => {
+    const env = migrationIo()
+    assert.equal(await run('ticket', { n: '7', agent: 'agy', dryRun: true }, env), 0)
+    assert.equal(existsSync(registry()), false)
+    assert.ok(env.out.includes('[simulación] Migración que reservaría para #7: 00013'), env.out.join('\n'))
+    assert.ok(env.out.some(line => line.includes(LINE('00013'))))
+  })
+
+  test('S2 negative: a reservation of a closed issue, or of a merged PR, is released and its number is free again', async () => {
+    write(registry(), JSON.stringify({ reservas: { 8: { numero: 13, texto: '00013', at: 'x' }, 9: { numero: 14, texto: '00014', at: 'x' }, 10: { numero: 15, texto: '00015', at: 'x' } } }))
+    const env = migrationIo({ states: { 8: 'CLOSED' }, prs: [{ number: 40, state: 'MERGED', body: 'Closes #9' }, { number: 41, state: 'CLOSED', body: 'Closes #10' }, { number: 42, state: 'OPEN', body: 'Closes #10' }] })
+    assert.equal(await run('ticket', { n: '7', agent: 'agy' }, env), 0)
+    const saved = JSON.parse(readFileSync(registry(), 'utf8'))
+    assert.deepEqual(Object.keys(saved.reservas).sort(), ['10', '7'])
+    assert.equal(saved.reservas['7'].numero, 16)
+  })
+
+  test('S2 negative: without migraciones nothing is reserved and the brief is byte-identical to today', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    assert.equal(existsSync(registry()), false)
+    assert.ok(!env.calls.some(c => c[0] === 'gh' && c[1] === 'pr'))
+    const brief = briefOf(env)
+    assert.ok(!brief.includes('migration'))
+    assert.ok(brief.includes('not a paraphrase of it.\n\n## Verification'))
+    assert.ok(!brief.includes('{{'))
+  })
+
+  test('S2: an unreadable registry refuses the dispatch before assigning anything', async () => {
+    write(registry(), 'not json')
+    const env = migrationIo()
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), /No reservo número de migración: no pude leer el registro de migraciones/)
+    assert.ok(!env.calls.some(c => c[0] === 'gh' && c[2] === 'edit'))
+  })
+})

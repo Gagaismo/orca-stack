@@ -314,6 +314,7 @@ export const renderBrief = (kind, vars, nota) => {
     FANOUT_INSTRUCTIONS: fanoutInstructions(vars.AGENT, nota),
     PI_FOREGROUND: piForeground(vars.AGENT),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
+    MIGRACION: vars.MIGRACION ? `\n- If this ticket adds a migration, number it ${vars.MIGRACION} (reserved by orca-stack); if it needs more than one, ask with a \`Consulta:\`.` : '',
   })
 }
 
@@ -906,6 +907,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
 
   let fetchedOrigin = false
   let hasCodingStandards = false
+  let migration
   const briefFor = branch => renderBrief(kind, {
     REPO: repo,
     REMOTE_HOST: remote.host,
@@ -917,7 +919,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     CUERPO_PR: config.verificacion?.cuerpoPR,
     PI_REVIEW: config.agentes?.pi?.review,
     HAS_CODING_STANDARDS: hasCodingStandards,
-    ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
+    ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n), MIGRACION: migration?.texto }),
     ...(review ? {
       DELTA_INSTRUCTIONS: previousHead ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : 'This is the first review round; review the full PR.',
       PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
@@ -956,6 +958,14 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   if (!dryRun && !fetchedOrigin) {
     const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
     if (fetched.status !== 0) throw new Error(`git fetch origin falló, no asigné ni creé nada: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
+  }
+  // main-autonomo-2 S2: the migration number is reserved after the fetch and before the issue is assigned; a second
+  // dispatch of the same issue gets the number it already holds. Loaded here only: migraciones.mjs reaches estado.mjs,
+  // which imports this module.
+  if (!review && config.migraciones !== undefined) {
+    const { reserve } = await import('./migraciones.mjs')
+    migration = reserve({ issue: n, config, base, commonDir, root, io, dryRun })
+    if (migration) say(dryRun ? `[simulación] Migración que reservaría para #${n}: ${migration.texto}` : `Migración ${migration.reused ? 'ya reservada' : 'reservada'} para #${n}: ${migration.texto}`)
   }
   const left = { assigned: false, worktree: null, brief: null }
   if (!review) {
