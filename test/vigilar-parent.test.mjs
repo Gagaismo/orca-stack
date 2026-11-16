@@ -95,7 +95,14 @@ const ghPids = file => existsSync(file) && readFileSync(file, 'utf8').split(' ')
 const dirs = []
 const stray = []
 after(() => {
-  for (const pid of stray) if (alive(pid)) process.kill(pid, 'SIGKILL')
+  for (const pid of stray) {
+    // It can exit on its own between alive() and kill(): ESRCH then means it is already gone (seen on windows CI).
+    try {
+      if (alive(pid)) process.kill(pid, 'SIGKILL')
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error
+    }
+  }
   for (const dir of dirs) cleanup(dir)
 })
 
