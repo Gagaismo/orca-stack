@@ -293,6 +293,19 @@ const reviewBody = (head, fixes) =>
   `Revisor: main (migraciones)\nCommit: ${head}\n\n## BLOQUEA\n${fixes.map((fix, i) => `${i + 1}. ${fix}`).join('\n')}\n\n## SUGERENCIAS\nnada`
 
 // One PR against MAIN.md step 7 on its current head.
+// #377: a repo that merges on green CI without reviews says so with `"reviewParaMerge": false`. The Gentle Shell guard
+// trusts this attestation, so the key is read only from the .orca-stack.json committed on the PR's base branch on
+// GitHub, never from the (agent-writable) checkout; any failure keeps the full step 7.
+export const reviewWaived = (base, root, io) => {
+  const res = io.sh('gh', ['api', '-H', 'Accept: application/vnd.github.raw+json', `repos/{owner}/{repo}/contents/.orca-stack.json?ref=${base}`], { cwd: root })
+  if (res.status !== 0) return false
+  try {
+    return JSON.parse(res.stdout)?.reviewParaMerge === false
+  } catch {
+    return false
+  }
+}
+
 const evaluate = (pr, config, root, io, now) => {
   const n = pr.number
   const head = String(pr.headRefOid ?? '').toLowerCase()
@@ -321,8 +334,12 @@ const evaluate = (pr, config, root, io, now) => {
   const sinReview = marks('Sin review', rdd)
   const sinOnHead = sinReview.filter(mark => namesCommit(mark.commit, head))
 
-  // (a) and (b)
-  if (implementer === undefined || !FAMILIES.agents.includes(implementer)) {
+  // (a) and (b); with #377's waiver only an unsettled blocker on the head and ## Evidencia remain.
+  const waived = reviewWaived(pr.baseRefName || config.ramaBase || 'main', root, io)
+  if (waived) {
+    for (const one of onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))) falta.push(`(a) el review de ${one.reviewer} sobre ${sha7} tiene bloqueos`)
+    if (!/^##\s*Evidencia\b/im.test(normalizeBody(pr.body))) falta.push('(a) reviewParaMerge: false en la base necesita ## Evidencia en el body del PR')
+  } else if (implementer === undefined || !FAMILIES.agents.includes(implementer)) {
     falta.push('(a) el body del PR no tiene una línea Implementador: <agente>')
   } else {
     const unsettled = onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))

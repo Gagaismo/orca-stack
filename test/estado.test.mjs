@@ -46,6 +46,11 @@ const harness = (world = {}, config = {}) => {
         const found = (world.prs ?? []).find(one => String(one.number) === args[2])
         return found ? json(found) : fail(`no pull requests found for branch "${args[2]}"`)
       }
+      if (cmd === 'gh' && args[0] === 'api') {
+        if (world.baseConfig === undefined) return fail('gh: Not Found (HTTP 404)')
+        world.apiCalls = [...(world.apiCalls ?? []), args.join(' ')]
+        return okRes(world.baseConfig)
+      }
       if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list') return json((world.prs ?? []).filter(one => one.state === 'OPEN').map(one => ({ number: one.number })))
       return fail(`unexpected call: ${cmd} ${args.join(' ')}`)
     },
@@ -302,5 +307,64 @@ describe('orca-stack estado (S1, #366)', () => {
     const h = harness({ prs: [prData(70, { reviews: [review('agy', HEAD)] })] })
     assert.equal(await main(['estado', '70', '--json'], h.io), 0)
     assert.deepEqual(h.out, [JSON.stringify({ pr: 70, head: HEAD, ok: true, falta: [], merge: MERGE })])
+  })
+})
+
+describe('orca-stack estado: reviewParaMerge (#377)', () => {
+  before(() => {
+    root = tempDir('estado-377-root')
+    home = tempDir('estado-377-home')
+  })
+  after(() => {
+    cleanup(root)
+    cleanup(home)
+  })
+  const EVIDENCIA = ['Implementador: claude', '', '## Evidencia', '', '| Rule | Test |', '| --- | --- |', '| R1 | `x` |', ''].join('\n')
+  const WAIVED = JSON.stringify({ ramaBase: 'main', reviewParaMerge: false })
+
+  test('#377 Rule 1/2: reviewParaMerge false on the base branch on GitHub, green CI and ## Evidencia: ok with no review, read with gh api on the PR base', async () => {
+    const world = { prs: [prData(80, { body: EVIDENCIA })], baseConfig: WAIVED }
+    const h = harness(world)
+    assert.equal(await estado(h, ['80'], { json: true }), 0)
+    assert.deepEqual(one(h), { pr: 80, head: HEAD, ok: true, falta: [], merge: MERGE })
+    assert.deepEqual(world.apiCalls, ['api -H Accept: application/vnd.github.raw+json repos/{owner}/{repo}/contents/.orca-stack.json?ref=main'])
+  })
+
+  test('#377 Rule 2 negative: a local .orca-stack.json saying false does not waive the review when the base on GitHub does not', async () => {
+    const world = { prs: [prData(81, { body: EVIDENCIA })], baseConfig: JSON.stringify({ ramaBase: 'main' }) }
+    const h = harness(world, { reviewParaMerge: false })
+    assert.equal(await estado(h, ['81'], { json: true }), 1)
+    assert.deepEqual(one(h).falta, [`(a) falta un review sin bloqueos sobre ${HEAD.slice(0, 7)} de alguien que no sea claude`])
+  })
+
+  test('#377 Rule 3 negative: with the waiver, red CI, a body without ## Evidencia, a blocking review on the head and an uncovered riesgo path still give ok:false', async () => {
+    const red = { prs: [prData(82, { body: EVIDENCIA, checks: [run('test', 'FAILURE')] })], baseConfig: WAIVED }
+    const hRed = harness(red)
+    assert.equal(await estado(hRed, ['82'], { json: true }), 1)
+    assert.ok(one(hRed).falta.some(item => item.startsWith('(c) ')), hRed.out[0])
+
+    const bare = { prs: [prData(83, { body: 'Implementador: claude' })], baseConfig: WAIVED }
+    const hBare = harness(bare)
+    assert.equal(await estado(hBare, ['83'], { json: true }), 1)
+    assert.deepEqual(one(hBare).falta, ['(a) reviewParaMerge: false en la base necesita ## Evidencia en el body del PR'])
+
+    const blocked = { prs: [prData(84, { body: EVIDENCIA, reviews: [review('codex', HEAD, { verdict: '- src/a.mjs:3 rompe X' })] })], baseConfig: WAIVED }
+    const hBlocked = harness(blocked)
+    assert.equal(await estado(hBlocked, ['84'], { json: true }), 1)
+    assert.deepEqual(one(hBlocked).falta, [`(a) el review de codex sobre ${HEAD.slice(0, 7)} tiene bloqueos`])
+
+    const risky = { prs: [prData(85, { body: EVIDENCIA.replace('claude', 'codex'), files: ['auth/store.go'] })], baseConfig: JSON.stringify({ ramaBase: 'main', reviewParaMerge: false, riesgo: ['auth/**'] }) }
+    const hRisky = harness(risky, { riesgo: ['auth/**'] })
+    assert.equal(await estado(hRisky, ['85'], { json: true }), 1)
+    assert.ok(one(hRisky).falta.some(item => item.startsWith('(d) ')), hRisky.out[0])
+  })
+
+  test('#377 Rule 4: gh api failing or returning invalid JSON keeps the full step 7 and does not error', async () => {
+    for (const baseConfig of [undefined, '{not json']) {
+      const world = { prs: [prData(86, { body: EVIDENCIA })], baseConfig }
+      const h = harness(world)
+      assert.equal(await estado(h, ['86'], { json: true }), 1)
+      assert.deepEqual(one(h).falta, [`(a) falta un review sin bloqueos sobre ${HEAD.slice(0, 7)} de alguien que no sea claude`])
+    }
   })
 })
