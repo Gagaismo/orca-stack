@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, blockOf, defaultIo, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, shellPrompt, writePin, writeRddConsent } from './despacho.mjs'
+import { AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, shellPrompt, writePin, writeRddConsent } from './despacho.mjs'
 import { identityOf, isDialog, paneAgents, stackAgent, piIdle, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
@@ -28,7 +28,7 @@ const prMatchesIssue = (pr, issue, branches) =>
   branches.includes(pr.headRefName) ||
   new RegExp(`^\\s*Closes\\s+#${issue}\\b`, 'im').test(pr.body ?? '')
 
-const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt, beforeSend) => {
+const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, beforeSend) => {
   const { handle } = target.terminal
   const screen = readScreen(io, handle)
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
@@ -45,12 +45,15 @@ const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt, beforeS
   const line = `Message from main: ${url} . Continue the ticket per your brief: ${briefPath}.`
   const argv = ['terminal', 'send', '--terminal', handle, '--text', line, '--enter', '--wait-submit', '10', '--json']
   if (flags.dryRun) {
+    if (target.identity === 'agy' && /esc to dismiss/i.test(screen.join('\n'))) io.out(`[simulaci\u{f3}n] cerrar el aviso de agy con Esc en ${handle} antes de enviar la l\u{ed}nea`)
     io.out(`[simulaci\u{f3}n] orca ${argv.map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
     io.out(`Terminal: ${handle}, worker de #${n} en ${target.worktree}`)
     io.out(`L\u{ed}nea: ${line}`)
     return true
   }
 
+  // agy's "esc to dismiss" banner or splash (#357): dismissed before anything else reaches the terminal.
+  if (target.identity === 'agy') await dismissAgySplash(io, handle, screen, briefPath)
   beforeSend()
   markAttempt()
   const sent = io.sh('orca', argv)
@@ -62,8 +65,11 @@ const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt, beforeS
     return true
   }
   if (receipt?.accepted === false || /No input was sent/i.test(`${sent.stdout}${sent.stderr}`)) {
+    if (target.identity === 'agy') throw new Error(agyNotDelivered(handle, briefPath))
     throw new Error(`orca terminal send no envi\u{f3} nada a ${handle}: ${receipt?.refusedReason ?? detail(sent)}. No reintento.`)
   }
+  // The no-resend guard stays; agy, whose empty prompt kept the line out before (#357), names the line to paste instead.
+  if (target.identity === 'agy') throw new Error(agyNotDelivered(handle, briefPath))
   throw new Error(`No hay recibo de entrega de orca terminal send en ${handle}: la l\u{ed}nea pudo haber llegado. No la reenv\u{ed}o; revis\u{e1} la terminal antes de volver a reanudar.`)
 }
 
@@ -227,7 +233,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
 
   if (target?.terminal && stateOf(target.record) === 'done') {
     target.worktree = row.path
-    const handled = sendToPaused(flags, n, url, originalPath, target, io, markAttempt, () => {
+    const handled = await sendToPaused(flags, n, url, originalPath, target, io, markAttempt, () => {
       if (needsPin(profile)) writePin(io, row.path, commonDir, profile.name)
       writeConsent()
     })
