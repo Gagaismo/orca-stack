@@ -3988,16 +3988,45 @@ describe('agy: banner and splash before the brief (#357)', () => {
     }
   })
 
-  test('S1: when the brief still does not arrive after the Esc, agy fails with exactly the line to paste, sent once', async () => {
-    const refused = splashIo({ over: { 'orca terminal send': args => args.includes('--wait-submit') ? { status: 1, stdout: '', stderr: 'agent_prompt_blocked: Re-issue the exact command with --retry-request req-1' } : okRes() } })
+  // Recorded live on 2026-11-15 (Antigravity CLI 1.5.9): `orca terminal read --screen` showed the empty `>` prompt while
+  // agy was really on its folder-trust screen, and Orca's own send refused with this.
+  const BLOCKED = { status: 1, stdout: JSON.stringify({ ok: false, error: { code: 'agent_prompt_blocked', message: 'agent_prompt_blocked The agent is showing a permission or trust prompt; to answer it, send --text and --enter as separate commands. Terminal prompt request ID: req-1. Re-issue the exact command with --retry-request req-1 --wait-submit <seconds>; do not retry it without that ID.' } }), stderr: '' }
+  const isLoneEnter = args => args[0] === 'terminal' && args[1] === 'send' && args.includes('--enter') && !args.includes('--text')
+
+  test('#357 live: a send refused with agent_prompt_blocked (trust screen the screen read missed) gets one Enter, then the brief goes through once', async () => {
+    let blocked = 1
+    const live = splashIo({ splash: PROMPT, over: { 'orca terminal send': args => args.includes('--wait-submit') && blocked-- > 0 ? BLOCKED : args.includes('--wait-submit') ? json({ result: { inputAccepted: true, turnStarted: true } }) : okRes() } })
+    await run('ticket', { n: '7', agent: 'agy' }, live.env)
+    const sends = live.env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send').map(c => (isLoneEnter(c.slice(1)) ? 'enter' : isBrief(c.slice(1)) ? 'brief' : 'other'))
+    assert.deepEqual(sends, ['brief', 'enter', 'brief'])
+    assert.ok(live.env.out.some(line => line.includes('agy muestra un pedido de confianza (agent_prompt_blocked): confirmo la carpeta con Enter (1/3).')), live.env.out.join('\n'))
+    assert.ok(live.env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('#357 live negative: blocked three times fails with the line to paste and Orca\'s reason; claude never gets the extra Enter', async () => {
+    const refused = splashIo({ splash: PROMPT, over: { 'orca terminal send': args => (args.includes('--wait-submit') ? BLOCKED : okRes()) } })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, refused.env), error => {
-      assert.equal(error.message, s1(briefOf(refused.env)))
+      assert.ok(error.message.startsWith(`${s1(briefOf(refused.env))}\nCausa: agent_prompt_blocked`), error.message)
+      return true
+    })
+    assert.equal(refused.briefCalls().length, 4)
+    assert.equal(refused.env.calls.filter(c => c[0] === 'orca' && isLoneEnter(c.slice(1))).length, 3)
+    const claude = splashIo({ splash: PROMPT, over: { 'orca terminal send': args => (args.includes('--wait-submit') ? BLOCKED : okRes()) } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, claude.env))
+    assert.equal(claude.env.calls.filter(c => c[0] === 'orca' && isLoneEnter(c.slice(1))).length, 0)
+    assert.equal(claude.briefCalls().length, 1)
+  })
+
+  test('S1: when the brief still does not arrive after the Esc, agy fails with exactly the line to paste, sent once', async () => {
+    const refused = splashIo({ over: { 'orca terminal send': args => args.includes('--wait-submit') ? { status: 1, stdout: '', stderr: 'send failed: terminal closed' } : okRes() } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, refused.env), error => {
+      assert.equal(error.message, `${s1(briefOf(refused.env))}\nCausa: send failed: terminal closed`)
       return true
     })
     assert.equal(refused.briefCalls().length, 1)
     const unobserved = splashIo({ over: { 'orca terminal send': args => args.includes('--wait-submit') ? json({ result: { inputAccepted: true, turnStarted: false } }) : okRes() } })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, unobserved.env), error => {
-      assert.equal(error.message, s1(briefOf(unobserved.env)))
+      assert.ok(error.message.startsWith(`${s1(briefOf(unobserved.env))}\nCausa: `), error.message)
       return true
     })
     assert.equal(unobserved.briefCalls().length, 1)

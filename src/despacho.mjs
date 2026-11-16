@@ -611,16 +611,32 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     let before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
     if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
     if (agent === 'agy') before = (await dismissAgySplash(io, handle, before.split('\n'), briefPath)).join('\n')
-    // agy's own failures after the send all mean one thing to the human: the brief did not arrive (#357).
-    const fail = message => new Error(agent === 'agy' ? agyNotDelivered(handle, briefPath) : message)
-    const observed = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', '10', '--json'])
+    // agy's own failures after the send all mean one thing to the human: the brief did not arrive (#357). Orca's own
+    // reason goes on a second line, so the cause is never hidden behind the line to paste.
+    const fail = message => new Error(agent === 'agy' ? `${agyNotDelivered(handle, briefPath)}${message ? `\nCausa: ${message}` : ''}` : message)
+    const sendBrief = () => io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', '10', '--json'])
+    let observed = sendBrief()
+    // #357, seen live on agy 1.5.9: `orca terminal read --screen` can show the empty `>` prompt while agy is really on
+    // its folder-trust screen, so the trust handling in waitForTui never fires; Orca's send does see it and refuses with
+    // agent_prompt_blocked. Right after launch, in a worktree orca-stack created, Enter confirms the preselected
+    // "Yes, I trust this folder" (as waitForTui does when the read shows it); bounded like the trust screen.
+    for (let i = 0; agent === 'agy' && i < AGY_TRUST_ENTERS && /agent_prompt_blocked/.test(`${observed.stdout ?? ''}${observed.stderr ?? ''}`); i += 1) {
+      say(`agy muestra un pedido de confianza (agent_prompt_blocked): confirmo la carpeta con Enter (${i + 1}/${AGY_TRUST_ENTERS}).`)
+      io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
+      await io.sleep(2000)
+      observed = sendBrief()
+    }
     let sent = observed
     let oldHost = false
     if (observed.status !== 0 && /(?:unknown|unrecognized|unsupported)[^\n]*--wait-submit/i.test(observed.stderr || observed.stdout)) {
       oldHost = true
       sent = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter'])
     }
-    if (sent.status !== 0 && agent === 'agy') throw fail()
+    if (sent.status !== 0 && agent === 'agy') {
+      let reason
+      try { reason = JSON.parse(sent.stdout)?.error?.message } catch {}
+      throw fail(String(reason ?? (sent.stderr || sent.stdout || 'orca terminal send falló')).trim().split(/\r?\n/)[0])
+    }
     ok(sent, 'orca terminal send')
     let started = false
     if (!oldHost) {
