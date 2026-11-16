@@ -132,7 +132,14 @@ Do not launch agents by hand: from the main checkout, `orca-stack despachar <iss
 brief from a template, check that every repo path the brief cites exists in the worktree, launch the agent
 in an Orca terminal and send it the brief. They refuse to start when the issue is assigned, the agent is
 not in `agentes.usa`, a worktree or a live agent already exists, or the reviewer wrote the PR. If one fails,
-show its error; do not rebuild the dispatch by hand.
+show its error; do not rebuild the dispatch by hand. `revisar` and `rebote` close the `done` terminals and empty
+shells of the worktree they reuse themselves, and refuse only while an agent works there.
+
+RDD consent for a dispatched worker comes from orca-stack's policy, `agentes.<agent>.rddConsentimiento` in the
+merged config: `"politica"` (the default) answers `declined` on the worker's own candidate and `granted` on main's
+`RDD:` request for that head, without asking the human; `"humano"` keeps asking the human through a `Consulta:`.
+`migraciones` in `.orca-stack.json`, `{ "glob": "<dir>/*.sql", "numero": "^(\\d+)_" }`, makes `orca-stack estado` require
+that every migration a PR adds has a number above the highest one on its base branch.
 
 Reference, the launcher each agent gets as the `--command` of `orca terminal create`. They are written for the Orca
 terminal on Windows, which is PowerShell; in a POSIX shell the leading `& ` is dropped and the key is set with

@@ -755,3 +755,111 @@ describe('reanudar: an open PR whose bounce stopped (#292)', () => {
     assert.equal(ghDown.sends().length, 0)
   })
 })
+
+describe('main-autonomo T1: reanudar picks the worker and trusts what orca-stack recorded', () => {
+  const PI_IDLE = ['● PR opened.', '╭─ ✿ ────────────────────────────╮', '│ type, or / for commands        │', '╰────────────────────────────────╯']
+  const briefLine = name => `Read and follow the brief in ${path.join('/home', 'orca', 'briefs', `${name}.md`)}`
+  const term = (n, title, agentIdentity = title) => ({ handle: `term-${n}`, tabId: `tab-${n}`, leafId: `leaf-${n}`, title, agentIdentity, worktreePath: WT })
+  const THREE = [term(1, 'codex'), term(2, 'claude'), term(3, 'codex')]
+  const BRIEF_ONLY = [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')]
+  const sentTo = h => h.sends().map(({ args }) => args[args.indexOf('--terminal') + 1])
+  const textOf = h => h.sends().map(({ args }) => args[args.indexOf('--text') + 1])
+  const withRoot = (config, run) => async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'orca-stack-main-autonomo-'))
+    writeFileSync(path.join(root, '.orca-stack.json'), JSON.stringify({ setup: 'completo', modo: 'multiagente', ...config }))
+    try {
+      await run(root)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  test('S5: with several done agents it resumes the terminal of the newest worker record, never a review or a subagent', async () => {
+    const h = harness({
+      terminals: THREE,
+      agents: [
+        { paneKey: 'tab-1:leaf-1', state: 'done', agentType: 'codex', prompt: briefLine('orca-stack-212'), updatedAt: 100 },
+        { paneKey: 'tab-2:leaf-2', state: 'done', agentType: 'claude', prompt: briefLine('orca-stack-revision-81-claude'), updatedAt: 300 },
+        { paneKey: 'tab-3:leaf-3', state: 'done', agentType: 'codex', prompt: `Message from main: ${URL} . Continue the ticket per your brief: ${BRIEF_PATH}.`, updatedAt: 200 },
+        { paneKey: 'tab-9:leaf-9', parentPaneKey: 'tab-3:leaf-3', state: 'done', agentType: 'codex', prompt: briefLine('orca-stack-212'), updatedAt: 400 },
+      ],
+    })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.deepEqual(sentTo(h), ['term-3'])
+    assert.deepEqual(textOf(h), [LINE])
+  })
+
+  test('S5: --terminal <handle> overrides the choice', async () => {
+    const agents = [1, 2, 3].map(n => ({ paneKey: `tab-${n}:leaf-${n}`, state: 'done', agentType: n === 2 ? 'claude' : 'codex' }))
+    const h = harness({ terminals: THREE, agents })
+    assert.equal(await reanudarCommand({ terminal: 'term-1' }, ISSUE, URL, h.io), 0)
+    assert.deepEqual(sentTo(h), ['term-1'])
+    assert.deepEqual(textOf(h), [LINE])
+  })
+
+  test('S5 negative: no worker record and no --terminal keeps the refusal, now naming --terminal and the handles', async () => {
+    const agents = [1, 2, 3].map(n => ({ paneKey: `tab-${n}:leaf-${n}`, state: 'done', agentType: 'codex' }))
+    const h = harness({ terminals: THREE, agents })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error =>
+      error.message === 'Hay 3 agentes done en el worktree de #212: no adivino a cuál reanudar. Elegí uno con --terminal <handle> (term-1, term-2, term-3).')
+    assert.equal(h.sends().length, 0)
+    assert.deepEqual(Object.keys(h.files), BRIEF_ONLY)
+  })
+
+  test('S5 negative: --terminal naming a terminal outside the worktree, or one without a done agent, is refused', async () => {
+    const agents = [{ paneKey: 'tab-1:leaf-1', state: 'done', agentType: 'codex' }, { paneKey: 'tab-3:leaf-3', state: 'done', agentType: 'codex' }]
+    const outside = harness({ terminals: THREE, agents })
+    await assert.rejects(() => reanudarCommand({ terminal: 'term-9' }, ISSUE, URL, outside.io), error =>
+      error.message === 'La terminal term-9 no está en el worktree de #212 (term-1, term-2, term-3): no reanudo.')
+    const noAgent = harness({ terminals: THREE, agents })
+    await assert.rejects(() => reanudarCommand({ terminal: 'term-2' }, ISSUE, URL, noAgent.io), error =>
+      error.message === 'La terminal term-2 de #212 no tiene un agente en done (sin agente): no reanudo.')
+    for (const h of [outside, noAgent]) {
+      assert.equal(h.sends().length, 0)
+      assert.deepEqual(Object.keys(h.files), BRIEF_ONLY)
+    }
+  })
+
+  test('S6: a pi pane that Orca detects as claude is resumed as pi', withRoot({ agentes: { usa: ['pi'], preguntarAntes: [] } }, async root => {
+    for (const agentType of ['pi', 'claude']) {
+      const h = pinned(harness({ root, screen: PI_IDLE, terminals: [term(1, 'pi', 'claude')], agents: [{ paneKey: 'tab-1:leaf-1', state: 'done', agentType }] }))
+      assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0, agentType)
+      assert.deepEqual(sentTo(h), ['term-1'], agentType)
+      assert.deepEqual(textOf(h), [LINE], agentType)
+    }
+  }))
+
+  test('S6 PRESERVE: without a stack title, Orca\'s record and then its detected identity still decide', async () => {
+    const h = harness({ terminals: [term(1, '✳ Brief', 'codex')], agents: [{ paneKey: 'tab-1:leaf-1', state: 'done', agentType: 'codex' }] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.deepEqual(sentTo(h), ['term-1'])
+  })
+
+  test('S3: resuming a paused worker or relaunching an exited one writes {"version":1,"granted":[]} in its git dir', async () => {
+    const consent = path.join(ROOT, '.git', 'orca-stack', 'rdd-consentimiento.json')
+    const paused = harness()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, paused.io), 0)
+    assert.equal(paused.files[consent], '{"version":1,"granted":[]}\n')
+    assert.ok(paused.outputs.includes(`Consentimiento RDD (política): ${consent} = {"version":1,"granted":[]}`))
+    assert.ok(paused.calls.some(({ args, cwd }) => args.join(' ') === 'rev-parse --path-format=absolute --git-dir' && cwd === WT))
+    const relaunch = harness({ state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, relaunch.io), 0)
+    assert.equal(relaunch.files[consent], '{"version":1,"granted":[]}\n')
+  })
+
+  test('S3: reanudar keeps an existing policy file, so main\'s granted head survives a paused RDD review', async () => {
+    const consent = path.join(ROOT, '.git', 'orca-stack', 'rdd-consentimiento.json')
+    const h = harness()
+    h.files[consent] = '{"version":1,"granted":["abc1234def"]}\n'
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.files[consent], '{"version":1,"granted":["abc1234def"]}\n')
+    assert.ok(h.outputs.includes(`Consentimiento RDD (política): dejo ${consent} como está.`))
+  })
+
+  test('S3 negative: with "humano" reanudar writes no consent file', withRoot({ agentes: { usa: ['codex'], preguntarAntes: [], codex: { rddConsentimiento: 'humano' } } }, async root => {
+    const h = harness({ root })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.sends().length, 1)
+    assert.ok(!Object.keys(h.files).some(file => file.endsWith('rdd-consentimiento.json')))
+  }))
+})

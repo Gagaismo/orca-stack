@@ -382,3 +382,38 @@ describe('avisar', () => {
     }
   })
 })
+
+describe('main-autonomo S7: running turns and dialogs as codex and agy draw them', () => {
+  const CODEX_WORKING = ['• Explored', '  └ Read app.ts', '', '• Working (32m • esc to interrupt)', '', '› Implement {feature}', '', '  gpt-6-luna high · 62% left · ~/wt/orca-stack-42']
+  const AGY_WORKING = ['● Editing src/app.ts', '', '✶ Thinking… (12s)', '', '> ', 'esc to cancel']
+  const worker = (identity, screen) => fakeIo({ terminals: [terminal('term_x', { identity, title: identity })], agents: [agent('term_x', 'working', identity)], screens: { term_x: screen } })
+
+  test('codex "• Working (32m • esc to interrupt)" counts as a running turn and gets the line', async () => {
+    const env = worker('codex', CODEX_WORKING)
+    assert.equal(await avisarCommand({}, '42', URL42, env.io), 0)
+    assert.deepEqual(env.sends().map(send => send.slice(3)), [['--terminal', 'term_x', '--text', LINE42, '--enter', '--wait-submit', '10', '--json']])
+    assert.ok(env.outputs.includes(`✔ Aviso enviado a term_x (#42): ${LINE42}`))
+  })
+
+  test('an agy footer "esc to cancel" with no question is no dialog: agy working gets the line', async () => {
+    const env = worker('agy', AGY_WORKING)
+    assert.equal(await avisarCommand({}, '42', URL42, env.io), 0)
+    assert.equal(env.sends().length, 1)
+  })
+
+  test('negative: "Do you want to proceed?" and "trust this folder?" still refuse, with the dialog message, and send nothing', async () => {
+    for (const [identity, base] of [['codex', CODEX_WORKING], ['agy', AGY_WORKING]]) {
+      for (const dialog of [['Do you want to proceed?', '❯ 1. Yes', '  2. No', 'Esc to cancel'], ['Do you trust this folder?', '❯ 1. Yes, continue', '  2. No, quit']]) {
+        const env = worker(identity, [...base, ...dialog])
+        await assert.rejects(() => avisarCommand({}, '42', URL42, env.io), error => error.message === 'La terminal term_x de #42 muestra un diálogo: no aviso encima.')
+        assert.equal(env.sends().length, 0)
+      }
+    }
+  })
+
+  test('negative: a settled codex screen without the Working line is still refused as no running turn', async () => {
+    const env = worker('codex', ['• Done. Opened the PR.', '', '› Implement {feature}', '', '  gpt-6-luna high · 62% left'])
+    await assert.rejects(() => avisarCommand({}, '42', URL42, env.io), error => error.message === 'No veo el turno en curso en la pantalla de term_x (#42): pudo haber terminado. No aviso.')
+    assert.equal(env.sends().length, 0)
+  })
+})

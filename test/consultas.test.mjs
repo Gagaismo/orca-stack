@@ -185,3 +185,20 @@ describe('orca-stack consultas (issue #165)', () => {
     assert.match(readme, /consultas/)
   })
 })
+
+describe('orca-stack consultas: shared marker normaliser (#365, S9)', () => {
+  test('a Consulta: led by a BOM and blank lines is reported; a quoted > Consulta: and a mid-body Consulta: are not', async () => {
+    const io = fakeIo({
+      commentsByNumber: {
+        '52': [
+          { id: 'bom', author: { login: 'stack-bot' }, body: String.fromCharCode(0xfeff) + '\r\n  Consulta: pi — ¿declined o granted?' },
+          { id: 'quoted', author: { login: 'stack-bot' }, body: '> Consulta: pi — cito la pregunta' },
+          { id: 'middle', author: { login: 'stack-bot' }, body: 'Respuesta de main: sí\nConsulta: otra' },
+        ],
+      },
+    })
+    await consultasCommand({}, ['52'], io)
+    assert.deepEqual(io.outputs, ['consulta nueva en #52'])
+    assert.deepEqual(JSON.parse(io.files[path.join('/repo/.git', 'orca-stack', 'consultas-reportadas.json')]), ['bom'])
+  })
+})

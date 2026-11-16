@@ -153,12 +153,17 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve --exclude-tools ${q(PI_DIALOG_TOOLS)}${piFlags}${tools} ${q(prompt)}`
   // No ENGRAM_DATA_DIR: since gentle-pi 4.4.0 any explicit Engram selection turns memory off; the worker shares the
   // human's global Engram server instead (#304).
-  const set = [['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
+  // main-autonomo S3: Gentle Shell answers RDD consent from the policy file only when the pi process itself carries
+  // GENTLE_PI_ORCA_RDD_POLICY=1. The agent's own bash calls cannot change its host's environment, so this is the trust
+  // anchor the review asked for; it is always cleared first so a value inherited from the terminal never leaks in.
+  const policy = rddConsentPolicy(config, 'pi') === 'politica'
+  const set = [['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(policy ? [['GENTLE_PI_ORCA_RDD_POLICY', '1']] : []), ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
+  const cleared = [...STACK_VARS_CLEARED, 'GENTLE_PI_ORCA_RDD_POLICY']
   if (win) {
-    return [`Remove-Item ${STACK_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
+    return [`Remove-Item ${cleared.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
   }
 
-  return [`unset ${STACK_VARS_CLEARED.join(' ')}`, `export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`, cmd].join('; ')
+  return [`unset ${cleared.join(' ')}`, `export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`, cmd].join('; ')
 }
 
 // Repo-relative paths a brief cites in inline backticks: contains a slash or ends in a known extension, no spaces, not a
@@ -355,11 +360,16 @@ const ok = (res, what) => {
 export const shellPrompt = text => /(?:^|\n)\s*PS\s+[A-Za-z]:\\[^\n>]*>\s*$/im.test(text)
 
 // Any "<kind> limit reached" (session, 5-hour, weekly, Opus...) or a limit line naming its reset, not one wording per limit (#292).
-const QUOTA = /quota (reached|exceeded)|usage limit|rate[- ]limit|Resets? in \d|hit your (?:session|usage) limit|\blimit reached\b|\blimit\b.*\bresets?\s+\S/i
+// Codex keeps an informational banner on screen while it works, "⚠ 5h limit: 50% left · resets at 00:57" (main-autonomo
+// S4): a line that says how much is left only stops a launch when nothing is left ("0% left") or it names a hard stop.
+const QUOTA_HARD = /quota (reached|exceeded)|usage limit|hit your (?:session|usage) limit|\blimit reached\b|(?<![\d.])0% left\b/i
+const QUOTA_SOFT = /rate[- ]limit|Resets? in \d|\blimit\b.*\bresets?\s+\S/i
+const PERCENT_LEFT = /\b\d+% left\b/i
+const isQuota = text => QUOTA_HARD.test(text) || (QUOTA_SOFT.test(text) && !PERCENT_LEFT.test(text))
 
 export const quotaLine = lines => {
   if (!Array.isArray(lines)) return undefined
-  return lines.slice(-15).find(line => QUOTA.test(String(line)))
+  return lines.slice(-15).find(line => isQuota(String(line)))
 }
 
 // The reset time a usage-limit line names, as read: "resets 02:20:00" -> "resets 02:20", "Resets in 10h45m" -> "resets in 10h45m";
@@ -517,7 +527,7 @@ const piFirstReply = (io, file, after = 0) => {
     const lines = message.stopReason === 'error' ? texts.flatMap(t => (typeof t === 'string' ? t.split(/\r?\n/) : [])) : []
     const auth = lines.find(t => PI_AUTH.test(t))
     // A usage limit is also an error turn: "Claude rate limit (five_hour) — resets 02:20:00: You've hit your session limit" (#292).
-    const quota = lines.find(t => QUOTA.test(t))
+    const quota = lines.find(t => isQuota(t))
     return auth ? { auth: auth.trim() } : quota ? { quota: quota.trim() } : { ok: true }
   }
   return undefined
@@ -746,12 +756,13 @@ export const writePin = (io, worktree, commonDir, name) => {
 }
 // The whole dispatch: despachar (kind 'ticket', n = issue) and revisar (kind 'review', n = PR).
 export const dispatch = async (kind, args, io = defaultIo()) => {
-  const { n, agent, nota, perfilPi, dryRun = false, confirmado = false } = args
+  const { n, agent, nota, perfilPi, rutas, dryRun = false, confirmado = false } = args
   const review = kind === 'review'
   const say = io.out
   if (!/^\d+$/.test(String(n ?? ''))) throw new Error(`Falta el número de ${review ? 'PR' : 'issue'}. Uso: orca-stack ${review ? 'revisar <pr>' : 'despachar <issue>'} <agente>.`)
   if (agent === 'codex-cc') throw new Error(CODEX_CC_REMOVED)
   if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido: ${agent ?? '(ninguno)'}. Los agentes son: ${AGENTS.join(', ')}.`)
+  const paths = reviewPaths(rutas, review)
 
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
   if (git.status !== 0) throw new Error('Corr\u00E9 este comando dentro del checkout principal de un repo git.')
@@ -771,6 +782,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   if ((config.agentes?.preguntarAntes ?? []).includes(agent) && !confirmado) {
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de despacharlo. Si dijo que sí, repetí el comando con --confirmado.`)
   }
+  const consent = review ? undefined : rddConsentPolicy(config, agent)
 
   const remote = getRemoteOrigin(root, io)
 
@@ -825,12 +837,9 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       w => worktreeName(w.path ?? '') === name || (!review && w.repo === repo && w.linkedIssue === Number(n)),
     )
     if (live && (!review || !existing)) throw new Error(`Orca ya tiene un worktree para ${name}${(live.agents ?? []).length > 0 ? ' con un agente vivo' : ''}: ${live.path}.`)
-    if (existing && live) {
-      const agents = live.agents ?? []
-      const active = agents.find(item => /^(working|running|active)$/i.test(item.state ?? item.status ?? ''))
-      if (active) throw new Error(`Orca ya tiene un worktree para ${name} con un agente vivo: ${live.path}.`)
-      const done = agents.find(item => /^done$/i.test(item.state ?? item.status ?? ''))
-      if (done) throw new Error(`La terminal ${done.paneKey ?? done.agentType ?? agent} de ${live.path} sigue abierta en done; cerrala antes de revisar de nuevo.`)
+    // A done terminal or an empty shell in the review worktree is closed right before the reuse (main-autonomo S8).
+    if (existing && live && (live.agents ?? []).some(item => LIVE_AGENT.test(item.state ?? item.status ?? ''))) {
+      throw new Error(`Orca ya tiene un worktree para ${name} con un agente vivo: ${live.path}.`)
     }
     if (existing && !live) throw new Error(`Orca no muestra ${existingPath}; no puedo comprobar que no haya una terminal abierta antes de reutilizarlo.`)
   } else if (!dryRun) {
@@ -867,7 +876,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
       PUBLISH_COMMAND: `gh pr review ${n} --comment --body-file ${reviewPath}`,
     } : {}),
-  }, nota)
+  }, nota) + partialReviewSection(paths)
   // Validate the cited paths against the tree the worktree will be created from, before any side effect.
   const tree = io.sh('git', ['ls-tree', '-r', '--name-only', startRef], { cwd: root })
   if (tree.status === 0) {
@@ -914,6 +923,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       ensureCandidateWorktreesExclude({ root, commonDir, io, dryRun, say })
     }
     if (existing) {
+      if (ps.status === 0) closeIdleTerminals(io, worktree, { dryRun, refusal: `Orca ya tiene un worktree para ${name} con un agente vivo: ${worktree}.` })
       say(`${dryRun ? '[simulación] ' : ''}Reutilizo ${worktree} desde ${previousHead} para revisar ${sha}.`)
       act('git', ['checkout', '--detach', sha], { cwd: worktree })
       branch = undefined
@@ -943,10 +953,12 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       if (!dryRun) io.rename(reviewPath, archivedReviewPath)
     }
     say(`${dryRun ? '[simulación] ' : ''}brief -> ${briefPath}`)
+    if (paths) say(`${dryRun ? '[simulación] ' : ''}Review parcial por diseño: ${paths.join(', ')}`)
     if (!dryRun) {
       io.mkdirp(path.dirname(briefPath))
       io.writeFile(briefPath, brief)
       left.brief = briefPath
+      if (consent === 'politica') writeRddConsent(io, worktree, [])
     }
     await launchInWorktree({
       agent, mode, worktree, briefPath, brief, session, config, win, home: io.home, skills,
@@ -961,8 +973,8 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   }
 }
 
-const command = kind => async (flags, n, agent) =>
-  dispatch(kind, { n, agent, nota: flags.nota, dryRun: flags.dryRun, confirmado: flags.confirmado, perfilPi: flags.perfilPi })
+const command = kind => async (flags, n, agent, io) =>
+  dispatch(kind, { n, agent, nota: flags.nota, dryRun: flags.dryRun, confirmado: flags.confirmado, perfilPi: flags.perfilPi, rutas: flags.rutas }, io)
 export const despacharCommand = command('ticket')
 export const revisarCommand = command('review')
 
@@ -1037,15 +1049,91 @@ const bounceProfile = (io, { agent, worktree, perfilPi, config, commonDir }) => 
 // Orca's live agent states: working (older Orca: running/active), or blocked/waiting on a dialog; only done is not live.
 const LIVE_AGENT = /^(working|running|active|blocked|waiting)$/i
 
-const refuseLiveAgent = (io, worktree) => {
+// main-autonomo S8: revisar and rebote refuse only a live agent; a done terminal or an empty shell (no agent record, a
+// shell prompt on screen) of that worktree they close themselves, and say which. A terminal Orca places in another
+// worktree, one whose screen cannot be read and any other terminal without a record are left alone.
+export const closeIdleTerminals = (io, worktree, { dryRun = false, refusal }) => {
   const ps = io.sh('orca', ['worktree', 'ps', '--json'])
   if (ps.status !== 0) throw new Error(`Orca no contesta (orca worktree ps): ${(ps.stderr || ps.stdout).trim()}`)
-  const rows = parseJson(ps, 'orca worktree ps').result?.worktrees ?? []
-  const row = rows.find(item => samePath(item.path ?? '', worktree))
-  if ((row?.agents ?? []).some(item => LIVE_AGENT.test(item.state ?? item.status ?? ''))) {
-    throw new Error(`Hay un agente vivo en ${worktree}; cerralo antes de rebotar.`)
+  const row = (parseJson(ps, 'orca worktree ps').result?.worktrees ?? []).find(item => samePath(item.path ?? '', worktree))
+  const agents = row?.agents ?? []
+  const stateOf = item => String(item?.state ?? item?.status ?? '')
+  if (agents.some(item => LIVE_AGENT.test(stateOf(item)))) throw new Error(refusal)
+  if (!row) return []
+  const listed = io.sh('orca', ['terminal', 'list', '--worktree', `path:${worktree}`, '--json'])
+  let terminals
+  try { terminals = JSON.parse(listed.stdout)?.result?.terminals } catch {}
+  if (listed.status !== 0 || !Array.isArray(terminals)) throw new Error(`orca terminal list falló para ${worktree}: ${(listed.stderr || listed.stdout).trim().split(/\r?\n/)[0]}. No cerré nada.`)
+  const records = new Map(agents.map(item => [item.paneKey, item]))
+  const idle = terminals.flatMap(terminal => {
+    if (!terminal?.handle || !terminal.worktreePath || !samePath(terminal.worktreePath, worktree)) return []
+    const record = records.get(`${terminal.tabId}:${terminal.leafId}`)
+    if (record) return /^done$/i.test(stateOf(record)) ? [[terminal.handle, 'done']] : []
+    const res = io.sh('orca', ['terminal', 'read', '--terminal', terminal.handle, '--screen', '--json'])
+    let tail
+    try { tail = res.status === 0 ? JSON.parse(res.stdout)?.result?.terminal?.tail : undefined } catch {}
+    const lines = Array.isArray(tail) ? tail.map(String) : typeof tail === 'string' ? tail.split(/\r?\n/) : []
+    const last = lines.filter(line => line.trim() !== '').at(-1)
+    return last && shellPrompt(last) ? [[terminal.handle, 'shell vacía']] : []
+  })
+  for (const [handle, reason] of idle) {
+    if (dryRun) {
+      io.out(`[simulación] Cerraría la terminal ${handle} (${reason}) de ${worktree}.`)
+      continue
+    }
+    ok(io.sh('orca', ['terminal', 'close', '--terminal', handle, '--json']), `orca terminal close ${handle}`)
+    io.out(`Cerré la terminal ${handle} (${reason}) de ${worktree}.`)
   }
+
+  return idle.map(([handle]) => handle)
 }
+
+const refuseLiveAgent = (io, worktree, dryRun) =>
+  closeIdleTerminals(io, worktree, { dryRun, refusal: `Hay un agente vivo en ${worktree}; cerralo antes de rebotar.` })
+
+// main-autonomo S3: how a worker answers RDD's consent. "politica" (the default) leaves the answer in a file Gentle Shell
+// reads; "humano" keeps the old behaviour, where the worker asks.
+export const rddConsentPolicy = (config, agent) => {
+  const value = config.agentes?.[agent]?.rddConsentimiento
+  if (value === undefined || value === 'politica') return 'politica'
+  if (value === 'humano') return 'humano'
+  throw new Error(`agentes.${agent}.rddConsentimiento tiene que ser "politica" o "humano", no ${JSON.stringify(value)}.`)
+}
+
+export const RDD_CONSENT_REL = ['orca-stack', 'rdd-consentimiento.json']
+
+// Written in the worktree's own git dir (a linked worktree has one per worktree), so it never shows in git status.
+// keepExisting (reanudar): a resumed worker keeps the file it has, so a head main granted for an RDD review that
+// paused on a Consulta: is still granted when it resumes.
+export const writeRddConsent = (io, worktree, granted, { keepExisting = false } = {}) => {
+  const res = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir'], { cwd: worktree })
+  const gitDir = res.status === 0 ? res.stdout.split(/\r?\n/)[0].trim() : ''
+  if (gitDir === '') throw new Error(`No pude leer el git dir de ${worktree} (git rev-parse --git-dir): ${(res.stderr || res.stdout || String(res.error ?? '')).trim()}`)
+  const file = path.join(path.resolve(worktree, gitDir), ...RDD_CONSENT_REL)
+  if (keepExisting && io.exists(file)) {
+    io.out(`Consentimiento RDD (política): dejo ${file} como está.`)
+    return file
+  }
+  const text = JSON.stringify({ version: 1, granted })
+  io.mkdirp(path.dirname(file))
+  io.writeFile(file, `${text}\n`)
+  io.out(`Consentimiento RDD (política): ${file} = ${text}`)
+
+  return file
+}
+
+// main-autonomo S12: `revisar --rutas a,b` asks for a review of those paths only.
+const reviewPaths = (rutas, review) => {
+  if (rutas === undefined) return undefined
+  if (!review) throw new Error('--rutas solo vale para revisar.')
+  const paths = [...new Set(String(rutas).split(',').map(item => item.trim()).filter(Boolean))]
+  if (paths.length === 0) throw new Error('--rutas necesita al menos una ruta: --rutas <ruta,ruta>.')
+
+  return paths
+}
+const partialReviewSection = paths => paths
+  ? `\n## Partial review by design\n\nmain asked for a review of these paths only (\`revisar --rutas\`): read each of them in full against the PR diff; you do not have to read the rest of the diff. Under \`## Cobertura\`, list them on \`Leído:\` and every other path the PR changes on \`Sin leer:\`.\n\n${paths.map(item => `- \`${item}\``).join('\n')}\n`
+  : ''
 
 export const CONTINUE_LINE = 'You were stopped before finishing this bounce (for example by a usage limit). The worktree keeps your work in progress (a merge in progress stays in progress): continue it, do not abort or reset it.'
 
@@ -1064,7 +1152,8 @@ const continueBounce = async ({ n, pr, agent, root, repo, config, commonDir, per
   if (!io.exists(bounceBrief)) throw new Error(`No encuentro el brief del rebote ${bounceBrief}; no hay rebote que continuar.`)
   const worktree = prWorktree(io, root, pr, n)
   const profile = bounceProfile(io, { agent, worktree, perfilPi, config, commonDir })
-  refuseLiveAgent(io, worktree)
+  const consent = rddConsentPolicy(config, agent)
+  refuseLiveAgent(io, worktree, dryRun)
   const sessionPath = path.join(io.home, 'orca', 'briefs', `${name}.session`)
   let session = agent === 'pi' && io.exists(sessionPath) ? io.readFile(sessionPath).trim() : ''
   if (!session) {
@@ -1083,6 +1172,7 @@ const continueBounce = async ({ n, pr, agent, root, repo, config, commonDir, per
   const brief = `${CONTINUE_LINE}\n\n${io.readFile(bounceBrief)}`
   if (!dryRun) io.writeFile(briefPath, brief)
   say(`${sim}brief -> ${briefPath}`)
+  if (consent === 'politica' && !dryRun) writeRddConsent(io, worktree, [])
   const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
   try {
     await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })
@@ -1134,6 +1224,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
   if (rdd && agent !== 'pi') throw new Error(`--rdd solo vale para un PR de pi (Implementador: ${agent}).`)
   if (rdd && !rddMode(config, agent)) throw new Error('--rdd necesita agentes.pi.review: "rdd" en la config del repo.')
+  const consent = rddConsentPolicy(config, agent)
 
   const sha = pr.headRefOid
   if (typeof sha !== 'string' || sha.trim() === '') throw new Error(`No pude obtener headRefOid del PR #${n}.`)
@@ -1278,7 +1369,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     if (ancestry.status === 1) throw new Error(`El worktree ${worktree} est\u00E1 en ${head}, no en el head del PR ${sha}.`)
     if (ancestry.status !== 0) throw new Error(`No pude comprobar si el worktree ${worktree} (${head}) est\u00E1 atr\u00E1s del head del PR ${sha}: ${(ancestry.stderr || ancestry.stdout || '').trim()}`)
   }
-  refuseLiveAgent(io, worktree)
+  refuseLiveAgent(io, worktree, dryRun)
   if (head !== sha) {
     if (!dryRun) ok(io.sh('git', ['merge', '--ff-only', sha], { cwd: worktree }), 'git merge --ff-only')
     say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Adelant\u00E9 el worktree de ${head.slice(0, 7)} a ${sha.slice(0, 7)} (el head del PR).`)
@@ -1349,6 +1440,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (!dryRun) {
     io.mkdirp(path.dirname(briefPath))
     io.writeFile(briefPath, brief)
+    // "declined lo propio, granted si pide main": only main's RDD request on this head grants it.
+    if (consent === 'politica') writeRddConsent(io, worktree, rdd ? [sha] : [])
   }
   say(`${dryRun ? '[simulaci\u00F3n] ' : ''}brief -> ${briefPath}`)
   await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })

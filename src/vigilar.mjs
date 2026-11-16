@@ -5,6 +5,7 @@ import { repoWorktrees } from './avisar.mjs'
 import { analyzeChecks, checkRunId, isHigherRunId, isStatus, latestChecks } from './checks.mjs'
 import { consultasCommand, getCommonDir } from './consultas.mjs'
 import { defaultIo } from './despacho.mjs'
+import { commitOf, markerValue } from './marcas.mjs'
 import { watchParent } from './parent-watch.mjs'
 
 export const CURSOR_REL = ['orca-stack', 'vigilar.json']
@@ -21,6 +22,8 @@ const CHECK_GREEN = ['SUCCESS', 'SKIPPED', 'NEUTRAL']
 const CHECK_RED = ['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE', 'ACTION_REQUIRED', 'CANCELLED']
 const STATUS_RED = ['FAILURE', 'ERROR']
 const LIVE_WORKER_STATES = new Set(['working', 'running', 'active', 'blocked', 'waiting'])
+// How many batches a cursor entry remembers having told about its PR (pr-abierto), the oldest dropped first.
+const TOLD_MAX = 20
 
 // stdout carries events only (it runs under the Monitor tool); every diagnostic goes to stderr.
 // A Monitor that stops leaves this process running with nobody reading its output: the watch ends it (#281).
@@ -129,12 +132,16 @@ const replacedRuns = (pr, root, io) => {
   return [...replaced]
 }
 
-// A PR is the item's by its closing reference, the branch of this repo's worktree linked to the issue, or a
-// `Closes #<n>` line in its body; never by guessing a branch name.
+// A PR is the item's by its closing reference, the branch of this repo's worktree linked to the issue, or a GitHub
+// closing keyword for `#<n>` anywhere in its body (`Closes #7`, `fixes #7`, `Closes: #7`, `resolves #7`); never by
+// guessing a branch name.
+const CLOSING = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*#(\d+)\b/gi
+export const closedIssues = body => [...String(body ?? '').matchAll(CLOSING)].map(match => match[1])
+export const closesIssue = (body, issue) => closedIssues(body).includes(String(issue))
 const linked = (pr, issue, branches) =>
   (pr.closingIssuesReferences ?? []).some(ref => String(ref.number) === issue) ||
   branches.includes(pr.headRefName) ||
-  new RegExp(`^\\s*Closes\\s+#${issue}\\b`, 'im').test(pr.body ?? '')
+  closesIssue(pr.body, issue)
 
 // Everything GitHub says about the items, read before anything is printed: a failed PR read fails the whole poll. An
 // issue gh cannot read (a mistyped number) only stays open, so it never blinds the rest of the batch.
@@ -190,8 +197,10 @@ const readWorld = (targets, cursor, root, io, warn) => {
 }
 
 // One item's events and its next cursor entry: the PR, its last head commit, the last CI result emitted for that head
-// commit (with the run of the last red one), and how the item ended.
-const advance = (issue, seen, before, merges, emitted) => {
+// commit (with the run of the last red one), the batches already told the PR opened, and how the item ended.
+// `batch` names this watcher by its items: the cursor is shared, so a PR another batch's watcher already knew is still
+// news to this one (once), while the same batch re-armed resumes without repeating it.
+const advance = (issue, seen, before, merges, emitted, batch) => {
   if (!seen.pr) {
     const entry = seen.issueState === 'CLOSED' ? { fin: 'issue-cerrado' } : {}
     if (seen.workersReadable === false) {
@@ -212,8 +221,8 @@ const advance = (issue, seen, before, merges, emitted) => {
   const lines = []
   const reported = new Set(entry.reviews ?? [])
   for (const comment of [...(seen.discussion.comments ?? []), ...(seen.discussion.reviews ?? [])]) {
-    const reviewer = /^Revisor:\s*(\S+)/im.exec(comment.body ?? '')?.[1]
-    const sha = /^Commit:\s*([a-f0-9]{7,40})\s*$/im.exec(comment.body ?? '')?.[1]
+    const reviewer = markerValue(comment.body, 'Revisor')?.split(/\s+/)[0] || undefined
+    const sha = commitOf(comment.body)
     if (!comment.id || !reviewer || !sha || reported.has(comment.id)) continue
     const section = /(?:^|\r?\n)##\s+BLOQUEA\s*(?:\r?\n|$)([\s\S]*?)(?=\r?\n##\s|$)/i.exec(comment.body)?.[1] ?? ''
     const count = [...section.matchAll(/^\s*\d+\.\s+/gm)].length
@@ -231,7 +240,11 @@ const advance = (issue, seen, before, merges, emitted) => {
   }
   if (pr.state === 'OPEN') {
     delete entry.fin
-    if (fresh) lines.push(event('pr-abierto', issue, pr, pr.headRefOid))
+    const told = Array.isArray(entry.abiertoPara) ? entry.abiertoPara : []
+    if (!told.includes(batch)) {
+      lines.push(event('pr-abierto', issue, pr, pr.headRefOid))
+      entry.abiertoPara = [...told, batch].slice(-TOLD_MAX)
+    }
     if (entry.head !== pr.headRefOid) {
       entry.head = pr.headRefOid
       delete entry.ci
@@ -343,6 +356,9 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
   const mergesPath = path.join(commonDir, ...MERGES_REL)
   let cursor = readJson(cursorPath, io, warn)
   let failures = 0
+  const batch = [...targets].sort((a, b) => Number(a) - Number(b)).join(',')
+  // The PRs of the items, as last read: --consultas reads their comments too, since a worker with a PR asks there.
+  let linkedPrs = []
 
   // Returns true when every item has ended.
   const poll = () => {
@@ -358,13 +374,14 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
       return false
     }
     failures = 0
+    linkedPrs = targets.map(issue => world[issue].pr?.number).filter(Boolean).map(String)
     const merges = readJson(mergesPath, io, warn)
     const next = { ...cursor }
     const lines = []
     let endedNow = false
     const emitted = new Set()
     for (const issue of targets) {
-      const step = advance(issue, world[issue], cursor[issue], merges, emitted)
+      const step = advance(issue, world[issue], cursor[issue], merges, emitted, batch)
       lines.push(...step.lines)
       if (step.entry.fin && !cursor[issue]?.fin) endedNow = true
       next[issue] = step.entry
@@ -396,7 +413,7 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     // One Monitor in Proactive: the consultas check runs on every poll, unchanged, and its failure never stops the poll.
     if (flags.consultas) {
       try {
-        await consultasCommand({ dryRun: flags.dryRun }, targets, io)
+        await consultasCommand({ dryRun: flags.dryRun }, [...new Set([...targets, ...linkedPrs])], io)
       } catch (error) {
         warn(`vigilar: el chequeo de consultas falló: ${error.message}`)
       }

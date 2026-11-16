@@ -82,7 +82,9 @@ what is fine. Tag blockers `implementación` (code breaks a clear rule) or
 `interpretación` (author and reviewer read a rule differently); send
 `interpretación` blockers to the human, never settle them with `Decidido por
 main`. On a re-review, read only the delta since the last reviewed commit and
-confirm the previous blockers. The project's own review rules, if any, take
+confirm the previous blockers. Every review carries a `## Cobertura` section
+with `Leído:` and `Sin leer:` path lists; a review that leaves a `riesgo` path
+unread is partial and lists it under `Sin leer:`. The project's own review rules, if any, take
 precedence. This review owns correctness, not minimalism.
 
 ## Ponytail reviewer

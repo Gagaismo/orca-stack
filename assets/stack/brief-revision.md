@@ -41,11 +41,15 @@ What blocks: only a finding with one of four kinds of concrete evidence. `test`:
 
 {{PUBLISH_COMMAND}}
 
-The headings and the `Revisor:` and `Commit:` lines are literal protocol markers: do not translate them. No lists of what is fine.
+Write the body file as UTF-8 without a BOM (Windows PowerShell's `Out-File` and `Set-Content -Encoding utf8` write one). The headings and the `Revisor:`, `Commit:`, `Leído:` and `Sin leer:` lines are literal protocol markers: do not translate them. No lists of what is fine.
 
 ```
 Revisor: {{REVIEWER_LINE}}
 Commit: {{SHA}}
+
+## Cobertura
+Leído: <every path of the diff you read in full, comma-separated>
+Sin leer: <every path of the diff you did not read, comma-separated, or nada>
 
 ## BLOQUEA
 1. `file:line` (introducido|empeorado, test|comando|regla escrita|regla sin test, implementación|interpretación): the problem in one sentence. Its evidence; for a verifier test, include the test code. The fix, in one line.
@@ -53,6 +57,8 @@ Commit: {{SHA}}
 ## SUGERENCIAS
 (at most three, one line each; inferred findings first)
 ```
+
+`## Cobertura` is required in every review. A review that leaves a path matching `riesgo` unread is partial: it must list that path under `Sin leer:`, and main does not count it for that path. For a PR over 1500 changed lines (`gh pr view {{PR}} --json additions,deletions`), review by layers: first every path that matches a `riesgo` glob of .orca-stack.json, then the rest; whatever you did not reach goes under `Sin leer:`.
 
 With no blockers, `## BLOQUEA` says `nada`. If the repo has no CI, add the line `Suite: <command> en verde` under `Revisor:` after running the suite. If the diff is a one-way door and the PR's `## Merge Danger` says otherwise, say so in SUGERENCIAS.
 
