@@ -125,13 +125,17 @@ export const blockOf = (config, agent, now) => {
   return undefined
 }
 
+const AGY_DEFAULT_MODEL = 'gemini-4-neon-high'
 const psQuote = text => `'${text.replace(/'/g, "''")}'`
 const shQuote = text => `'${text.replace(/'/g, "'\\''")}'`
 
 // The command typed into the Orca terminal. `win` is the target shell, not the host: PowerShell on win32 (Orca's
 // terminal there), POSIX elsewhere. Paths follow it.
 export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive = false }) => {
-  const { model, effort } = modelFor(config, agent, mode)
+  const { model: configured, effort } = modelFor(config, agent, mode)
+  // #382: agy's default lives here, not in modelFor, so familyOf (the reviewer family) never sees it.
+  // A blank or non-text agy model counts as unset, the same reading familyOf gives it.
+  const model = agent === 'agy' ? (typeof configured === 'string' && configured.trim() !== '' ? configured.trim() : AGY_DEFAULT_MODEL) : configured
   const P = win ? path.win32 : path.posix
   const wrapper = P.join(home, ...SCRIPTS_REL, wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
   const bin = (win ? '& ' : '') + `"${wrapper}"`

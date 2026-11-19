@@ -1035,6 +1035,38 @@ describe('launchers', () => {
     assert.match(launcherFor({ ...base, agent: 'agy', config }), /agy-orca-stack\.cmd" --dangerously-skip-permissions --model gemini-x$/)
   })
 
+  test('issue 382 Rule 1: agy without a configured model launches with --model gemini-4-neon-high', () => {
+    for (const config of [{}, { agentes: { modelos: {} } }, { agentes: { modelos: { agy: '  ' } } }, { agentes: { modelos: { agy: { modelo: 123 } } } }]) {
+      assert.equal(launcherFor({ ...base, agent: 'agy', config }), '& "C:\\Users\\me\\orca\\stack\\scripts\\agy-orca-stack.cmd" --dangerously-skip-permissions --model gemini-4-neon-high')
+      assert.equal(launcherFor({ ...base, agent: 'agy', config, win: false, home: '/home/me' }), '"/home/me/orca/stack/scripts/agy-orca-stack.sh" --dangerously-skip-permissions --model gemini-4-neon-high')
+    }
+  })
+
+  test('issue 382 Rule 2: a configured agy model wins over the default', () => {
+    const scripts = 'C:\\Users\\me\\orca\\stack\\scripts'
+    assert.equal(launcherFor({ ...base, agent: 'agy', config: { agentes: { modelos: { agy: 'gemini-x' } } } }), `& "${scripts}\\agy-orca-stack.cmd" --dangerously-skip-permissions --model gemini-x`)
+    const split = { agentes: { modelos: { agy: { implementar: { modelo: 'gemini-3.8-flash-high' } } } } }
+    const launcher = launcherFor({ ...base, agent: 'agy', config: split })
+    assert.equal(launcher, `& "${scripts}\\agy-orca-stack.cmd" --dangerously-skip-permissions --model gemini-3.8-flash-high`)
+    assert.ok(!launcher.includes('gemini-4-neon-high'))
+  })
+
+  test('issue 382 Rule 3: a missing agy mode falls back to the default', () => {
+    const config = { agentes: { modelos: { agy: { implementar: { modelo: 'gemini-3.8-flash-high' } } } } }
+    assert.match(launcherFor({ ...base, agent: 'agy', config, mode: 'review' }), /agy-orca-stack\.cmd" --dangerously-skip-permissions --model gemini-4-neon-high$/)
+    const reviewOnly = { agentes: { modelos: { agy: { revisar: { modelo: 'gemini-x' } } } } }
+    assert.match(launcherFor({ ...base, agent: 'agy', config: reviewOnly }), /--model gemini-4-neon-high$/)
+    assert.match(launcherFor({ ...base, agent: 'agy', config: reviewOnly, mode: 'review' }), /--model gemini-x$/)
+  })
+
+  test('issue 382 Rule 4: the default is only for agy, claude and codex get no unconfigured --model', () => {
+    for (const config of [{}, { agentes: { modelos: {} } }]) {
+      for (const win of [true, false]) {
+        for (const agent of ['claude', 'codex']) assert.ok(!launcherFor({ ...base, agent, config, win }).includes('--model'), `${agent} (win: ${win})`)
+      }
+    }
+  })
+
   test('the target platform, not the host, decides the wrapper and the paths', () => {
     const posix = { ...base, win: false, home: '/home/me', briefPath: '/b.md', skills: '/s' }
     assert.equal(launcherFor({ ...posix, agent: 'claude' }), '"/home/me/orca/stack/scripts/claude-orca-stack.sh" --dangerously-skip-permissions')
@@ -1079,6 +1111,15 @@ describe('launchers', () => {
     await run('ticket', { n: '7', agent: 'codex', dryRun: true }, env)
     assert.ok(env.out.includes(`Lanzador (codex): ${codexLauncher()}`))
     assert.ok(env.out.some(line => line.startsWith('[simulaci\u00f3n] orca terminal create') && line.includes(JSON.stringify(codexLauncher()))))
+  })
+
+  test('issue 382 Rule 1: despachar and revisar launch agy with --model gemini-4-neon-high', async () => {
+    const prView = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) }
+    for (const [kind, n, over] of [['ticket', '7', {}], ['review', '9', prView]]) {
+      const env = fakeIo(over)
+      await run(kind, { n, agent: 'agy', dryRun: true }, env)
+      assert.match(env.out.find(line => line.startsWith('Lanzador (agy):')), /agy-orca-stack\.(cmd|sh)" --dangerously-skip-permissions --model gemini-4-neon-high$/, kind)
+    }
   })
 
   test('issue 236 Rule 5: despachar and revisar launch as before, codex only gains the flag', async () => {
@@ -2282,6 +2323,12 @@ describe('rebote', () => {
     const env = bounceEnv(pr({ body: 'Implementador: codex' }))
     await reboteCommand({ dryRun: true }, '12', env.io)
     assert.equal(env.out.find(line => line.startsWith('Lanzador (codex):')), `Lanzador (codex): ${codexLauncher()}`)
+  })
+
+  test('issue 382 Rule 1: rebote relaunches an agy author with --model gemini-4-neon-high', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: agy' }))
+    await reboteCommand({ dryRun: true }, '12', env.io)
+    assert.match(env.out.find(line => line.startsWith('Lanzador (agy):')), /agy-orca-stack\.(cmd|sh)" --dangerously-skip-permissions --model gemini-4-neon-high$/)
   })
 
   test('Rule 9: refuses missing Implementador marker', async () => {
