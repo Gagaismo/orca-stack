@@ -431,6 +431,12 @@ describe('orca-stack reanudar (#214)', () => {
     await assert.rejects(() => reanudarCommand({ dryRun: true }, ISSUE, URL, unknown.io), /agente conocido/)
   })
 
+  test('issue 382: reanudar relaunches agy with --model gemini-4-neon-high', async () => {
+    const gone = harness({ agents: [{ paneKey: 'tab-9:leaf-9', state: 'done', agentType: 'antigravity' }], terminals: [] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, gone.io), 0)
+    assert.ok(gone.outputs.includes('Lanzador (agy): "/home/orca/stack/scripts/agy-orca-stack.sh" --dangerously-skip-permissions --model gemini-4-neon-high'), gone.outputs.join('\n'))
+  })
+
   test('issue 330 Rule 4: Orca\'s antigravity agentType is agy; an unknown agentType still refuses', async () => {
     // The 2026-11-08 state: antigravity:done with its live TUI, despachar's terminal titled agy.
     const live = harness({ agent: 'antigravity', terminals: [{ handle: 'term-1', tabId: 'tab-1', leafId: 'leaf-1', title: 'agy', worktreePath: WT }] })

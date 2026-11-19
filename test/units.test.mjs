@@ -237,6 +237,13 @@ describe('the repository itself', () => {
   })
 
   // The mod runs the same cases against shared/orca-config.ts (its copy is mods/puente-gentle/tests/familias.ts).
+  test('issue 382 Rule 5: agy stays in the gemini family with and without a configured model', () => {
+    for (const mode of ['ticket', 'review']) {
+      for (const config of [{}, { agentes: { modelos: {} } }]) assert.deepEqual(familyOf(config, 'agy', mode), { family: 'gemini', model: undefined }, mode)
+      assert.deepEqual(familyOf({ agentes: { modelos: { agy: 'gemini-x' } } }, 'agy', mode), { family: 'gemini', model: 'gemini-x' }, mode)
+    }
+  })
+
   test('familyOf and blockOf answer shared/familias.json', () => {
     const cases = JSON.parse(readFileSync(path.join(ROOT, 'shared', 'familias.json'), 'utf8'))
     for (const c of cases.familyOf) assert.equal(familyOf(c.config, c.agent, c.mode).family ?? null, c.family, JSON.stringify(c))
