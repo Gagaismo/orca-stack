@@ -1036,7 +1036,7 @@ describe('launchers', () => {
   })
 
   test('issue 382 Rule 1: agy without a configured model launches with --model gemini-4-neon-high', () => {
-    for (const config of [{}, { agentes: { modelos: {} } }]) {
+    for (const config of [{}, { agentes: { modelos: {} } }, { agentes: { modelos: { agy: '  ' } } }, { agentes: { modelos: { agy: { modelo: 123 } } } }]) {
       assert.equal(launcherFor({ ...base, agent: 'agy', config }), '& "C:\\Users\\me\\orca\\stack\\scripts\\agy-orca-stack.cmd" --dangerously-skip-permissions --model gemini-4-neon-high')
       assert.equal(launcherFor({ ...base, agent: 'agy', config, win: false, home: '/home/me' }), '"/home/me/orca/stack/scripts/agy-orca-stack.sh" --dangerously-skip-permissions --model gemini-4-neon-high')
     }
@@ -1054,6 +1054,9 @@ describe('launchers', () => {
   test('issue 382 Rule 3: a missing agy mode falls back to the default', () => {
     const config = { agentes: { modelos: { agy: { implementar: { modelo: 'gemini-3.8-flash-high' } } } } }
     assert.match(launcherFor({ ...base, agent: 'agy', config, mode: 'review' }), /agy-orca-stack\.cmd" --dangerously-skip-permissions --model gemini-4-neon-high$/)
+    const reviewOnly = { agentes: { modelos: { agy: { revisar: { modelo: 'gemini-x' } } } } }
+    assert.match(launcherFor({ ...base, agent: 'agy', config: reviewOnly }), /--model gemini-4-neon-high$/)
+    assert.match(launcherFor({ ...base, agent: 'agy', config: reviewOnly, mode: 'review' }), /--model gemini-x$/)
   })
 
   test('issue 382 Rule 4: the default is only for agy, claude and codex get no unconfigured --model', () => {

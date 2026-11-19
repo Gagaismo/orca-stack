@@ -134,7 +134,8 @@ const shQuote = text => `'${text.replace(/'/g, "'\\''")}'`
 export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive = false }) => {
   const { model: configured, effort } = modelFor(config, agent, mode)
   // #382: agy's default lives here, not in modelFor, so familyOf (the reviewer family) never sees it.
-  const model = configured || (agent === 'agy' ? AGY_DEFAULT_MODEL : undefined)
+  // A blank or non-text agy model counts as unset, the same reading familyOf gives it.
+  const model = agent === 'agy' ? (typeof configured === 'string' && configured.trim() !== '' ? configured.trim() : AGY_DEFAULT_MODEL) : configured
   const P = win ? path.win32 : path.posix
   const wrapper = P.join(home, ...SCRIPTS_REL, wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
   const bin = (win ? '& ' : '') + `"${wrapper}"`
