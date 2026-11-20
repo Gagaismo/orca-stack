@@ -7,15 +7,18 @@ import { cleanup, cli, git, read, tempDir, write } from './helpers.mjs'
 const contract = read(path.join(process.cwd(), 'assets', 'stack', 'CONTRATO.md'))
 const main = read(path.join(process.cwd(), 'assets', 'stack', 'MAIN.md'))
 const policy = read(path.join(process.cwd(), 'assets', 'stack', 'ORCA-STACK.md'))
-const marchas = main.split('### Marchas')[1]?.split('\n### ')[0] ?? ''
-const gearList = policy.split('## Gear knobs')[1]?.split('\n## ')[0] ?? ''
+// #393: the gear rules and the knob list live in the gears perk fragment.
+const fragment = read(path.join(process.cwd(), 'assets', 'stack', 'MARCHAS.md'))
+const marchas = fragment.split('### Marchas')[1]?.split('\n### ')[0] ?? ''
+const gearChanges = fragment.split('### Lo que cambia cada marcha')[1]?.split('\n## ')[0] ?? ''
+const gearList = fragment.split('## Gear knobs')[1]?.split('\n## ')[0] ?? ''
 // Issue 325: the contract keeps what any fan-out owner acts on; MAIN.md holds main's part of the section.
 const arena = [contract, main].map(text => text.split('### Arena y swarm')[1]?.split('\n### ')[0] ?? '').join('\n')
 const permissions = contract.split('### Permisos')[1]?.split('\n### ')[0] ?? ''
 
-const checkCitedHeadings = (contractText, policyText) => {
+const checkCitedHeadings = (contractText, policyText, knobsText = fragment) => {
   const sources = { 'CONTRATO.md': contractText, 'ORCA-STACK.md': policyText }
-  for (const line of policyText.split(/\r?\n/)) {
+  for (const line of knobsText.split(/\r?\n/)) {
     if (!line.startsWith('- **K')) continue
     const match = /^- \*\*(K\d+) \u2014 [^*]+\*\*.*?Internal heading: (CONTRATO\.md|ORCA-STACK\.md) \u2014 (.+?)(?:\.|;|$)/.exec(line)
     if (!match) throw new Error(`Malformed internal heading citation in knob: ${line}`)
@@ -43,9 +46,9 @@ describe('gear contract', () => {
   })
 
   test('ticket rule 2: only pure-read swarms avoid approval and Lazy runs none', () => {
-    assert.match(arena, /Un swarm de solo lectura sobre c\u00F3digo, issues y PRs, con pocos subagentes y sin correr una suite, hacer llamadas remotas ni crear worktrees, no requiere OK, pero nunca se hace en Lazy/)
+    assert.match(arena, /Un swarm de solo lectura sobre c\u00F3digo, issues y PRs, con pocos subagentes y sin correr una suite, hacer llamadas remotas ni crear worktrees, no requiere OK\./)
     assert.match(arena, /Cualquier otro swarm requiere OK como una arena/)
-    assert.match(arena, /pero nunca se hace en Lazy/)
+    assert.match(gearChanges, /El swarm de solo lectura que no requiere OK nunca se hace en Lazy/)
     assert.match(arena, /Una suite o build en paralelo requiere worktrees aislados/)
     assert.match(arena, /Las APIs externas son operaciones remotas y requieren su autorizaci\u00F3n/)
     assert.match(arena, /Es trabajo de lectura y no publica nada/)
@@ -77,7 +80,8 @@ describe('gear contract', () => {
     assert.match(arena, /una sola arena por artefacto, la menor que responda la pregunta/)
     assert.match(arena, /N sale de una propuesta registrada que el humano haya visto, o es el menor n\u00FAmero de candidaturas que permita las diferencias necesarias/)
     assert.match(arena, /Un swarm que no sea de solo lectura cuenta como una arena/)
-    assert.match(arena, /Proactive y los swarms de solo lectura no agregan otro l\u00EDmite/)
+    assert.match(arena, /Los swarms de solo lectura no agregan otro l\u00EDmite/)
+    assert.match(gearChanges, /En modo aut\u00F3nomo, Proactive no agrega otro l\u00EDmite/)
     assert.match(arena, /Una segunda arena queda registrada como propuesta y no se ejecuta/)
   })
 
@@ -172,7 +176,7 @@ describe('gear contract', () => {
   })
 
   test('rule 8: step 10 records the gear and the next session suggests it without applying it', () => {
-    const step10 = main.split('\n').find(line => line.startsWith('10. '))
+    const step10 = gearChanges.split('\n').find(line => line.includes('paso 10'))
     assert.match(step10, /marcha que deja/)
     assert.match(step10, /sugiere en una l\u00EDnea esa marcha/)
     assert.match(step10, /sin aplicarla/)
@@ -188,7 +192,7 @@ describe('gear contract', () => {
   })
 
   test('rule 10: Marchas points to the policy list instead of copying knobs', () => {
-    assert.match(marchas, /perillas de marcha.*ORCA-STACK\.md/i)
+    assert.match(marchas, /perillas de marcha enumeradas en Gear knobs/i)
     assert.doesNotMatch(marchas, /\bK(?:[1-9]|10|11)\b/)
     assert.deepEqual(
       [...gearList.matchAll(/^- \*\*(K\d+) /gm)].map(([, knob]) => knob),
@@ -201,6 +205,8 @@ describe('gear contract', () => {
     const repo = path.join(tempDir('gear-repo'), 'project')
     try {
       write(path.join(repo, 'README.md'), '# project\n')
+      // #393: the gear contract is written only with the gears perk on.
+      write(path.join(repo, '.orca-stack.json'), JSON.stringify({ perks: { marchas: true } }))
       git(repo, 'init', '-q', '-b', 'main')
       const result = cli(home, ['init'], { cwd: repo })
       assert.equal(result.status, 0, result.out)

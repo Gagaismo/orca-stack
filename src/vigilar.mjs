@@ -594,7 +594,7 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
   for (;;) {
     const done = poll()
     pollMailbox()
-    // One Monitor in Proactive: the consultas check runs on every poll, unchanged, and its failure never stops the poll.
+    // One Monitor: the consultas check runs on every poll, unchanged, and its failure never stops the poll.
     if (flags.consultas) {
       try {
         await consultasCommand({ dryRun: flags.dryRun }, [...new Set([...targets, ...linkedPrs])], io)
