@@ -10,6 +10,27 @@ The methodology orca-stack installs: one orchestrating session plans and dispatc
 The orchestrating session, running in a repo's main checkout; it plans, dispatches, merges and integrates, and never implements tickets.
 _Avoid_: coordinator, orchestrator session
 
+**Perk**:
+An optional part of the stack that the human turns on in the project config; it is off by default, and orca-stack works completely without it. The gears perk (*marchas*) is one.
+
+**Supervised Run**:
+The Orca orchestration Run bound to the main session: every ticket worker is started inside it, reports its end to it as ok or partial, and main watches its mailbox alongside GitHub.
+_Avoid_: handoff (for ticket dispatch)
+
+**Diagnóstico**:
+A worker's written cause, attempts and next hypothesis after exhausting its attempts on the same failure.
+
+**Watchdog**:
+The check main's watch runs on every batch worker to detect one that stopped before opening a PR (out of quota, back at the shell, or finished without a PR) or stalled with an unchanged screen, reporting each event with the worker's last screen line as diagnosis.
+
+**Autonomous mode**:
+The state the human puts a session in so main works toward a goal they set without them: main does not wait for the human, records what needs them and carries on with the rest. It is independent of the gear. Spanish: *modo autónomo*.
+_Avoid_: autopilot, unattended gear
+
+### Gears perk
+
+These terms apply only when the gears perk is on.
+
 **Gear**:
 The posture main works in: how deep it explores, how much it delegates and narrates, and how it collaborates with workers. Spanish: *marcha*.
 _Avoid_: profile, perfil, mode, modo, level
@@ -38,10 +59,6 @@ _Avoid_: process rule, soft rule
 **Fixed rule**:
 Any rule main follows that is not a gear knob; it holds the same in every gear. Spanish: *regla fija*.
 _Avoid_: contract rule, safety rule, hard rule
-
-**Autonomous mode**:
-The state the human puts a session in so main works toward a goal they set without them: main does not wait for the human, records what needs them and carries on with the rest. It is independent of the gear. Spanish: *modo autónomo*.
-_Avoid_: autopilot, unattended gear
 
 ### Fan-out techniques
 
