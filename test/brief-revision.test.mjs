@@ -88,6 +88,12 @@ describe('brief-revision', () => {
     assert.ok(brief.includes('Revisor: subagente (gpt-6)'))
   })
 
+  test('issue 385 Rule 6: template requires nada alone and directs reservations and unread coverage', () => {
+    const brief = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/brief-revision.md'), 'utf8')
+    assert.ok(brief.includes('`nada` alone on its line, without clarification'))
+    assert.ok(brief.includes('Reservations go in `## SUGERENCIAS` and unread material in `## Cobertura`'))
+    assert.ok(brief.includes('`nada identificado en la cobertura parcial` does not count as a clean review'))
+  })
   test('Rule 2: leaves the main checkout tracked file byte-for-byte unchanged', async () => {
     const env = setup()
     const before = readFileSync(env.tracked)

@@ -138,6 +138,38 @@ describe('orca-stack estado (S1, #366)', () => {
     assert.deepEqual(one(noImplementer).falta, ['(a) el body del PR no tiene una línea Implementador: <agente>'])
   })
 
+  test('issue 385 Rule 1: qualified nada is explained in both review paths', async () => {
+    for (const waived of [false, true]) {
+      const world = { prs: [prData(70, { body: 'Implementador: codex\n\n## Evidencia', reviews: [review('agy', HEAD, { verdict: 'Nada identificado en la cobertura parcial' })] })], ...(waived ? { baseConfig: JSON.stringify({ reviewParaMerge: false }) } : {}) }
+      const h = harness(world)
+      assert.equal(await estado(h, ['70'], { json: true }), 1)
+      assert.deepEqual(one(h).falta, ['(a) el review de agy sobre abc1234 no dice "nada" solo en ## BLOQUEA: "Nada identificado en la cobertura parcial"'])
+    }
+  })
+  test('issue 385 Rule 2: risk explains qualified nada and keeps the risk guidance', async () => {
+    const h = harness({ prs: [prData(70, { files: ['src/auth/login.mjs'], reviews: [review('agy', HEAD, { verdict: 'nada identificado en la cobertura parcial' })] })] }, { riesgo: ['src/auth/**'] })
+    assert.equal(await estado(h, ['70'], { json: true }), 1)
+    assert.ok(one(h).falta.some(line => line.includes('sobre el commit abc1234 no dice "nada" solo en ## BLOQUEA: "nada identificado en la cobertura parcial". En una ruta de riesgo un bloqueo no se salda con "Decidido por main"')))
+  })
+  test('issue 385 Rule 3: verdicts over 80 characters are shortened', async () => {
+    for (const verdict of ['nada (no blockers established within the partial coverage above)', `nada ${'x'.repeat(100)}`]) {
+      const h = harness({ prs: [prData(70, { reviews: [review('agy', HEAD, { verdict })] })] })
+      assert.equal(await estado(h, ['70'], { json: true }), 1)
+      assert.ok(one(h).falta[0].endsWith(`"${verdict.length > 80 ? verdict.slice(0, 80) + '\u2026' : verdict}"`))
+    }
+  })
+  test('issue 385 Rule 4: numbered findings still report blockers', async () => {
+    const h = harness({ prs: [prData(70, { reviews: [review('agy', HEAD, { verdict: '1. api/x.go:10 (introducido, test, implementaci\u00f3n): ...' })] })] })
+    assert.equal(await estado(h, ['70'], { json: true }), 1)
+    assert.deepEqual(one(h).falta, ['(a) el review de agy sobre abc1234 tiene bloqueos'])
+  })
+  test('issue 385 Rule 5: exact nada is clean and other verdicts remain blockers', async () => {
+    for (const verdict of ['nada', 'Nada', 'ninguno']) {
+      const h = harness({ prs: [prData(70, { reviews: [review('agy', HEAD, { verdict })] })] })
+      assert.equal(await estado(h, ['70'], { json: true }), verdict === 'ninguno' ? 1 : 0)
+      assert.deepEqual(one(h).falta, verdict === 'ninguno' ? ['(a) el review de agy sobre abc1234 tiene bloqueos'] : [])
+    }
+  })
   test('S1 (c): a red, a pending or a missing check gives ok:false with ci=red, pending and no checks', async () => {
     const cases = [
       [[run('test', 'FAILURE'), run('ci-ok', 'SUCCESS')], 'red', '(c) CI roja: test=FAILURE'],
