@@ -43,6 +43,14 @@ describe('#393 perk switch, gears first', () => {
       const yes = initRepo(home)
       repos.push(yes.repo)
       assert.ok(!hasGears(yes.block), 'a non-boolean perk counts as off')
+
+      // doctor merges the layers: a project value replaces the personal one before it is checked.
+      write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ perks: { marchas: true } }))
+      write(path.join(yes.repo, '.orca-stack.json'), JSON.stringify({ perks: { marchas: 'x' } }))
+      const layered = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: yes.repo })
+      assert.match(layered.out, /perks\.marchas - no es booleano \("x"\)/)
+      write(path.join(yes.repo, '.orca-stack.json'), JSON.stringify({ perks: { marchas: false } }))
+      assert.doesNotMatch(cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: yes.repo }).out, /perks\.marchas/)
     } finally {
       cleanup(home)
       for (const repo of repos) cleanup(path.dirname(repo))

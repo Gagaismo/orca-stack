@@ -255,7 +255,7 @@ Un PR es del issue por su referencia de cierre, por la rama del worktree de este
 Guarda lo emitido en <git-common-dir>/orca-stack/vigilar.json: rearmado con los mismos argumentos, retoma sin repetir.
 Si el proceso que lo lanzó desaparece (el Monitor venció o se paró), sale en menos de 5 segundos con su gh u orca.
 --una-vez consulta una vez y sale; --dry-run consulta una vez y no escribe nada; --consultas corre en cada vuelta el
-chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor; main lo arma siempre así).
+chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor).
 
 --merge-de-main <pr> registra el head del PR en <git-common-dir>/orca-stack/vigilar-merges.json y sale sin imprimir
 nada en stdout. main lo corre justo antes de cada intento de \`gh pr merge <pr>\`, también después de
