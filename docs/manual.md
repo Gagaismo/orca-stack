@@ -96,7 +96,7 @@ Reglas que sostienen todo lo demás:
 | `revisar` | Despacha el review de un PR a otro agente | Checkout principal |
 | `rebote` | Relanza al autor de un PR bloqueado, con CI roja o en conflicto con la base | Checkout principal |
 | `brief-revision` | Worktree y brief de review para un subagente (modo `un-agente`) | Checkout principal |
-| `consultas` | Avisa comentarios `Consulta:` nuevos | Checkout principal |
+| `consultas` | Avisa comentarios `Consulta:` nuevos de sesiones no supervisadas | Checkout principal |
 | `avisar` | Le toca el timbre a un worker con el turno en curso | Checkout principal |
 | `vigilar` | Monitor de una tanda de PRs | Checkout principal |
 | `estado` | Qué le falta a cada PR para el paso 7, de solo lectura (con `--json`, la atestación) | Checkout principal |
@@ -218,7 +218,7 @@ Solo para el modo `un-agente`: crea un worktree detached en el head del PR y un 
 orca-stack consultas 42 57
 ```
 
-Busca comentarios que empiecen con `Consulta:` hechos por la cuenta de GitHub del stack (`gh api user`) en esos issues o PRs, e imprime `consulta nueva en #<n>` una sola vez por comentario. Lo reportado queda en `.git/orca-stack/consultas-reportadas.json`, así que repetirlo no duplica avisos.
+Busca comentarios que empiecen con `Consulta:` hechos por la cuenta de GitHub del stack (`gh api user`) en esos issues o PRs, e imprime `consulta nueva en #<n>` una sola vez por comentario. Lo reportado queda en `.git/orca-stack/consultas-reportadas.json`, así que repetirlo no duplica avisos. Es el camino de las sesiones no supervisadas (reviews y rebotes): un worker supervisado pregunta con `orca orchestration ask` y `main` le contesta por el buzón del Run (ver el evento `consulta` de [`vigilar`](#vigilar)).
 
 #### `avisar`
 
@@ -226,7 +226,7 @@ Busca comentarios que empiecen con `Consulta:` hechos por la cuenta de GitHub de
 orca-stack avisar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecomment-123 --dry-run
 ```
 
-El timbre: le escribe al worker una sola línea fija, `Message from main: <url>`, mientras su turno sigue en curso. Avisa a `claude` y a `pi` (reconoce el turno en curso por el spinner de Claude o por el marco del prompt de Gentle Shell con su fase, como `╭─ ❀ implementing…`); se niega con codex y agy, si el turno ya terminó, si la terminal muestra un shell o un diálogo, si hay más de un agente vivo, o si el comentario no es de la cuenta del stack o no empieza con `Respuesta de main:` o `Respuesta del humano:`. Nunca reintenta: sin recibo de entrega informa la falla.
+El timbre: le escribe al worker una sola línea fija, `Message from main: <url>`, mientras su turno sigue en curso. Avisa a `claude` y a `pi` (reconoce el turno en curso por el spinner de Claude o por el marco del prompt de Gentle Shell con su fase, como `╭─ ❀ implementing…`); se niega con codex y agy, si el turno ya terminó, si la terminal muestra un shell o un diálogo, si hay más de un agente vivo, o si el comentario no es de la cuenta del stack o no empieza con `Respuesta de main:` o `Respuesta del humano:`. Nunca reintenta: sin recibo de entrega informa la falla. No es la forma de responder la pregunta de un worker supervisado: esa va por `orca orchestration reply`.
 
 #### `reanudar`
 
@@ -262,6 +262,7 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 | `pr-mergeado #<n> PR #<pr> <sha>` | Se mergeó y `main` no registró ese merge |
 | `pr-cerrado #<n> PR #<pr>` | Se cerró sin mergear |
 | `worker-terminado #<n> <agente> ok\|partial` | El worker de ese ticket mandó `worker_done` al buzón del Run de `main`: `ok` si terminó bien; `partial` si terminó con un `Diagnóstico:` o escaló. `vigilar` lee el buzón sin consumirlo; sin Run ligado, vigila solo GitHub |
+| `consulta #<n> <agente> <message_id>` | El worker supervisado de ese ticket preguntó con `orca orchestration ask`. `main` responde las preguntas de ejecución con `orca orchestration reply --id <message_id> --body <respuesta>`; las de producto e interpretación van al humano con `orca orchestration gate-create --task <task_id> --question <pregunta> --options <json_array>`, y si la respuesta cambia una regla del ticket, `main` la publica también en GitHub como `Respuesta del humano:` (o `Respuesta de main:` si el cambio es suyo) |
 | `worker-detenido #<n> <agente>: <motivo>` | Worker sin PR detenido: `cuota — <línea>`, `volvió al shell` o `terminó sin abrir un PR` (termina con la última línea no vacía de su pantalla, hasta 200 caracteres); cubre a todos los agentes, incluido `pi` |
 | `worker-trabado #<n> <agente>: <motivo>` | Pantalla sin cambios por 30 minutos mientras está `working`, o por 4 minutos en otro estado sin PR (termina con la última línea no vacía, hasta 200 caracteres); cubre a todos los agentes, incluido `pi` |
 | `vigilar-ciego: <error>` | Tres vueltas seguidas sin poder leer GitHub (una vez por corte; nunca dice "no hay PRs") |
@@ -309,7 +310,7 @@ Resumen del "Ciclo de `main`" (en `~/orca/stack/MAIN.md`), con el comando de cad
 | 2 | Cada ticket con criterios y `## Reglas` | Reglas numeradas con ejemplos, bordes y errores; cada valor esperado va como `cliente` o `inferido` |
 | 3 | Elegir la frontera | Issues abiertos, sin bloqueantes, sin assignee, sin `needs-info`, sin sub-issues. Leer con `gh issue view <n> --json title,body,comments` |
 | 4 | Despachar la tanda | `orca-stack despachar <n> <agente>`, un ticket por comando |
-| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>`, y `orca-stack estado` en cada evento y al empezar cada turno; atiende `worker-detenido` / `worker-trabado` (por ejemplo respondiendo la `Consulta:` donde apareció y corriendo `orca-stack reanudar <issue> <url-del-comentario>`), y `pr-en-conflicto` con `orca-stack rebote <pr>` cuando el worker se detuvo. En Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
+| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>`, y `orca-stack estado` en cada evento y al empezar cada turno; atiende `consulta` con `orca orchestration reply` por id o un gate para el humano, `worker-detenido` / `worker-trabado` (con una sesión no supervisada, por ejemplo respondiendo la `Consulta:` donde apareció y corriendo `orca-stack reanudar <issue> <url-del-comentario>`), y `pr-en-conflicto` con `orca-stack rebote <pr>` cuando el worker se detuvo. En Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
 | 6 | Review de cada PR nuevo | `orca-stack revisar <pr> <agente>`; segundo review de pi si toca `riesgo` |
 | 7 | Mergear si se cumple la condición | Ver [4.8](#48-review-rebote-y-merge); `orca-stack estado <n>` y, con `ok`, `gh pr merge <n> --merge --match-head-commit <head>`; antes de cada `gh pr merge`, `orca-stack vigilar --merge-de-main <n>` |
 | 8 | Rebote | `orca-stack rebote <pr>`; una sola vez por review; `--continuar` si el autor se cortó antes de pushear; `--rdd <lentes>` para el review RDD de un PR de pi |
