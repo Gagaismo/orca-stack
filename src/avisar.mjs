@@ -36,6 +36,7 @@ const TURN_RUNNING = {
   agy: working,
   antigravity: working,
 }
+export const turnRunning = (agent, screen) => Boolean(TURN_RUNNING[agent]?.(screen))
 export const piIdle = screen => PI_IDLE.test(piFrame(screen))
 // "Esc to cancel" alone is agy's footer while it works (main-autonomo S7): it marks a dialog only next to a question.
 const DIALOG = /trust this folder\?|Do you want to proceed\?/i

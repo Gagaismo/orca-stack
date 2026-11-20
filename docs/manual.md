@@ -261,6 +261,8 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 | `pr-en-conflicto #<n> PR #<pr> <sha>` | El PR quedó en conflicto con la base (`mergeable: CONFLICTING`) y GitHub no le corre la CI; uno por head, también con el worker vivo (el autor puede estar resolviéndolo). Corré `orca-stack rebote <pr>` una vez que el worker se detuvo: con el agente vivo, `rebote` se niega |
 | `pr-mergeado #<n> PR #<pr> <sha>` | Se mergeó y `main` no registró ese merge |
 | `pr-cerrado #<n> PR #<pr>` | Se cerró sin mergear |
+| `worker-detenido #<n> <agente>: <motivo>` | Worker sin PR detenido: `cuota — <línea>`, `volvió al shell` o `terminó sin abrir un PR` (termina con la última línea no vacía de su pantalla, hasta 200 caracteres); cubre a todos los agentes, incluido `pi` |
+| `worker-trabado #<n> <agente>: <motivo>` | Pantalla sin cambios por 30 minutos mientras está `working`, o por 4 minutos en otro estado sin PR (termina con la última línea no vacía, hasta 200 caracteres); cubre a todos los agentes, incluido `pi` |
 | `vigilar-ciego: <error>` | Tres vueltas seguidas sin poder leer GitHub (una vez por corte; nunca dice "no hay PRs") |
 | `tanda-cerrada #<n> #<m>...` | Terminaron todos los items; sale con 0 |
 
