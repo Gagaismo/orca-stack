@@ -428,7 +428,7 @@ y volvé a correr `orca-stack init`: el contrato suma la sección `Marchas`, que
 - `{ "perks": { "ponytail": true } }`: el contrato suma la frase de Ponytail con un puntero a `~/orca/stack/PONYTAIL.md` (sus reglas, incluido el rol de Ponytail reviewer) y los wrappers escriben `ORCA_STACK_PONYTAIL_LEVEL=full`. Apagado, los wrappers escriben `off`; las skills `ponytail-review` y `ponytail-audit` siguen instaladas para usarlas a mano.
 - `{ "perks": { "caveman": true } }`: el contrato suma la viñeta de Caveman con un puntero a `~/orca/stack/CAVEMAN.md` y los wrappers escriben `ORCA_STACK_MODE=auto` y `ORCA_STACK_CAVEMAN_LEVEL=caveman`, que disparan la skill. Apagado, escriben `off` en las dos.
 
-El contrato sigue la config fusionada; los marcadores de los wrappers siguen solo `~/.orca-stack/config.json`, así que después de cambiar ahí un perk volvé a correr `orca-stack global`. `doctor` acepta `off` (o la variable vacía) mientras el perk está apagado y exige los valores de arriba cuando está encendido.
+El contrato sigue la config fusionada; los marcadores de los wrappers siguen solo `~/.orca-stack/config.json`, así que después de cambiar ahí un perk volvé a correr `orca-stack global`. Por eso, prender `perks.caveman` solo en `.orca-stack.json` pone la viñeta en el contrato de ese repo, pero el disparador automático de Caveman sigue la capa personal. `doctor` acepta `off` (o la variable vacía) mientras el perk está apagado y exige los valores de arriba cuando está encendido.
 
 Lo que sigue vale solo con el perk `marchas` encendido.
 
