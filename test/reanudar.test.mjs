@@ -485,7 +485,7 @@ describe('orca-stack reanudar (#214)', () => {
   test('Rule 10: contract names pause recovery and init renders the managed block into AGENTS', () => {
     // Issue 325: steps 5 and Despacho moved to MAIN.md; the AGENTS.md block sends main there.
     const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
-    assert.ok(contract.includes('worker-en-pausa #<n> <agente>'))
+    assert.ok(contract.includes('worker-detenido #<n> <agente>: terminó sin abrir un PR'))
     assert.match(contract, /`orca-stack avisar` y `orca-stack reanudar` son las \u00FAnicas formas en que main llega a una terminal de worker/)
     assert.ok(contract.includes('orca-stack reanudar <issue> <url-del-comentario>'))
     const init = spawnSync(process.execPath, [path.join(PACKAGE_ROOT, 'bin', 'orca-stack.mjs'), 'init'], { cwd: PACKAGE_ROOT, encoding: 'utf8' })

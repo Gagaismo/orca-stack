@@ -108,7 +108,7 @@ describe('planning paths (#267)', () => {
       // C11:
       assert.ok(s5.includes('en busca de comentarios `Consulta:` (vía `orca-stack consultas`).'))
       // C12:
-      assert.ok(s5.includes('Ante `worker-en-pausa #<n> <agente>`, main responde la `Consulta:` donde se hizo y corre `orca-stack reanudar <issue> <url-del-comentario>`.'))
+      assert.ok(s5.includes('Ante `worker-detenido #<n> <agente>: terminó sin abrir un PR`, si hay `Consulta:` sin responder, respondela y corré `orca-stack reanudar <issue> <url-del-comentario>`; si no, actuá como con `diagnostico`.'))
       assert.ok(s5.includes('Ante `pr-en-conflicto #<n> PR #<pr> <sha>`, el PR quedó en conflicto con la base y GitHub no le corre la CI: corré `orca-stack rebote <pr>` una vez que su worker se detuvo'))
     }
   })
