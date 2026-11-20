@@ -131,7 +131,7 @@ const shQuote = text => `'${text.replace(/'/g, "'\\''")}'`
 
 // The command typed into the Orca terminal. `win` is the target shell, not the host: PowerShell on win32 (Orca's
 // terminal there), POSIX elsewhere. Paths follow it.
-export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive = false }) => {
+export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive = false, supervised = false }) => {
   const { model: configured, effort } = modelFor(config, agent, mode)
   // #382: agy's default lives here, not in modelFor, so familyOf (the reviewer family) never sees it.
   // A blank or non-text agy model counts as unset, the same reading familyOf gives it.
@@ -155,7 +155,8 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   const tools = PI_TOOLS[mode] ? ` --tools ${q(PI_TOOLS[mode])}` : ''
   // With a profile the orchestrator is the profile's own, not whatever the global settings.json says (a pin never moves it).
   const piFlags = piModel ? ` --model ${q(piModel)}${PI_THINKING.includes(piThinking) ? ` --thinking ${piThinking}` : ''}` : ''
-  const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve${interactive ? '' : ` --exclude-tools ${q(PI_DIALOG_TOOLS)}`}${piFlags}${tools} ${q(prompt)}`
+  // #397: a supervised worker gets its brief once, from `orca orchestration worker-start`, not on its command line.
+  const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve${interactive ? '' : ` --exclude-tools ${q(PI_DIALOG_TOOLS)}`}${piFlags}${tools}${supervised ? '' : ` ${q(prompt)}`}`
   // No ENGRAM_DATA_DIR: since gentle-pi 4.4.0 any explicit Engram selection turns memory off; the worker shares the
   // human's global Engram server instead (#304).
   // main-autonomo S3: Gentle Shell answers RDD consent from the policy file only when the pi process itself carries
@@ -591,9 +592,81 @@ const checkPiAuth = async (io, file, configDir, after) => {
   }
 }
 
-export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue, interactive = false }) => {
+// #397: Orca's orchestration commands. A failure carries Orca's own error and is marked, so despachar can release the
+// issue instead of leaving it assigned with no worker.
+const orchestrationError = message => Object.assign(new Error(message), { orchestration: true })
+const orchestrationFailure = (res, what) => {
+  let reason
+  try {
+    const body = JSON.parse(res.stdout)
+    if (body?.ok === false) reason = body.error?.message ?? JSON.stringify(body.error ?? body)
+  } catch {}
+  if (res.status === 0 && reason === undefined) return undefined
+  return `${what} falló: ${String(reason ?? (res.stderr || res.stdout || String(res.error ?? ''))).trim()}`
+}
+const shownArgs = argv => argv.map(a => (/\s|"/.test(a) ? JSON.stringify(a) : a)).join(' ')
+const orchestrate = (io, say, argv) => {
+  say(`orca orchestration ${shownArgs(argv)}`)
+  const res = io.sh('orca', ['orchestration', ...argv])
+  const failure = orchestrationFailure(res, `orca orchestration ${argv[0]}`)
+  if (failure) throw orchestrationError(failure)
+  let body
+  try { body = JSON.parse(res.stdout) } catch { throw orchestrationError(`orca orchestration ${argv[0]} no devolvió JSON: ${(res.stderr || res.stdout).trim().split('\n')[0]}`) }
+  return body?.result ?? body ?? {}
+}
+// The Run bound to main's session, or a new one bound to it when there is none.
+const boundRun = (io, say, objective) => {
+  const current = orchestrate(io, say, ['run-current', '--json'])
+  const bound = current.runId ?? current.run?.id
+  if (typeof bound === 'string' && bound !== '') return bound
+  const created = orchestrate(io, say, ['run-create', '--objective', objective, '--json'])
+  const id = created.runId ?? created.run?.id ?? created.id
+  if (typeof id !== 'string' || id === '') throw orchestrationError('orca orchestration run-create no devolvió el id del Run.')
+  return id
+}
+const startWorker = async (io, say, { agent, handle, briefPath, supervised }) => {
+  const runId = boundRun(io, say, supervised.objective)
+  const argv = ['worker-start', '--run', runId, '--terminal', handle, '--spec-file', briefPath, '--task-title', supervised.title, '--json']
+  const start = () => {
+    say(`orca orchestration ${shownArgs(argv)}`)
+    return io.sh('orca', ['orchestration', ...argv])
+  }
+  let res = start()
+  // #357: agy's trust screen the screen read missed makes Orca refuse with agent_prompt_blocked before the spec is
+  // delivered; Enter confirms the preselected "Yes, I trust this folder", bounded like the trust screen. The retry
+  // reissues the request Orca named (--retry-request), so Orca does not start a second "#<n> agy" Task.
+  for (let i = 0; agent === 'agy' && i < AGY_TRUST_ENTERS && /agent_prompt_blocked/.test(`${res.stdout ?? ''}${res.stderr ?? ''}`); i += 1) {
+    say(`agy muestra un pedido de confianza (agent_prompt_blocked): confirmo la carpeta con Enter (${i + 1}/${AGY_TRUST_ENTERS}).`)
+    io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
+    await io.sleep(2000)
+    const request = requestIdOf(res)
+    if (request && !argv.includes('--retry-request')) argv.push('--retry-request', request)
+    res = start()
+  }
+  const failure = orchestrationFailure(res, 'orca orchestration worker-start')
+  if (!failure) return
+  // Orca exits 1 for outcome_unknown too: the worker may have started, so the issue keeps its assignee.
+  let body
+  try { body = JSON.parse(res.stdout) } catch {}
+  if (!hasValue(body, 'outcome_unknown')) throw orchestrationError(failure)
+  const request = requestIdOf(res)
+  const dispatchId = deepFind(body, ['dispatchId'])
+  const check = request ? `orca orchestration request-show --request ${request} --json` : dispatchId ? `orca orchestration worker-show --dispatch ${dispatchId} --json` : `orca orchestration task-list --run ${runId} --json`
+  throw new Error(`${failure}\nEl resultado de worker-start es desconocido (outcome_unknown): el worker de ${supervised.title} puede estar corriendo, así que el issue sigue asignado. Comprobalo con \`${check}\`.`)
+}
+const hasValue = (value, wanted) => value === wanted || ((isPlain(value) || Array.isArray(value)) && Object.values(value).some(v => hasValue(v, wanted)))
+// The request id Orca names for a reissue: a requestId field, or the id in its "--retry-request <id>" advice.
+const requestIdOf = res => {
+  let body
+  try { body = JSON.parse(res.stdout) } catch {}
+  return deepFind(body, ['requestId', 'request_id']) ?? /--retry-request\s+([^\s.,;]+)/.exec(`${res.stdout ?? ''}${res.stderr ?? ''}`)?.[1]
+}
+
+// `supervised` ({ title, objective }, despachar only): the worker starts with `orca orchestration worker-start` in the
+// Run bound to main instead of getting the brief line typed into its terminal (#397).
+export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue, interactive = false, supervised }) => {
   const say = io.out
-  const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive })
+  const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive, supervised: Boolean(supervised) })
   const act = (cmd, argv, opts = {}) => {
     say(`${dryRun ? '[simulaci\u00f3n] ' : ''}${cmd} ${argv.map(a => (/\s|"/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
 
@@ -603,7 +676,11 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
   say(`Lanzador (${agent}): ${launcher}`)
   const term = act('orca', ['terminal', 'create', '--worktree', `path:${worktree}`, '--title', agent, '--command', launcher, '--json'])
   if (dryRun) {
-    if (agent !== 'pi') say(`[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
+    if (supervised) {
+      if (agent !== 'pi') say(`[simulación] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''}`)
+      say(`[simulación] orca orchestration run-current --json (sin Run de main: orca orchestration run-create --objective ${JSON.stringify(supervised.objective)} --json)`)
+      say(`[simulación] orca orchestration worker-start --run <run> --terminal <terminal> --spec-file ${briefPath} --task-title ${JSON.stringify(supervised.title)} --json`)
+    } else if (agent !== 'pi') say(`[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
     say(`\n--- brief ---\n${brief}`)
 
     return 0
@@ -615,6 +692,13 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     let before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
     if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
     if (agent === 'agy') before = (await dismissAgySplash(io, handle, before.split('\n'), briefPath)).join('\n')
+    if (supervised) {
+      await startWorker(io, say, { agent, handle, briefPath, supervised })
+      await checkPostLaunchScreen(io, handle, agent)
+      say(`✔ ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
+
+      return 0
+    }
     // agy's own failures after the send all mean one thing to the human: the brief did not arrive (#357). Orca's own
     // reason goes on a second line, so the cause is never hidden behind the line to paste.
     const fail = message => new Error(agent === 'agy' ? `${agyNotDelivered(handle, briefPath)}${message ? `\nCausa: ${message}` : ''}` : message)
@@ -661,6 +745,11 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     if (!started) throw fail(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
     await checkPostLaunchScreen(io, handle, agent)
   } else {
+    if (supervised) {
+      const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
+      if (!handle) throw new Error('orca terminal create no devolvió el handle de la terminal.')
+      await startWorker(io, say, { agent, handle, briefPath, supervised })
+    }
     const { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
     if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
@@ -1041,10 +1130,16 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       agent, mode, worktree, briefPath, brief, session, config, win, home: io.home, skills,
       piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun,
       piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: review ? undefined : n,
+      supervised: review ? undefined : { title: `#${n} ${agent}`, objective: `orca-stack ${repo}: tickets despachados por main` },
     })
 
     return 0
   } catch (error) {
+    // #397: Orca refused the supervised start, so no worker runs: the issue is released, not left assigned.
+    if (!dryRun && error.orchestration && left.assigned) {
+      say(`gh issue edit ${n} --remove-assignee @me`)
+      if (io.sh('gh', ['issue', 'edit', String(n), '--remove-assignee', '@me'], { cwd: root }).status === 0) left.assigned = false
+    }
     if (!dryRun) say(leftover(left, n, base))
     throw error
   }
