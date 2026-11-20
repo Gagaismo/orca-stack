@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { buildBlock } from '../src/marker.mjs'
 import { packageVersion, samePath } from '../src/util.mjs'
 import { sddConfig, withPath } from './gentle-fixture.mjs'
-import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
+import { ROOT, backups, cleanup, cli, git, isolatePath, pathKey, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const MODS = ['bandeja-mensajes', 'grilling-ok', 'guardia-despacho', 'main-md', 'marchas', 'modo-autonomo', 'puente-gentle', 'reloj-cache', 'tablero-despacho']
 
@@ -127,6 +127,36 @@ describe('global', () => {
     assert.match(result.out, /already exists on PATH and was not written/)
   })
 
+  test('isolates global from a stray orca-stack command on the process PATH', () => {
+    const strayDir = tempDir('stray-path')
+    const commandDir = path.join(home, 'path-bin')
+    const command = process.platform === 'win32' ? 'orca-stack.cmd' : 'orca-stack'
+    const envPathKey = pathKey()
+    const originalPath = process.env[envPathKey]
+    write(path.join(strayDir, 'orca-stack'), '#!/bin/sh\necho stray\n')
+    if (process.platform === 'win32') {
+      write(path.join(strayDir, 'orca-stack.cmd'), '@echo off\r\necho stray\r\n')
+      write(path.join(commandDir, 'npm.cmd'), `@echo off\r\necho ${commandDir}\r\n`)
+    } else {
+      write(path.join(commandDir, '.probe'), '')
+    }
+    process.env[envPathKey] = [strayDir, commandDir, originalPath].filter(Boolean).join(path.delimiter)
+    try {
+      const installed = cli(home, ['global', '--skip-pi'])
+      assert.equal(installed.status, 0, installed.out)
+      assert.doesNotMatch(installed.out, /already exists on PATH and was not written/)
+      assert.ok(existsSync(path.join(commandDir, command)), installed.out)
+      const state = JSON.parse(read(path.join(home, '.orca-stack', 'state.json')))
+      assert.equal(state.command?.file, path.join(commandDir, command))
+      const checked = cli(home, ['doctor', '--offline', '--skip-pi'])
+      assert.match(checked.out, new RegExp(`✔ orca-stack - version ${packageVersion().replaceAll('.', '\\.')} on PATH`))
+    } finally {
+      if (originalPath === undefined) delete process.env[envPathKey]
+      else process.env[envPathKey] = originalPath
+      cleanup(strayDir)
+    }
+  })
+
   test('ignores its npx shim, installs outside npx .bin, and doctor checks the installed command', () => {
     const packageDir = path.join(home, 'npm-cache', 'node_modules', 'orca-stack')
     const npxBinDir = path.join(home, 'npm-cache', 'node_modules', '.bin')
@@ -146,12 +176,9 @@ describe('global', () => {
       write(npxShim, `#!/bin/sh\nexec node '${packageBin}' "$@"\n`)
       chmodSync(npxShim, 0o755)
     }
-    const realCommandNames = process.platform === 'win32' ? ['orca-stack', 'orca-stack.cmd'] : ['orca-stack']
-    const originalPathDirs = (process.env.PATH || process.env.Path || '')
-      .split(path.delimiter)
-      .filter(dir => dir && !samePath(dir, npxBinDir))
-      .filter(dir => !realCommandNames.some(name => existsSync(path.join(dir, name))))
-    const env = { PATH: [npxBinDir, installDir, ...originalPathDirs].join(path.delimiter) }
+    const envPathKey = pathKey()
+    const originalPath = isolatePath(process.env[envPathKey] ?? '', { home, exclude: [npxBinDir] })
+    const env = { [envPathKey]: [npxBinDir, installDir, originalPath].filter(Boolean).join(path.delimiter) }
     const npxCli = (args) => spawnSync(process.execPath, [packageBin, ...args], {
       encoding: 'utf8',
       env: {
@@ -177,7 +204,7 @@ describe('global', () => {
       HOME: home,
       USERPROFILE: home,
       ORCA_STACK_HOME: home,
-      PATH: [installDir, ...originalPathDirs].join(path.delimiter),
+      [envPathKey]: [installDir, originalPath].filter(Boolean).join(path.delimiter),
     }
     const shell = process.platform === 'win32'
       ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
