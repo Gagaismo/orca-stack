@@ -488,7 +488,8 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     }
     const allEnded = targets.every(issue => next[issue].fin)
     if (allEnded && endedNow) lines.push(`tanda-cerrada ${targets.map(issue => `#${issue}`).join(' ')}`)
-    // Printed before the cursor is written: a crash re-emits at most one poll's lines rather than losing them.
+    // Diagnosis, like other events, is at-least-once: a crash after stdout and before the cursor write can repeat it.
+    // Print first so that a crash does not silently lose the event.
     for (const line of lines) io.out(line)
     if (!flags.dryRun && JSON.stringify(next) !== JSON.stringify(cursor)) {
       // A failed write never stops the watcher: this run keeps the cursor in memory and prints nothing twice. The file is
