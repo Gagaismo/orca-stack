@@ -143,12 +143,15 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = 
       if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'], latestCursor: calls.length } } })
       // A worktree Orca lists with no open terminals (main-autonomo S8 lists them before reusing a worktree).
       if (args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: [] } })
+      // #397: despachar starts its worker in the Run bound to main.
+      if (args[0] === 'orchestration' && args[1] === 'run-current') return json({ ok: true, result: { runId: 'run_main' } })
+      if (args[0] === 'orchestration' && args[1] === 'worker-start') return json({ ok: true, result: { taskId: 'task_1', dispatchId: 'ctx_1', status: 'ready' } })
       return okRes()
     },
   }
   // Calls that change something: every gh issue edit, orca worktree create, terminal create/send/close, git fetch.
   const writes = () =>
-    calls.filter(c => (c[0] === 'gh' && c[2] === 'edit') || (c[0] === 'orca' && (c[2] === 'create' || c[2] === 'send' || c[2] === 'close')) || (c[0] === 'git' && c[1] === 'fetch'))
+    calls.filter(c => (c[0] === 'gh' && c[2] === 'edit') || (c[0] === 'orca' && (c[2] === 'create' || c[2] === 'send' || c[2] === 'close' || c[2] === 'run-create' || c[2] === 'worker-start')) || (c[0] === 'git' && c[1] === 'fetch'))
 
   return { io, calls, out, written, writes, sleeps }
 }
@@ -579,8 +582,9 @@ describe('despachar: the TUI wait', () => {
   test('a still screen is stable even though every read carries a new request id', async () => {
     const env = fakeIo()
     await run('ticket', { n: '7', agent: 'claude' }, env)
-    const sent = env.calls.find(c => c[1] === 'terminal' && c[2] === 'send')
-    assert.ok(sent?.includes('--text') && sent.some(a => String(a).startsWith('Read and follow the brief in ')))
+    // #397: once the screen is still, despachar starts the worker with worker-start.
+    assert.equal(env.calls.filter(c => c[1] === 'orchestration' && c[2] === 'worker-start').length, 1)
+    assert.ok(!env.calls.some(c => c[1] === 'terminal' && c[2] === 'send'))
   })
 
   test('codex trust screen fails with the repo trust hint and never sends the brief', async () => {
@@ -610,6 +614,8 @@ describe('despachar: the TUI wait', () => {
     env.io.sh = (cmd, args, opts) => {
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') timeline.push(`read ${reads < trustReads ? 'trust' : 'tui'}`)
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send') timeline.push(args.includes('--text') ? 'brief' : 'enter')
+      // #397: despachar hands the brief over with worker-start.
+      if (cmd === 'orca' && args[0] === 'orchestration' && args[1] === 'worker-start') timeline.push('brief')
       return sh(cmd, args, opts)
     }
     return { env, timeline }
@@ -665,9 +671,8 @@ describe('despachar: the TUI wait', () => {
     assert.ok(!codex.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send'))
     const claude = fakeIo()
     await run('ticket', { n: '7', agent: 'claude' }, claude)
-    const sends = claude.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
-    assert.equal(sends.length, 1)
-    assert.ok(sends[0].includes('--text'))
+    assert.equal(claude.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send').length, 0)
+    assert.equal(claude.calls.filter(c => c[0] === 'orca' && c[1] === 'orchestration' && c[2] === 'worker-start').length, 1)
   })
 
   test('revisar applies the same trust check before sending its brief', async () => {
@@ -697,13 +702,15 @@ describe('despachar: the TUI wait', () => {
     assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
   })
 
+  // #397: despachar starts its worker with worker-start; revisar still sends the brief line, so it carries these.
+  const reviewOf = over => fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }), ...over })
   test('only an observed submitted turn prints dispatch success', async () => {
-    const env = fakeIo({
+    const env = reviewOf({
       'orca terminal send': args => args.includes('--wait-submit')
         ? json({ result: { submission: 'submitted', turnStarted: true } })
         : okRes(),
     })
-    await run('ticket', { n: '7', agent: 'claude' }, env)
+    await run('review', { n: '9', agent: 'claude' }, env)
     const send = env.calls.find(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
     assert.ok(send.includes('--wait-submit') && send.includes('--json'))
     assert.ok(env.out.some(line => line.includes('✔ claude despachado')))
@@ -711,13 +718,13 @@ describe('despachar: the TUI wait', () => {
 
   test('an old host without --wait-submit falls back to a changed terminal screen', async () => {
     let reads = 0
-    const env = fakeIo({
+    const env = reviewOf({
       'orca terminal read': () => json({ result: { terminal: { tail: [reads++ < 3 ? 'ready' : 'prompt submitted'] } } }),
       'orca terminal send': args => args.includes('--wait-submit')
         ? { status: 1, stdout: '', stderr: 'unknown option --wait-submit' }
         : okRes(),
     })
-    await run('ticket', { n: '7', agent: 'claude' }, env)
+    await run('review', { n: '9', agent: 'claude' }, env)
     const sends = env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
     assert.equal(sends.length, 2)
     assert.ok(sends[0].includes('--wait-submit') && !sends[1].includes('--wait-submit'))
@@ -725,21 +732,21 @@ describe('despachar: the TUI wait', () => {
   })
 
   test('an accepted but unobserved prompt is not reported as a started turn', async () => {
-    const env = fakeIo({
+    const env = reviewOf({
       'orca terminal send': args => args.includes('--wait-submit')
         ? json({ result: { inputAccepted: true, turnStarted: false } })
         : okRes(),
       'orca terminal read': args => json({ result: { terminal: { tail: ['ready'] } } }),
     })
-    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, env), /no hay evidencia.*turno haya arrancado/i)
+    await assert.rejects(run('review', { n: '9', agent: 'claude' }, env), /no hay evidencia.*turno haya arrancado/i)
     assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
   })
 
   test('a send transport error prints recovery details and never reports success', async () => {
-    const env = fakeIo({
+    const env = reviewOf({
       'orca terminal send': { status: 1, stdout: '', stderr: 'agent_prompt_blocked' },
     })
-    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, env), /agent_prompt_blocked/)
+    await assert.rejects(run('review', { n: '9', agent: 'claude' }, env), /agent_prompt_blocked/)
     assert.ok(env.out.join('\n').includes('El despacho quedó a medias'))
     assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
   })
@@ -989,8 +996,8 @@ describe('briefs', () => {
     assert.ok(brief.includes('Mirá `src/app.ts` antes de empezar.'))
     assert.ok(!brief.includes('{{'))
     assert.notEqual(read(file).charCodeAt(0), 0xfeff)
-    assert.deepEqual(env.writes().map(c => c.slice(0, 3).join(' ')), ['git fetch origin', 'gh issue edit', 'orca worktree create', 'orca terminal create', 'orca terminal send'])
-    assert.deepEqual(env.calls.find(c => c[2] === 'send').slice(3), ['--terminal', 'term_1', '--text', `Read and follow the brief in ${file}`, '--enter', '--wait-submit', '10', '--json'])
+    assert.deepEqual(env.writes().map(c => c.slice(0, 3).join(' ')), ['git fetch origin', 'gh issue edit', 'orca worktree create', 'orca terminal create', 'orca orchestration worker-start'])
+    assert.deepEqual(env.calls.find(c => c[2] === 'worker-start').slice(3), ['--run', 'run_main', '--terminal', 'term_1', '--spec-file', file, '--task-title', '#7 agy', '--json'])
   })
 
   test('review brief: sha, implementer, axes, red check and format', async () => {
@@ -1322,11 +1329,15 @@ describe('issue #277: pi workers run as an interactive TUI', () => {
     await run('ticket', { n: '7', agent: 'pi' }, ticket)
     const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) })
     await run('review', { n: '9', agent: 'pi' }, review)
+    assert.match(launched(review), /'Read and carry out the brief in [^']+\.md\. Unattended: never wait for user input\.'$/)
+    // #397: the ticket brief is pi's first message through worker-start, not on its command line.
+    assert.doesNotMatch(launched(ticket), /Read and carry out the brief/)
+    const start = ticket.calls.find(c => c[1] === 'orchestration' && c[2] === 'worker-start')
+    assert.equal(start[start.indexOf('--spec-file') + 1], path.join(home, 'orca', 'briefs', 'proj-7.md'))
     for (const env of [ticket, review]) {
       const command = launched(env)
       assert.match(command, /; pi --no-skills /)
       assert.doesNotMatch(command, /\spi\s+(-p|--print)\b/)
-      assert.match(command, /'Read and carry out the brief in [^']+\.md\. Unattended: never wait for user input\.'$/)
       assert.ok(env.out.some(line => line.includes('\u2714 pi despachado')))
     }
   })
@@ -1603,17 +1614,24 @@ describe('--dry-run', () => {
       await run('ticket', { n: '7', agent, dryRun: true }, env)
       const output = env.out.join('\n')
       const briefPath = path.join(home, 'orca', 'briefs', 'proj-7.md')
-      const launcher = launcherFor({ agent, mode: 'ticket', config: PROJECT, win: true, home, briefPath, session: 'proj-7', skills: agent === 'pi' ? 'C:\\pi\\gentle-pi\\skills' : null })
+      const launcher = launcherFor({ agent, mode: 'ticket', config: PROJECT, win: true, home, briefPath, session: 'proj-7', skills: agent === 'pi' ? 'C:\\pi\\gentle-pi\\skills' : null, supervised: true })
+      // #397: the worker starts in main's Run with worker-start; pi has no TUI wait.
+      const supervised = [
+        `[simulación] orca orchestration run-current --json (sin Run de main: orca orchestration run-create --objective "orca-stack proj: tickets despachados por main" --json)`,
+        `[simulación] orca orchestration worker-start --run <run> --terminal <terminal> --spec-file ${briefPath} --task-title "#7 ${agent}" --json`,
+      ]
       const start = env.out.findIndex(line => line.startsWith(`Lanzador (${agent}):`))
       const launchLines = env.out.slice(start)
 
       assert.equal(launchLines[0], `Lanzador (${agent}): ${launcher}`)
       assert.equal(launchLines[1], `[simulaci\u00f3n] orca terminal create --worktree path:<worktree> --title ${agent} --command ${JSON.stringify(launcher)} --json`)
       if (agent !== 'pi') {
-        assert.equal(launchLines[2], `[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
+        assert.deepEqual(launchLines.slice(2, 5), [`[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''}`, ...supervised])
       } else {
         assert.ok(!output.includes('esperar la TUI'))
+        assert.deepEqual(launchLines.slice(2, 4), supervised)
       }
+      assert.ok(!output.includes('enviar: Read and follow the brief'))
       assert.ok(!env.writes().some(call => call[0] === 'orca' && call[1] === 'terminal'))
     }
   })
@@ -2890,7 +2908,7 @@ describe('rebote', () => {
 
     test('Rule 2: opening the PR is the last change to the branch', () => {
       const after = ticketBrief('claude').split('gh pr create --base main --head branch')[1]
-      assert.ok(after.includes('Opening the PR is the last change to the branch: after `gh pr create`, write your final summary and end your turn. Push again only when main relaunches you with `orca-stack rebote` or `orca-stack reanudar`.'))
+      assert.ok(after.includes('Opening the PR is the last change to the branch: after `gh pr create`, write your final summary, send `worker_done` ok (see Finish) and end your turn. Push again only when main relaunches you with `orca-stack rebote` or `orca-stack reanudar`.'))
     })
 
     test('Rule 3: the Evidencia table comes first, then at most two code-review rounds, all before the PR', () => {
@@ -3948,7 +3966,8 @@ describe('agy: banner and splash before the brief (#357)', () => {
   const PROMPT = ['Antigravity CLI 1.5.9', 'Gemini 4 Hydrogen (High)', '>']
   const ESC = '\u001b'
   const isEsc = args => args[0] === 'terminal' && args[1] === 'send' && args[args.indexOf('--text') + 1] === ESC
-  const isBrief = args => args[0] === 'terminal' && args[1] === 'send' && String(args[args.indexOf('--text') + 1] ?? '').startsWith('Read and follow the brief in ')
+  // #397: despachar hands its brief over with worker-start; revisar and rebote still send the line.
+  const isBrief = args => (args[0] === 'orchestration' && args[1] === 'worker-start') || (args[0] === 'terminal' && args[1] === 'send' && String(args[args.indexOf('--text') + 1] ?? '').startsWith('Read and follow the brief in '))
   // The splash stays until `escs` Escapes reached agy; `after` is the screen once it is gone.
   const splashIo = ({ splash = SPLASH_159, escs = 1, after = PROMPT, over = {}, envFor = fakeIo } = {}) => {
     let sentEscs = 0
@@ -4042,37 +4061,41 @@ describe('agy: banner and splash before the brief (#357)', () => {
 
   test('#357 live: a send refused with agent_prompt_blocked (trust screen the screen read missed) gets one Enter, then the brief goes through once', async () => {
     let blocked = 1
-    const live = splashIo({ splash: PROMPT, over: { 'orca terminal send': args => args.includes('--wait-submit') && blocked-- > 0 ? BLOCKED : args.includes('--wait-submit') ? json({ result: { inputAccepted: true, turnStarted: true } }) : okRes() } })
+    const live = splashIo({ splash: PROMPT, over: { 'orca orchestration worker-start': () => blocked-- > 0 ? BLOCKED : json({ ok: true, result: { taskId: 'task_1' } }) } })
     await run('ticket', { n: '7', agent: 'agy' }, live.env)
-    const sends = live.env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send').map(c => (isLoneEnter(c.slice(1)) ? 'enter' : isBrief(c.slice(1)) ? 'brief' : 'other'))
+    const sends = live.env.calls.filter(c => c[0] === 'orca' && ((c[1] === 'terminal' && c[2] === 'send') || c[2] === 'worker-start')).map(c => (isLoneEnter(c.slice(1)) ? 'enter' : isBrief(c.slice(1)) ? 'brief' : 'other'))
     assert.deepEqual(sends, ['brief', 'enter', 'brief'])
     assert.ok(live.env.out.some(line => line.includes('agy muestra un pedido de confianza (agent_prompt_blocked): confirmo la carpeta con Enter (1/3).')), live.env.out.join('\n'))
     assert.ok(live.env.out.some(line => line.includes('✔ agy despachado')))
   })
 
   test('#357 live negative: blocked three times fails with the line to paste and Orca\'s reason; claude never gets the extra Enter', async () => {
-    const refused = splashIo({ splash: PROMPT, over: { 'orca terminal send': args => (args.includes('--wait-submit') ? BLOCKED : okRes()) } })
+    // #397: despachar reports Orca's refusal of worker-start and releases the issue.
+    const refused = splashIo({ splash: PROMPT, over: { 'orca orchestration worker-start': BLOCKED } })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, refused.env), error => {
-      assert.ok(error.message.startsWith(`${s1(briefOf(refused.env))}\nCausa: agent_prompt_blocked`), error.message)
+      assert.ok(error.message.startsWith('orca orchestration worker-start falló: agent_prompt_blocked'), error.message)
       return true
     })
     assert.equal(refused.briefCalls().length, 4)
     assert.equal(refused.env.calls.filter(c => c[0] === 'orca' && isLoneEnter(c.slice(1))).length, 3)
-    const claude = splashIo({ splash: PROMPT, over: { 'orca terminal send': args => (args.includes('--wait-submit') ? BLOCKED : okRes()) } })
+    assert.ok(refused.env.calls.some(c => c.join(' ') === 'gh issue edit 7 --remove-assignee @me'))
+    const claude = splashIo({ splash: PROMPT, over: { 'orca orchestration worker-start': BLOCKED } })
     await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, claude.env))
     assert.equal(claude.env.calls.filter(c => c[0] === 'orca' && isLoneEnter(c.slice(1))).length, 0)
     assert.equal(claude.briefCalls().length, 1)
   })
 
   test('S1: when the brief still does not arrive after the Esc, agy fails with exactly the line to paste, sent once', async () => {
-    const refused = splashIo({ over: { 'orca terminal send': args => args.includes('--wait-submit') ? { status: 1, stdout: '', stderr: 'send failed: terminal closed' } : okRes() } })
-    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, refused.env), error => {
+    // #397: despachar starts with worker-start (S3 of #397 covers its failure); revisar still sends the line.
+    const pr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) }
+    const refused = splashIo({ over: { ...pr, 'orca terminal send': args => args.includes('--wait-submit') ? { status: 1, stdout: '', stderr: 'send failed: terminal closed' } : okRes() } })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, refused.env), error => {
       assert.equal(error.message, `${s1(briefOf(refused.env))}\nCausa: send failed: terminal closed`)
       return true
     })
     assert.equal(refused.briefCalls().length, 1)
-    const unobserved = splashIo({ over: { 'orca terminal send': args => args.includes('--wait-submit') ? json({ result: { inputAccepted: true, turnStarted: false } }) : okRes() } })
-    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, unobserved.env), error => {
+    const unobserved = splashIo({ over: { ...pr, 'orca terminal send': args => args.includes('--wait-submit') ? json({ result: { inputAccepted: true, turnStarted: false } }) : okRes() } })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, unobserved.env), error => {
       assert.ok(error.message.startsWith(`${s1(briefOf(unobserved.env))}\nCausa: `), error.message)
       return true
     })

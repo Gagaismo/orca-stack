@@ -11,7 +11,7 @@ You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this 
 - {{SUBAGENTS_INSTRUCTION}}
 - **RED:** Write one test per rule in `## Reglas`, covering the examples, edges and errors each rule names. If the ticket has no `## Reglas`, use its acceptance criteria and failure modes as the RED list. Each item ends with a test that proves it.
 - **PRESERVE:** Write one test per existing public entry the change touches, even when the ticket did not ask for it. A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job.
-- **Diagnosis:** You have two attempts per cause (a red check, a test that will not pass, or an unreproducible failure). Fixing an unrelated failure does not use an attempt for this cause. After the second failed attempt, publish `Diagnóstico: {{AGENT}}` with `Causa:`, `Probado:` and `Siguiente hipótesis:` (or `ninguna`) and stop; the worker does not push or open a PR to hide the failure. Post it on the open PR, otherwise on the issue.
+- **Diagnosis:** You have two attempts per cause (a red check, a test that will not pass, or an unreproducible failure). Fixing an unrelated failure does not use an attempt for this cause. After the second failed attempt, publish `Diagnóstico: {{AGENT}}` with `Causa:`, `Probado:` and `Siguiente hipótesis:` (or `ninguna`) and stop; the worker does not push or open a PR to hide the failure. Post it on the open PR, otherwise on the issue, and finish with `worker_done` partial (see Finish).
 - **RED setup:** Building the RED test has one setup self-fix that does not count toward the two attempts per cause. If it still cannot reproduce the failure, publish a diagnosis with `Causa: no se pudo reproducir <la regla>` and stop.
 - **Nothing else:** do not add extra cases for their own sake. When a rule cites an artifact (such as a path in `## Reglas`), test against that artifact, not a paraphrase of it.{{MIGRACION}}
 
@@ -43,7 +43,7 @@ When the work is done and verified, push the branch and open the PR with a body 
 
 gh pr create --base {{BASE}} --head {{BRANCH}} --title "<title>" --body-file <file>
 
-Opening the PR is the last change to the branch: after `gh pr create`, write your final summary and end your turn. Push again only when main relaunches you with `orca-stack rebote` or `orca-stack reanudar`.
+Opening the PR is the last change to the branch: after `gh pr create`, write your final summary, send `worker_done` ok (see Finish) and end your turn. Push again only when main relaunches you with `orca-stack rebote` or `orca-stack reanudar`.
 
 The body is UTF-8 without a BOM (Windows PowerShell's `Out-File` and `Set-Content -Encoding utf8` write one) and has exactly this shape. The headings and the `Implementador:` and `Closes` lines are literal protocol markers: do not translate them.
 
@@ -68,6 +68,24 @@ Closes #{{ISSUE}}
 ```
 
 If you want to change GLOSSARY.md or docs/adr, do not edit them: propose it in the PR body under `## Propuesta para GLOSSARY.md` or `## Propuesta de ADR`.
+
+## Finish
+
+Orca started you as a supervised worker in main's Run: your last action is exactly one `worker_done`, with the `--task-id`, `--dispatch-id` and `--from` values Orca's preamble gave you. Orca only accepts `--outcome succeeded` or `--outcome failed`.
+
+- ok: the PR is open.
+
+```
+orca orchestration send --type worker_done --outcome succeeded --subject "#{{ISSUE}} ok" --body "<PR url and a one-line summary>" --task-id <task-id> --dispatch-id <dispatch-id> --from <handle>
+```
+
+- partial: you stopped with a diagnosis. Publish the `Diagnóstico: {{AGENT}}` on GitHub first: on the open PR (gh pr comment <pr> --body-file <file>), otherwise on the issue (gh issue comment {{ISSUE}} --body-file <file>). Then send its text:
+
+```
+orca orchestration send --type worker_done --outcome failed --subject "#{{ISSUE}} partial" --body "<the Diagnóstico: text>" --task-id <task-id> --dispatch-id <dispatch-id> --from <handle>
+```
+
+If Orca's preamble gave you no task id (you were relaunched outside main's Run), skip the `worker_done`.
 
 ## Unattended progress
 
