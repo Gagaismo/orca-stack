@@ -30,9 +30,9 @@ Cero dependencias, Node 20 o más nuevo. Funciona en Windows, macOS y Linux.
 
 | Qué | Dónde |
 | --- | --- |
-| Política del stack: `ORCA-STACK.md`, `ROLE-BRIEFS.md`, `MAIN.md` (las reglas que solo usa `main`) y `MARCHAS.md` (el fragmento del perk de marchas, ver [Perks](#perks)) | `~/orca/stack/` |
+| Política del stack: `ORCA-STACK.md`, `ROLE-BRIEFS.md`, `MAIN.md` (las reglas que solo usa `main`) y `MARCHAS.md`, `PONYTAIL.md` y `CAVEMAN.md` (los fragmentos de los perks, ver [Perks](#perks)) | `~/orca/stack/` |
 | Wrappers `claude-orca-stack`, `codex-orca-stack`, `agy-orca-stack` (`.cmd` en Windows, `.sh` en el resto), cada uno con `--orca-stack-self-test` | `~/orca/stack/scripts/` |
-| Skills propias: `orca-stack-policy`, `orca-setup`, `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help`, `grilling`, `grill-me`, `grill-with-docs` | `~/.claude/skills/` y `~/.agents/skills/` |
+| Skills propias: `orca-stack-policy`, `orca-setup`, `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` (siempre instaladas; sus reglas valen solo con el perk `ponytail`), `grilling`, `grill-me`, `grill-with-docs` | `~/.claude/skills/` y `~/.agents/skills/` |
 | Nueve mods de Claude Code (ver abajo) y sus rutas en `env.CLAUDE_CODE_PLUGIN_DIRS` | `~/.claude/mods/` y `~/.claude/settings.json` |
 | Nada de metodología en `~/.claude/CLAUDE.md`: si un `global` anterior dejó ahí el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->`, lo saca (con respaldo). También achica el bloque que gentle-ai escribe ahí (ver abajo) | `~/.claude/CLAUDE.md` |
 | Codex: `project_doc_max_bytes` en `config.toml`, para que codex no corte el `AGENTS.md` del proyecto (lo lee hasta 32 KiB por defecto y trunca el resto; el `AGENTS.md` global no cuenta). Lo pone en la menor potencia de dos que sea al menos 65536 y al menos el doble del bloque orca-stack (hoy 65536), solo si falta o es menor: nunca baja un valor más alto. Si no existe la carpeta de codex, se omite | `$CODEX_HOME/config.toml` (o `~/.codex/config.toml`) |
@@ -180,7 +180,10 @@ Después corré `orca-stack init` en el repo: el contrato de `AGENTS.md` suma la
 | Perk | Qué agrega |
 | --- | --- |
 | `marchas` | Las marchas Lazy, Medium y Proactive de `main`: el comando `/marcha`, el ajuste de esfuerzo y la etiqueta del pie del prompt (mod `marchas`), y las reglas de `MARCHAS.md`. Sin marchas, `main` atiende las consultas de los workers siempre (`vigilar --consultas` y las reglas de colaboración del Despacho) |
-| `ponytail`, `caveman` | Por ahora la config acepta sus claves, pero no cambian nada todavía: Ponytail y Caveman siguen como hoy hasta el próximo ticket |
+| `ponytail` | La frase de Ponytail en el contrato, con puntero a `PONYTAIL.md` (sus reglas y el rol de Ponytail reviewer), y `ORCA_STACK_PONYTAIL_LEVEL=full` en los wrappers. Apagado, los wrappers escriben `off`; las skills `ponytail-review` y `ponytail-audit` siguen instaladas para usarlas a mano |
+| `caveman` | La viñeta de Caveman en el contrato, con puntero a `CAVEMAN.md`, y `ORCA_STACK_MODE=auto` y `ORCA_STACK_CAVEMAN_LEVEL=caveman` en los wrappers, que disparan la skill. Apagado, escriben `off` |
+
+Los marcadores de los wrappers siguen solo `~/.orca-stack/config.json`: después de cambiar ahí `ponytail` o `caveman`, volvé a correr `orca-stack global`. `doctor` acepta `off` mientras el perk está apagado.
 
 ### Claves
 
@@ -269,8 +272,8 @@ Al terminar, `global` imprime la lista con tus rutas exactas. Resumen:
 
 - **Binarios de terceros** (Orca, engram, gentle-ai, Pi, `gh`): son de otros proyectos con su propio ciclo de versiones y firmas. Se detectan y se imprime cómo instalarlos.
 - **Las skills de Matt Pocock** (`mattpocock/skills`): es la metodología de ingeniería por defecto del stack (Pi trabaja con la suya) y la mantiene su autor. Se instala desde su origen, con el marketplace del propio Matt (el oficial fija una versión vieja): `claude plugin marketplace add mattpocock/skills` y `claude plugin install mattpocock-skills@mattpocock`, que trae la 1.3.1 con el mismo nombre de plugin, así que `/mattpocock-skills:<skill>` sigue andando, salvo `grill-with-docs` y `grill-me`: son de orca-stack y se escriben `/grill-with-docs` y `/grill-me`. Para agy y codex: `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`. La 1.3 agrega `pr`, `implement-spec` y `retro`, quita `resolving-merge-conflicts` y solo busca `GLOSSARY.md` (antes `CONTEXT.md`).
-- **Caveman** (`JuliusBrussee/caveman`, Apache-2.0): se instala desde su origen, sin fijar versión y solo como skills: `npx skills add JuliusBrussee/caveman -g` (el stack se verificó con la 3.2.0). El comando detecta los agentes que tenés instalados (Claude Code, Codex, Antigravity) y deja las skills en la carpeta de cada uno. En Claude Code ya no arranca sola: la aplica el modo Auto de Orca.
-- **Los hooks de ciclo de vida completos de Ponytail y Caveman**: duplicarían el control que ya tienen Orca y los proveedores (ver `ORCA-STACK.md`, sección "Deliberate exclusions").
+- **Caveman** (`JuliusBrussee/caveman`, Apache-2.0): se instala desde su origen, sin fijar versión y solo como skills: `npx skills add JuliusBrussee/caveman -g` (el stack se verificó con la 3.2.0). El comando detecta los agentes que tenés instalados (Claude Code, Codex, Antigravity) y deja las skills en la carpeta de cada uno. En Claude Code ya no arranca sola: la aplica el modo Auto de Orca, solo con el perk `caveman` encendido (ver [Perks](#perks)).
+- **Los hooks de ciclo de vida completos de Ponytail y Caveman**: duplicarían el control que ya tienen Orca y los proveedores (ver `ORCA-STACK.md`, sección "Deliberate exclusions", y los fragmentos `PONYTAIL.md` y `CAVEMAN.md`).
 - **El plugin `ponytail` de Claude Code**: si lo tenés instalado, desactivalo en las sesiones de Orca (`claude plugin disable ponytail@ponytail`), porque Orca trae sus propias skills adaptadas y sus hooks duplican el control de Orca.
 - **El plugin `caveman` de Claude Code**: si lo tenés instalado, desactivalo en las sesiones de Orca (`claude plugin disable caveman@caveman`), porque sus hooks inyectan caveman en cada subagente y duplican el control de Orca. Las skills de `npx skills add` alcanzan.
 - **Credenciales y datos locales**: nada de `auth.json`, `models.json`, `~/.claude.json`, bases de engram ni datos de la aplicación de Orca.

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { INSTALL_HINTS, STACK_LEVELS, WRAPPERS } from '../src/constants.mjs'
 import { launcherFor } from '../src/despacho.mjs'
 import { cmdWrapper, shWrapper } from '../src/templates.mjs'
-import { ROOT, cleanup, cli, tempDir } from './helpers.mjs'
+import { ROOT, cleanup, cli, tempDir, write } from './helpers.mjs'
 
 const read = (...parts) => readFileSync(path.join(ROOT, ...parts), 'utf8').replace(/\r\n/g, '\n')
 // caveman v3.2.0, src/hooks/caveman-config.js: VALID_MODES has one id per voice skill; LEGACY_MODES keeps the old
@@ -27,15 +27,16 @@ describe('caveman 3.2.0', () => {
     }
   })
 
+  // #394: Caveman is a perk; with it on, the wrappers carry today's markers and CAVEMAN.md carries the policy.
   test('rule 2: every wrapper carries a caveman 3.2.0 mode, not a legacy level or off, and the policy uses the new names', () => {
     // `full` became the `caveman` skill in 3.2.0.
     assert.equal(STACK_LEVELS.caveman, 'caveman')
     assert.ok(VOICE_MODES.includes(STACK_LEVELS.caveman))
     for (const agent of Object.keys(WRAPPERS)) {
-      assert.match(shWrapper(agent), /^ORCA_STACK_CAVEMAN_LEVEL=caveman$/m, agent)
-      assert.ok(cmdWrapper(agent).includes('set "ORCA_STACK_CAVEMAN_LEVEL=caveman"'), agent)
+      assert.match(shWrapper(agent, { caveman: true }), /^ORCA_STACK_CAVEMAN_LEVEL=caveman$/m, agent)
+      assert.ok(cmdWrapper(agent, { caveman: true }).includes('set "ORCA_STACK_CAVEMAN_LEVEL=caveman"'), agent)
     }
-    const caveman = cavemanPassages(read('assets', 'stack', 'ORCA-STACK.md')).find(passage => passage.startsWith('- **Caveman (modular)**'))
+    const caveman = cavemanPassages(read('assets', 'stack', 'CAVEMAN.md')).find(passage => passage.startsWith('- **Caveman (modular)**'))
     assert.match(caveman.replace(/\s+/g, ' '), /`caveman`, `ultracave` or `megacave`/)
     assert.match(caveman.replace(/\s+/g, ' '), /the wrappers set `caveman`/)
   })
@@ -62,9 +63,10 @@ describe('caveman 3.2.0', () => {
   })
 
   test('rule 4: the policy files keep Auto/Off and communication-only, and name no caveman level 3.2.0 dropped', () => {
-    const policy = read('assets', 'stack', 'ORCA-STACK.md')
-    const briefs = read('assets', 'stack', 'ROLE-BRIEFS.md')
-    const skill = read('assets', 'skills', 'orca-stack-policy', 'SKILL.md')
+    // #394: the Caveman text of ORCA-STACK.md, ROLE-BRIEFS.md and the policy skill moved to CAVEMAN.md.
+    const policy = read('assets', 'stack', 'CAVEMAN.md')
+    const briefs = policy
+    const skill = policy
     const flat = text => text.replace(/\s+/g, ' ')
     assert.match(flat(policy), /\*\*Caveman \(modular\)\*\*: communication compression\. Orca Auto applies it when the work is token-heavy/)
     assert.match(flat(policy), /Caveman is communication-only\. In `auto`, compress filler/)
@@ -93,6 +95,7 @@ describe('caveman 3.2.0: doctor', () => {
   })
 
   test('rule 2 negative: a wrapper with a legacy or unknown caveman level fails doctor and says to rerun global', () => {
+    write(path.join(home, '.orca-stack', 'config.json'), JSON.stringify({ perks: { caveman: true } }))
     assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
     const file = wrapper('claude')
     const original = readFileSync(file, 'utf8')

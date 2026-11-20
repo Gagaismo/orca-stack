@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { GRILL_SKILLS, INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
-import { PERKS } from './perks.mjs'
+import { PERKS, perksOf } from './perks.mjs'
 import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestratorMode, rddMode, readPersonalConfig, refreshLazyPointer, restoreBlock, sddBlock, trimReviewSections } from './gentle.mjs'
 import { cleanupKnownSdd } from './sdd-cleanup.mjs'
 import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, codexAgentsMd } from './codex-windows.mjs'
@@ -46,8 +46,8 @@ export const stackVars = L => {
 const installPolicyDocs = ctx => {
   ctx.say('\nPolítica del stack')
   const vars = stackVars(ctx.L)
-  // MARCHAS.md is the gears perk fragment (#393): installed always, read only while the perk is on.
-  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md']) {
+  // MARCHAS.md, PONYTAIL.md and CAVEMAN.md are perk fragments (#393, #394): installed always, read only while their perk is on.
+  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md', 'PONYTAIL.md', 'CAVEMAN.md']) {
     ctx.writeOwned(path.join(ctx.L.stackDir, name), render(readAsset('stack', name), vars))
   }
 }
@@ -55,9 +55,11 @@ const installPolicyDocs = ctx => {
 const installWrappers = ctx => {
   ctx.say('\nWrappers de proveedores')
   const win = isWindows()
+  // The wrappers are machine-global: their markers follow the perks of the personal layer only (#394).
+  const perks = perksOf(readPersonalConfig(ctx.L))
   for (const agent of Object.keys(WRAPPERS)) {
     const file = path.join(ctx.L.scriptsDir, wrapperFile(agent, win))
-    ctx.writeOwned(file, wrapperContent(agent, win), { mode: win ? undefined : 0o755 })
+    ctx.writeOwned(file, wrapperContent(agent, win, perks), { mode: win ? undefined : 0o755 })
     if (!win && !ctx.dryRun && existsSync(file)) {
       chmodSync(file, 0o755)
     }

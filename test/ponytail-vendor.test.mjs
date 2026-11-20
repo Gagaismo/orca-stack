@@ -79,22 +79,23 @@ describe('vendored ponytail skills (upstream v5.3.2)', () => {
     const [, hint] = ponytail.match(/^argument-hint: "\[([^\]]+)\]"$/m) ?? []
     assert.deepEqual(hint?.split('|'), ['lite', 'full', 'ultra'])
     assert.ok(hint.split('|').includes(STACK_LEVELS.ponytail))
-    assert.match(shWrapper('claude'), new RegExp(`^ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}$`, 'm'))
-    assert.ok(cmdWrapper('claude').includes(`set "ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}"`))
+    // #394: with the ponytail perk on; off, the wrappers write `off`.
+    assert.match(shWrapper('claude', { ponytail: true }), new RegExp(`^ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}$`, 'm'))
+    assert.match(shWrapper('claude'), /^ORCA_STACK_PONYTAIL_LEVEL=off$/m)
+    assert.ok(cmdWrapper('claude', { ponytail: true }).includes(`set "ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}"`))
     assert.match(orcaSection, /`ORCA_STACK_PONYTAIL_LEVEL`/)
     assert.match(orcaSection, /unset, empty or any other value means `full`/)
     assert.match(orcaSection, /never turns Ponytail off/)
   })
 
+  // #394: the Ponytail policy and briefs moved to the ponytail perk fragment, PONYTAIL.md.
   test('policy and briefs use the v5 vocabulary', () => {
-    const policy = read(ROOT, 'assets', 'stack', 'ORCA-STACK.md')
-    assert.match(policy, /`lite`, `full` or `ultra`/)
-    assert.match(policy, /`shortcut: <the limit>, <when to upgrade>`/)
-    assert.doesNotMatch(policy, /complexity-only/)
-    const briefs = read(ROOT, 'assets', 'stack', 'ROLE-BRIEFS.md')
-    assert.match(briefs, /smallest complete change/)
-    assert.match(briefs, /`shortcut: <the limit>, <when to upgrade>`/)
-    const reviewer = briefs.split('\n## Ponytail reviewer\n')[1].split('\n## ')[0]
+    const fragment = read(ROOT, 'assets', 'stack', 'PONYTAIL.md')
+    assert.match(fragment, /`lite`, `full` or `ultra`/)
+    assert.match(fragment, /`shortcut: <the limit>, <when to upgrade>`\s+code comment/)
+    assert.doesNotMatch(fragment, /complexity-only/)
+    assert.match(fragment, /smallest complete change, and mark a shortcut\s+with a known limit `shortcut: <the limit>, <when to upgrade>`/)
+    const reviewer = fragment.split('\n## Ponytail reviewer\n')[1].split('\n## ')[0]
     assert.match(reviewer, /`ponytail-review`/)
     assert.match(reviewer, /Lean/)
   })
@@ -130,7 +131,7 @@ describe('#139 ponytail follow-ups', () => {
   })
 
   test('rule 4: the Ponytail reviewer passes a non-Lean Must fix to main and names its output format', () => {
-    const briefs = read(ROOT, 'assets', 'stack', 'ROLE-BRIEFS.md')
+    const briefs = read(ROOT, 'assets', 'stack', 'PONYTAIL.md')
     const reviewer = briefs.split('\n## Ponytail reviewer\n')[1].split('\n## ')[0].replace(/\s+/g, ' ')
     assert.match(reviewer, /report only its Lean findings/)
     assert.match(reviewer, /non-Lean \*Must fix\*/)

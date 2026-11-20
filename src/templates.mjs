@@ -45,7 +45,16 @@ export const skipForMod = (rel, name) =>
 
 export const wrapperFile = (agent, win) => `${agent}-orca-stack${win ? '.cmd' : '.sh'}`
 
-export const cmdWrapper = agent => {
+// The stack markers a wrapper sets (#394): today's levels for a perk that is on, `off` for one that is off. Caveman's
+// trigger reads ORCA_STACK_MODE ("Orca Agent Stack is Auto"), so it is off with Caveman.
+export const stackMarkers = perks => ({
+  ORCA_STACK_MODE: perks.caveman === true ? STACK_LEVELS.mode : 'off',
+  ORCA_STACK_CAVEMAN_LEVEL: perks.caveman === true ? STACK_LEVELS.caveman : 'off',
+  ORCA_STACK_PONYTAIL_LEVEL: perks.ponytail === true ? STACK_LEVELS.ponytail : 'off',
+})
+
+export const cmdWrapper = (agent, perks = perksOf({})) => {
+  const markers = stackMarkers(perks)
   const probes = WRAPPERS[agent].windows
     .map(
       exe =>
@@ -59,9 +68,7 @@ export const cmdWrapper = agent => {
     `rem Generado por orca-stack (${agent}). Se regenera con "orca-stack global"; no lo edites a mano.`,
     'setlocal',
     'set "NoDefaultCurrentDirectoryInExePath=1"',
-    `set "ORCA_STACK_MODE=${STACK_LEVELS.mode}"`,
-    `set "ORCA_STACK_CAVEMAN_LEVEL=${STACK_LEVELS.caveman}"`,
-    `set "ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}"`,
+    ...Object.entries(markers).map(([name, value]) => `set "${name}=${value}"`),
     'for %%I in ("%~dp0..\\ORCA-STACK.md") do set "ORCA_STACK_POLICY_PATH=%%~fI"',
     '',
     'if /I "%~1"=="--orca-stack-self-test" (',
@@ -85,15 +92,14 @@ export const cmdWrapper = agent => {
   ].join('\r\n')
 }
 
-export const shWrapper = agent => {
+export const shWrapper = (agent, perks = perksOf({})) => {
+  const markers = stackMarkers(perks)
   const names = WRAPPERS[agent].posix.join(' ')
 
   return [
     '#!/bin/sh',
     `# Generado por orca-stack (${agent}). Se regenera con "orca-stack global"; no lo edites a mano.`,
-    `ORCA_STACK_MODE=${STACK_LEVELS.mode}`,
-    `ORCA_STACK_CAVEMAN_LEVEL=${STACK_LEVELS.caveman}`,
-    `ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}`,
+    ...Object.entries(markers).map(([name, value]) => `${name}=${value}`),
     'here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)',
     'ORCA_STACK_POLICY_PATH=$(CDPATH= cd -- "$here/.." && pwd)/ORCA-STACK.md',
     'export ORCA_STACK_MODE ORCA_STACK_CAVEMAN_LEVEL ORCA_STACK_PONYTAIL_LEVEL ORCA_STACK_POLICY_PATH',
@@ -124,7 +130,7 @@ export const shWrapper = agent => {
   ].join('\n')
 }
 
-export const wrapperContent = (agent, win) => (win ? cmdWrapper(agent) : shWrapper(agent))
+export const wrapperContent = (agent, win, perks = perksOf({})) => (win ? cmdWrapper(agent, perks) : shWrapper(agent, perks))
 
 // The policy lines of the project blocks. policyPath/briefsPath are shown as given.
 const policyLines = ({ policyPath, briefsPath }) => [
@@ -132,9 +138,9 @@ const policyLines = ({ policyPath, briefsPath }) => [
   'Si faltan, corré `npx github:Gagaismo/orca-stack global`.',
   '',
   '- El runtime de Orca y el Dispatch activo manejan el ciclo de vida, la delegación, los workers, el cierre y la limpieza. Un worker ejecuta su brief: no arranca otro flujo de trabajo ni espera al humano.',
-  '- Planificación con las skills de Matt Pocock (grill-with-docs, to-spec, to-tickets, disparadas por el humano), e implementación con gentle-ai ODD en todo el stack. Gentle Shell (Pi) trabaja con la suya y puede usar ODD. Ponytail se aplica en el trabajo de implementación con el nivel configurado, pero nunca contra un requisito explícito.',
+  '- Planificación con las skills de Matt Pocock (grill-with-docs, to-spec, to-tickets, disparadas por el humano), e implementación con gentle-ai ODD en todo el stack. Gentle Shell (Pi) trabaja con la suya y puede usar ODD.<!-- perk:ponytail --> Ponytail se aplica en el trabajo de implementación con el nivel configurado, pero nunca contra un requisito explícito. Sus reglas están en `~/orca/stack/PONYTAIL.md`, el fragmento del perk de ponytail.<!-- /perk:ponytail -->',
   '- Respetá los requisitos explícitos de la spec, el ticket y los ADRs, y también la validación, la seguridad, la accesibilidad, el manejo de errores, la protección contra pérdida de datos y los tests que se piden: son lo que el humano espera recibir.',
-  '- Caveman sigue el ajuste Auto/Off del stack y comprime solo prosa pesada en tokens. Conservá el código, los comandos, las rutas, los errores exactos, las decisiones, los riesgos, las dudas, los tests y la evidencia de aceptación.',
+  '<!-- perk:caveman -->- Caveman sigue el ajuste Auto/Off del stack y comprime solo prosa pesada en tokens. Conservá el código, los comandos, las rutas, los errores exactos, las decisiones, los riesgos, las dudas, los tests y la evidencia de aceptación. Sus reglas están en `~/orca/stack/CAVEMAN.md`, el fragmento del perk de caveman.<!-- /perk:caveman -->',
   '- Engram es solo memoria: no es autoridad ni planificador. Para las reglas de cada rol, leé la política canónica.',
   '- Las reglas de los mods de Claude Code para este proyecto están en `.orca-stack.json` (se commitea) y `.orca-stack.local.json` (local, ignorado por git); las personales, en `~/.orca-stack/config.json`.',
 ]
@@ -161,7 +167,13 @@ export const policyBlock = ({ policyPath, briefsPath, short = false, importAgent
       `The stack policy is \`${policyPath}\`; the orca-stack block in \`AGENTS.md\` summarises it.`,
     ].join('\n')
   }
-  const lines = policyLines({ policyPath, briefsPath })
+  // Line by line: a span that ends a line would otherwise take that line's break with it.
+  // A line that is a whole perk span disappears with the perk, without leaving an empty line.
+  const lines = policyLines({ policyPath, briefsPath }).flatMap(line => {
+    const kept = applyPerks(line, perks)
+
+    return kept === '' && line !== '' ? [] : [kept]
+  })
 
   return [applyPerks(readAsset('stack', 'CONTRATO.md'), perks).replace(/\s+$/, ''), '', '### Política del stack', '', ...lines].join('\n')
 }

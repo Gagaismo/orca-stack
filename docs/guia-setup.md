@@ -1,6 +1,6 @@
 # Guía de setup: stack de agentes con orca-stack
 
-Esta guía deja una máquina y un proyecto listos para trabajar con el stack de agentes: Orca ejecuta, las skills de Matt Pocock definen el método y orca-stack instala la política, los wrappers, Ponytail y los mods de Claude Code. Tiene dos partes. La de la máquina se hace una sola vez. La del proyecto se hace en cada repo y se guía con un cuestionario que cambia según el proyecto arranque de cero o ya esté empezado.
+Esta guía deja una máquina y un proyecto listos para trabajar con el stack de agentes: Orca ejecuta, las skills de Matt Pocock definen el método y orca-stack instala la política, los wrappers, las skills de Ponytail y los mods de Claude Code. Tiene dos partes. La de la máquina se hace una sola vez. La del proyecto se hace en cada repo y se guía con un cuestionario que cambia según el proyecto arranque de cero o ya esté empezado.
 
 Versión de referencia: `orca-stack v0.20.1` (octubre de 2026). Si sale una versión nueva, cambiá la etiqueta `#v0.20.1` en los comandos. Lo marcado `UNKNOWN / MUST VERIFY` no está confirmado: verificalo antes de darlo por cierto.
 
@@ -20,15 +20,17 @@ Versión de referencia: `orca-stack v0.20.1` (octubre de 2026). Si sale una vers
 | --- | --- | --- |
 | Orca | Corre los Runs, las Tasks, los worktrees y los workers en paralelo | Instalador oficial (github.com/stablyai/orca) |
 | Skills de Matt Pocock | Son el método: grill, spec, tickets, implement con TDD y review | Claude Code: `claude plugin marketplace add mattpocock/skills` y `claude plugin install mattpocock-skills@mattpocock` (versión 1.3.1 o más nueva). Codex y Antigravity: ver la nota debajo |
-| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, Ponytail y los 9 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.20.1 global` |
+| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, las skills de Ponytail (perk opcional) y los 9 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.20.1 global` |
 | Gentle Shell (Pi) | Un segundo orquestador al que Claude consulta en las decisiones | Pi con su instalador oficial (si falta, `global` lo instala con npm); los paquetes los instala `global` |
 | Engram | Memoria entre sesiones (no planifica ni decide) | Instalador propio de Engram |
 | gentle-ai | Context7, permisos de Claude Code y skills extra | Instalador propio de gentle-ai |
-| Caveman | Comprime la prosa larga para ahorrar tokens | Solo las skills: `npx skills add JuliusBrussee/caveman -g` (verificado con la 3.2.0). Si tenés el plugin de Claude Code, desactivalo en las sesiones de Orca: `claude plugin disable caveman@caveman` |
+| Caveman | Comprime la prosa larga para ahorrar tokens (perk opcional, apagado por defecto) | Solo las skills: `npx skills add JuliusBrussee/caveman -g` (verificado con la 3.2.0). Si tenés el plugin de Claude Code, desactivalo en las sesiones de Orca: `claude plugin disable caveman@caveman` |
 | [Impeccable](https://impeccable.style/) (Frontend repos, opcional) | Vocabulario de diseño para agentes (polish, audit, critique, typeset, distill) y detector con 61 checks para defaults de diseño en IA. Licencia: Apache-2.0 | Solo las skills: `npx skills add pbakaus/impeccable`. Instalar solo sus skills, no sus hooks, porque el stack no instala hooks de ciclo de vida de terceros (`ORCA-STACK.md`, "Deliberate exclusions") |
 | [Taste Skill](https://www.tasteskill.dev/) (Frontend repos, opcional) | Reglas de diseño frontend para agentes (tipografía, espaciado, color, layout y motion). Licencia: MIT | Solo las skills: `npx skills add Leonxlnx/taste-skill --skill design-taste-frontend` |
 
-Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con su propio criterio. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
+Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con su propio criterio. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`.
+
+Ponytail y Caveman son perks opcionales, apagados por defecto: se encienden con `{ "perks": { "ponytail": true } }` o `{ "perks": { "caveman": true } }` en una capa de la config (ver [Parte 4](#parte-4-configuración-de-los-mods-dónde-va-cada-cosa)). El contrato que escribe `init` sigue la config fusionada y apunta a `~/orca/stack/PONYTAIL.md` o `~/orca/stack/CAVEMAN.md`, los fragmentos que `global` instala siempre. Los marcadores de los wrappers siguen solo `~/.orca-stack/config.json`: después de cambiar un perk ahí, volvé a correr `orca-stack global`. Con un perk apagado, los wrappers escriben `off` y `doctor` lo acepta. Las skills de Ponytail quedan instaladas en los dos estados, para usar a mano `ponytail-review` y `ponytail-audit`. Con Ponytail encendido, achica la implementación pero nunca saca requisitos, validaciones ni tests.
 
 **Nota sobre las skills de Matt:**
 - El plugin solo las instala para Claude Code. Si Codex o Antigravity van a usarlas, tienen que estar en `~/.agents/skills`: `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`.
@@ -77,7 +79,7 @@ npx github:Gagaismo/orca-stack#v0.20.1 doctor
 2. Abrí `pi` y corré `/login`. Sin login, Gentle Shell no responde.
 3. Corré `gh auth login` (lo necesitan el tablero de PRs y el puente).
 4. Corré `gentle-ai sync`.
-5. Instalá las skills de Matt Pocock (Claude Code con el marketplace de Matt y, para agy y codex, `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`) y Caveman con los comandos del mapa.
+5. Instalá las skills de Matt Pocock (Claude Code con el marketplace de Matt y, para agy y codex, `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`) y, si vas a encender el perk `caveman`, Caveman con los comandos del mapa.
 6. Reiniciá Claude Code: los mods se cargan en las sesiones nuevas.
 
 Además, instalá lo que `global` marque como faltante.
