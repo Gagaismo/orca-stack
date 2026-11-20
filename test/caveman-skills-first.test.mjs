@@ -99,7 +99,7 @@ describe('#142: caveman is recommended as skills only, and the plugin gets a war
     )
     // The policy still excludes the hooks and keeps the skill hook-free and communication-only.
     const policy = flat(read('assets', 'stack', 'ORCA-STACK.md'))
-    assert.match(policy, /Do not install the full Ponytail or Caveman lifecycle-hook stacks\. Their always-on hooks, session-start codebase map, subagent injection/)
+    assert.match(policy, /Do not install the full lifecycle-hook stacks of the modular skills\. Their always-on hooks, session-start codebase map, subagent injection/)
     assert.match(policy, /`caveman` — communication-only mode; Auto is selected in Orca, not by a provider hook\./)
     assert.match(policy, /Caveman is communication-only\./)
     assert.match(flat(read('assets', 'stack', 'ROLE-BRIEFS.md')), /Caveman follows the Orca Agent Stack setting/)

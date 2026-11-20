@@ -283,7 +283,7 @@ export const doctorCommand = async flags => {
 
   // Policy docs
   section('Política del stack')
-  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md']) {
+  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md', 'PONYTAIL.md']) {
     const file = path.join(L.stackDir, name)
     if (!existsSync(file)) {
       add('fail', name, `falta ${tilde(file, home)}`)

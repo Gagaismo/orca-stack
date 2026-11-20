@@ -10,12 +10,6 @@ Provider instruction files point here for the durable policy.
   worker placement, settlement, cleanup, and coordinator/worker boundaries.
 - **Matt Pocock skills**: engineering methodology: grill-with-docs -> domain
   modeling -> CONTEXT/ADRs -> spec -> tickets -> TDD implementation -> review.
-- **Ponytail (modular)**: implementation policy only: avoid unnecessary work and
-  choose the smallest correct solution after understanding the task and code.
-  Orca Auto applies it to implementation turns; it never overrides requirements.
-  Its level is `lite`, `full` or `ultra` (the wrappers set `full`), and a
-  shortcut with a known limit gets a `shortcut: <the limit>, <when to upgrade>`
-  code comment.
 - **Caveman (modular)**: communication compression. Orca Auto applies it when
   the work is token-heavy, but never compresses code, commands, paths, exact
   errors, decisions, risks, uncertainty, tests, or acceptance evidence.
@@ -34,9 +28,8 @@ Provider instruction files point here for the durable policy.
 2. Project instructions, ADRs, CONTEXT, spec, and ticket acceptance criteria.
 3. Role brief supplied by the coordinator (research, implementation, review, etc.).
 4. Specialized skill for the current role.
-5. Ponytail implementation policy.
-6. Caveman communication policy.
-7. Provider defaults.
+5. Caveman communication policy.
+6. Provider defaults.
 
 A lower layer cannot cancel, replace, or broaden a higher layer. If a generic
 minimalism rule conflicts with an explicit requirement, preserve the requirement.
@@ -72,16 +65,7 @@ do not wait for Orca receipts that will not come.
 
 Planning follows Matt's skills (`grill-with-docs`, `to-spec`, `to-tickets`, triggered
 by the human) and implementation follows gentle-ai ODD for Claude, Codex and
-Antigravity sessions; Pi follows its own methodology (it may use ODD). Ponytail
-may reduce the
-implementation footprint inside an approved ticket; it may not remove research,
-domain modeling, explicit spec obligations, ADR decisions, security, validation,
-accessibility, data-loss handling, or required tests. `ponytail-review` is a
-second pass after correctness/spec review; it reports only and never applies
-changes. It reviews quality as a whole (bugs, risk, scale, tests, speed, lean);
-the Ponytail reviewer role keeps only its Lean findings and passes any
-non-Lean *Must fix* to main in one line. `ponytail-audit` is
-opt-in and repo-wide.
+Antigravity sessions; Pi follows its own methodology (it may use ODD).
 
 Ticket authoring rules are defined in `~/orca/stack/MAIN.md` ("Ciclo de `main`", step 2).
 `main` follows them when writing tickets; do not copy a second version here.
@@ -168,18 +152,13 @@ switches, or new global settings to the official build.
 
 ## Deliberate exclusions
 
-Do not install the full Ponytail or Caveman lifecycle-hook stacks. Their
+Do not install the full lifecycle-hook stacks of the modular skills. Their
 always-on hooks, session-start codebase map, subagent injection, MCP proxy, statusline ownership, cavecrew
 workers, and alternate planning loops would duplicate provider/Orca control.
 The wrappers own the small safe bridge: launch-scoped environment markers
-(`ORCA_STACK_MODE`, `ORCA_STACK_CAVEMAN_LEVEL`, `ORCA_STACK_PONYTAIL_LEVEL`,
-`ORCA_STACK_POLICY_PATH`).
+(`ORCA_STACK_MODE`, `ORCA_STACK_CAVEMAN_LEVEL`, `ORCA_STACK_POLICY_PATH`).
 The installed modular skills remain available explicitly:
 
-- `ponytail` — implementation policy card, no lifecycle hook.
-- `ponytail-review` — read-only quality review, second pass.
-- `ponytail-audit` / `ponytail-debt` — explicit maintenance tools;
-  `ponytail-debt` lists the `shortcut:` comments and older `ponytail:` ones.
 - `caveman` — communication-only mode; Auto is selected in Orca, not by a
   provider hook.
 

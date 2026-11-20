@@ -46,8 +46,8 @@ export const stackVars = L => {
 const installPolicyDocs = ctx => {
   ctx.say('\nPolítica del stack')
   const vars = stackVars(ctx.L)
-  // MARCHAS.md is the gears perk fragment (#393): installed always, read only while the perk is on.
-  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md']) {
+  // MARCHAS.md and PONYTAIL.md are perk fragments (#393, #394): installed always, read only while their perk is on.
+  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md', 'PONYTAIL.md']) {
     ctx.writeOwned(path.join(ctx.L.stackDir, name), render(readAsset('stack', name), vars))
   }
 }
