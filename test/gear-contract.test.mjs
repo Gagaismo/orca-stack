@@ -81,9 +81,9 @@ describe('gear contract', () => {
     assert.match(arena, /Una segunda arena queda registrada como propuesta y no se ejecuta/)
   })
 
-  test('ticket rule 7: second CI bounce carries escalation and proposal together', () => {
+  test('ticket rule 7: CI escalation carries escalation and proposal together', () => {
     const step8 = main.split('\n').find(line => line.startsWith('8. '))
-    assert.match(step8, /Despu\u00E9s del segundo rebote de CI, si vuelve a fallar, se lo pas\u00E1s al humano/)
+    assert.match(step8, /Sin una hip\u00F3tesis nueva o con el tope alcanzado, agreg\u00E1 `needs-info` al issue, coment\u00E1 por qu\u00E9 e inform\u00E1 al humano/)
     assert.match(step8, /Si propon\u00E9s un swarm para diagnosticar, atac\u00E1 la premisa primero con la skill de #160/)
     assert.match(step8, /la propuesta viaja con la escalaci\u00F3n al humano, nunca en su lugar ni para demorarla/)
   })
