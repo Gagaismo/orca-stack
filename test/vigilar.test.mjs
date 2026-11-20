@@ -98,7 +98,7 @@ const harness = (world = {}) => {
       }
       if (cmd === 'gh' && args[0] === 'issue' && args[1] === 'view') {
         if (world.ghDown) return fail(world.ghDown)
-        if (args.includes('comments')) return json({ comments: (world.comments ?? {})[args[2]] ?? [] })
+        if (args.includes('comments')) return world.issueCommentsDown ? fail('comments unavailable') : json({ comments: (world.comments ?? {})[args[2]] ?? [] })
         if ((world.issueDown ?? {})[args[2]]) return fail(world.issueDown[args[2]])
         return json({ state: (world.issues ?? {})[args[2]] ?? 'OPEN' })
       }
@@ -1353,6 +1353,12 @@ describe('issue #395 diagnosis', () => {
     const shared = harness({ prs: [{ ...pr(70, { closes: [7, 8] }), comments: [{ id: 'p1', body: 'Diagn\u00f3stico: agy' }] }] })
     await once(shared, ['7', '8'])
     assert.deepEqual(shared.out.filter(line => line.startsWith('diagnostico ')), ['diagnostico #7 agy'])
+    const unavailable = harness({ issueCommentsDown: true, issues: { 7: 'CLOSED' }, comments: { 7: [{ id: 'i1', body: 'Diagn\u00f3stico: codex' }] } })
+    await once(unavailable, ['7'])
+    assert.deepEqual(drain(unavailable), [])
+    unavailable.world.issueCommentsDown = false
+    await once(unavailable, ['7'])
+    assert.deepEqual(drain(unavailable), ['diagnostico #7 codex', 'tanda-cerrada #7'])
   })
   test('Rule 6: main acts on a new hypothesis or flags recurring causes without asking', () => {
     const text = read('assets/stack/MAIN.md')

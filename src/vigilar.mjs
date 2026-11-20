@@ -166,7 +166,9 @@ const readWorld = (targets, cursor, root, io, warn) => {
     const mine = [...prs.values()].filter(pr => pr.number === cursor[issue]?.pr || linked(pr, issue, branches))
     const pr = mine.sort((a, b) => b.number - a.number)[0]
     const commentsResult = io.sh('gh', ['issue', 'view', issue, '--json', 'comments'], { cwd: root })
-    const issueComments = commentsResult.status === 0 ? parse(commentsResult)?.comments ?? [] : []
+    const issueComments = commentsResult.status === 0 ? parse(commentsResult)?.comments : undefined
+    const commentsReadable = Array.isArray(issueComments)
+    if (!commentsReadable) warn(`vigilar: no pude leer comentarios de #${issue}; lo sigo vigilando.`)
     if (pr) {
       let worker
       if (workersReadable) {
@@ -181,7 +183,7 @@ const readWorld = (targets, cursor, root, io, warn) => {
       }
 
       const discussion = ghJson(io, root, ['pr', 'view', String(pr.number), '--json', 'comments,reviews'])
-      return [issue, { pr, discussion, issueComments, workersReadable, worker: worker ?? null, replacedWorkflows: replacedRuns(pr, root, io) }]
+      return [issue, { pr, discussion, issueComments, commentsReadable, workersReadable, worker: worker ?? null, replacedWorkflows: replacedRuns(pr, root, io) }]
     }
 
     const res = io.sh('gh', ['issue', 'view', issue, '--json', 'state'], { cwd: root })
@@ -194,7 +196,7 @@ const readWorld = (targets, cursor, root, io, warn) => {
     const identity = String(agent?.agentType ?? '').trim().toLowerCase()
     const workerState = identity && identity !== 'pi' ? String(agent?.state ?? '').trim().toLowerCase() : ''
 
-    return [issue, { issueState, issueComments, workersReadable, worker: workerState ? { state: workerState, agent: identity } : null }]
+    return [issue, { issueState, issueComments, commentsReadable, workersReadable, worker: workerState ? { state: workerState, agent: identity } : null }]
   }))
 }
 
@@ -203,6 +205,7 @@ const readWorld = (targets, cursor, root, io, warn) => {
 // `batch` names this watcher by its items: the cursor is shared, so a PR another batch's watcher already knew is still
 // news to this one (once), while the same batch re-armed resumes without repeating it.
 const advance = (issue, seen, before, merges, emitted, batch) => {
+  if (!seen.commentsReadable) return { lines: [], entry: before ?? {} }
   const diagnoses = new Set(before?.diagnoses ?? [])
   const lines = []
   for (const comment of [...(seen.issueComments ?? []), ...(seen.discussion?.comments ?? [])]) {
