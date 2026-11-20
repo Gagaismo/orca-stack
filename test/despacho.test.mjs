@@ -2602,10 +2602,12 @@ describe('rebote', () => {
       await refused([ciMark('old1', 1), ciMark('old2', 2), diagnosis('old2', 'retry on the new head', 3)], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
       // Another author's Diagnóstico does not count either.
       await refused([ciMark('old1', 1), ciMark('old2', 2), { ...diagnosis('abc123', 'mine', 3), body: diagnosis('abc123', 'mine', 3).body.replace('Diagnóstico: main', 'Diagnóstico: codex') }], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
-      for (const hypothesis of ['ninguna', '']) {
+      for (const hypothesis of ['ninguna', '', '`ninguna`', '**ninguna**']) {
         await refused([ciMark('old1', 1), ciMark('old2', 2), diagnosis('abc123', hypothesis, 3)], 'rebote: el Diagnóstico de main sobre abc123 no trae una Siguiente hipótesis')
       }
       await refused([ciMark('old1', 1), ciMark('old2', 2), ciMark('old3', 3), ciMark('old4', 4), diagnosis('abc123', 'one more try', 5)], 'rebote: tope de 4 rebotes de CI alcanzado en el PR #12')
+      // The cap is checked before the diagnosis: without one, a fifth bounce still names the cap.
+      await refused([ciMark('old1', 1), ciMark('old2', 2), ciMark('old3', 3), ciMark('old4', 4)], 'rebote: tope de 4 rebotes de CI alcanzado en el PR #12')
 
       // Through the CLI: exit code 1 and a single line.
       const env = bounceEnv(ciPr([ciMark('old1', 1), ciMark('old2', 2)]))

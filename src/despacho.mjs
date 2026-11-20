@@ -1104,7 +1104,9 @@ const mainDiagnosis = (items, namesHead) => {
     .at(-1)
   if (!found) return undefined
   const hypothesis = /^\s*Siguiente hipótesis:[ \t]*(.*)$/mi.exec(found.body)?.[1]?.trim() ?? ''
-  return { hypothesis: hypothesis === '' || /^ninguna\.?$/i.test(hypothesis) ? undefined : hypothesis }
+  // `ninguna` copied with markdown (`ninguna`, **ninguna**, ninguna.) is still no hypothesis.
+  const plain = hypothesis.replace(/[`*_]/g, '').trim().replace(/\.$/, '').trim()
+  return { hypothesis: plain === '' || plain.toLowerCase() === 'ninguna' ? undefined : hypothesis }
 }
 
 const MARKER_ATTEMPTS = 3
