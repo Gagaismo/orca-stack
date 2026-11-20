@@ -242,6 +242,7 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
   ci-verde #<n> PR #<pr> <sha>       todos los checks del head terminaron en verde
   ci-roja #<n> PR #<pr> <sha>: ...   un check terminado falló, venció o se canceló (los lista); uno por corrida,
                                      también si un gh run rerun --failed vuelve a fallar en el mismo head
+  diagnostico #<n> <agente>          diagn\u00f3stico de un worker en el issue o PR
   review-publicado #<pr> <agente> <sha> bloquea=<n>  review publicado en el PR
   head-nuevo #<pr> <sha>             camb\u00F3 el head del PR
   pr-en-conflicto #<n> PR #<pr> <sha>

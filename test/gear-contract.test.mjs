@@ -151,7 +151,7 @@ describe('gear contract', () => {
     assert.ok(fixedLine)
     const markerList = fixedLine.split(', son marcas fijas')[0]
     const actual = [...markerList.matchAll(/`([^`]+)`/g)].map(([, marker]) => marker)
-    assert.deepEqual(actual, [...existingHeadings, ...addedHeadings, ...existingLines, ...bounceLines, ...addedLines])
+    assert.deepEqual(actual, [...existingHeadings, ...addedHeadings, ...existingLines, ...bounceLines, ...addedLines.slice(0, 3), 'Diagn\u00f3stico: <agente>', ...addedLines.slice(3)])
     assert.equal(addedHeadings.length + addedLines.length, 7)
   })
 
