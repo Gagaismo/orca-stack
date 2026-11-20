@@ -1,12 +1,13 @@
 import { renameSync } from 'node:fs'
 import path from 'node:path'
 
-import { repoWorktrees } from './avisar.mjs'
+import { identityOf, paneAgents, paneKey, readScreen, repoWorktrees, stackAgent, turnRunning, workerTerminals } from './avisar.mjs'
 import { analyzeChecks, checkRunId, isHigherRunId, isStatus, latestChecks } from './checks.mjs'
 import { consultasCommand, getCommonDir } from './consultas.mjs'
-import { defaultIo } from './despacho.mjs'
+import { defaultIo, quotaLine, shellPrompt } from './despacho.mjs'
 import { commitOf, markerValue } from './marcas.mjs'
 import { watchParent } from './parent-watch.mjs'
+import { sha256 } from './util.mjs'
 
 export const CURSOR_REL = ['orca-stack', 'vigilar.json']
 export const MERGES_REL = ['orca-stack', 'vigilar-merges.json']
@@ -18,6 +19,9 @@ const MERGE_WINDOW_MS = 30 * 60 * 1000
 // Polls in a row that failed to read GitHub before the watcher says it is blind (once per outage).
 const BLIND_AFTER = 3
 const DETAIL_MAX = 200
+const STALL_WORKING_MS = 30 * 60 * 1000
+const STALL_IDLE_MS = 4 * 60 * 1000
+const WATCHDOG_EMITTED_MAX = 20
 const CHECK_GREEN = ['SUCCESS', 'SKIPPED', 'NEUTRAL']
 const CHECK_RED = ['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE', 'ACTION_REQUIRED', 'CANCELLED']
 const STATUS_RED = ['FAILURE', 'ERROR']
@@ -143,6 +147,112 @@ const linked = (pr, issue, branches) =>
   branches.includes(pr.headRefName) ||
   closesIssue(pr.body, issue)
 
+const agentState = record => String(record?.state ?? record?.status ?? '').trim().toLowerCase()
+const recordTime = record => Number(record?.updatedAt ?? record?.stateStartedAt ?? 0) || 0
+const candidateTime = candidate => Math.max(recordTime(candidate.record), Number(candidate.terminal?.lastOutputAt ?? 0) || 0)
+const lastRawLine = screen => Array.isArray(screen) ? (screen.map(line => String(line)).reverse().find(line => line.trim() !== '') ?? '') : ''
+const truncateChars = (text, max = DETAIL_MAX) => Array.from(String(text ?? '')).slice(0, max).join('')
+const normalizeScreenLine = line => truncateChars(String(line ?? '').replace(/\s+/g, ' ').trim(), DETAIL_MAX)
+const screenDigest = screen => Array.isArray(screen) ? sha256(screen.map(line => String(line).trimEnd()).join('\n').replace(/\n+$/, '')) : null
+const agentIdentity = raw => {
+  const norm = String(raw ?? '').trim().toLowerCase()
+  return norm ? stackAgent(norm) : ''
+}
+
+const inspectWorker = (issue, worktrees, hasOpenPr, io, warn) => {
+  if (worktrees.length > 1) {
+    warn(`vigilar: hay ${worktrees.length} worktrees para el worker de #${issue}; no adivino cuál.`)
+    return { unreadable: false, worker: null, probe: null }
+  }
+  if (worktrees.length === 0) return { unreadable: false, worker: null, probe: null }
+  const row = worktrees[0].row
+  const allAgents = (row.agents ?? []).filter(agent => !agent?.parentPaneKey)
+  const fallbackAgent = allAgents.slice().sort((a, b) =>
+    (agentState(b) === 'working' ? 1 : 0) -
+    (agentState(a) === 'working' ? 1 : 0) ||
+    recordTime(b) - recordTime(a),
+  )[0]
+  const fallbackIdentity = agentIdentity(fallbackAgent?.agentType)
+  const fallbackState = agentState(fallbackAgent)
+  const fallbackWorker = fallbackIdentity && fallbackState ? { state: fallbackState, agent: fallbackIdentity } : null
+
+  if (hasOpenPr && !allAgents.some(agent => agentState(agent) === 'working')) {
+    return { unreadable: false, worker: allAgents.length === 1 ? fallbackWorker : null, probe: null }
+  }
+
+  let terminals
+  try {
+    terminals = workerTerminals(row.path, issue, io)
+  } catch (error) {
+    warn(`vigilar: no pude leer la terminal de #${issue}: ${error.message}`)
+    return { unreadable: true, worker: fallbackWorker, probe: null }
+  }
+
+  const byPane = paneAgents(row)
+  const matched = []
+  for (const terminal of terminals) {
+    const record = byPane.get(paneKey(terminal)) ?? (allAgents.length === 1 && !allAgents[0].paneKey && terminals.length === 1 ? allAgents[0] : undefined)
+    if (record?.parentPaneKey) continue
+    const agent = agentIdentity(identityOf(terminal, record))
+    if (!agent) continue
+    matched.push({ terminal, record, agent })
+  }
+
+  if (matched.length === 0) {
+    if (!hasOpenPr && fallbackWorker) {
+      return {
+        unreadable: false,
+        worker: fallbackWorker,
+        probe: {
+          workerId: fallbackAgent?.paneKey || fallbackIdentity,
+          agent: fallbackIdentity,
+          state: fallbackState,
+          screenHash: null,
+          lastLine: '',
+          quota: undefined,
+          isQuotaStop: false,
+          isShellStop: false,
+          isDoneStop: fallbackState === 'done',
+          isLiveWorking: fallbackState === 'working',
+        },
+      }
+    }
+    return { unreadable: false, worker: allAgents.length === 1 ? fallbackWorker : null, probe: null }
+  }
+
+  const screens = []
+  for (const { terminal } of matched) {
+    try {
+      screens.push(readScreen(io, terminal.handle))
+    } catch (error) {
+      warn(`vigilar: no pude leer la terminal de #${issue} (${terminal.handle}): ${error.message}`)
+      return { unreadable: true, worker: fallbackWorker, probe: null }
+    }
+  }
+
+  const candidates = matched.map(({ terminal, record, agent }, index) => {
+    const screen = screens[index]
+    const state = agentState(record)
+    const rawLast = lastRawLine(screen)
+    const lastLine = normalizeScreenLine(rawLast)
+    const quota = quotaLine(screen)
+    const isQuotaStop = Boolean(quota) && (state !== 'working' || !turnRunning(agent, screen))
+    const isShellStop = Boolean(rawLast && shellPrompt(rawLast))
+    const isDoneStop = state === 'done'
+    const isLiveWorking = state === 'working' && !isQuotaStop && !isShellStop
+    const workerId = record?.paneKey || (terminal.tabId && terminal.leafId ? paneKey(terminal) : terminal.handle ? String(terminal.handle) : agent)
+    return { index, terminal, record, agent, state, screenHash: screenDigest(screen), lastLine, quota, isQuotaStop, isShellStop, isDoneStop, isLiveWorking, workerId }
+  })
+
+  const live = candidates.filter(candidate => candidate.isLiveWorking)
+  if (live.length > 0) {
+    const chosen = live.sort((a, b) => candidateTime(b) - candidateTime(a) || b.index - a.index)[0]
+    return { unreadable: false, worker: { state: 'working', agent: chosen.agent }, probe: chosen }
+  }
+  const chosen = candidates.sort((a, b) => candidateTime(b) - candidateTime(a) || (b.record ? 1 : 0) - (a.record ? 1 : 0) || b.index - a.index)[0]
+  return { unreadable: false, worker: chosen.state ? { state: chosen.state, agent: chosen.agent } : null, probe: chosen }
+}
+
 // Everything GitHub says about the items, read before anything is printed: a failed PR read fails the whole poll. An
 // issue gh cannot read (a mistyped number) only stays open, so it never blinds the rest of the batch.
 const readWorld = (targets, cursor, root, io, warn) => {
@@ -170,41 +280,107 @@ const readWorld = (targets, cursor, root, io, warn) => {
     const commentsReadable = Array.isArray(issueComments)
     if (!commentsReadable) warn(`vigilar: no pude leer comentarios de #${issue}; lo sigo vigilando.`)
     if (pr) {
-      let worker
-      if (workersReadable) {
-        const linked = ours.filter(({ row }) => String(row.linkedIssue) === issue)
-        const candidates = linked.length > 0 ? linked : ours.filter(({ branch }) => branch === pr.headRefName)
-        if (candidates.length > 1) warn(`vigilar: hay ${candidates.length} worktrees para el worker de #${issue}; no adivino cuál.`)
-        const agents = candidates.length === 1 ? candidates[0].row.agents ?? [] : []
-        const agent = agents.length === 1 ? agents[0] : undefined
-        const identity = String(agent?.agentType ?? '').trim().toLowerCase()
-        const state = identity && identity !== 'pi' ? String(agent?.state ?? '').trim().toLowerCase() : ''
-        if (state) worker = { state, agent: identity }
+      let inspected = { unreadable: !workersReadable, worker: null, probe: null }
+      if (workersReadable && pr.state === 'OPEN') {
+        const linkedWt = ours.filter(({ row }) => String(row.linkedIssue) === issue)
+        const candidates = linkedWt.length > 0 ? linkedWt : ours.filter(({ branch }) => branch === pr.headRefName)
+        inspected = inspectWorker(issue, candidates, true, io, warn)
       }
 
       const discussion = ghJson(io, root, ['pr', 'view', String(pr.number), '--json', 'comments,reviews'])
-      return [issue, { pr, discussion, issueComments, commentsReadable, workersReadable, worker: worker ?? null, replacedWorkflows: replacedRuns(pr, root, io) }]
+      return [issue, { pr, discussion, issueComments, commentsReadable, workersReadable, worker: inspected.worker, probe: inspected.probe, watchdogUnreadable: inspected.unreadable, replacedWorkflows: replacedRuns(pr, root, io) }]
     }
 
     const res = io.sh('gh', ['issue', 'view', issue, '--json', 'state'], { cwd: root })
     const issueState = res.status === 0 ? parse(res)?.state : undefined
     if (!issueState) warn(`vigilar: no pude leer el estado de #${issue} (${detail(res)}); lo sigo vigilando.`)
 
-    const worktrees = ours.filter(({ row }) => String(row.linkedIssue) === issue)
-    const agents = worktrees.length === 1 ? worktrees[0].row.agents ?? [] : []
-    const agent = agents.length === 1 ? agents[0] : undefined
-    const identity = String(agent?.agentType ?? '').trim().toLowerCase()
-    const workerState = identity && identity !== 'pi' ? String(agent?.state ?? '').trim().toLowerCase() : ''
+    if (issueState === 'CLOSED') return [issue, { issueState, issueComments, commentsReadable, workersReadable, worker: null, probe: null, watchdogUnreadable: false }]
+    if (!workersReadable) return [issue, { issueState, issueComments, commentsReadable, workersReadable: false, worker: null, probe: null, watchdogUnreadable: true }]
 
-    return [issue, { issueState, issueComments, commentsReadable, workersReadable, worker: workerState ? { state: workerState, agent: identity } : null }]
+    const worktrees = ours.filter(({ row }) => String(row.linkedIssue) === issue)
+    const inspected = inspectWorker(issue, worktrees, false, io, warn)
+
+    return [issue, { issueState, issueComments, commentsReadable, workersReadable: true, worker: inspected.worker, probe: inspected.probe, watchdogUnreadable: inspected.unreadable }]
   }))
+}
+
+const evaluateWatchdog = (issue, seen, before, entry, now) => {
+  if (seen.watchdogUnreadable) {
+    if (before?.watchdog) entry.watchdog = before.watchdog
+    return []
+  }
+  const probe = seen.probe
+  if (!probe) {
+    delete entry.watchdog
+    return []
+  }
+
+  const prev = before?.watchdog
+  const sameWorker = prev?.workerId === probe.workerId
+  const isWorking = probe.state === 'working'
+  const screenChanged = probe.screenHash !== null && (!sameWorker || prev.screen !== probe.screenHash)
+  const workingChanged = sameWorker && prev?.working !== undefined && prev.working !== isWorking
+  let emittedList = sameWorker && Array.isArray(prev.emitted) ? [...prev.emitted] : []
+  if (probe.isLiveWorking) emittedList = emittedList.filter(key => !key.startsWith('stopped:'))
+  if (screenChanged) emittedList = emittedList.filter(key => !key.startsWith('stalled:'))
+  const emittedSet = new Set(emittedList)
+  const screenSince = probe.screenHash === null ? undefined : (screenChanged || workingChanged || prev?.screenSince === undefined ? now : prev.screenSince)
+  const openWithoutPr = !seen.pr && seen.issueState === 'OPEN'
+  const lines = []
+
+  let deathKey
+  let deathReason
+  if (openWithoutPr) {
+    if (probe.isQuotaStop) {
+      deathKey = 'stopped:quota'
+      const quotaNorm = normalizeScreenLine(probe.quota)
+      deathReason = probe.lastLine && probe.lastLine !== quotaNorm ? `cuota \u2014 ${quotaNorm} \u2014 ${probe.lastLine}` : `cuota \u2014 ${quotaNorm}`
+    } else if (probe.isShellStop) {
+      deathKey = 'stopped:shell'
+      deathReason = probe.lastLine ? `volvi\u00F3 al shell \u2014 ${probe.lastLine}` : 'volvi\u00F3 al shell'
+    } else if (probe.isDoneStop) {
+      deathKey = 'stopped:done'
+      deathReason = probe.lastLine ? `termin\u00F3 sin abrir un PR \u2014 ${probe.lastLine}` : 'termin\u00F3 sin abrir un PR'
+    }
+  }
+
+  if (deathKey) {
+    if (!emittedSet.has(deathKey)) {
+      lines.push(`worker-detenido #${issue} ${probe.agent}: ${deathReason}`)
+      emittedSet.add(deathKey)
+    }
+  } else if (probe.screenHash !== null && screenSince !== undefined) {
+    const eligible = openWithoutPr || (isWorking && seen.pr?.state === 'OPEN')
+    if (eligible && now - screenSince >= (isWorking ? STALL_WORKING_MS : STALL_IDLE_MS)) {
+      const workingKey = `stalled:30m:${probe.screenHash}`
+      const stallKey = isWorking ? workingKey : `stalled:4m:${probe.screenHash}`
+      const alreadyReported = emittedSet.has(stallKey) || (!isWorking && emittedSet.has(workingKey))
+      if (!alreadyReported) {
+        const label = isWorking ? 'sin cambios por 30m' : 'sin cambios por 4m'
+        const stallReason = probe.lastLine ? `${label} \u2014 ${probe.lastLine}` : label
+        lines.push(`worker-trabado #${issue} ${probe.agent}: ${stallReason}`)
+        emittedSet.add(stallKey)
+      }
+    }
+  }
+
+  const nextEmitted = [...emittedSet].slice(-WATCHDOG_EMITTED_MAX)
+  entry.watchdog = {
+    workerId: probe.workerId,
+    working: isWorking,
+    ...(probe.screenHash !== null ? { screen: probe.screenHash, screenSince } : {}),
+    ...(nextEmitted.length > 0 ? { emitted: nextEmitted } : {}),
+  }
+
+  return lines
 }
 
 // One item's events and its next cursor entry: the PR, its last head commit, the last CI result emitted for that head
 // commit (with the run of the last red one), the batches already told the PR opened, and how the item ended.
 // `batch` names this watcher by its items: the cursor is shared, so a PR another batch's watcher already knew is still
 // news to this one (once), while the same batch re-armed resumes without repeating it.
-const advance = (issue, seen, before, merges, emitted, batch) => {
+const advance = (issue, seen, before, merges, emitted, batch, now) => {
   if (!seen.commentsReadable) return { lines: [], entry: before ?? {} }
   const diagnoses = new Set(before?.diagnoses ?? [])
   const lines = []
@@ -221,12 +397,10 @@ const advance = (issue, seen, before, merges, emitted, batch) => {
     if (diagnoses.size) entry.diagnoses = [...diagnoses]
     if (seen.workersReadable === false) {
       if (before?.worker) entry.worker = before.worker
-    } else if (seen.issueState !== 'CLOSED' && seen.worker?.state === 'done') {
-      entry.worker = seen.worker
-      if (before?.worker?.state !== 'done') return { lines: [...lines, `worker-en-pausa #${issue} ${seen.worker.agent}`], entry }
     } else if (seen.worker) {
       entry.worker = seen.worker
     }
+    if (seen.issueState !== 'CLOSED') lines.push(...evaluateWatchdog(issue, seen, before, entry, now))
 
     return { lines, entry }
   }
@@ -306,7 +480,9 @@ const advance = (issue, seen, before, merges, emitted, batch) => {
         delete entry.corridaRun
       }
     }
+    lines.push(...evaluateWatchdog(issue, seen, before, entry, now))
   } else if (!entry.fin) {
+    delete entry.watchdog
     entry.head = pr.headRefOid
     // A merge of the head commit main recorded, made after the record and within the window, gives no event, however
     // late the watcher sees it; the cursor marks the item ended by main, so the record is never used again. Anything
@@ -476,12 +652,13 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     failures = 0
     linkedPrs = targets.map(issue => world[issue].pr?.number).filter(Boolean).map(String)
     const merges = readJson(mergesPath, io, warn)
+    const now = (io.now ?? Date.now)()
     const next = { ...cursor }
     const lines = []
     let endedNow = false
     const emitted = new Set()
     for (const issue of targets) {
-      const step = advance(issue, world[issue], cursor[issue], merges, emitted, batch)
+      const step = advance(issue, world[issue], cursor[issue], merges, emitted, batch, now)
       lines.push(...step.lines)
       if (step.entry.fin && !cursor[issue]?.fin) endedNow = true
       next[issue] = step.entry

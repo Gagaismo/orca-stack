@@ -36,6 +36,7 @@ const TURN_RUNNING = {
   agy: working,
   antigravity: working,
 }
+export const turnRunning = (agent, screen) => Boolean(TURN_RUNNING[agent]?.(screen))
 export const piIdle = screen => PI_IDLE.test(piFrame(screen))
 // "Esc to cancel" alone is agy's footer while it works (main-autonomo S7): it marks a dialog only next to a question.
 const DIALOG = /trust this folder\?|Do you want to proceed\?/i
@@ -53,7 +54,7 @@ const parse = res => {
   }
 }
 const detail = res => (res.stderr || res.stdout || String(res.error ?? '')).trim().split(/\r?\n/)[0]
-const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
+export const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
 
 export const worktreeRows = io => {
   const res = io.sh('orca', ['worktree', 'ps', '--json'])

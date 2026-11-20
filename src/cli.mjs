@@ -249,6 +249,10 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
                                      el PR quedó en conflicto con la base; uno por head (rebote, con el worker detenido)
   pr-mergeado #<n> PR #<pr> <sha>    el PR se mergeó y main no registró ese merge
   pr-cerrado #<n> PR #<pr>           el PR se cerró sin mergear
+  worker-detenido #<n> <agente>: <motivo>
+                                     worker sin PR detenido (cuota, volvió al shell, terminó sin abrir un PR) + última línea
+  worker-trabado #<n> <agente>: <motivo>
+                                     pantalla sin cambios (30m en working, o 4m en otro estado sin PR) + última línea
   vigilar-ciego: <error>             tres vueltas seguidas sin poder leer GitHub (una vez por corte)
   tanda-cerrada #<n> #<m>...         terminaron todos los items; sale con 0
 Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue o por una línea
