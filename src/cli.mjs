@@ -73,7 +73,7 @@ const COMMAND_HELP = {
   global: `orca-stack global [--dry-run] [--force] [--skip-pi] [--limpiar-sdd] [--humano <nombre>]
 
 Instala a nivel usuario:
-  1. ~/orca/stack/ORCA-STACK.md, ROLE-BRIEFS.md y MAIN.md (las reglas de main)
+  1. ~/orca/stack/ORCA-STACK.md, ROLE-BRIEFS.md y MAIN.md (las reglas de main), y MARCHAS.md (el perk de marchas)
   2. Wrappers claude/codex/agy-orca-stack (.cmd en Windows, .sh en el resto) en ~/orca/stack/scripts
   3. Skills propias en ~/.claude/skills y ~/.agents/skills
   4. Mods en ~/.claude/mods y sus rutas en env.CLAUDE_CODE_PLUGIN_DIRS de ~/.claude/settings.json
@@ -182,7 +182,7 @@ Emite una sola línea "consulta nueva en #<n>" por cada comentario nuevo y recue
 `,
   avisar: `orca-stack avisar <issue|pr> <url-del-comentario> [--dry-run]
 
-El timbre de Proactive: cuando main responde la pregunta de un worker, le escribe en su terminal una sola línea fija
+El timbre: cuando main responde la pregunta de un worker, le escribe en su terminal una sola línea fija
 ("Message from main: <url>") con la URL del comentario y nada de su texto, para que la lea sin esperar a su PR.
 Encuentra la terminal por el worktree de este repo enlazado a <n> (con un PR, el de su rama), buscado solo entre los de
 \`git worktree list\` porque los selectores de Orca abarcan todos los repos, y, si un rebote dejó dos, elige la del agente vivo. Manda solo mientras el turno del worker está en curso: se niega si ya terminó, si la
@@ -256,7 +256,7 @@ Un PR es del issue por su referencia de cierre, por la rama del worktree de este
 Guarda lo emitido en <git-common-dir>/orca-stack/vigilar.json: rearmado con los mismos argumentos, retoma sin repetir.
 Si el proceso que lo lanzó desaparece (el Monitor venció o se paró), sale en menos de 5 segundos con su gh u orca.
 --una-vez consulta una vez y sale; --dry-run consulta una vez y no escribe nada; --consultas corre en cada vuelta el
-chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor en Proactive).
+chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor).
 
 --merge-de-main <pr> registra el head del PR en <git-common-dir>/orca-stack/vigilar-merges.json y sale sin imprimir
 nada en stdout. main lo corre justo antes de cada intento de \`gh pr merge <pr>\`, también después de

@@ -1,5 +1,7 @@
 import type { EngineInterface, Register } from 'claude-code'
 
+import { loadConfig, perkOn, type Host } from './orca-config'
+
 const isOn = { plugin: 'modo-autonomo', key: 'isOn' } as const
 const goal = { plugin: 'modo-autonomo', key: 'goal' } as const
 const nudges = { plugin: 'modo-autonomo', key: 'nudges' } as const
@@ -8,6 +10,19 @@ export const DEFAULT_GOAL = 'producción'
 export const DONE_TOKEN = '[AUTONOMO-LISTO]'
 export const MAX_NUDGES = 3
 const WAITING_GEAR = 'Esperando marcha:'
+// The engine's `$` cannot cross an import: the shared module gets these closures instead.
+const hostOf = ($: EngineInterface): Host => ({
+  home: async () => (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')),
+  exists: path => $.fs.exists(path),
+  read: path => $.fs.read(path),
+  git: argv => $.process.run(argv, { timeoutMs: 10_000 }),
+  now: () => $.clock.now(),
+})
+
+// Items waiting on a gear change exist only with the gears perk on (#393).
+const waitsOnGear = async ($: EngineInterface, last: string): Promise<boolean> =>
+  last.includes(WAITING_GEAR) && perkOn(await loadConfig(hostOf($)), 'marchas')
+
 const OFF_NOTICE = 'Modo aut\u00f3nomo apagado; las instrucciones aut\u00f3nomas anteriores ya no aplican.'
 
 export const instructions = (target: string): string =>
@@ -131,12 +146,12 @@ export const register: Register = on => {
         additionalContext: [...(result.additionalContext ?? []), OFF_NOTICE],
       }
     }
-    // Paused on a monitor or a cron that will wake the session, or on items that wait for the
-    // human to change gear: that is not a stop to fight.
+    // Paused on a monitor or a cron that will wake the session, or, with the gears perk on, on items that wait for
+    // the human to change gear: that is not a stop to fight.
     if (
       (e.background_tasks?.length ?? 0) > 0 ||
       (e.session_crons?.length ?? 0) > 0 ||
-      (e.last_assistant_message ?? '').includes(WAITING_GEAR)
+      (await waitsOnGear($, e.last_assistant_message ?? ''))
     ) {
       return next(e)
     }

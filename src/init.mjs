@@ -4,7 +4,9 @@ import path from 'node:path'
 import { copyToBackup } from './backup.mjs'
 import { CANDIDATE_WORKTREES_EXCLUDE, CANDIDATE_WORKTREES_PROBE, findGitignoreNegation } from './candidate-worktrees.mjs'
 import { LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, MARKER_END, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
+import { loadConfig } from './despacho.mjs'
 import { removeBlock, upsertBlock } from './marker.mjs'
+import { perksOf } from './perks.mjs'
 import { policyBlock } from './templates.mjs'
 import { homeDir, layout, readTextIfExists, run, timestamp, tilde, which } from './util.mjs'
 
@@ -74,7 +76,8 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
   }
 
   try {
-    block('AGENTS.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS }))
+    // The contract carries the text of the perks the merged config turns on (#393).
+    block('AGENTS.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, perks: perksOf(loadConfig(home, root)) }))
 
     const claudeText = readTextIfExists(path.join(root, 'CLAUDE.md')) ?? ''
     block('CLAUDE.md', policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, short: true, importAgents: !importsAgents(claudeText) }))

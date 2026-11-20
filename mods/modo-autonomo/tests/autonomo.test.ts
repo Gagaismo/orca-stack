@@ -25,9 +25,9 @@ const stop = (last: string, extra: { background_tasks?: never[] } = {}) => ({
 
 const setup = (
   on: Parameters<typeof world>[0],
-  options: { sessionStartContext?: string[]; stopContext?: string[] } = {},
+  options: { sessionStartContext?: string[]; stopContext?: string[]; config?: unknown } = {},
 ) => {
-  const w = world(on)
+  const w = world(on, { config: options.config })
   on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'base', scope: 'shared' as const }] }))
   on('tool.call', () => ({ result: {} as never }))
   on('classic.Stop', () => ({ additionalContext: options.stopContext }))
@@ -170,7 +170,7 @@ test('the done token turns the mode off and toasts', async ($, on) => {
 })
 
 test('a stop that leaves items waiting on a gear change goes through without a nudge', async ($, on) => {
-  const w = setup(on)
+  const w = setup(on, { config: { perks: { marchas: true } } })
   await $.command.run(run(''))
 
   const out = await $.classic.Stop(stop('Solo quedan items en espera.\nEsperando marcha: #41'))
@@ -180,6 +180,18 @@ test('a stop that leaves items waiting on a gear change goes through without a n
   expect(w.state.get('modo-autonomo/isOn')?.value).toBe(true)
   expect(w.statuses.at(-1)).toBe('AUTÓNOMO → producción')
 })
+
+for (const [name, config] of [['no config', undefined], ['marchas false', { perks: { marchas: false } }]] as const) {
+  test(`#393 R6: with gears off (${name}) a turn ending with Esperando marcha is nudged like any other stop`, async ($, on) => {
+    const w = setup(on, { config })
+    await $.command.run(run(''))
+
+    const out = await $.classic.Stop(stop('Solo quedan items en espera.\nEsperando marcha: #5'))
+
+    expect(out.block).toContain('Modo autónomo activo')
+    expect(w.state.get('modo-autonomo/nudges')?.value).toBe(1)
+  })
+}
 
 test('no nudge while off or while a background task will wake the session', async ($, on) => {
   setup(on)
