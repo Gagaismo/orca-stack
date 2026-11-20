@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { GRILL_SKILLS, INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
+import { PERKS } from './perks.mjs'
 import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestratorMode, rddMode, readPersonalConfig, refreshLazyPointer, restoreBlock, sddBlock, trimReviewSections } from './gentle.mjs'
 import { cleanupKnownSdd } from './sdd-cleanup.mjs'
 import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, codexAgentsMd } from './codex-windows.mjs'
@@ -45,7 +46,8 @@ export const stackVars = L => {
 const installPolicyDocs = ctx => {
   ctx.say('\nPolítica del stack')
   const vars = stackVars(ctx.L)
-  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md']) {
+  // MARCHAS.md is the gears perk fragment (#393): installed always, read only while the perk is on.
+  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md']) {
     ctx.writeOwned(path.join(ctx.L.stackDir, name), render(readAsset('stack', name), vars))
   }
 }
@@ -381,8 +383,8 @@ const raiseCodexDocBytes = ctx => {
 
     return
   }
-  // The block exactly as `init` writes it into a project's AGENTS.md.
-  const block = policyBlock({ policyPath: POLICY, briefsPath: BRIEFS })
+  // The block as `init` writes it into a project's AGENTS.md, at its largest: with every perk on.
+  const block = policyBlock({ policyPath: POLICY, briefsPath: BRIEFS, perks: Object.fromEntries(PERKS.map(perk => [perk, true])) })
   const target = codexDocBytesFor(Buffer.byteLength(block))
   const file = path.join(ctx.L.codexDir, 'config.toml')
   const original = readTextIfExists(file) ?? ''

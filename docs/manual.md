@@ -15,7 +15,7 @@ Versión de referencia: `orca-stack v0.20.1`. Lo que se mergee después de ese t
    - [4.3 Los mods de Claude Code](#43-los-mods-de-claude-code)
    - [4.4 Las skills que instala](#44-las-skills-que-instala)
    - [4.5 Configuración en tres capas](#45-configuración-en-tres-capas)
-   - [4.6 Marchas](#46-marchas)
+   - [4.6 Perks y marchas](#46-perks-y-marchas)
    - [4.7 Modos `multiagente` y `un-agente`](#47-modos-multiagente-y-un-agente)
    - [4.8 Review, rebote y merge](#48-review-rebote-y-merge)
    - [4.9 Arena y swarm](#49-arena-y-swarm)
@@ -37,7 +37,7 @@ Lo esencial en tres líneas:
 - **Los workers implementan**, cada uno en su worktree, con un brief generado desde el ticket.
 - **Un agente distinto revisa** (o un subagente de contexto limpio en modo `un-agente`), y la CI es la que cuenta para lo mecánico.
 
-El contrato completo vive en `assets/stack/CONTRATO.md` y `init` lo copia al `AGENTS.md` de cada proyecto. Lo que solo usa `main` (el Ciclo de `main`, las Marchas, el Modo `un-agente`, el Despacho, sus Permisos y su parte de Arena y swarm) vive en `assets/stack/MAIN.md`, que `global` instala en `~/orca/stack/MAIN.md`; el contrato deja en esas secciones una línea que apunta ahí y le pide a `main` leerlo entero. Así el bloque que cargan todos los workers y revisores queda por debajo de 24 KiB. Este manual explica cómo se usa; si hay una diferencia, manda el contrato.
+El contrato completo vive en `assets/stack/CONTRATO.md` y `init` lo copia al `AGENTS.md` de cada proyecto. Lo que solo usa `main` (el Ciclo de `main`, el Modo `un-agente`, el Despacho, sus Permisos y su parte de Arena y swarm) vive en `assets/stack/MAIN.md`, que `global` instala en `~/orca/stack/MAIN.md`; el contrato deja en esas secciones una línea que apunta ahí y le pide a `main` leerlo entero. Así el bloque que cargan todos los workers y revisores queda por debajo de 24 KiB. Este manual explica cómo se usa; si hay una diferencia, manda el contrato.
 
 ## 2. Los roles: `main`, worker y revisor
 
@@ -77,7 +77,7 @@ Reglas que sostienen todo lo demás:
 | Un repo sin GitHub | `despachar` lee y asigna issues con `gh`; `revisar`, `rebote` y `vigilar` leen PRs con `gh`. El contrato da por hecho issues, PRs y `Closes #` |
 | Sin Orca instalado | El despacho crea worktrees con `orca worktree create` y lanza el agente en una terminal de Orca. `global` solo detecta Orca, no lo instala |
 | Una tarea exploratoria sin criterio de aceptación | El método parte de tickets con `## Reglas`; sin reglas no hay qué probar ni qué revisar |
-| Si necesitás supervisar cada paso de cada worker | El despacho es un handoff: el worker trabaja solo y `main` no lee sus terminales |
+| Si necesitás supervisar cada paso de cada worker | Cada worker corre supervisado en el Run de Orca de `main`, pero `main` solo se entera de cómo terminó (`worker-terminado`); no lee sus terminales |
 | Equipos que no quieren que un bloque de contrato entre en su `AGENTS.md` | `init` lo escribe ahí; sin él, la metodología no llega al proyecto (`global` no instala texto de metodología) |
 
 ## 4. Funcionalidades
@@ -164,11 +164,11 @@ Agentes válidos: `claude`, `agy`, `codex`, `pi`. Orden de lo que hace:
 
 1. Se niega si estás en un worktree, si el setup está pendiente, si `modo` es `un-agente`, si el agente no está en `agentes.usa`, si tiene una regla `guardia.bloquear` vigente, si está en `agentes.preguntarAntes` sin `--confirmado`, si el issue está cerrado o ya tiene assignee, o si ya hay un worktree o un agente vivo para ese ticket.
 2. Hace `git fetch origin` y comprueba que **cada ruta que cita el brief exista** en `origin/<ramaBase>` y no esté ignorada por git. Si falta una, aborta sin asignar ni crear nada.
-3. Asigna el issue (el assignee es el cerrojo: no lo asignes a mano), crea el worktree con `orca worktree create`, escribe el brief en `~/orca/briefs/`, lanza el agente en una terminal de Orca y le manda el brief.
+3. Asigna el issue (el assignee es el cerrojo: no lo asignes a mano), crea el worktree con `orca worktree create`, escribe el brief en `~/orca/briefs/`, lanza el agente en una terminal de Orca y lo arranca con `orca orchestration worker-start` como worker supervisado del Run ligado a la sesión de `main` (`orca orchestration run-current`, o `run-create` si no hay uno), con el brief como spec. Si un comando de `orca orchestration` falla, imprime el error de Orca y le saca el assignee al issue para que no quede asignado sin worker. El worker termina con `worker_done`: `ok`, o `partial` con el texto de su `Diagnóstico:`.
 4. Imprime `Rama: <rama>` con el nombre que devolvió Orca.
-5. Lee la pantalla tres veces (pausas de 5 segundos, salvo con pi) y falla ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell. Con agy, antes de mandar el brief cierra con Esc un aviso `esc to dismiss` (el banner `Auto is now the default agent mode` o el splash `Introducing Gemini 4 Hydrogen`), hasta 3 veces con 2 segundos entre intentos, y manda solo a un prompt `>` vacío; si Orca frena el envío con `agent_prompt_blocked` (la pantalla de confianza de la carpeta, que la lectura de pantalla a veces no muestra), confirma la carpeta con un Enter y reintenta, hasta 3 veces; si igual no llega, falla con `agy no recibió el brief. Pegá en la terminal <handle> esta línea: Read and follow the brief in <ruta>` y una segunda línea `Causa:` con el motivo de Orca (#357).
+5. Lee la pantalla tres veces (pausas de 5 segundos, salvo con pi) y falla ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell. Con agy, antes de mandar el brief cierra con Esc un aviso `esc to dismiss` (el banner `Auto is now the default agent mode` o el splash `Introducing Gemini 4 Hydrogen`), hasta 3 veces con 2 segundos entre intentos, y manda solo a un prompt `>` vacío; si Orca frena el envío con `agent_prompt_blocked` (la pantalla de confianza de la carpeta, que la lectura de pantalla a veces no muestra), confirma la carpeta con un Enter y reintenta, hasta 3 veces; si igual no llega, falla con `agy no recibió el brief. Pegá en la terminal <handle> esta línea: Read and follow the brief in <ruta>` y una segunda línea `Causa:` con el motivo de Orca (#357). En `despachar` el envío es `orca orchestration worker-start`: si Orca lo sigue frenando, falla con `orca orchestration worker-start falló: <motivo de Orca>` y le saca el assignee al issue.
 
-Pi se lanza como TUI interactiva, como los demás agentes, con el brief como primer mensaje: `pi --no-skills --skill <skills de gentle-pi> --session-id <id> --no-approve --exclude-tools ask_user_choice,ask_user_question "<brief>"`. Orca lo muestra en su tarjeta con los mismos estados que claude y codex, y un turno que espera una verificación en segundo plano sigue cuando esta termina. Nada espera a una persona: quedan afuera las herramientas de diálogo y `--no-approve` saltea el aviso de confianza del proyecto. En vez de leer la pantalla, el comando espera la sesión nueva de Pi en ese worktree y se niega si no aparece. Después lee esa sesión hasta tres veces, con pausas de 5 segundos, esperando la primera respuesta de Pi: si es un error `Failed to authenticate` (por ejemplo, un token vencido en la carpeta de `agentes.pi.claudeConfigDir`), falla con esa línea y el `CLAUDE_CONFIG_DIR` usado, y no imprime `✔ pi despachado`. Los briefs de pi (ticket, revisión y rebote) agregan una regla que los demás agentes no reciben: el proceso termina con el turno, los trabajos en segundo plano mueren con él, y toda verificación corre en primer plano y termina antes del commit y el push.
+Pi se lanza como TUI interactiva, como los demás agentes, con el brief como primer mensaje: `pi --no-skills --skill <skills de gentle-pi> --session-id <id> --no-approve --exclude-tools ask_user_choice,ask_user_question`. En `revisar` y `rebote` el brief va al final de esa línea (`"<brief>"`); en `despachar` se lo da `orca orchestration worker-start` y la línea no lo lleva. Orca lo muestra en su tarjeta con los mismos estados que claude y codex, y un turno que espera una verificación en segundo plano sigue cuando esta termina. Nada espera a una persona: quedan afuera las herramientas de diálogo y `--no-approve` saltea el aviso de confianza del proyecto. En vez de leer la pantalla, el comando espera la sesión nueva de Pi en ese worktree y se niega si no aparece. Después lee esa sesión hasta tres veces, con pausas de 5 segundos, esperando la primera respuesta de Pi: si es un error `Failed to authenticate` (por ejemplo, un token vencido en la carpeta de `agentes.pi.claudeConfigDir`), falla con esa línea y el `CLAUDE_CONFIG_DIR` usado, y no imprime `✔ pi despachado`. Los briefs de pi (ticket, revisión y rebote) agregan una regla que los demás agentes no reciben: el proceso termina con el turno, los trabajos en segundo plano mueren con él, y toda verificación corre en primer plano y termina antes del commit y el push.
 
 El modelo de cada agente sale de `agentes.modelos` de tu config personal. agy, sin modelo configurado para el modo que se lanza (implementar o revisar), arranca con `--model gemini-4-neon-high` (Gemini 4 Neon (High)) en `despachar`, `revisar`, `rebote` y `reanudar`; un modelo en `agentes.modelos.agy` pisa ese default. claude y codex sin modelo configurado arrancan sin `--model`. El default no cambia la familia de agy, que sigue siendo `gemini`.
 
@@ -226,7 +226,7 @@ Busca comentarios que empiecen con `Consulta:` hechos por la cuenta de GitHub de
 orca-stack avisar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecomment-123 --dry-run
 ```
 
-El timbre de Proactive: le escribe al worker una sola línea fija, `Message from main: <url>`, mientras su turno sigue en curso. Avisa a `claude` y a `pi` (reconoce el turno en curso por el spinner de Claude o por el marco del prompt de Gentle Shell con su fase, como `╭─ ❀ implementing…`); se niega con codex y agy, si el turno ya terminó, si la terminal muestra un shell o un diálogo, si hay más de un agente vivo, o si el comentario no es de la cuenta del stack o no empieza con `Respuesta de main:` o `Respuesta del humano:`. Nunca reintenta: sin recibo de entrega informa la falla.
+El timbre: le escribe al worker una sola línea fija, `Message from main: <url>`, mientras su turno sigue en curso. Avisa a `claude` y a `pi` (reconoce el turno en curso por el spinner de Claude o por el marco del prompt de Gentle Shell con su fase, como `╭─ ❀ implementing…`); se niega con codex y agy, si el turno ya terminó, si la terminal muestra un shell o un diálogo, si hay más de un agente vivo, o si el comentario no es de la cuenta del stack o no empieza con `Respuesta de main:` o `Respuesta del humano:`. Nunca reintenta: sin recibo de entrega informa la falla.
 
 #### `reanudar`
 
@@ -261,6 +261,9 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 | `pr-en-conflicto #<n> PR #<pr> <sha>` | El PR quedó en conflicto con la base (`mergeable: CONFLICTING`) y GitHub no le corre la CI; uno por head, también con el worker vivo (el autor puede estar resolviéndolo). Corré `orca-stack rebote <pr>` una vez que el worker se detuvo: con el agente vivo, `rebote` se niega |
 | `pr-mergeado #<n> PR #<pr> <sha>` | Se mergeó y `main` no registró ese merge |
 | `pr-cerrado #<n> PR #<pr>` | Se cerró sin mergear |
+| `worker-terminado #<n> <agente> ok\|partial` | El worker de ese ticket mandó `worker_done` al buzón del Run de `main`: `ok` si terminó bien; `partial` si terminó con un `Diagnóstico:` o escaló. `vigilar` lee el buzón sin consumirlo; sin Run ligado, vigila solo GitHub |
+| `worker-detenido #<n> <agente>: <motivo>` | Worker sin PR detenido: `cuota — <línea>`, `volvió al shell` o `terminó sin abrir un PR` (termina con la última línea no vacía de su pantalla, hasta 200 caracteres); cubre a todos los agentes, incluido `pi` |
+| `worker-trabado #<n> <agente>: <motivo>` | Pantalla sin cambios por 30 minutos mientras está `working`, o por 4 minutos en otro estado sin PR (termina con la última línea no vacía, hasta 200 caracteres); cubre a todos los agentes, incluido `pi` |
 | `vigilar-ciego: <error>` | Tres vueltas seguidas sin poder leer GitHub (una vez por corte; nunca dice "no hay PRs") |
 | `tanda-cerrada #<n> #<m>...` | Terminaron todos los items; sale con 0 |
 
@@ -306,7 +309,7 @@ Resumen del "Ciclo de `main`" (en `~/orca/stack/MAIN.md`), con el comando de cad
 | 2 | Cada ticket con criterios y `## Reglas` | Reglas numeradas con ejemplos, bordes y errores; cada valor esperado va como `cliente` o `inferido` |
 | 3 | Elegir la frontera | Issues abiertos, sin bloqueantes, sin assignee, sin `needs-info`, sin sub-issues. Leer con `gh issue view <n> --json title,body,comments` |
 | 4 | Despachar la tanda | `orca-stack despachar <n> <agente>`, un ticket por comando |
-| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>`, y `orca-stack estado` en cada evento y al empezar cada turno; atiende `worker-en-pausa` respondiendo la `Consulta:` donde apareció y corriendo `orca-stack reanudar <issue> <url-del-comentario>`, y `pr-en-conflicto` con `orca-stack rebote <pr>` cuando el worker se detuvo. En Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
+| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>`, y `orca-stack estado` en cada evento y al empezar cada turno; atiende `worker-detenido` / `worker-trabado` (por ejemplo respondiendo la `Consulta:` donde apareció y corriendo `orca-stack reanudar <issue> <url-del-comentario>`), y `pr-en-conflicto` con `orca-stack rebote <pr>` cuando el worker se detuvo. En Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
 | 6 | Review de cada PR nuevo | `orca-stack revisar <pr> <agente>`; segundo review de pi si toca `riesgo` |
 | 7 | Mergear si se cumple la condición | Ver [4.8](#48-review-rebote-y-merge); `orca-stack estado <n>` y, con `ok`, `gh pr merge <n> --merge --match-head-commit <head>`; antes de cada `gh pr merge`, `orca-stack vigilar --merge-de-main <n>` |
 | 8 | Rebote | `orca-stack rebote <pr>`; una sola vez por review; `--continuar` si el autor se cortó antes de pushear; `--rdd <lentes>` para el review RDD de un PR de pi |
@@ -328,10 +331,10 @@ Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `
 | `grilling-ok` | — | Responde con un clic (o con `ok`) las preguntas Q1…Qn de un grilling | Deshabilitar el plugin |
 | `modo-autonomo` | `/autonomo [meta \| off]` | Instrucción permanente de trabajar hasta la meta (por defecto `producción`) con recordatorio anti-parada acotado (máximo 3). Se apaga solo cuando el agente escribe `[AUTONOMO-LISTO]` | `/autonomo off` |
 | `main-md` | — | Solo en el checkout principal (git-dir igual a git-common-dir, en cualquier rama) de un repo con `.orca-stack.json`: al arrancar, al retomar y después de compactar inyecta los pasos de `### Ciclo de main` de `MAIN.md` (`~/orca/stack/MAIN.md`, o el que está junto a `$ORCA_STACK_POLICY_PATH`), precedidos de una línea que dice que salen del mismo archivo al que apunta el contrato. Claude Code corta cada texto de un hook en 10.000 caracteres, así que los pasos van en partes por debajo de ese límite y el resto del archivo se lee desde el puntero. Si no lo puede leer, o no tiene esa sección, deja solo una línea con la ruta | `claude plugin disable main-md@inline --scope user` (o `local`, o `project`) |
-| `marchas` | `/marcha [lazy\|medium\|proactive]` | Solo en el checkout principal de un repo con `.orca-stack.json` o `.orca-stack.local.json` cuyo contrato incluye `Marchas`. Muestra o cambia la marcha | `claude plugin disable marchas@inline --scope user` (o `local`, o `project`) |
+| `marchas` | `/marcha [lazy\|medium\|proactive]` | Solo con el perk `marchas` encendido, en el checkout principal de un repo con `.orca-stack.json` o `.orca-stack.local.json` cuyo contrato incluye `Marchas`. Muestra o cambia la marcha | `claude plugin disable marchas@inline --scope user` (o `local`, o `project`) |
 | `reloj-cache` | `/compactar-ya` | Muestra cuánto falta para que venza el caché del prompt (supone 1 hora), avisa 10 minutos antes y ofrece compactar | Deshabilitar el plugin |
 
-`marchas` además ajusta el esfuerzo de cada solicitud de `main` (ver [4.6](#46-marchas)).
+`marchas` además ajusta el esfuerzo de cada solicitud de `main` (ver [4.6](#46-perks-y-marchas)).
 
 ### 4.4 Las skills que instala
 
@@ -364,7 +367,7 @@ Cada capa pisa a la anterior: los objetos se fusionan clave por clave y **una li
 
 `<repo>` es el checkout principal (se resuelve con `git rev-parse --git-common-dir`), así que una sesión dentro de un worktree lee los archivos del checkout principal.
 
-Claves del contrato: `setup`, `modo`, `ramaBase`, `agentes` (`usa`, `preguntarAntes`, `pi.review`, `<agente>.rddConsentimiento`), `verificacion` (`suite`, `typecheck`, `cuerpoPR`), `riesgo`, `reviewParaMerge` (con `false`, `estado` no exige review para mergear; se lee de la rama base en GitHub), `migraciones`, `review`, `merge`, `despliegue`, `idioma`. `agentes.<agente>.rddConsentimiento` es `"politica"` (por defecto) o `"humano"`: con `"politica"`, `despachar`, `rebote` y `reanudar` escriben `orca-stack/rdd-consentimiento.json` en el git dir propio del worktree (`{"version":1,"granted":[]}`, y con `rebote --rdd` el head del PR en `granted`), y el Gentle Shell de pi contesta solo: `declined` sobre el candidato propio del worker y `granted` sobre el pedido `RDD:` de `main` para ese head; los briefs les dan la misma respuesta a codex y agy. Con `"humano"` no se escribe el archivo. `migraciones`, `{ "glob": "<dir>/*.sql", "numero": "^(\\d+)_" }`, hace que `orca-stack estado` exija que cada migración nueva de un PR tenga un número mayor que la más alta de la rama base. `cuerpoPR` permite configurar un comando con placeholder `{file}` para pre-validar localmente el cuerpo del PR antes de crearlo; la validación de `## Evidencia` acepta títulos exactos declarados en `test()`/`it()`, describe paths aceptados por su último segmento y patrones de template, exigiendo que solo los nombres de test lleven backticks y las verificaciones sin test vayan en texto plano. Claves de los mods: `humano`, `mensajes.destinatarios`, `despacho.script`, `despacho.revisar`, `guardia.bloquear`, `guardia.modeloClaude`. La tabla completa está en el [README](../README.md#claves) y en la [guía de setup](guia-setup.md#parte-4-configuración-de-los-mods-dónde-va-cada-cosa).
+Perks: `perks` (`{ "marchas": true }`, ver [4.6](#46-perks-y-marchas)). Claves del contrato: `setup`, `modo`, `ramaBase`, `agentes` (`usa`, `preguntarAntes`, `pi.review`, `<agente>.rddConsentimiento`), `verificacion` (`suite`, `typecheck`, `cuerpoPR`), `riesgo`, `reviewParaMerge` (con `false`, `estado` no exige review para mergear; se lee de la rama base en GitHub), `migraciones`, `review`, `merge`, `despliegue`, `idioma`. `agentes.<agente>.rddConsentimiento` es `"politica"` (por defecto) o `"humano"`: con `"politica"`, `despachar`, `rebote` y `reanudar` escriben `orca-stack/rdd-consentimiento.json` en el git dir propio del worktree (`{"version":1,"granted":[]}`, y con `rebote --rdd` el head del PR en `granted`), y el Gentle Shell de pi contesta solo: `declined` sobre el candidato propio del worker y `granted` sobre el pedido `RDD:` de `main` para ese head; los briefs les dan la misma respuesta a codex y agy. Con `"humano"` no se escribe el archivo. `migraciones`, `{ "glob": "<dir>/*.sql", "numero": "^(\\d+)_" }`, hace que `orca-stack estado` exija que cada migración nueva de un PR tenga un número mayor que la más alta de la rama base. `cuerpoPR` permite configurar un comando con placeholder `{file}` para pre-validar localmente el cuerpo del PR antes de crearlo; la validación de `## Evidencia` acepta títulos exactos declarados en `test()`/`it()`, describe paths aceptados por su último segmento y patrones de template, exigiendo que solo los nombres de test lleven backticks y las verificaciones sin test vayan en texto plano. Claves de los mods: `humano`, `mensajes.destinatarios`, `despacho.script`, `despacho.revisar`, `guardia.bloquear`, `guardia.modeloClaude`. La tabla completa está en el [README](../README.md#claves) y en la [guía de setup](guia-setup.md#parte-4-configuración-de-los-mods-dónde-va-cada-cosa).
 
 Ejemplo: bloquear a un agente sin cuota hasta una fecha, en `.orca-stack.local.json`:
 
@@ -415,9 +418,19 @@ Bordes:
 - El daemon guarda tu sesión de ChatGPT y le manda el código del repo a ChatGPT Web. Automatizar la web de ChatGPT probablemente va contra los términos de uso de OpenAI (inferido). Pensalo dos veces antes de usarlo con código de un cliente.
 - Es automatización no oficial de la web de ChatGPT. Si la web cambia, falla de forma explícita; nunca cambia de modelo por su cuenta. Un pedido de aprobación inesperado del lado de ChatGPT falla cerrado, y un revisor desatendido no puede contestarlo.
 
-### 4.6 Marchas
+### 4.6 Perks y marchas
 
-La marcha fija cuánto explora, delega, consulta y narra `main`. Solo toca la lista cerrada de perillas K1 a K11 de `ORCA-STACK.md`; está por debajo de las instrucciones del proyecto, los ADRs, la spec y el ticket.
+Un perk es una parte opcional del stack que se enciende en la config, en cualquiera de las tres capas (ver [4.5](#45-configuración-en-tres-capas)). Los perks están **apagados por defecto**: sin la clave `perks`, sin el perk o con un valor que no es `true`, cuenta como apagado, y orca-stack funciona completo sin ninguno. `doctor` avisa de un valor que no es booleano. Para encender las marchas, por ejemplo en `.orca-stack.json`:
+
+```json
+{ "perks": { "marchas": true } }
+```
+
+y volvé a correr `orca-stack init`: el contrato suma la sección `Marchas`, que apunta a `~/orca/stack/MARCHAS.md` (el fragmento del perk, que `global` instala siempre junto a `MAIN.md`), y las marcas `Marcha:` y `Esperando marcha:`. `MAIN.md`, `ORCA-STACK.md` y `ROLE-BRIEFS.md` no traen reglas de marchas en ningún caso. Sin marchas, `main` arma `vigilar` siempre con `--consultas`, colabora con los workers según las reglas del Despacho y el modo autónomo trata `Esperando marcha:` como cualquier otro cierre. Las claves `ponytail` y `caveman` ya se aceptan, pero todavía no cambian nada.
+
+Lo que sigue vale solo con el perk `marchas` encendido.
+
+La marcha fija cuánto explora, delega, consulta y narra `main`. Solo toca la lista cerrada de perillas K1 a K11 de `MARCHAS.md`; está por debajo de las instrucciones del proyecto, los ADRs, la spec y el ticket.
 
 | Marcha | Cuándo | Esfuerzo de `main` (mod `marchas`) |
 | --- | --- | --- |
@@ -619,6 +632,6 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 
 Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.20.1`, todavía no publicado en un release.
 
-(nada por ahora)
+- **[solo en main]** Perks: la clave `perks` y el perk de marchas, apagado por defecto; las reglas de marchas pasan de `MAIN.md` y `ORCA-STACK.md` a `MARCHAS.md` (ver [4.6](#46-perks-y-marchas)).
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.

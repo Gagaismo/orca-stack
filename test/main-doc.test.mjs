@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { renderBrief } from '../src/despacho.mjs'
 import { POLICY } from '../src/init.mjs'
+import { applyPerks, perksOf } from '../src/perks.mjs'
 import { policyBlock } from '../src/templates.mjs'
 import { cleanup, cli, read, tempDir } from './helpers.mjs'
 
@@ -19,12 +20,13 @@ const paragraphs = text => text.split(/\r?\n\s*\r?\n/).map(unit => unit.trim()).
 const CONTRACT_LIMIT = 24576
 const contractFits = text => Buffer.byteLength(text, 'utf8') <= CONTRACT_LIMIT
 const MAIN_PATH = `${path.posix.dirname(POLICY)}/MAIN.md`
-const POINTER = `Si sos \`main\` (o la sesión única en modo \`un-agente\`), leé \`${MAIN_PATH}\` entero antes de actuar: ahí están el Ciclo de \`main\`, las Marchas, el Despacho, los Permisos de \`main\` y Arena y swarm.`
+const POINTER = `Si sos \`main\` (o la sesión única en modo \`un-agente\`), leé \`${MAIN_PATH}\` entero antes de actuar: ahí están el Ciclo de \`main\`, el Despacho, los Permisos de \`main\` y Arena y swarm.`
 
 describe('issue 325: main-only rules move to MAIN.md', () => {
   test('R1: MAIN.md keeps the moved headings in contract order and steps 1 through 10 of Ciclo de main', () => {
     const headings = main.split(/\r?\n/).filter(line => line.startsWith('### '))
-    assert.deepEqual(headings, ['### Marchas', '### Modo `un-agente`', '### Permisos', '### Ciclo de `main`', '### Arena y swarm', '### Despacho'])
+    // #393: Marchas moved to the gears perk fragment, MARCHAS.md.
+    assert.deepEqual(headings, ['### Modo `un-agente`', '### Permisos', '### Ciclo de `main`', '### Arena y swarm', '### Despacho'])
     const cycle = section(main, '### Ciclo de `main`')
     assert.deepEqual([...cycle.matchAll(/^(\d+)\. /gm)].map(([, n]) => Number(n)), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     assert.ok(cycle.startsWith('Antes de actuar sobre un número medido'))
@@ -68,7 +70,8 @@ describe('issue 325: main-only rules move to MAIN.md', () => {
   })
 
   test('R3: the pointer line closes Qué rol tenés and uses the base dir of the ORCA-STACK.md path line', () => {
-    const role = section(contract, '### Qué rol tenés')
+    // #393: the asset carries the gears perk span right after this section; the rendered block does not.
+    const role = section(applyPerks(contract, perksOf({})), '### Qué rol tenés')
     assert.equal(paragraphs(role).at(-1), POINTER)
     assert.equal(MAIN_PATH, '~/orca/stack/MAIN.md')
     const block = policyBlock({ policyPath: POLICY, briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
@@ -76,8 +79,8 @@ describe('issue 325: main-only rules move to MAIN.md', () => {
     assert.ok(block.includes(POINTER))
   })
 
-  test('R4: Ciclo de main, Arena y swarm and Marchas stay as stubs that point to MAIN.md, and the fixed markers stay whole', () => {
-    for (const heading of ['### Ciclo de `main`', '### Marchas', '### Modo `un-agente`']) {
+  test('R4: Ciclo de main and Arena y swarm stay as stubs that point to MAIN.md, and the fixed markers stay whole', () => {
+    for (const heading of ['### Ciclo de `main`', '### Modo `un-agente`']) {
       assert.deepEqual(paragraphs(section(contract, heading)), [`Esta sección es solo de \`main\` y está en \`${MAIN_PATH}\`.`], heading)
     }
     assert.ok(paragraphs(section(contract, '### Arena y swarm'))[0].includes(`está en \`${MAIN_PATH}\``))

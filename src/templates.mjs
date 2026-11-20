@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 import { STACK_LEVELS, WRAPPERS } from './constants.mjs'
+import { applyPerks, perksOf } from './perks.mjs'
 import { PACKAGE_ROOT } from './util.mjs'
 
 export const render = (text, vars) =>
@@ -149,8 +150,9 @@ export const homePointerBlock = ({ policyPath, briefsPath }) =>
     'Si faltan, corré `npx github:Gagaismo/orca-stack global`.',
   ].join('\n')
 
-// The project blocks: the short CLAUDE.md one, or the AGENTS.md one that carries the work contract.
-export const policyBlock = ({ policyPath, briefsPath, short = false, importAgents = false }) => {
+// The project blocks: the short CLAUDE.md one, or the AGENTS.md one that carries the work contract, with the text of
+// the perks that are on (#393); `perks` is the `{ marchas, ponytail, caveman }` of perksOf, all off when omitted.
+export const policyBlock = ({ policyPath, briefsPath, short = false, importAgents = false, perks = perksOf({}) }) => {
   if (short) {
     return [
       '## Orca stack integration',
@@ -161,5 +163,5 @@ export const policyBlock = ({ policyPath, briefsPath, short = false, importAgent
   }
   const lines = policyLines({ policyPath, briefsPath })
 
-  return [readAsset('stack', 'CONTRATO.md').replace(/\s+$/, ''), '', '### Política del stack', '', ...lines].join('\n')
+  return [applyPerks(readAsset('stack', 'CONTRATO.md'), perks).replace(/\s+$/, ''), '', '### Política del stack', '', ...lines].join('\n')
 }

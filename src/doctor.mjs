@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+import { mergedPerks, perkProblems } from './perks.mjs'
 import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { CODEX_DOC_DEFAULT, readCodexDocBytes } from './codex-doc-bytes.mjs'
@@ -282,7 +283,7 @@ export const doctorCommand = async flags => {
 
   // Policy docs
   section('Política del stack')
-  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md']) {
+  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md']) {
     const file = path.join(L.stackDir, name)
     if (!existsSync(file)) {
       add('fail', name, `falta ${tilde(file, home)}`)
@@ -595,6 +596,11 @@ export const doctorCommand = async flags => {
     for (const key of retiredAgentKeys(config)) {
       add('warn', 'agente retirado', `codex-cc ya no existe: sacalo de ${file} (${key}).`)
     }
+  }
+
+  // Perks (#393): a value that is not a boolean counts as off, and doctor says so.
+  for (const { label, detail } of perkProblems({ perks: mergedPerks(personal, committed, local) })) {
+    add('warn', label, detail)
   }
 
   // codex on Windows reads files through PowerShell 5.1 (#58). Off Windows or without codex, not even the title prints.
