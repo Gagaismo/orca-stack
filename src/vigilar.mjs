@@ -441,6 +441,57 @@ const watchUmbrella = async (flags, items, io, warn) => {
   }
 }
 
+// The Run mailbox (#397): the workers despachar started in the Run bound to main end with worker_done or escalate. It is
+// read with `check --all`, which never marks anything read (the mailbox belongs to main's agent), and with --full, since
+// the concise view keeps only payload ids and so has no outcome. Each message is told once: its id goes to the Run's
+// entry in vigilar.json, pruned to the ids `check --all` still returns, so the entry stays bounded and a restart neither
+// loses nor repeats a message.
+const runKey = runId => `run:${runId}`
+const TASK_TITLE = /^#(\d+) (\S+)$/
+
+const orchestration = (io, root, args) => {
+  const res = io.sh('orca', ['orchestration', ...args], { cwd: root })
+  const body = parse(res)
+  if (res.status !== 0 || !body || body.ok === false) throw new Error(`orca orchestration ${args[0]} falló (${body?.error?.message ?? detail(res)})`)
+
+  return body.result ?? {}
+}
+const payloadOf = message => {
+  if (message?.payload && typeof message.payload === 'object') return message.payload
+  try {
+    return JSON.parse(message?.payload) ?? {}
+  } catch {
+    return {}
+  }
+}
+
+// Returns the event lines and the Run's next cursor entry; throws when Orca cannot answer, so nothing is marked told.
+const readMailbox = (before, io, root) => {
+  const { runId } = orchestration(io, root, ['run-current', '--json'])
+  if (!runId) return { lines: [] }
+  const { messages } = orchestration(io, root, ['check', '--run', runId, '--all', '--types', 'worker_done,escalation', '--full', '--json'])
+  if (!Array.isArray(messages)) throw new Error('orca orchestration check no devolvió una lista de mensajes')
+  const key = runKey(runId)
+  const told = new Set(before[key]?.vistos ?? [])
+  const ours = messages.filter(m => m?.id && (m.type === 'worker_done' || m.type === 'escalation'))
+  const fresh = ours.filter(m => !told.has(m.id)).sort((a, b) => (Number(a.sequence) || 0) - (Number(b.sequence) || 0))
+  const lines = []
+  if (fresh.length > 0) {
+    const { tasks } = orchestration(io, root, ['task-list', '--run', runId, '--json'])
+    const titles = new Map((Array.isArray(tasks) ? tasks : []).map(task => [task?.id, String(task?.title ?? '')]))
+    for (const message of fresh) {
+      const payload = payloadOf(message)
+      const title = TASK_TITLE.exec(titles.get(payload.taskId) ?? '')
+      if (!title) continue
+      const ok = message.type === 'worker_done' && payload.outcome === 'succeeded'
+      lines.push(`worker-terminado #${title[1]} ${title[2]} ${ok ? 'ok' : 'partial'}`)
+    }
+  }
+  const vistos = ours.map(m => m.id).filter(id => told.has(id) || fresh.some(m => m.id === id))
+
+  return { lines, key, entry: { vistos } }
+}
+
 export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) => {
   const warn = io.err ?? (message => console.error(message))
   if (flags.mergeDeMain !== undefined) return recordMainMerge(flags.mergeDeMain, flags, io, warn)
@@ -508,9 +559,41 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     return allEnded
   }
 
+  // Orca failing is said once per outage on stderr; GitHub keeps being watched either way. What this run told stays in
+  // memory too, so a cursor that cannot be written never makes it print a message twice.
+  let mailboxDown = false
+  const toldHere = {}
+  const pollMailbox = () => {
+    let read
+    try {
+      const stored = readJson(cursorPath, io, warn)
+      const before = { ...stored }
+      for (const [key, ids] of Object.entries(toldHere)) before[key] = { vistos: [...new Set([...(stored[key]?.vistos ?? []), ...ids])] }
+      read = readMailbox(before, io, root)
+    } catch (error) {
+      if (!mailboxDown) warn(`vigilar: no pude leer el buzón del Run de Orca: ${error.message}; sigo vigilando GitHub.`)
+      mailboxDown = true
+
+      return
+    }
+    mailboxDown = false
+    for (const line of read.lines) io.out(line)
+    if (!read.key) return
+    toldHere[read.key] = read.entry.vistos
+    if (flags.dryRun) return
+    const stored = readJson(cursorPath, io, warn)
+    if (JSON.stringify(stored[read.key]) === JSON.stringify(read.entry)) return
+    try {
+      writeJson(cursorPath, { ...stored, [read.key]: read.entry }, io)
+    } catch (error) {
+      warn(`vigilar: no pude escribir ${cursorPath}: ${error.message}`)
+    }
+  }
+
   if (!flags.unaVez && !flags.dryRun) io.watchParent?.()
   for (;;) {
     const done = poll()
+    pollMailbox()
     // One Monitor in Proactive: the consultas check runs on every poll, unchanged, and its failure never stops the poll.
     if (flags.consultas) {
       try {

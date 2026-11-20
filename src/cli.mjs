@@ -114,7 +114,10 @@ Sirve de entrada para \`/retro\`.
 Desde el checkout principal del repo (agentes: claude, agy, codex, pi). Se niega si el setup está pendiente, si el
 agente no está en agentes.usa, si está en agentes.preguntarAntes sin --confirmado, si el issue está cerrado o asignado, o si ya hay
 un worktree o un agente vivo para ese ticket. Asigna el issue, crea el worktree con \`orca worktree create\`, escribe el brief en
-~/orca/briefs, comprueba que cada ruta que cita exista en el worktree, lanza el agente en una terminal de Orca y le manda el brief.
+~/orca/briefs, comprueba que cada ruta que cita exista en el worktree, lanza el agente en una terminal de Orca y lo arranca con
+\`orca orchestration worker-start\` en el Run ligado a main (\`run-current\`, o \`run-create\` si no hay uno), con el brief como spec:
+el brief le llega una sola vez, también a pi. Si falla un comando de orca orchestration, imprime el error de Orca, lista lo que
+quedó y le saca el assignee al issue.
 Con --dry-run muestra el plan y el brief y no escribe nada.
 Imprime \`Rama: <rama>\` con la rama que devolvió Orca; en --dry-run aclara que Orca define la rama al crear el worktree.
 Después de confirmar el inicio, despachar, revisar y rebote leen tres veces la pantalla, salvo pi, con pausas de 5 segundos;
@@ -250,7 +253,14 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
   pr-mergeado #<n> PR #<pr> <sha>    el PR se mergeó y main no registró ese merge
   pr-cerrado #<n> PR #<pr>           el PR se cerró sin mergear
   vigilar-ciego: <error>             tres vueltas seguidas sin poder leer GitHub (una vez por corte)
+  worker-terminado #<n> <agente> ok|partial
+                                     un worker del Run de main mandó worker_done (ok si succeeded, partial si failed)
+                                     o escaló (partial)
   tanda-cerrada #<n> #<m>...         terminaron todos los items; sale con 0
+En cada vuelta lee también el buzón del Run de Orca ligado a main (\`orca orchestration run-current\`), con
+\`orca orchestration check --all\`, que no marca nada como leído, y nombra cada worker por el título "#<n> <agente>" de
+su tarea (las tareas con otro título se ignoran). Sin Run ligado vigila solo GitHub; si Orca falla, lo dice una vez
+por corte en stderr y sigue con GitHub.
 Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue o por una línea
 \`Closes #<n>\` en su cuerpo; nunca por adivinar el nombre de la rama. Un issue cerrado sin PR cuenta como terminado.
 Guarda lo emitido en <git-common-dir>/orca-stack/vigilar.json: rearmado con los mismos argumentos, retoma sin repetir.
