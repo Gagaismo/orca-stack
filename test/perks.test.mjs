@@ -137,7 +137,10 @@ describe('#393 perk switch, gears first', () => {
     const step5 = main.split('\n').find(line => line.startsWith('5. '))
     assert.match(step5, /Armalo siempre con `--consultas`/)
     const despacho = main.split('### Despacho')[1]
-    assert.match(despacho, /Sin pedirlo, `main` igual colabora con los workers sin un Run de Orca/)
+    const supervised = despacho.split('\n').find(line => line.startsWith('El despacho es supervisado:'))
+    assert.match(supervised, /`despachar` arranca cada worker con `orca orchestration worker-start` como worker supervisado del Run de Orca ligado a la sesión de `main`/)
+    assert.match(supervised, /Reglas de colaboración: `main` responde preguntas de ejecución/)
+    assert.doesNotMatch(supervised, /Proactive|marcha/)
     assert.match(despacho, /le toca el timbre con `orca-stack avisar <issue\|pr> <url-del-comentario>`/)
     const home = tempDir('perks-help')
     try {
