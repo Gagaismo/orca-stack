@@ -36,17 +36,17 @@ const stepRun = (block, name) => new RegExp(`- name: ${name}\\n\\s+run: (.+)`).e
 
 describe('formal/rebote (issue #311)', () => {
   test('Rule 1: the model describes the fixed rebote, with its comment retry and fail-loud exit', () => {
-    assert.match(model, /synced at commit f85aa43/)
+    assert.match(model, /synced at commit d90b10c/)
     // The fix of #310: 3 comment attempts after the launch, then a non-zero exit that main answers by posting the marker.
     assert.match(read(path.join('src', 'despacho.mjs')), /const MARKER_ATTEMPTS = 3\n/)
     assert.match(model, /CommentFail\s+\\\* TRUE: all 3 attempts of `gh pr comment`/)
-    assert.match(model, /^ReboteCommentFails ==\n\s+\/\\ CommentFail\n\s+\/\\ Launch\n\s+\/\\ owed' = WithMarkers\(owed\)\n\s+\/\\ UNCHANGED mk$/m)
+    assert.match(model, /^ReboteCommentFails ==\n\s+\/\\ CommentFail\n\s+\/\\ Launch\n\s+\/\\ owed' = WithMarkers\(owed\)\n\s+\/\\ UNCHANGED <<mk, diag>>$/m)
     assert.match(model, /^MainPostsOwed ==$/m)
     assert.match(model, /\\\/ \(OwedGuard \/\\ owed \/= NoMarkers\)/)
     // Every refusal carries the src/despacho.mjs line it models.
     const refused = /^Refused ==\n([\s\S]*?)\n\n/m.exec(model)[1].split(/\n(?=\s+\\\/ )/)
-    // #296 removed the moved-head refusal: the review bounce is counted by the review's Commit: sha.
-    assert.equal(refused.length, 7)
+    // #296 removed the moved-head refusal: the review bounce is counted by the review's Commit: sha; #396 added the diagnosis refusal.
+    assert.equal(refused.length, 8)
     for (const disjunct of refused) assert.match(disjunct, /\\\* L\d+/, disjunct)
   })
 
@@ -58,7 +58,8 @@ describe('formal/rebote (issue #311)', () => {
     assert.equal(results['rebote-commentfail.cfg'], 'pass')
     const fixed = constants(read(path.join(formal, 'rebote.cfg')))
     assert.ok(Object.entries(fixed).every(([key, value]) => key === 'MaxHead' || key === 'CommentFail' || value === 'TRUE'), 'the real code has every guard on')
-    assert.equal(fixed.MaxHead, '3')
+    // #396: five heads, so a fifth CI bounce on its own head is reachable.
+    assert.equal(fixed.MaxHead, '5')
     for (const cfg of cfgs.filter(name => name.startsWith('broken-'))) {
       const text = read(path.join(formal, cfg))
       const off = Object.entries(constants(text)).filter(([key, value]) => key.endsWith('Guard') && value === 'FALSE')
@@ -86,6 +87,30 @@ describe('formal/rebote (issue #311)', () => {
       assert.match(differs.stdout, /^broken-owed\.cfg: pass \[expected ConflictBounceOncePerHead\]$/m)
     } finally {
       cleanup(dir)
+    }
+  })
+
+  test('Rule 7 (#396): the model caps CI bounces at four and asks a fresh Diagnóstico de main with a hypothesis from the third', () => {
+    // The cap of four and the diagnosis condition are two refusals, each switched off by its own guard.
+    assert.match(model, /\\\/ \(CiLimitGuard \/\\ failed \/\\ Cardinality\(priorCI\) >= 4\)/)
+    assert.match(model, /\\\/ \(DiagnosisGuard \/\\ failed \/\\ Cardinality\(priorCI\) >= 2 \/\\ diag \/= h\)/)
+    // Only a diagnosis with a hypothesis that is neither empty nor `ninguna` is recorded, with the head its Commit: names,
+    // and a `Rebote CI:` marker reaching the PR clears it: it has to be published after the latest marker.
+    assert.match(model, /^MainDiagnoses ==\n\s+\/\\ diag' = head$/m)
+    assert.match(model, /ninguna/)
+    assert.match(model, /diag' = IF failed THEN 0 ELSE diag/)
+    assert.match(model, /diag' = IF owed\["CI"\] \/= \{\} THEN 0 ELSE diag/)
+    // The promises: at most four CI bounces, and each from the third on carried a fresh diagnosis of its own head.
+    assert.match(model, /^CiBounceAtMostFour == Cardinality\(lauCI\) <= 4$/m)
+    assert.match(model, /^CiBounceFromThirdNeedsDiagnosis == ~undiagnosed$/m)
+    assert.doesNotMatch(model, /CiBounceTwice/)
+    const results = expected()
+    assert.equal(results['broken-ci-limit.cfg'], 'CiBounceAtMostFour')
+    assert.equal(results['broken-diagnosis.cfg'], 'CiBounceFromThirdNeedsDiagnosis')
+    assert.equal(constants(read(path.join(formal, 'broken-diagnosis.cfg'))).DiagnosisGuard, 'FALSE')
+    for (const cfg of Object.keys(results)) {
+      const listed = invariants(read(path.join(formal, cfg)))
+      for (const invariant of ['CiBounceAtMostFour', 'CiBounceFromThirdNeedsDiagnosis']) assert.ok(listed.includes(invariant), `${cfg} checks ${invariant}`)
     }
   })
 
@@ -134,7 +159,7 @@ describe('formal/rebote (issue #311)', () => {
   test('Rule 5: the verify-rebote skill keeps its coverage record with the sync commit of the model', () => {
     assert.match(skill, /^name: verify-rebote$/m)
     assert.match(skill, /^## Coverage record$/m)
-    assert.match(skill, /^- Sync commit: `f85aa43`/m)
+    assert.match(skill, /^- Sync commit: `d90b10c`/m)
     assert.match(skill, /^- Code covered: `reboteCommand` in `src\/despacho\.mjs`/m)
     assert.match(skill, /`latestChecks`, `analyzeChecks`, `isPending`/)
     assert.match(skill, /`blockingBody`, `blockingSection`, `humanAnswers`/)
@@ -145,7 +170,7 @@ describe('formal/rebote (issue #311)', () => {
     const manual = read(path.join('docs', 'manual.md'))
     const section = /### 4\.11 La verificación formal de `rebote`\n([\s\S]*?)\n## 5\./.exec(manual)?.[1]
     assert.ok(section, 'docs/manual.md has section 4.11')
-    for (const text of ['un PR, un autor y una sola sesión de `main`', '`MaxHead=3`', 'pendiente, verde o roja', 'TLA2TOOLS=', 'JAVA=', '`/statechart`', 'no corre en Windows nativo', 'test/formal-rebote-replay.test.mjs']) {
+    for (const text of ['un PR, un autor y una sola sesión de `main`', '`MaxHead=5`', '`broken-diagnosis.cfg`', 'pendiente, verde o roja', 'TLA2TOOLS=', 'JAVA=', '`/statechart`', 'no corre en Windows nativo', 'test/formal-rebote-replay.test.mjs']) {
       assert.ok(section.includes(text), `section 4.11 mentions ${text}`)
     }
   })
