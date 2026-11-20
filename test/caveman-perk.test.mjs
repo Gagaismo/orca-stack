@@ -5,7 +5,7 @@ import { describe, test } from 'node:test'
 
 import { WRAPPERS } from '../src/constants.mjs'
 import { wrapperContent } from '../src/templates.mjs'
-import { cleanup, cli, git, read, tempDir, write } from './helpers.mjs'
+import { cleanup, cli, git, read, ROOT, tempDir, write } from './helpers.mjs'
 
 const BULLET = '- Caveman sigue el ajuste Auto/Off del stack y comprime solo prosa pesada en tokens. Conservá el código, los comandos, las rutas, los errores exactos, las decisiones, los riesgos, las dudas, los tests y la evidencia de aceptación.'
 const POINTER = 'Sus reglas están en `~/orca/stack/CAVEMAN.md`, el fragmento del perk de caveman.'
@@ -119,6 +119,20 @@ describe('#394 Caveman as a perk', () => {
       assert.match(doctor(env.home), STALE)
     } finally {
       teardown(env)
+    }
+  })
+})
+
+describe('#394 docs', () => {
+  test('S8: the setup guide and the manual describe Ponytail and Caveman as optional perks, off by default', () => {
+    for (const file of [path.join('docs', 'guia-setup.md'), path.join('docs', 'manual.md')]) {
+      const text = read(path.join(ROOT, file))
+      assert.match(text, /"perks": \{ "ponytail": true \}/, file)
+      assert.match(text, /"perks": \{ "caveman": true \}/, file)
+      assert.match(text, /Ponytail y Caveman son perks opcionales, apagados por defecto/, file)
+      assert.match(text, /PONYTAIL\.md/, file)
+      assert.match(text, /CAVEMAN\.md/, file)
+      assert.doesNotMatch(text, /todavía no cambian nada/, file)
     }
   })
 })
