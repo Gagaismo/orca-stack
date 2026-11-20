@@ -100,6 +100,8 @@ describe('main-autonomo: policy and briefs', () => {
   test('S3/S11: ORCA-STACK.md documents rddConsentimiento and migraciones', () => {
     const policy = flat(asset('ORCA-STACK.md'))
     assert.ok(policy.includes('`agentes.<agent>.rddConsentimiento`'))
+    assert.ok(policy.includes('`"humano"` makes a supervised ticket worker ask main with `orca orchestration ask`, with only the consent\'s choices as closed options, and a session that is not supervised (a review or a bounce) ask the human through a `Consulta:`.'))
+    assert.ok(!policy.includes('`"humano"` keeps asking the human through a `Consulta:`.'))
     assert.ok(policy.includes('`migraciones` in `.orca-stack.json`'))
   })
 

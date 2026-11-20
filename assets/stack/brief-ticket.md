@@ -1,6 +1,6 @@
 # Ticket brief: issue #{{ISSUE}} ({{REPO}})
 
-You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked. Anything you post for main on GitHub that is not a question (a cap you passed) starts with `Consulta: {{AGENT}}`; a question, including a deviation that needs a decision, goes through `orca orchestration ask`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait.
+You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked. Anything you post for main on GitHub that is not a question (a cap you passed) starts with `Consulta: {{AGENT}}`; a question, including a deviation that needs a decision, goes through `orca orchestration ask`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait. The answer to an `ask` is different: it arrives as Orca mail, not as a comment.
 
 ## Setup
 

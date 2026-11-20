@@ -25,6 +25,8 @@ describe('issue 398: MAIN.md answers worker questions through Orca', () => {
     ]) assert.ok(despacho.includes(kept), kept)
     const cycle = section(main, '### Ciclo de `main`')
     assert.ok(cycle.includes('Ante `consulta #<n> <agente> <message_id>`, o `worker-detenido #<n> <agente>: terminó sin abrir un PR` con `Consulta:` pendiente (sesión no supervisada), seguí el Despacho;'))
+    // A supervised worker that ended its turn waiting for an answer is answered and left for Orca to wake, never diagnosed.
+    assert.ok(cycle.includes('Un `worker-detenido` de un worker supervisado sin diagnóstico y con una `consulta` sin `reply` o recién respondida no sigue esta regla: respondela por id (o resolvé su gate pendiente) y dejá que Orca lo despierte con la respuesta, sin `reanudar`, `rebote`, despacho nuevo ni `needs-info`.'))
     // Negative: questions are no longer answered where they were asked, and product answers are no longer just relayed.
     assert.ok(!despacho.includes('`main` responde preguntas de ejecución donde se hicieron'))
     assert.ok(!despacho.includes('las de producto e interpretación van al humano y `main` transmite la respuesta'))

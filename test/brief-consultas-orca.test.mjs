@@ -13,6 +13,7 @@ describe('issue #398: worker questions through Orca', () => {
       const text = brief(agent)
       assert.ok(text.includes('## Questions to main\n\nOrca started you as a supervised worker, so your questions to main go through Orca, not GitHub:\n\n```\norca orchestration ask --question "<question>" --options "<recommended>,<other options>"\n```'), agent)
       assert.ok(text.includes('- Asking: put your recommended option first; main may also reply with a typed answer instead of an option. The call returns at once: continue with the tasks that do not depend on the answer, then end your turn. Orca wakes you with the answer.'), agent)
+      assert.ok(text.includes('A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait. The answer to an `ask` is different: it arrives as Orca mail, not as a comment.'), agent)
       assert.ok(text.includes('If you are blocked, ask main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked.'), agent)
       assert.ok(text.includes(`Anything you post for main on GitHub that is not a question (a cap you passed) starts with \`Consulta: ${agent}\`; a question, including a deviation that needs a decision, goes through \`orca orchestration ask\`.`), agent)
       assert.ok(text.includes('Step 3 (Resolve uncertainty): product questions go to main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked; never stop and wait.'), agent)
