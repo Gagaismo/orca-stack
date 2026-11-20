@@ -1610,16 +1610,25 @@ describe('orca-stack vigilar (#399)', () => {
     await once(switched, ['7'])
     assert.deepEqual(drain(switched), ['worker-trabado #7 claude: sin cambios por 4m \u2014 Thinking'])
 
-    // Transitioning back to working on the same screen still reports a 30m working stall; decaying later does not duplicate 4m.
+    // Transitioning back to working and waiting on the same screen does not repeat 4m, still reports 30m working, and decaying does not duplicate 4m.
     switched.world.worktrees[0].agents[0].state = 'working'
     switched.world.now = T0 + 10 * MINUTE
     await once(switched, ['7'])
+    switched.world.worktrees[0].agents[0].state = 'waiting'
+    switched.world.now = T0 + 11 * MINUTE
+    await once(switched, ['7'])
+    switched.world.now = T0 + 16 * MINUTE
+    await once(switched, ['7'])
     assert.deepEqual(drain(switched), [])
-    switched.world.now = T0 + 40 * MINUTE
+    switched.world.worktrees[0].agents[0].state = 'working'
+    switched.world.now = T0 + 17 * MINUTE
+    await once(switched, ['7'])
+    assert.deepEqual(drain(switched), [])
+    switched.world.now = T0 + 47 * MINUTE
     await once(switched, ['7'])
     assert.deepEqual(drain(switched), ['worker-trabado #7 claude: sin cambios por 30m \u2014 Thinking'])
     switched.world.worktrees[0].agents[0].state = 'unverifiable'
-    switched.world.now = T0 + 45 * MINUTE
+    switched.world.now = T0 + 52 * MINUTE
     await once(switched, ['7'])
     assert.deepEqual(switched.out, [])
   })

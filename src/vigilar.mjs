@@ -320,13 +320,12 @@ const evaluateWatchdog = (issue, seen, before, entry, now) => {
   const sameWorker = prev?.workerId === probe.workerId
   const isWorking = probe.state === 'working'
   const screenChanged = probe.screenHash !== null && (!sameWorker || prev.screen !== probe.screenHash)
-  const modeChanged = sameWorker && prev?.working !== undefined && prev.working !== isWorking
+  const workingChanged = sameWorker && prev?.working !== undefined && prev.working !== isWorking
   let emittedList = sameWorker && Array.isArray(prev.emitted) ? [...prev.emitted] : []
   if (probe.isLiveWorking) emittedList = emittedList.filter(key => !key.startsWith('stopped:'))
   if (screenChanged) emittedList = emittedList.filter(key => !key.startsWith('stalled:'))
-  else if (modeChanged && isWorking) emittedList = emittedList.filter(key => !key.startsWith('stalled:4m:'))
   const emittedSet = new Set(emittedList)
-  const screenSince = probe.screenHash === null ? undefined : (screenChanged || modeChanged || prev?.screenSince === undefined ? now : prev.screenSince)
+  const screenSince = probe.screenHash === null ? undefined : (screenChanged || workingChanged || prev?.screenSince === undefined ? now : prev.screenSince)
   const openWithoutPr = !seen.pr && seen.issueState === 'OPEN'
   const lines = []
 
