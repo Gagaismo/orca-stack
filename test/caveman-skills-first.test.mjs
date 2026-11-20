@@ -85,23 +85,26 @@ describe('#142: caveman is recommended as skills only, and the plugin gets a war
     // Nothing the stack recommends installs a caveman hook.
     for (const line of INSTALL_HINTS.caveman) assert.doesNotMatch(line, /claude plugin/, line)
     // ORCA-STACK.md: "Auto is selected in Orca, not by a provider hook". The wrappers carry Auto and the mode.
+    // #394: with the caveman perk on.
+    const on = { caveman: true }
     for (const agent of Object.keys(WRAPPERS)) {
-      assert.match(shWrapper(agent), /^ORCA_STACK_MODE=auto$/m, agent)
-      assert.match(shWrapper(agent), /^ORCA_STACK_CAVEMAN_LEVEL=caveman$/m, agent)
-      assert.ok(cmdWrapper(agent).includes('set "ORCA_STACK_MODE=auto"'), agent)
-      assert.ok(cmdWrapper(agent).includes('set "ORCA_STACK_CAVEMAN_LEVEL=caveman"'), agent)
+      assert.match(shWrapper(agent, on), /^ORCA_STACK_MODE=auto$/m, agent)
+      assert.match(shWrapper(agent, on), /^ORCA_STACK_CAVEMAN_LEVEL=caveman$/m, agent)
+      assert.ok(cmdWrapper(agent, on).includes('set "ORCA_STACK_MODE=auto"'), agent)
+      assert.ok(cmdWrapper(agent, on).includes('set "ORCA_STACK_CAVEMAN_LEVEL=caveman"'), agent)
     }
     // The orca-stack block every project's AGENTS.md carries tells the worker what caveman does there.
     assert.ok(
-      policyBlock({ policyPath: 'p', briefsPath: 'b' }).includes(
+      policyBlock({ policyPath: 'p', briefsPath: 'b', perks: on }).includes(
         '- Caveman sigue el ajuste Auto/Off del stack y comprime solo prosa pesada en tokens.',
       ),
     )
     // The policy still excludes the hooks and keeps the skill hook-free and communication-only.
     const policy = flat(read('assets', 'stack', 'ORCA-STACK.md'))
-    assert.match(policy, /Do not install the full Ponytail or Caveman lifecycle-hook stacks\. Their always-on hooks, session-start codebase map, subagent injection/)
-    assert.match(policy, /`caveman` — communication-only mode; Auto is selected in Orca, not by a provider hook\./)
-    assert.match(policy, /Caveman is communication-only\./)
-    assert.match(flat(read('assets', 'stack', 'ROLE-BRIEFS.md')), /Caveman follows the Orca Agent Stack setting/)
+    assert.match(policy, /Do not install the full lifecycle-hook stacks of the modular skills\. Their always-on hooks, session-start codebase map, subagent injection/)
+    const fragment = flat(read('assets', 'stack', 'CAVEMAN.md'))
+    assert.match(fragment, /`caveman` — communication-only mode; Auto is selected in Orca, not by a provider hook\./)
+    assert.match(fragment, /Caveman is communication-only\./)
+    assert.match(fragment, /Caveman follows the Orca Agent Stack setting/)
   })
 })

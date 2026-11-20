@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { mergedPerks, perkProblems } from './perks.mjs'
+import { mergedPerks, perkProblems, perksOf } from './perks.mjs'
 import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { CODEX_DOC_DEFAULT, readCodexDocBytes } from './codex-doc-bytes.mjs'
@@ -12,6 +12,7 @@ import { loadState } from './ctx.mjs'
 import { PI_PROVIDERS, disallowedModels } from './despacho.mjs'
 import { compareVersions, driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
+import { readPersonalConfig } from './gentle.mjs'
 import { knownSddLeftovers } from './sdd-cleanup.mjs'
 import { removeAnyBlock } from './marker.mjs'
 import { checkPathCommand } from './path-command.mjs'
@@ -19,7 +20,7 @@ import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
 import { describeCheckout, installedPackageVersion, localPiPackages, npmGlobalRoot, piBinary, piModulesDir, piTooOld, readBundledShell, resolveGentleSkills } from './pi.mjs'
 import { codexCodemodeStatus, piCodemodeStatus } from './codemode.mjs'
 import { parseSettings } from './settings.mjs'
-import { assetPath, listDirs, wrapperFile } from './templates.mjs'
+import { assetPath, listDirs, stackMarkers, wrapperFile } from './templates.mjs'
 import { PACKAGE_ROOT, binaryVersion, homeDir, isWindows, layout, run, samePath, tilde, which } from './util.mjs'
 
 const ICON = { ok: '✔', warn: '⚠', fail: '✖' }
@@ -283,7 +284,7 @@ export const doctorCommand = async flags => {
 
   // Policy docs
   section('Política del stack')
-  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md']) {
+  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md', 'PONYTAIL.md', 'CAVEMAN.md']) {
     const file = path.join(L.stackDir, name)
     if (!existsSync(file)) {
       add('fail', name, `falta ${tilde(file, home)}`)
@@ -298,6 +299,9 @@ export const doctorCommand = async flags => {
   section('Wrappers de proveedores')
   const win = isWindows()
   const vars = stackVars(L)
+  // The markers global writes for the perks of the personal layer (#394). A perk that is off also accepts its marker
+  // unset or empty; any other value is stale.
+  const expected = stackMarkers(perksOf(readPersonalConfig(L)))
   for (const agent of Object.keys(WRAPPERS)) {
     const file = path.join(L.scriptsDir, wrapperFile(agent, win))
     if (!existsSync(file)) {
@@ -306,10 +310,11 @@ export const doctorCommand = async flags => {
     }
     const probe = run(file, ['--orca-stack-self-test'], { timeout: 20_000 })
     const policy = /ORCA_STACK_POLICY_PATH=(.+)/.exec(probe.stdout)?.[1]?.trim()
-    const markers =
-      /ORCA_STACK_MODE=auto/.test(probe.stdout) &&
-      /ORCA_STACK_CAVEMAN_LEVEL=caveman/.test(probe.stdout) &&
-      /ORCA_STACK_PONYTAIL_LEVEL=full/.test(probe.stdout)
+    const markers = Object.entries(expected).every(([name, value]) => {
+      const shown = new RegExp(`^${name}=(.*)$`, 'm').exec(probe.stdout)?.[1]?.trim() ?? ''
+
+      return shown === value || (value === 'off' && shown === '')
+    })
     const healthy = probe.status === 0 && markers && policy && existsSync(policy)
     if (healthy) {
       add('ok', `${agent}-orca-stack --orca-stack-self-test`, 'marcadores y política OK')

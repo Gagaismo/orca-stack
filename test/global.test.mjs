@@ -455,9 +455,10 @@ describe('wrappers', () => {
     const file = path.join(home, 'orca', 'stack', 'scripts', `claude-orca-stack.${ext}`)
     const run = spawnSync(file, ['--orca-stack-self-test'], { encoding: 'utf8', shell: process.platform === 'win32' })
     assert.equal(run.status, 0, run.stdout + run.stderr)
-    assert.match(run.stdout, /ORCA_STACK_MODE=auto/)
-    assert.match(run.stdout, /ORCA_STACK_CAVEMAN_LEVEL=caveman/)
-    assert.match(run.stdout, /ORCA_STACK_PONYTAIL_LEVEL=full/)
+    // #394: Caveman and Ponytail are perks, off by default.
+    assert.match(run.stdout, /ORCA_STACK_MODE=off/)
+    assert.match(run.stdout, /ORCA_STACK_CAVEMAN_LEVEL=off/)
+    assert.match(run.stdout, /ORCA_STACK_PONYTAIL_LEVEL=off/)
     assert.ok(run.stdout.includes(path.join(home, 'orca', 'stack', 'ORCA-STACK.md')), run.stdout)
   })
 
@@ -476,7 +477,7 @@ describe('wrappers', () => {
     const file = path.join(home, 'orca', 'stack', 'scripts', 'agy-orca-stack.sh')
     const run = spawnSync('sh', [file, '--orca-stack-self-test'], { encoding: 'utf8' })
     assert.equal(run.status, 0, run.stdout + run.stderr)
-    assert.match(run.stdout, /ORCA_STACK_MODE=auto/)
+    assert.match(run.stdout, /ORCA_STACK_MODE=off/)
     assert.match(run.stdout, /ORCA_STACK_POLICY_PATH=.*ORCA-STACK\.md/)
     // never named like the real binary, so it cannot call itself
     assert.ok(!existsSync(path.join(home, 'orca', 'stack', 'scripts', 'agy')))
