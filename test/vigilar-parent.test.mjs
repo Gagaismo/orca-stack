@@ -25,6 +25,8 @@ if (process.env.FAKE_GH_SLOW) {
   setTimeout(() => {}, 120000)
 } else if (args[0] === 'pr' && args[1] === 'list') {
   console.log(JSON.stringify([{ number: 70, state: 'OPEN', headRefName: 'b', headRefOid: '${SHA}', mergedAt: null, body: '', closingIssuesReferences: [{ number: 7 }], statusCheckRollup: [], mergeable: 'MERGEABLE' }]))
+} else if (args[0] === 'issue' && args[1] === 'view' && args.includes('comments')) {
+  console.log(JSON.stringify({ comments: [] }))
 } else {
   console.log('{}')
 }

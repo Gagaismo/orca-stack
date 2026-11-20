@@ -165,6 +165,10 @@ const readWorld = (targets, cursor, root, io, warn) => {
     const branches = ours.filter(({ row }) => String(row.linkedIssue) === issue).map(({ branch }) => branch).filter(Boolean)
     const mine = [...prs.values()].filter(pr => pr.number === cursor[issue]?.pr || linked(pr, issue, branches))
     const pr = mine.sort((a, b) => b.number - a.number)[0]
+    const commentsResult = io.sh('gh', ['issue', 'view', issue, '--json', 'comments'], { cwd: root })
+    const issueComments = commentsResult.status === 0 ? parse(commentsResult)?.comments : undefined
+    const commentsReadable = Array.isArray(issueComments)
+    if (!commentsReadable) warn(`vigilar: no pude leer comentarios de #${issue}; lo sigo vigilando.`)
     if (pr) {
       let worker
       if (workersReadable) {
@@ -179,7 +183,7 @@ const readWorld = (targets, cursor, root, io, warn) => {
       }
 
       const discussion = ghJson(io, root, ['pr', 'view', String(pr.number), '--json', 'comments,reviews'])
-      return [issue, { pr, discussion, workersReadable, worker: worker ?? null, replacedWorkflows: replacedRuns(pr, root, io) }]
+      return [issue, { pr, discussion, issueComments, commentsReadable, workersReadable, worker: worker ?? null, replacedWorkflows: replacedRuns(pr, root, io) }]
     }
 
     const res = io.sh('gh', ['issue', 'view', issue, '--json', 'state'], { cwd: root })
@@ -192,7 +196,7 @@ const readWorld = (targets, cursor, root, io, warn) => {
     const identity = String(agent?.agentType ?? '').trim().toLowerCase()
     const workerState = identity && identity !== 'pi' ? String(agent?.state ?? '').trim().toLowerCase() : ''
 
-    return [issue, { issueState, workersReadable, worker: workerState ? { state: workerState, agent: identity } : null }]
+    return [issue, { issueState, issueComments, commentsReadable, workersReadable, worker: workerState ? { state: workerState, agent: identity } : null }]
   }))
 }
 
@@ -201,24 +205,36 @@ const readWorld = (targets, cursor, root, io, warn) => {
 // `batch` names this watcher by its items: the cursor is shared, so a PR another batch's watcher already knew is still
 // news to this one (once), while the same batch re-armed resumes without repeating it.
 const advance = (issue, seen, before, merges, emitted, batch) => {
+  if (!seen.commentsReadable) return { lines: [], entry: before ?? {} }
+  const diagnoses = new Set(before?.diagnoses ?? [])
+  const lines = []
+  for (const comment of [...(seen.issueComments ?? []), ...(seen.discussion?.comments ?? [])]) {
+    const agent = markerValue(comment.body, 'Diagn\u00f3stico')?.split(/\s+/)[0]
+    if (!comment.id || !agent || agent.toLowerCase() === 'main' || diagnoses.has(comment.id)) continue
+    const key = `diagnosis:${comment.id}`
+    if (!emitted.has(key)) lines.push(`diagnostico #${issue} ${agent}`)
+    emitted.add(key)
+    diagnoses.add(comment.id)
+  }
   if (!seen.pr) {
     const entry = seen.issueState === 'CLOSED' ? { fin: 'issue-cerrado' } : {}
+    if (diagnoses.size) entry.diagnoses = [...diagnoses]
     if (seen.workersReadable === false) {
       if (before?.worker) entry.worker = before.worker
     } else if (seen.issueState !== 'CLOSED' && seen.worker?.state === 'done') {
       entry.worker = seen.worker
-      if (before?.worker?.state !== 'done') return { lines: [`worker-en-pausa #${issue} ${seen.worker.agent}`], entry }
+      if (before?.worker?.state !== 'done') return { lines: [...lines, `worker-en-pausa #${issue} ${seen.worker.agent}`], entry }
     } else if (seen.worker) {
       entry.worker = seen.worker
     }
 
-    return { lines: [], entry }
+    return { lines, entry }
   }
   const { pr } = seen
   const fresh = before?.pr !== pr.number
   const entry = fresh ? { ...(before?.worker ? { worker: before.worker } : {}), pr: pr.number } : { ...before }
   if (seen.workersReadable !== false && seen.worker) entry.worker = seen.worker
-  const lines = []
+  if (diagnoses.size) entry.diagnoses = [...diagnoses]
   const reported = new Set(entry.reviews ?? [])
   for (const comment of [...(seen.discussion.comments ?? []), ...(seen.discussion.reviews ?? [])]) {
     const reviewer = markerValue(comment.body, 'Revisor')?.split(/\s+/)[0] || undefined
@@ -472,7 +488,8 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     }
     const allEnded = targets.every(issue => next[issue].fin)
     if (allEnded && endedNow) lines.push(`tanda-cerrada ${targets.map(issue => `#${issue}`).join(' ')}`)
-    // Printed before the cursor is written: a crash re-emits at most one poll's lines rather than losing them.
+    // Diagnosis, like other events, is at-least-once: a crash after stdout and before the cursor write can repeat it.
+    // Print first so that a crash does not silently lose the event.
     for (const line of lines) io.out(line)
     if (!flags.dryRun && JSON.stringify(next) !== JSON.stringify(cursor)) {
       // A failed write never stops the watcher: this run keeps the cursor in memory and prints nothing twice. The file is
