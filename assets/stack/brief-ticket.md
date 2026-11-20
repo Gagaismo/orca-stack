@@ -11,6 +11,8 @@ You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this 
 - {{SUBAGENTS_INSTRUCTION}}
 - **RED:** Write one test per rule in `## Reglas`, covering the examples, edges and errors each rule names. If the ticket has no `## Reglas`, use its acceptance criteria and failure modes as the RED list. Each item ends with a test that proves it.
 - **PRESERVE:** Write one test per existing public entry the change touches, even when the ticket did not ask for it. A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job.
+- **Diagnosis:** You have two attempts per cause (a red check, a test that will not pass, or an unreproducible failure). Fixing an unrelated failure does not use an attempt for this cause. After the second failed attempt, publish `Diagnóstico: {{AGENT}}` with `Causa:`, `Probado:` and `Siguiente hipótesis:` (or `ninguna`) and stop; the worker does not push or open a PR to hide the failure. Post it on the open PR, otherwise on the issue.
+- **RED setup:** Building the RED test has one setup self-fix that does not count toward the two attempts per cause. If it still cannot reproduce the failure, publish a diagnosis with `Causa: no se pudo reproducir <la regla>` and stop.
 - **Nothing else:** do not add extra cases for their own sake. When a rule cites an artifact (such as a path in `## Reglas`), test against that artifact, not a paraphrase of it.{{MIGRACION}}
 
 ## Verification

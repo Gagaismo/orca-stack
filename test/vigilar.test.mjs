@@ -542,7 +542,7 @@ describe('orca-stack vigilar (#195)', () => {
     assert.deepEqual(again.out, [])
   })
 
-  test('Rule 19: with --consultas one watcher also reports a new Consulta: comment once; without it no comment is read', async () => {
+  test('Rule 19: with --consultas one watcher reports a new Consulta: once; without it no Consulta is reported', async () => {
     const h = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] } })
     h.world.script = [() => {}, world => {
       world.prs = [pr(70, { state: 'MERGED' })]
@@ -554,7 +554,7 @@ describe('orca-stack vigilar (#195)', () => {
     const plain = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] } })
     await once(plain, ['7'])
     assert.deepEqual(plain.out, ['pr-abierto #7 PR #70 abc1234'])
-    assert.equal(plain.calls.some(call => call.startsWith('gh issue view') && call.includes('comments')), false)
+    assert.equal(plain.files[REPORTED], undefined)
 
     // A failing consultas check goes to stderr; the PR events of that poll are still printed.
     const broken = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] }, userDown: 'HTTP 401: Bad credentials' })
@@ -1316,5 +1316,61 @@ describe('orca-stack vigilar --paraguas (S3, #370)', () => {
       await assert.rejects(vigilarCommand({ unaVez: true, ...flags }, items, h.io), error => error.message === usage, JSON.stringify([flags, items]))
       assert.deepEqual(h.calls, [])
     }
+  })
+})
+
+
+describe('issue #395 diagnosis', () => {
+  const read = name => readFileSync(path.join(PACKAGE_ROOT, name), 'utf8')
+  test('Rule 1: contract defines the diagnosis marker and fields', () => {
+    const text = read('assets/stack/CONTRATO.md')
+    for (const s of ['Diagn\u00f3stico: <agente>', 'Causa:', 'Probado:', 'Siguiente hip\u00f3tesis:']) assert.ok(text.includes(s), s)
+  })
+  test('Rule 2: brief limits attempts by cause and stops without a PR', () => {
+    const text = read('assets/stack/brief-ticket.md')
+    for (const s of ['two attempts per cause', 'Fixing an unrelated failure does not use an attempt for this cause', 'After the second failed attempt', 'does not push or open a PR']) assert.ok(text.includes(s), s)
+  })
+  test('Rule 3: RED setup self-fix is separate and unreproduced rule is diagnosed', () => {
+    const text = read('assets/stack/brief-ticket.md')
+    for (const s of ['one setup self-fix', 'does not count', 'Causa: no se pudo reproducir']) assert.ok(text.includes(s), s)
+  })
+  test('Rule 4: brief places diagnosis on open PR or otherwise issue', () => {
+    const text = read('assets/stack/brief-ticket.md')
+    assert.ok(text.includes('on the open PR, otherwise on the issue'))
+  })
+  test('Rule 5: diagnosis events survive rearm and PR transition and ignore quotes and main', async () => {
+    const comments = { 7: [{ id: 'i1', body: 'Diagn\u00f3stico: codex' }, { id: 'i2', body: 'quoted Diagn\u00f3stico: pi' }, { id: 'i3', body: 'Diagn\u00f3stico: main' }] }
+    const h = harness({ comments })
+    await once(h, ['7'])
+    assert.deepEqual(drain(h), ['diagnostico #7 codex'])
+    h.world.prs = [{ ...pr(70), comments: [{ id: 'p1', body: 'Diagn\u00f3stico: agy' }, { id: 'p2', body: '> Diagn\u00f3stico: pi' }] }]
+    await once(h, ['7'])
+    assert.deepEqual(drain(h).filter(line => line.startsWith('diagnostico ')), ['diagnostico #7 agy'])
+    const rearmed = harness(h.world)
+    rearmed.files[CURSOR] = h.files[CURSOR]
+    await once(rearmed, ['7'])
+    assert.deepEqual(rearmed.out, [])
+    const shared = harness({ prs: [{ ...pr(70, { closes: [7, 8] }), comments: [{ id: 'p1', body: 'Diagn\u00f3stico: agy' }] }] })
+    await once(shared, ['7', '8'])
+    assert.deepEqual(shared.out.filter(line => line.startsWith('diagnostico ')), ['diagnostico #7 agy'])
+  })
+  test('Rule 6: main acts on a new hypothesis or flags recurring causes without asking', () => {
+    const text = read('assets/stack/MAIN.md')
+    for (const s of ['diagnostico #<n> <agente>', 'sin preguntarle al humano', 'Probado:', 'nunca repitas lo probado', 'Siguiente hip\u00f3tesis: ninguna', 'needs-info', '--nota', 'producto, interpretaci\u00f3n y alcance']) assert.ok(text.includes(s), s)
+  })
+  test('Rule 7: manual and help document diagnosis marker and event', async () => {
+    const manual = read('docs/manual.md')
+    assert.ok(manual.includes('Diagn\u00f3stico:'))
+    assert.ok(manual.includes('diagnostico #<n> <agente>'))
+    const oldLog = console.log
+    let output = ''
+    console.log = value => { output += value }
+    try { assert.equal(await main(['vigilar', '--help']), 0) } finally { console.log = oldLog }
+    assert.ok(output.includes('diagnostico #<n> <agente>'))
+  })
+  test('PRESERVE: vigilarCommand emits existing PR and CI events', async () => {
+    const h = harness({ prs: [pr(70, { checks: GREEN })] })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
   })
 })

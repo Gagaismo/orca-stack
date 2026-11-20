@@ -255,6 +255,7 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 | `ci-verde-retenido #<n> PR #<pr> <sha>: <agente> <estado>` | CI está verde, pero el worker sigue vivo; esperá a que termine antes de mergear |
 | `ci-roja #<n> PR #<pr> <sha>: ...` | Un check terminado falló o venció; uno por corrida, también si un `gh run rerun --failed` vuelve a fallar en el mismo head |
 | `ci-cancelada #<n> PR #<pr> <sha>: <check>=CANCELLED, ...` | No hay una corrida más nueva que reemplace a la cancelada y ninguna falla real previa en la corrida la explica; revisá la causa y re-ejecutá con `gh run rerun <run> --failed` |
+| `diagnostico #<n> <agente>` | Un comentario `Diagnóstico: <agente>` en el issue o PR, con `Causa:`, `Probado:` y `Siguiente hipótesis:`; main actúa según la causa |
 | `review-publicado #<pr> <agente> <sha> bloquea=<n>` | Un comentario de review con `Revisor:` y `Commit:`; cuenta los hallazgos numerados de `## BLOQUEA` |
 | `head-nuevo #<pr> <sha>` | Cambió el head de un PR ya observado |
 | `pr-en-conflicto #<n> PR #<pr> <sha>` | El PR quedó en conflicto con la base (`mergeable: CONFLICTING`) y GitHub no le corre la CI; uno por head, también con el worker vivo (el autor puede estar resolviéndolo). Corré `orca-stack rebote <pr>` una vez que el worker se detuvo: con el agente vivo, `rebote` se niega |
