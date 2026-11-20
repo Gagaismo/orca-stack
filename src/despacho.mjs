@@ -1180,6 +1180,30 @@ const humanAnswers = (io, root, pr) => {
   return [...(pr.comments ?? []), ...fromIssues].filter(isAnswer)
 }
 
+export const CI_BOUNCE_CAP = 4
+
+// #396: the newest comment or review that starts with `Diagnóstico: main`, names the head on its `Commit:` line and
+// was posted after the newest `Rebote CI:` marker, by date; an item without a date is never after a marker.
+// hypothesis is its `Siguiente hipótesis:`, or undefined when it is empty or `ninguna`.
+const mainDiagnosis = (items, namesHead) => {
+  const timeOf = item => Date.parse(String(item?.createdAt ?? item?.submittedAt ?? ''))
+  const lastMark = Math.max(-Infinity, ...items.filter(item => /^Rebote CI:\s*\S+\s*$/im.test(reviewBody(item))).map(item => {
+    const at = timeOf(item)
+    return Number.isNaN(at) ? Infinity : at
+  }))
+  const found = items
+    .map(item => ({ body: reviewBody(item), at: timeOf(item) }))
+    .filter(({ body, at }) => /^Diagnóstico:[ \t]*main(?:[ \t]|$)/im.test(body.trimStart().split(/\r?\n/)[0]) && !Number.isNaN(at) && at > lastMark &&
+      namesHead(/^\s*Commit:\s*(\S+)\s*$/mi.exec(body)?.[1]))
+    .sort((a, b) => a.at - b.at)
+    .at(-1)
+  if (!found) return undefined
+  const hypothesis = /^\s*Siguiente hipótesis:[ \t]*(.*)$/mi.exec(found.body)?.[1]?.trim() ?? ''
+  // `ninguna` copied with markdown (`ninguna`, **ninguna**, ninguna.) is still no hypothesis.
+  const plain = hypothesis.replace(/[`*_]/g, '').trim().replace(/\.$/, '').trim()
+  return { hypothesis: plain === '' || plain.toLowerCase() === 'ninguna' ? undefined : hypothesis }
+}
+
 const MARKER_ATTEMPTS = 3
 const MARKER_RETRY_WAIT_MS = 3000
 
@@ -1481,10 +1505,17 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     throw new Error(`El PR #${n} todavía tiene checks pendientes en ${sha}: ${pendingChecks.map(checkName).join(', ')}. Esperá a que termine la CI antes de rebotar.`)
   }
   const failedChecks = analysis.realFailures.map(({ check }) => check)
+  // #396: k is the CI bounce being attempted, the distinct heads already CI-bounced (the current one aside) plus one.
+  // Bounces 3 and 4 need a `Diagnóstico: main` on the head, posted after the latest `Rebote CI:`; never a fifth.
+  let ciHypothesis
   if (failedChecks.length > 0) {
-    const previousCiShas = new Set(ciMarkers.filter(marker => marker !== sha))
-    if (previousCiShas.size >= 2) {
-      throw new Error(`Ya hubo dos rebotes de CI distintos para el PR #${n}; la CI sigue roja en ${sha}. Pasalo al humano para resolverlo.`)
+    const k = new Set(ciMarkers.filter(marker => marker !== sha)).size + 1
+    if (k > CI_BOUNCE_CAP) throw new Error(`rebote: tope de ${CI_BOUNCE_CAP} rebotes de CI alcanzado en el PR #${n}`)
+    if (k > 2) {
+      const diagnosis = mainDiagnosis(allReviews, namesHead)
+      if (!diagnosis) throw new Error(`rebote: falta un Diagnóstico de main sobre ${sha} para el rebote de CI ${k}`)
+      if (!diagnosis.hypothesis) throw new Error(`rebote: el Diagnóstico de main sobre ${sha} no trae una Siguiente hipótesis`)
+      ciHypothesis = diagnosis.hypothesis
     }
   }
   const blockers = rdd ? [] : allReviews.filter(item => {
@@ -1523,7 +1554,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
         ? `\n  Cancelled siblings (following from this failure): ${siblings.map(checkName).join(', ')}`
         : ''
       return `- **${checkName(check)}**\n  Link: ${url || '(no link available)'}${jobId ? `\n  Inspect: \`gh run view --job ${jobId} --log-failed\`` : ''}${siblingText}`
-    }).join('\n')
+    }).join('\n') + (ciHypothesis ? `\n\nmain's diagnosis of this head (\`Diagnóstico: main\`), the hypothesis to test in this bounce: ${ciHypothesis}` : '')
     : 'None.'
 
   const worktree = prWorktree(io, root, pr, n)

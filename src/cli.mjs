@@ -73,7 +73,7 @@ const COMMAND_HELP = {
   global: `orca-stack global [--dry-run] [--force] [--skip-pi] [--limpiar-sdd] [--humano <nombre>]
 
 Instala a nivel usuario:
-  1. ~/orca/stack/ORCA-STACK.md, ROLE-BRIEFS.md y MAIN.md (las reglas de main), y MARCHAS.md (el perk de marchas)
+  1. ~/orca/stack/ORCA-STACK.md, ROLE-BRIEFS.md y MAIN.md (las reglas de main), y MARCHAS.md, PONYTAIL.md y CAVEMAN.md (los fragmentos de los perks)
   2. Wrappers claude/codex/agy-orca-stack (.cmd en Windows, .sh en el resto) en ~/orca/stack/scripts
   3. Skills propias en ~/.claude/skills y ~/.agents/skills
   4. Mods en ~/.claude/mods y sus rutas en env.CLAUDE_CODE_PLUGIN_DIRS de ~/.claude/settings.json
@@ -153,6 +153,8 @@ salvo que despu\u00E9s del review haya un comentario \`Respuesta del humano:\` e
 El rebote por review se cuenta por el \`Commit:\` de cada review: un \`Rebote: <sha>\` de un head anterior no frena ning\u00FAn rebote, y un head que avanz\u00F3 rebota si tiene un review bloqueante propio.
 Un worktree limpio que solo est\u00E1 atr\u00E1s del head (por ejemplo, tras \`gh pr update-branch\`) se adelanta con \`git merge --ff-only <sha>\`.
 Para CI roja agrega los checks fallidos al brief y publica \`Rebote CI: <sha>\`; publica \`Rebote: <sha>\` solo con bloqueos de review.
+Los rebotes de CI 1 y 2 no piden nada más; el 3 y el 4 exigen un comentario que empiece con \`Diagnóstico: main\`, con \`Commit: <headRefOid>\` y una \`Siguiente hipótesis:\` que no esté vacía ni sea \`ninguna\`
+y publicado después del último \`Rebote CI:\`; la hipótesis va al brief. No hay quinto rebote de CI. Si falta algo, se niega en una línea, sin marcador ni relanzar.
 Con bloqueos de review imprime y publica, en el mismo comentario, \`Ronda: <n>\` debajo de \`Rebote: <sha>\`: n es la cantidad de SHAs distintos de los \`Rebote:\` anteriores, sin contar el head actual, m\u00E1s uno (\`Rebote CI:\` y \`Rebote conflicto:\` no suman rondas).
 Desde la ronda 2 imprime, sin publicarla ni frenar el rebote, una l\u00EDnea que recuerda la se\u00F1al de swarm de diagn\u00F3stico del contrato.
 El brief de un rebote por review le pide al autor nombrar la clase de defecto de cada hallazgo, corregir todas sus instancias en el diff y decir en su comentario cu\u00E1les otras revis\u00F3.

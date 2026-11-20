@@ -19,7 +19,8 @@ if [ "$#" -eq 0 ]; then
     rebote.cfg pass \
     rebote-commentfail.cfg pass \
     broken-review-sha.cfg ReviewBounceOnItsOwnHead \
-    broken-ci-limit.cfg CiBounceTwice \
+    broken-ci-limit.cfg CiBounceAtMostFour \
+    broken-diagnosis.cfg CiBounceFromThirdNeedsDiagnosis \
     broken-conflict.cfg ConflictBounceOncePerHead \
     broken-interp.cfg InterpretationNeverToAuthor \
     broken-answer-order.cfg InterpretationNeverToAuthor \
