@@ -152,10 +152,14 @@ describe('orca-stack estado (S1, #366)', () => {
     assert.ok(one(h).falta.some(line => line.includes('sobre el commit abc1234 no dice "nada" solo en ## BLOQUEA: "nada identificado en la cobertura parcial". En una ruta de riesgo un bloqueo no se salda con "Decidido por main"')))
   })
   test('issue 385 Rule 3: verdicts over 80 characters are shortened', async () => {
-    for (const verdict of ['nada (no blockers established within the partial coverage above)', `nada ${'x'.repeat(100)}`]) {
-      const h = harness({ prs: [prData(70, { reviews: [review('agy', HEAD, { verdict })] })] })
+    for (const verdict of ['nada (no blockers established within the partial coverage above)', `nada ${'x'.repeat(74)}\u{1f600}x`, `nada ${'\u{1f600}'.repeat(40)}`]) {
+      const chars = Array.from(verdict)
+      const quote = `"${chars.length > 80 ? chars.slice(0, 80).join('') + '\u2026' : verdict}"`
+      const h = harness({ prs: [prData(70, { files: ['src/auth/login.mjs'], reviews: [review('agy', HEAD, { verdict })] })] }, { riesgo: ['src/auth/**'] })
       assert.equal(await estado(h, ['70'], { json: true }), 1)
-      assert.ok(one(h).falta[0].endsWith(`"${verdict.length > 80 ? verdict.slice(0, 80) + '\u2026' : verdict}"`))
+      const falta = one(h).falta
+      assert.ok(falta.some(line => line.startsWith('(a)') && line.endsWith(quote)))
+      assert.ok(falta.some(line => line.startsWith('(d)') && line.includes(`${quote}. En una ruta de riesgo`)))
     }
   })
   test('issue 385 Rule 4: numbered findings still report blockers', async () => {

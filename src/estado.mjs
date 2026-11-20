@@ -85,9 +85,12 @@ const reviewOf = body => {
   return { reviewer: named[1].toLowerCase(), commit, clean: verdict?.toLowerCase() === 'nada', verdict, lenses, body }
 }
 
-const blockerReason = review => /^nada/i.test(review.verdict ?? '') && !review.clean
-  ? `no dice "nada" solo en ## BLOQUEA: "${review.verdict.length > 80 ? review.verdict.slice(0, 80) + '\u2026' : review.verdict}"`
-  : 'tiene bloqueos'
+const blockerReason = review => {
+  if (!/^nada/i.test(review.verdict ?? '') || review.clean) return 'tiene bloqueos'
+  const chars = Array.from(review.verdict)
+  const verdict = chars.length > 80 ? chars.slice(0, 80).join('') + '\u2026' : review.verdict
+  return `no dice "nada" solo en ## BLOQUEA: "${verdict}"`
+}
 
 // main's `RDD: <sha> (<lentes>)` request for this head, its lenses sorted, or undefined. A body that is a review is no
 // request.
