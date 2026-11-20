@@ -26,7 +26,10 @@ describe('issue 398: MAIN.md answers worker questions through Orca', () => {
     const cycle = section(main, '### Ciclo de `main`')
     assert.ok(cycle.includes('Ante `consulta #<n> <agente> <message_id>`, o `worker-detenido #<n> <agente>: terminó sin abrir un PR` con `Consulta:` pendiente (sesión no supervisada), seguí el Despacho;'))
     // A supervised worker that ended its turn waiting for an answer is answered and left for Orca to wake, never diagnosed.
-    assert.ok(cycle.includes('Un `worker-detenido` de un worker supervisado sin diagnóstico y con una `consulta` sin `reply` o recién respondida no sigue esta regla: respondela por id (o resolvé su gate pendiente) y dejá que Orca lo despierte con la respuesta, sin `reanudar`, `rebote`, despacho nuevo ni `needs-info`.'))
+    assert.ok(cycle.includes('Un `worker-detenido` de un worker supervisado sin diagnóstico cuya última `consulta` no tiene `reply`, o tiene un `reply` en el buzón del Run posterior a ella, no sigue esta regla: si falta el `reply`, respondela por id (si fue a un gate, esperá a que el humano lo resuelva y respondé con su resolución), y dejá que Orca lo despierte con la respuesta, sin `reanudar`, `rebote`, despacho nuevo ni `needs-info`.'))
+    assert.ok(cycle.includes('Si llega `worker-detenido #<n> <agente>: terminó sin abrir un PR` por el mismo worker con diagnóstico, o sin `Consulta:` pendiente (sesión no supervisada) ni una `consulta` de Orca en el caso anterior, seguí esta regla en lugar de buscar una `Consulta:`.'))
+    assert.ok(!cycle.includes('con diagnóstico o sin `Consulta:` pendiente, seguí esta regla'))
+    assert.ok(!cycle.includes('o resolvé su gate pendiente'))
     // Negative: questions are no longer answered where they were asked, and product answers are no longer just relayed.
     assert.ok(!despacho.includes('`main` responde preguntas de ejecución donde se hicieron'))
     assert.ok(!despacho.includes('las de producto e interpretación van al humano y `main` transmite la respuesta'))
