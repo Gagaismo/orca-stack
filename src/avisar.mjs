@@ -54,7 +54,7 @@ const parse = res => {
   }
 }
 const detail = res => (res.stderr || res.stdout || String(res.error ?? '')).trim().split(/\r?\n/)[0]
-const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
+export const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
 
 export const worktreeRows = io => {
   const res = io.sh('orca', ['worktree', 'ps', '--json'])

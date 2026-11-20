@@ -1413,13 +1413,19 @@ describe('orca-stack vigilar (#399)', () => {
     const h = harness({
       worktrees: [wt(7, 'antigravity', 'working', { screen: ['Applying fix...', quota] })],
       issues: { 7: 'OPEN' },
+      now: T0,
     })
     await once(h, ['7'])
-    assert.deepEqual(h.out, [`worker-detenido #7 agy: cuota \u2014 ${quota}`])
+    assert.deepEqual(drain(h), [`worker-detenido #7 agy: cuota \u2014 ${quota}`])
 
-    // Negative: a genuinely working worker with an active spinner reading "rate-limited" in comments emits nothing.
+    // R3's 30m working threshold never preempts or double-fires after quota.
+    h.world.now = T0 + 30 * MINUTE
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [])
+
+    // Negative: a genuinely working worker with an active spinner reading quota or rate-limit text emits nothing.
     const working = harness({
-      worktrees: [wt(7, 'claude', 'working', { screen: ['Issue #199 says rate-limited', '\u2722 Churning\u2026 (1m 2s \u00B7 \u2193 3k tokens)'] })],
+      worktrees: [wt(7, 'claude', 'working', { screen: ['Issue #199 says rate-limited and usage limit / quota reached', '\u2722 Churning\u2026 (1m 2s \u00B7 \u2193 3k tokens)'] })],
       issues: { 7: 'OPEN' },
     })
     await once(working, ['7'])
@@ -1504,6 +1510,14 @@ describe('orca-stack vigilar (#399)', () => {
     await once(readErr, ['7', '8'])
     assert.deepEqual(readErr.out, ['pr-abierto #8 PR #80 abc1234'])
     assert.ok(readErr.err.some(line => line.includes('#7') && line.includes('terminal gone')))
+
+    // Failed gh issue view (unknown issue state) never invents worker-detenido.
+    const unknownIssue = harness({
+      worktrees: [wt(7, 'claude', 'done', { screen: ['PS C:\\work>'] })],
+      issueDown: { 7: 'Could not resolve issue' },
+    })
+    await once(unknownIssue, ['7'])
+    assert.deepEqual(unknownIssue.out, [])
   })
 
   test('Rule 3: emits worker-trabado after 30 minutes while working and after 4 minutes while non-working without a PR', async () => {
@@ -1580,6 +1594,34 @@ describe('orca-stack vigilar (#399)', () => {
     openBlocked.world.now = T0 + 10 * MINUTE
     await once(openBlocked, ['7'])
     assert.deepEqual(openBlocked.out, [])
+
+    // State transition working -> waiting resets the stall clock (does not fire 4m immediately after 5m working).
+    const switched = harness({
+      worktrees: [wt(7, 'claude', 'working', { screen: ['Thinking'] })],
+      issues: { 7: 'OPEN' },
+      now: T0,
+    })
+    await once(switched, ['7'])
+    switched.world.worktrees[0].agents[0].state = 'waiting'
+    switched.world.now = T0 + 5 * MINUTE
+    await once(switched, ['7'])
+    assert.deepEqual(drain(switched), [])
+    switched.world.now = T0 + 9 * MINUTE
+    await once(switched, ['7'])
+    assert.deepEqual(drain(switched), ['worker-trabado #7 claude: sin cambios por 4m \u2014 Thinking'])
+
+    // Transitioning back to working on the same screen still reports a 30m working stall; decaying later does not duplicate 4m.
+    switched.world.worktrees[0].agents[0].state = 'working'
+    switched.world.now = T0 + 10 * MINUTE
+    await once(switched, ['7'])
+    assert.deepEqual(drain(switched), [])
+    switched.world.now = T0 + 40 * MINUTE
+    await once(switched, ['7'])
+    assert.deepEqual(drain(switched), ['worker-trabado #7 claude: sin cambios por 30m \u2014 Thinking'])
+    switched.world.worktrees[0].agents[0].state = 'unverifiable'
+    switched.world.now = T0 + 45 * MINUTE
+    await once(switched, ['7'])
+    assert.deepEqual(switched.out, [])
   })
 
   test('Rule 4: each watchdog event ends with the last non-empty screen line cut at 200 characters', async () => {
@@ -1665,6 +1707,24 @@ describe('orca-stack vigilar (#399)', () => {
     })
     await once(hPiQuota, ['9'])
     assert.deepEqual(hPiQuota.out, [`worker-detenido #9 pi: cuota \u2014 ${piQuota}`])
+
+    // Newer pi terminal without an Orca record wins over an older done terminal.
+    const newerPi = harness({
+      worktrees: [{
+        path: '/wt/orca-stack-10',
+        branch: 'Gagaismo/orca-stack-10',
+        linkedIssue: 10,
+        terminals: [
+          { handle: 'term_old', title: 'claude', lastOutputAt: 100 },
+          { handle: 'term_pi', title: 'pi', lastOutputAt: 200 },
+        ],
+        screens: { term_old: ['Done'], term_pi: ['PS C:\\work>'] },
+        agents: [{ paneKey: 'tab-term_old:leaf-term_old', state: 'done', agentType: 'claude', updatedAt: 100 }],
+      }],
+      issues: { 10: 'OPEN' },
+    })
+    await once(newerPi, ['10'])
+    assert.deepEqual(newerPi.out, ['worker-detenido #10 pi: volvi\u00F3 al shell \u2014 PS C:\\work>'])
   })
 
   test('Rule 6: each (worker, reason) is emitted once and resumes across restarts without repeating or losing elapsed stall time', async () => {
@@ -1724,6 +1784,17 @@ describe('orca-stack vigilar (#399)', () => {
     await once(stall3, ['8'])
     assert.deepEqual(stall3.out, [])
 
+    // Closing the terminal while Orca keeps the done agent record (same paneKey) does not repeat worker-detenido.
+    const closedTerm = harness({
+      worktrees: [wt(10, 'claude', 'done', { screen: ['Finished'] })],
+      issues: { 10: 'OPEN' },
+    })
+    await once(closedTerm, ['10'])
+    assert.deepEqual(drain(closedTerm), ['worker-detenido #10 claude: termin\u00F3 sin abrir un PR \u2014 Finished'])
+    closedTerm.world.worktrees[0].terminals = []
+    await once(closedTerm, ['10'])
+    assert.deepEqual(closedTerm.out, [])
+
     // --dry-run writes no cursor.
     const dry = harness({
       worktrees: [wt(9, 'claude', 'done', { screen: ['PS C:\\work>'] })],
@@ -1763,6 +1834,11 @@ describe('orca-stack vigilar (#399)', () => {
     h.world.prs = [pr(70, { state: 'MERGED', checks: GREEN })]
     h.world.now = T0 + 2 * MINUTE
     assert.equal(await vigilarCommand({}, ['7'], h.io), 0)
-    assert.deepEqual(h.out, ['tanda-cerrada #7'])
+    assert.deepEqual(drain(h), ['tanda-cerrada #7'])
+
+    const umb = harness({ subIssues: { 29: [63, 64] } })
+    await vigilarCommand({ paraguas: '29', unaVez: true }, [], umb.io)
+    await vigilarCommand({ paraguas: '29', unaVez: true }, [], umb.io)
+    assert.deepEqual(umb.out, ['planificacion-publicada #29 #63,#64'])
   })
 })

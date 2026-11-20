@@ -1,10 +1,10 @@
 import { renameSync } from 'node:fs'
 import path from 'node:path'
 
-import { identityOf, paneAgents, readScreen, repoWorktrees, stackAgent, turnRunning, workerTerminals } from './avisar.mjs'
+import { identityOf, paneAgents, paneKey, readScreen, repoWorktrees, stackAgent, turnRunning, workerTerminals } from './avisar.mjs'
 import { analyzeChecks, checkRunId, isHigherRunId, isStatus, latestChecks } from './checks.mjs'
 import { consultasCommand, getCommonDir } from './consultas.mjs'
-import { defaultIo, isHardQuota, quotaLine, shellPrompt } from './despacho.mjs'
+import { defaultIo, quotaLine, shellPrompt } from './despacho.mjs'
 import { commitOf, markerValue } from './marcas.mjs'
 import { watchParent } from './parent-watch.mjs'
 import { sha256 } from './util.mjs'
@@ -147,8 +147,9 @@ const linked = (pr, issue, branches) =>
   branches.includes(pr.headRefName) ||
   closesIssue(pr.body, issue)
 
-const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
+const agentState = record => String(record?.state ?? record?.status ?? '').trim().toLowerCase()
 const recordTime = record => Number(record?.updatedAt ?? record?.stateStartedAt ?? 0) || 0
+const candidateTime = candidate => Math.max(recordTime(candidate.record), Number(candidate.terminal?.lastOutputAt ?? 0) || 0)
 const lastRawLine = screen => Array.isArray(screen) ? (screen.map(line => String(line)).reverse().find(line => line.trim() !== '') ?? '') : ''
 const truncateChars = (text, max = DETAIL_MAX) => Array.from(String(text ?? '')).slice(0, max).join('')
 const normalizeScreenLine = line => truncateChars(String(line ?? '').replace(/\s+/g, ' ').trim(), DETAIL_MAX)
@@ -167,15 +168,15 @@ const inspectWorker = (issue, worktrees, hasOpenPr, io, warn) => {
   const row = worktrees[0].row
   const allAgents = (row.agents ?? []).filter(agent => !agent?.parentPaneKey)
   const fallbackAgent = allAgents.slice().sort((a, b) =>
-    (String(b?.state ?? b?.status ?? '').trim().toLowerCase() === 'working' ? 1 : 0) -
-    (String(a?.state ?? a?.status ?? '').trim().toLowerCase() === 'working' ? 1 : 0) ||
+    (agentState(b) === 'working' ? 1 : 0) -
+    (agentState(a) === 'working' ? 1 : 0) ||
     recordTime(b) - recordTime(a),
   )[0]
   const fallbackIdentity = agentIdentity(fallbackAgent?.agentType)
-  const fallbackState = String(fallbackAgent?.state ?? fallbackAgent?.status ?? '').trim().toLowerCase()
+  const fallbackState = agentState(fallbackAgent)
   const fallbackWorker = fallbackIdentity && fallbackState ? { state: fallbackState, agent: fallbackIdentity } : null
 
-  if (hasOpenPr && !allAgents.some(agent => String(agent?.state ?? agent?.status ?? '').trim().toLowerCase() === 'working')) {
+  if (hasOpenPr && !allAgents.some(agent => agentState(agent) === 'working')) {
     return { unreadable: false, worker: allAgents.length === 1 ? fallbackWorker : null, probe: null }
   }
 
@@ -203,7 +204,7 @@ const inspectWorker = (issue, worktrees, hasOpenPr, io, warn) => {
         unreadable: false,
         worker: fallbackWorker,
         probe: {
-          workerId: fallbackIdentity,
+          workerId: fallbackAgent?.paneKey || fallbackIdentity,
           agent: fallbackIdentity,
           state: fallbackState,
           screenHash: null,
@@ -231,24 +232,24 @@ const inspectWorker = (issue, worktrees, hasOpenPr, io, warn) => {
 
   const candidates = matched.map(({ terminal, record, agent }, index) => {
     const screen = screens[index]
-    const state = String(record?.state ?? record?.status ?? '').trim().toLowerCase()
+    const state = agentState(record)
     const rawLast = lastRawLine(screen)
     const lastLine = normalizeScreenLine(rawLast)
     const quota = quotaLine(screen)
-    const isQuotaStop = Boolean(quota) && (state !== 'working' || isHardQuota(quota) || !turnRunning(agent, screen))
+    const isQuotaStop = Boolean(quota) && (state !== 'working' || !turnRunning(agent, screen))
     const isShellStop = Boolean(rawLast && shellPrompt(rawLast))
     const isDoneStop = state === 'done'
     const isLiveWorking = state === 'working' && !isQuotaStop && !isShellStop
-    const workerId = terminal.handle ? String(terminal.handle) : agent
-    return { index, record, agent, state, screenHash: screenDigest(screen), lastLine, quota, isQuotaStop, isShellStop, isDoneStop, isLiveWorking, workerId }
+    const workerId = record?.paneKey || (terminal.tabId && terminal.leafId ? paneKey(terminal) : terminal.handle ? String(terminal.handle) : agent)
+    return { index, terminal, record, agent, state, screenHash: screenDigest(screen), lastLine, quota, isQuotaStop, isShellStop, isDoneStop, isLiveWorking, workerId }
   })
 
   const live = candidates.filter(candidate => candidate.isLiveWorking)
   if (live.length > 0) {
-    const chosen = live.sort((a, b) => recordTime(b.record) - recordTime(a.record) || b.index - a.index)[0]
+    const chosen = live.sort((a, b) => candidateTime(b) - candidateTime(a) || b.index - a.index)[0]
     return { unreadable: false, worker: { state: 'working', agent: chosen.agent }, probe: chosen }
   }
-  const chosen = candidates.sort((a, b) => (b.record ? 1 : 0) - (a.record ? 1 : 0) || recordTime(b.record) - recordTime(a.record) || b.index - a.index)[0]
+  const chosen = candidates.sort((a, b) => candidateTime(b) - candidateTime(a) || (b.record ? 1 : 0) - (a.record ? 1 : 0) || b.index - a.index)[0]
   return { unreadable: false, worker: chosen.state ? { state: chosen.state, agent: chosen.agent } : null, probe: chosen }
 }
 
@@ -309,52 +310,57 @@ const evaluateWatchdog = (issue, seen, before, entry, now) => {
     if (before?.watchdog) entry.watchdog = before.watchdog
     return []
   }
-  const p = seen.probe
-  if (!p) {
+  const probe = seen.probe
+  if (!probe) {
     delete entry.watchdog
     return []
   }
 
   const prev = before?.watchdog
-  const sameWorker = prev?.workerId === p.workerId
-  const screenChanged = p.screenHash !== null && (!sameWorker || prev.screen !== p.screenHash)
+  const sameWorker = prev?.workerId === probe.workerId
+  const isWorking = probe.state === 'working'
+  const screenChanged = probe.screenHash !== null && (!sameWorker || prev.screen !== probe.screenHash)
+  const modeChanged = sameWorker && prev?.working !== undefined && prev.working !== isWorking
   let emittedList = sameWorker && Array.isArray(prev.emitted) ? [...prev.emitted] : []
-  if (p.isLiveWorking) emittedList = emittedList.filter(key => !key.startsWith('detenido:'))
-  if (screenChanged) emittedList = emittedList.filter(key => !key.startsWith('trabado:'))
+  if (probe.isLiveWorking) emittedList = emittedList.filter(key => !key.startsWith('stopped:'))
+  if (screenChanged) emittedList = emittedList.filter(key => !key.startsWith('stalled:'))
+  else if (modeChanged && isWorking) emittedList = emittedList.filter(key => !key.startsWith('stalled:4m:'))
   const emittedSet = new Set(emittedList)
-  const screenSince = p.screenHash === null ? undefined : (screenChanged || prev?.screenSince === undefined ? now : prev.screenSince)
+  const screenSince = probe.screenHash === null ? undefined : (screenChanged || modeChanged || prev?.screenSince === undefined ? now : prev.screenSince)
+  const openWithoutPr = !seen.pr && seen.issueState === 'OPEN'
   const lines = []
 
   let deathKey
   let deathReason
-  if (!seen.pr && seen.issueState !== 'CLOSED') {
-    if (p.isQuotaStop) {
-      deathKey = 'detenido:cuota'
-      const quotaNorm = normalizeScreenLine(p.quota)
-      deathReason = p.lastLine && p.lastLine !== quotaNorm ? `cuota \u2014 ${quotaNorm} \u2014 ${p.lastLine}` : `cuota \u2014 ${quotaNorm}`
-    } else if (p.isShellStop) {
-      deathKey = 'detenido:shell'
-      deathReason = p.lastLine ? `volvi\u00F3 al shell \u2014 ${p.lastLine}` : 'volvi\u00F3 al shell'
-    } else if (p.isDoneStop) {
-      deathKey = 'detenido:done'
-      deathReason = p.lastLine ? `termin\u00F3 sin abrir un PR \u2014 ${p.lastLine}` : 'termin\u00F3 sin abrir un PR'
+  if (openWithoutPr) {
+    if (probe.isQuotaStop) {
+      deathKey = 'stopped:quota'
+      const quotaNorm = normalizeScreenLine(probe.quota)
+      deathReason = probe.lastLine && probe.lastLine !== quotaNorm ? `cuota \u2014 ${quotaNorm} \u2014 ${probe.lastLine}` : `cuota \u2014 ${quotaNorm}`
+    } else if (probe.isShellStop) {
+      deathKey = 'stopped:shell'
+      deathReason = probe.lastLine ? `volvi\u00F3 al shell \u2014 ${probe.lastLine}` : 'volvi\u00F3 al shell'
+    } else if (probe.isDoneStop) {
+      deathKey = 'stopped:done'
+      deathReason = probe.lastLine ? `termin\u00F3 sin abrir un PR \u2014 ${probe.lastLine}` : 'termin\u00F3 sin abrir un PR'
     }
   }
 
   if (deathKey) {
     if (!emittedSet.has(deathKey)) {
-      lines.push(`worker-detenido #${issue} ${p.agent}: ${deathReason}`)
+      lines.push(`worker-detenido #${issue} ${probe.agent}: ${deathReason}`)
       emittedSet.add(deathKey)
     }
-  } else if (p.screenHash !== null && screenSince !== undefined) {
-    const isWorking = p.state === 'working'
-    const eligible = isWorking ? ((!seen.pr && seen.issueState !== 'CLOSED') || seen.pr?.state === 'OPEN') : (!seen.pr && seen.issueState !== 'CLOSED')
+  } else if (probe.screenHash !== null && screenSince !== undefined) {
+    const eligible = openWithoutPr || (isWorking && seen.pr?.state === 'OPEN')
     if (eligible && now - screenSince >= (isWorking ? STALL_WORKING_MS : STALL_IDLE_MS)) {
-      const stallKey = `trabado:${p.screenHash}`
-      if (!emittedSet.has(stallKey)) {
+      const workingKey = `stalled:30m:${probe.screenHash}`
+      const stallKey = isWorking ? workingKey : `stalled:4m:${probe.screenHash}`
+      const alreadyReported = emittedSet.has(stallKey) || (!isWorking && emittedSet.has(workingKey))
+      if (!alreadyReported) {
         const label = isWorking ? 'sin cambios por 30m' : 'sin cambios por 4m'
-        const motivo = p.lastLine ? `${label} \u2014 ${p.lastLine}` : label
-        lines.push(`worker-trabado #${issue} ${p.agent}: ${motivo}`)
+        const stallReason = probe.lastLine ? `${label} \u2014 ${probe.lastLine}` : label
+        lines.push(`worker-trabado #${issue} ${probe.agent}: ${stallReason}`)
         emittedSet.add(stallKey)
       }
     }
@@ -362,8 +368,9 @@ const evaluateWatchdog = (issue, seen, before, entry, now) => {
 
   const nextEmitted = [...emittedSet].slice(-WATCHDOG_EMITTED_MAX)
   entry.watchdog = {
-    workerId: p.workerId,
-    ...(p.screenHash !== null ? { screen: p.screenHash, screenSince } : {}),
+    workerId: probe.workerId,
+    working: isWorking,
+    ...(probe.screenHash !== null ? { screen: probe.screenHash, screenSince } : {}),
     ...(nextEmitted.length > 0 ? { emitted: nextEmitted } : {}),
   }
 

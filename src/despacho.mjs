@@ -372,7 +372,6 @@ const QUOTA_HARD = /quota (reached|exceeded)|usage limit|hit your (?:session|usa
 const QUOTA_SOFT = /rate[- ]limit|Resets? in \d|\blimit\b.*\bresets?\s+\S/i
 const PERCENT_LEFT = /\b\d+% left\b/i
 const isQuota = text => QUOTA_HARD.test(text) || (QUOTA_SOFT.test(text) && !PERCENT_LEFT.test(text))
-export const isHardQuota = line => QUOTA_HARD.test(String(line ?? ''))
 
 export const quotaLine = lines => {
   if (!Array.isArray(lines)) return undefined
