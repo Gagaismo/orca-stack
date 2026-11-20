@@ -84,7 +84,7 @@ const harness = (world = {}) => {
 
 const once = (h, items = ['7']) => vigilarCommand({ unaVez: true }, items, h.io)
 const orcaCalls = h => h.calls.filter(call => call.startsWith('orca orchestration'))
-const CHECK = `orca orchestration check --run ${RUN} --all --types worker_done,escalation --full --json`
+const CHECK = `orca orchestration check --run ${RUN} --all --types worker_done,escalation,question --full --json`
 
 describe('orca-stack vigilar: the Run mailbox (S5, #397)', () => {
   test('S5: worker_done succeeded gives ok; failed or an escalation gives partial; a task not titled "#<n> <agente>" is ignored; the mailbox is read without consuming', async () => {
@@ -175,5 +175,30 @@ describe('orca-stack vigilar: the Run mailbox (S5, #397)', () => {
     }
     assert.ok(output.includes('worker-terminado #<n> <agente> ok|partial'))
     assert.ok(output.includes('orca orchestration check'))
+  })
+})
+
+describe('orca-stack vigilar: worker questions in the Run mailbox (S3, #398)', () => {
+  test('S3: each question gives "consulta #<n> <agente> <message_id>" once; a restart with the cursor repeats nothing and a mailbox failure marks nothing told', async () => {
+    const question = { ...msg(20, 'question', 'task_8'), subject: 'Question', body: '¿Sigo?' }
+    const down = harness({ run: RUN, mailbox: [question], orcaDown: 'Orca is not running' })
+    await once(down)
+    assert.deepEqual(down.out, [])
+    assert.deepEqual(down.err, ['vigilar: no pude leer el buzón del Run de Orca: orca orchestration run-current falló (Orca is not running); sigo vigilando GitHub.'])
+    assert.equal(JSON.parse(down.files[CURSOR])[`run:${RUN}`], undefined)
+
+    delete down.world.orcaDown
+    await once(down)
+    assert.deepEqual(down.out, ['consulta #8 codex msg_20'])
+    assert.deepEqual(orcaCalls(down).slice(1), ['orca orchestration run-current --json', CHECK, `orca orchestration task-list --run ${RUN} --json`])
+    await once(down)
+    assert.deepEqual(down.out, ['consulta #8 codex msg_20'])
+
+    const restarted = harness({ run: RUN, mailbox: [question] })
+    restarted.files[CURSOR] = down.files[CURSOR]
+    await once(restarted)
+    assert.deepEqual(restarted.out, [])
+    assert.deepEqual(orcaCalls(restarted), ['orca orchestration run-current --json', CHECK])
+    assert.equal(restarted.calls.some(call => call.includes('--ack') || call.includes('--peek') || call.includes('--unread')), false)
   })
 })

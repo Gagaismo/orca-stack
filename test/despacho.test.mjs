@@ -3484,13 +3484,14 @@ describe('rebote', () => {
 
     test('Rule 2: The brief\'s general rule covers every notice, not only questions, including caps set in --nota', () => {
       const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
-      const generalNoticeRule = 'Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`.'
-      assert.ok(ticket.includes(generalNoticeRule), 'brief-ticket.md must carry the general notice rule covering questions, caps, and deviations')
+      // #398: a question goes through `orca orchestration ask`; a notice that is not a question still starts with Consulta:.
+      const generalNoticeRule = 'Anything you post for main on GitHub that is not a question (a cap you passed) starts with `Consulta: {{AGENT}}`; a question, including a deviation that needs a decision, goes through `orca orchestration ask`.'
+      assert.ok(ticket.includes(generalNoticeRule), 'brief-ticket.md must carry the general notice rule for notices that are not questions')
       assert.ok(!ticket.includes('Questions start with `Consulta: {{AGENT}}`.'), 'brief-ticket.md must not limit Consulta: to questions only')
 
       for (const agent of AGENTS) {
         const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '278', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' }, 'cap diff at 1000 lines')
-        assert.ok(brief.includes(`Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with \`Consulta: ${agent}\`.`), `${agent} brief must render general notice rule`)
+        assert.ok(brief.includes(`Anything you post for main on GitHub that is not a question (a cap you passed) starts with \`Consulta: ${agent}\`; a question, including a deviation that needs a decision, goes through \`orca orchestration ask\`.`), `${agent} brief must render general notice rule`)
         assert.ok(brief.includes('cap diff at 1000 lines'), `${agent} brief must carry the --nota cap`)
       }
     })
@@ -4205,7 +4206,7 @@ describe('agy: banner and splash before the brief (#357)', () => {
 
 describe('main-autonomo-2 S2: despachar reserves the migration number', () => {
   const MIGRACIONES = { ...PROJECT, migraciones: { glob: 'db/migrations/*.sql', numero: '^(\\d+)_' } }
-  const LINE = n => `- If this ticket adds a migration, number it ${n} (reserved by orca-stack); if it needs more than one, ask with a \`Consulta:\`.`
+  const LINE = n => `- If this ticket adds a migration, number it ${n} (reserved by orca-stack); if it needs more than one, ask main with \`orca orchestration ask\`.`
   const registry = () => path.join(root, '.git', 'orca-stack', 'migraciones.json')
   const briefPath = () => path.join(home, 'orca', 'briefs', 'proj-7.md')
   // origin/main holds 00011 and 00012; issues not named in `states` are open; `prs` answers gh pr list --state all.

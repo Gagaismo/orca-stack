@@ -617,13 +617,15 @@ const watchUmbrella = async (flags, items, io, warn) => {
   }
 }
 
-// The Run mailbox (#397): the workers despachar started in the Run bound to main end with worker_done or escalate. It is
+// The Run mailbox (#397): the workers despachar started in the Run bound to main end with worker_done or escalate, and
+// ask main with `orca orchestration ask`, which lands as a question (#398). It is
 // read with `check --all`, which never marks anything read (the mailbox belongs to main's agent), and with --full, since
 // the concise view keeps only payload ids and so has no outcome. Each message is told once: its id goes to the Run's
 // entry in vigilar.json, pruned to the ids `check --all` still returns, so the entry stays bounded and a restart neither
 // loses nor repeats a message.
 const runKey = runId => `run:${runId}`
 const TASK_TITLE = /^#(\d+) (\S+)$/
+const MAILBOX_TYPES = ['worker_done', 'escalation', 'question']
 
 const orchestration = (io, root, args) => {
   const res = io.sh('orca', ['orchestration', ...args], { cwd: root })
@@ -645,11 +647,11 @@ const payloadOf = message => {
 const readMailbox = (before, io, root) => {
   const { runId } = orchestration(io, root, ['run-current', '--json'])
   if (!runId) return { lines: [] }
-  const { messages } = orchestration(io, root, ['check', '--run', runId, '--all', '--types', 'worker_done,escalation', '--full', '--json'])
+  const { messages } = orchestration(io, root, ['check', '--run', runId, '--all', '--types', MAILBOX_TYPES.join(','), '--full', '--json'])
   if (!Array.isArray(messages)) throw new Error('orca orchestration check no devolvió una lista de mensajes')
   const key = runKey(runId)
   const told = new Set(before[key]?.vistos ?? [])
-  const ours = messages.filter(m => m?.id && (m.type === 'worker_done' || m.type === 'escalation'))
+  const ours = messages.filter(m => m?.id && MAILBOX_TYPES.includes(m.type))
   const fresh = ours.filter(m => !told.has(m.id)).sort((a, b) => (Number(a.sequence) || 0) - (Number(b.sequence) || 0))
   const lines = []
   // A message whose task is not listed yet stays unseen, so a later poll tells it once the task shows up; a listed task
@@ -664,6 +666,10 @@ const readMailbox = (before, io, root) => {
       handled.add(message.id)
       const title = TASK_TITLE.exec(titles.get(payload.taskId))
       if (!title) continue
+      if (message.type === 'question') {
+        lines.push(`consulta #${title[1]} ${title[2]} ${message.id}`)
+        continue
+      }
       const ok = message.type === 'worker_done' && payload.outcome === 'succeeded'
       lines.push(`worker-terminado #${title[1]} ${title[2]} ${ok ? 'ok' : 'partial'}`)
     }

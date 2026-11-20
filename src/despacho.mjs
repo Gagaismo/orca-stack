@@ -319,7 +319,7 @@ export const renderBrief = (kind, vars, nota) => {
     FANOUT_INSTRUCTIONS: fanoutInstructions(vars.AGENT, nota),
     PI_FOREGROUND: piForeground(vars.AGENT),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
-    MIGRACION: vars.MIGRACION ? `\n- If this ticket adds a migration, number it ${vars.MIGRACION} (reserved by orca-stack); if it needs more than one, ask with a \`Consulta:\`.` : '',
+    MIGRACION: vars.MIGRACION ? `\n- If this ticket adds a migration, number it ${vars.MIGRACION} (reserved by orca-stack); if it needs more than one, ask main with \`orca orchestration ask\`.` : '',
   })
 }
 

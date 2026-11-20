@@ -262,6 +262,9 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
   worker-terminado #<n> <agente> ok|partial
                                      un worker del Run de main mandó worker_done (ok si succeeded, partial si failed)
                                      o escaló (partial)
+  consulta #<n> <agente> <message_id>
+                                     un worker del Run de main preguntó con \`orca orchestration ask\`; main responde con
+                                     \`orca orchestration reply --id <message_id>\` (o un gate para el humano)
   tanda-cerrada #<n> #<m>...         terminaron todos los items; sale con 0
 En cada vuelta lee también el buzón del Run de Orca ligado a main (\`orca orchestration run-current\`), con
 \`orca orchestration check --all\`, que no marca nada como leído, y nombra cada worker por el título "#<n> <agente>" de
