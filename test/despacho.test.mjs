@@ -4065,6 +4065,8 @@ describe('agy: banner and splash before the brief (#357)', () => {
     await run('ticket', { n: '7', agent: 'agy' }, live.env)
     const sends = live.env.calls.filter(c => c[0] === 'orca' && ((c[1] === 'terminal' && c[2] === 'send') || c[2] === 'worker-start')).map(c => (isLoneEnter(c.slice(1)) ? 'enter' : isBrief(c.slice(1)) ? 'brief' : 'other'))
     assert.deepEqual(sends, ['brief', 'enter', 'brief'])
+    // #397: the retry reissues the request Orca named, so no second "#7 agy" Task is started.
+    assert.deepEqual(live.env.calls.filter(c => c[2] === 'worker-start').map(c => c.slice(c.indexOf('--json') + 1)), [[], ['--retry-request', 'req-1']])
     assert.ok(live.env.out.some(line => line.includes('agy muestra un pedido de confianza (agent_prompt_blocked): confirmo la carpeta con Enter (1/3).')), live.env.out.join('\n'))
     assert.ok(live.env.out.some(line => line.includes('✔ agy despachado')))
   })

@@ -633,15 +633,33 @@ const startWorker = async (io, say, { agent, handle, briefPath, supervised }) =>
   }
   let res = start()
   // #357: agy's trust screen the screen read missed makes Orca refuse with agent_prompt_blocked before the spec is
-  // delivered; Enter confirms the preselected "Yes, I trust this folder", bounded like the trust screen.
+  // delivered; Enter confirms the preselected "Yes, I trust this folder", bounded like the trust screen. The retry
+  // reissues the request Orca named (--retry-request), so Orca does not start a second "#<n> agy" Task.
   for (let i = 0; agent === 'agy' && i < AGY_TRUST_ENTERS && /agent_prompt_blocked/.test(`${res.stdout ?? ''}${res.stderr ?? ''}`); i += 1) {
     say(`agy muestra un pedido de confianza (agent_prompt_blocked): confirmo la carpeta con Enter (${i + 1}/${AGY_TRUST_ENTERS}).`)
     io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
     await io.sleep(2000)
+    const request = requestIdOf(res)
+    if (request && !argv.includes('--retry-request')) argv.push('--retry-request', request)
     res = start()
   }
   const failure = orchestrationFailure(res, 'orca orchestration worker-start')
-  if (failure) throw orchestrationError(failure)
+  if (!failure) return
+  // Orca exits 1 for outcome_unknown too: the worker may have started, so the issue keeps its assignee.
+  let body
+  try { body = JSON.parse(res.stdout) } catch {}
+  if (!hasValue(body, 'outcome_unknown')) throw orchestrationError(failure)
+  const request = requestIdOf(res)
+  const dispatchId = deepFind(body, ['dispatchId'])
+  const check = request ? `orca orchestration request-show --request ${request} --json` : dispatchId ? `orca orchestration worker-show --dispatch ${dispatchId} --json` : `orca orchestration task-list --run ${runId} --json`
+  throw new Error(`${failure}\nEl resultado de worker-start es desconocido (outcome_unknown): el worker de ${supervised.title} puede estar corriendo, así que el issue sigue asignado. Comprobalo con \`${check}\`.`)
+}
+const hasValue = (value, wanted) => value === wanted || ((isPlain(value) || Array.isArray(value)) && Object.values(value).some(v => hasValue(v, wanted)))
+// The request id Orca names for a reissue: a requestId field, or the id in its "--retry-request <id>" advice.
+const requestIdOf = res => {
+  let body
+  try { body = JSON.parse(res.stdout) } catch {}
+  return deepFind(body, ['requestId', 'request_id']) ?? /--retry-request\s+([^\s.,;]+)/.exec(`${res.stdout ?? ''}${res.stderr ?? ''}`)?.[1]
 }
 
 // `supervised` ({ title, objective }, despachar only): the worker starts with `orca orchestration worker-start` in the

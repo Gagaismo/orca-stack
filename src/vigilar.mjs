@@ -476,18 +476,23 @@ const readMailbox = (before, io, root) => {
   const ours = messages.filter(m => m?.id && (m.type === 'worker_done' || m.type === 'escalation'))
   const fresh = ours.filter(m => !told.has(m.id)).sort((a, b) => (Number(a.sequence) || 0) - (Number(b.sequence) || 0))
   const lines = []
+  // A message whose task is not listed yet stays unseen, so a later poll tells it once the task shows up; a listed task
+  // with another title is ignored for good.
+  const handled = new Set()
   if (fresh.length > 0) {
     const { tasks } = orchestration(io, root, ['task-list', '--run', runId, '--json'])
     const titles = new Map((Array.isArray(tasks) ? tasks : []).map(task => [task?.id, String(task?.title ?? '')]))
     for (const message of fresh) {
       const payload = payloadOf(message)
-      const title = TASK_TITLE.exec(titles.get(payload.taskId) ?? '')
+      if (!titles.has(payload.taskId)) continue
+      handled.add(message.id)
+      const title = TASK_TITLE.exec(titles.get(payload.taskId))
       if (!title) continue
       const ok = message.type === 'worker_done' && payload.outcome === 'succeeded'
       lines.push(`worker-terminado #${title[1]} ${title[2]} ${ok ? 'ok' : 'partial'}`)
     }
   }
-  const vistos = ours.map(m => m.id).filter(id => told.has(id) || fresh.some(m => m.id === id))
+  const vistos = ours.map(m => m.id).filter(id => told.has(id) || handled.has(id))
 
   return { lines, key, entry: { vistos } }
 }

@@ -156,6 +156,20 @@ describe('#397 despachar: supervised start', () => {
     }
   })
 
+  test('S3: a worker-start whose outcome is unknown keeps the assignee and says how to check whether the worker is running', async () => {
+    const unknown = { status: 1, stdout: JSON.stringify({ ok: false, error: { code: 'outcome_unknown', message: 'worker start outcome unknown after delivering the spec' }, result: { status: 'outcome_unknown', stage: 'deliver', requestId: 'req_9', dispatchId: 'ctx_9' } }), stderr: '' }
+    const env = fakeIo({ 'worker-start': unknown })
+    await assert.rejects(dispatch('ticket', { n: '7', agent: 'claude' }, env.io), error => {
+      assert.equal(error.message, 'orca orchestration worker-start falló: worker start outcome unknown after delivering the spec\nEl resultado de worker-start es desconocido (outcome_unknown): el worker de #7 claude puede estar corriendo, así que el issue sigue asignado. Comprobalo con `orca orchestration request-show --request req_9 --json`.')
+      return true
+    })
+    assert.ok(!env.calls.some(c => c.join(' ').includes('--remove-assignee')))
+    assert.equal(env.orchestration().filter(c => c[0] === 'worker-start').length, 1)
+    const leftover = env.out.slice(env.out.indexOf('El despacho quedó a medias. Quedó:'))
+    assert.deepEqual(leftover.join('\n').split('\n').slice(0, 4), ['El despacho quedó a medias. Quedó:', '  - el issue #7 asignado', `  - el worktree ${worktree}`, `  - el brief ${briefPath()}`])
+    assert.ok(!env.out.some(line => line.startsWith('✔')))
+  })
+
   test('S4: the ticket brief tells the worker to finish with worker_done ok, or partial with the Diagnóstico: text after publishing it on GitHub', () => {
     for (const agent of ['claude', 'codex', 'agy', 'pi']) {
       const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '7', REPO: 'proj', BASE: 'main', BRANCH: 'proj-7' })

@@ -124,6 +124,19 @@ describe('orca-stack vigilar: the Run mailbox (S5, #397)', () => {
     assert.deepEqual(again.out, [])
   })
 
+  test('S5: a message that arrives before its task is listed is not lost: nothing on poll 1, emitted once on poll 2', async () => {
+    const h = harness({ run: RUN, mailbox: [msg(10, 'worker_done', 'task_7', 'succeeded')], tasks: [] })
+    await once(h)
+    assert.deepEqual(h.out, [])
+    assert.deepEqual(JSON.parse(h.files[CURSOR])[`run:${RUN}`]?.vistos ?? [], [])
+
+    h.world.tasks = TASKS
+    await once(h)
+    assert.deepEqual(h.out, ['worker-terminado #7 claude ok'])
+    await once(h)
+    assert.deepEqual(h.out, ['worker-terminado #7 claude ok'])
+  })
+
   test('S5: with no bound Run or with Orca failing, GitHub events keep flowing, nothing crashes and the Orca error is said once per outage', async () => {
     const unbound = harness({ prs: [openPr] })
     assert.equal(await once(unbound), 0)
