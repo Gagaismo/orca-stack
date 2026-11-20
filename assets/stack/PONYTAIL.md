@@ -13,7 +13,7 @@ Este fragmento lo instala `orca-stack global` junto a `MAIN.md`, `ORCA-STACK.md`
 
 ### Authority order (`ORCA-STACK.md`)
 
-Ponytail takes its own level, right after the specialized skill for the current role (level 4) and before Caveman communication policy:
+Ponytail takes its own level, right after the specialized skill for the current role (level 4) and before Caveman communication policy (when that perk is on) and provider defaults:
 
 5. Ponytail implementation policy.
 

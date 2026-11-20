@@ -13,10 +13,6 @@ questions. If a fact cannot be verified, mark `UNKNOWN / MUST VERIFY`. End with
 sources, findings, open uncertainty, and the report path.
 The answer is a measured number: read `~/.claude/skills/principle-explain-the-number/SKILL.md`.
 
-**Policy:** Caveman follows the
-Orca Agent Stack setting for the summary only; preserve citations and
-uncertainty even when compressed.
-
 ## Domain/spec worker
 
 **Mission:** sharpen the domain model, CONTEXT/ADR, or spec named by the task.

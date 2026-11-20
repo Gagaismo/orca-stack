@@ -10,11 +10,6 @@ Provider instruction files point here for the durable policy.
   worker placement, settlement, cleanup, and coordinator/worker boundaries.
 - **Matt Pocock skills**: engineering methodology: grill-with-docs -> domain
   modeling -> CONTEXT/ADRs -> spec -> tickets -> TDD implementation -> review.
-- **Caveman (modular)**: communication compression. Orca Auto applies it when
-  the work is token-heavy, but never compresses code, commands, paths, exact
-  errors, decisions, risks, uncertainty, tests, or acceptance evidence.
-  Its level is a caveman 3.2.0 mode: `caveman`, `ultracave` or `megacave` (the
-  wrappers set `caveman`).
 - **Engram**: persistent memory only. It is not an authority or a scheduler.
 - **Gentle Shell (Pi)**: another engineer on the team with its own methodology
   (it may use ODD). It implements tickets, reviews with Judgment Day, and is
@@ -28,12 +23,10 @@ Provider instruction files point here for the durable policy.
 2. Project instructions, ADRs, CONTEXT, spec, and ticket acceptance criteria.
 3. Role brief supplied by the coordinator (research, implementation, review, etc.).
 4. Specialized skill for the current role.
-5. Caveman communication policy.
-6. Provider defaults.
+5. Provider defaults.
 
 A lower layer cannot cancel, replace, or broaden a higher layer. If a generic
 minimalism rule conflicts with an explicit requirement, preserve the requirement.
-If a communication rule would hide evidence, use normal prose for that passage.
 
 ## Worker contract
 
@@ -69,14 +62,6 @@ Antigravity sessions; Pi follows its own methodology (it may use ODD).
 
 Ticket authoring rules are defined in `~/orca/stack/MAIN.md` ("Ciclo de `main`", step 2).
 `main` follows them when writing tickets; do not copy a second version here.
-
-## Communication contract
-
-Caveman is communication-only. In `auto`, compress filler and repetitive prose
-only when it saves tokens; use normal prose for research, security warnings,
-irreversible-action confirmations, exact evidence, or when compression could
-change order or meaning. The official-build integration below intentionally does not pretend to add
-controls that the official Orca UI does not provide.
 
 ## Provider routing
 
@@ -148,7 +133,8 @@ Each wrapper sets the stack markers, resolves the real provider executable from
 `npx github:Gagaismo/orca-stack doctor` verifies the whole setup. This path preserves official
 Orca updates and existing projects/profiles. It applies to Orca-launched
 terminal agents; it does not add a native Agent Stack section, per-worker
-switches, or new global settings to the official build.
+switches, or new global settings to the official build. The official-build integration intentionally does not pretend to add
+controls that the official Orca UI does not provide.
 
 ## Deliberate exclusions
 
@@ -156,11 +142,7 @@ Do not install the full lifecycle-hook stacks of the modular skills. Their
 always-on hooks, session-start codebase map, subagent injection, MCP proxy, statusline ownership, cavecrew
 workers, and alternate planning loops would duplicate provider/Orca control.
 The wrappers own the small safe bridge: launch-scoped environment markers
-(`ORCA_STACK_MODE`, `ORCA_STACK_CAVEMAN_LEVEL`, `ORCA_STACK_POLICY_PATH`).
-The installed modular skills remain available explicitly:
-
-- `caveman` — communication-only mode; Auto is selected in Orca, not by a
-  provider hook.
+(`ORCA_STACK_POLICY_PATH`, plus those of the perks).
 
 ## Stop criteria
 

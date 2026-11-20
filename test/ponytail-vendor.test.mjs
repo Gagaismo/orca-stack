@@ -79,8 +79,10 @@ describe('vendored ponytail skills (upstream v5.3.2)', () => {
     const [, hint] = ponytail.match(/^argument-hint: "\[([^\]]+)\]"$/m) ?? []
     assert.deepEqual(hint?.split('|'), ['lite', 'full', 'ultra'])
     assert.ok(hint.split('|').includes(STACK_LEVELS.ponytail))
-    assert.match(shWrapper('claude'), new RegExp(`^ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}$`, 'm'))
-    assert.ok(cmdWrapper('claude').includes(`set "ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}"`))
+    // #394: with the ponytail perk on; off, the wrappers write `off`.
+    assert.match(shWrapper('claude', { ponytail: true }), new RegExp(`^ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}$`, 'm'))
+    assert.match(shWrapper('claude'), /^ORCA_STACK_PONYTAIL_LEVEL=off$/m)
+    assert.ok(cmdWrapper('claude', { ponytail: true }).includes(`set "ORCA_STACK_PONYTAIL_LEVEL=${STACK_LEVELS.ponytail}"`))
     assert.match(orcaSection, /`ORCA_STACK_PONYTAIL_LEVEL`/)
     assert.match(orcaSection, /unset, empty or any other value means `full`/)
     assert.match(orcaSection, /never turns Ponytail off/)
