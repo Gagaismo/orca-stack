@@ -12,9 +12,9 @@ Este fragmento lo instala `orca-stack global` junto a `MAIN.md`, `ORCA-STACK.md`
 
 ### Authority order (`ORCA-STACK.md`)
 
-Caveman takes its own level, after the specialized skill for the current role (and after Ponytail's level when that perk is on) and before provider defaults:
+Caveman takes its own level, after the specialized skill for the current role (and after Ponytail's level when that perk is on) and before Provider defaults, which move down one level:
 
-6. Caveman communication policy.
+- Caveman communication policy.
 
 If a communication rule would hide evidence, use normal prose for that passage.
 
@@ -27,7 +27,8 @@ change order or meaning.
 
 ### Deliberate exclusions (`ORCA-STACK.md`)
 
-Do not install the full Caveman lifecycle-hook stack. The wrappers set the
+Do not install the full Caveman lifecycle-hook stack. Its cavecrew
+workers would duplicate provider/Orca control. The wrappers set the
 launch-scoped environment markers
 (`ORCA_STACK_MODE`, `ORCA_STACK_CAVEMAN_LEVEL`).
 The installed modular skills remain available explicitly:

@@ -65,6 +65,7 @@ describe('#394 Ponytail as a perk', () => {
       assert.match(fragment, /Ponytail is not active for research output\./)
       assert.match(fragment, /apply Ponytail's smallest complete change, and mark a shortcut with a known limit `shortcut: <the limit>, <when to upgrade>`/)
       assert.match(fragment, /## Ponytail reviewer \*\*Mission:\*\* second-pass review for over-engineering only, after correctness\/spec review\./)
+      assert.match(fragment, /Apply the Ponytail implementation policy: Ponytail only minimizes an approved implementation\./)
       assert.match(fragment, /When it finds a non-Lean \*Must fix\* \(a bug, data loss\), pass it to main in one line, never drop it\./)
     } finally {
       teardown(env)

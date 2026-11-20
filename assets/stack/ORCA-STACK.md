@@ -139,8 +139,8 @@ controls that the official Orca UI does not provide.
 ## Deliberate exclusions
 
 Do not install the full lifecycle-hook stacks of the modular skills. Their
-always-on hooks, session-start codebase map, subagent injection, MCP proxy, statusline ownership, cavecrew
-workers, and alternate planning loops would duplicate provider/Orca control.
+always-on hooks, session-start codebase map, subagent injection, MCP proxy, statusline ownership,
+and alternate planning loops would duplicate provider/Orca control.
 The wrappers own the small safe bridge: launch-scoped environment markers
 (`ORCA_STACK_POLICY_PATH`, plus those of the perks).
 

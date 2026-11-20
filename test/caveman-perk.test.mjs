@@ -10,6 +10,7 @@ import { cleanup, cli, git, read, ROOT, tempDir, write } from './helpers.mjs'
 const BULLET = '- Caveman sigue el ajuste Auto/Off del stack y comprime solo prosa pesada en tokens. Conservá el código, los comandos, las rutas, los errores exactos, las decisiones, los riesgos, las dudas, los tests y la evidencia de aceptación.'
 const POINTER = 'Sus reglas están en `~/orca/stack/CAVEMAN.md`, el fragmento del perk de caveman.'
 const CORE = ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md']
+const BRIEFS = ['brief-planificacion.md', 'brief-rdd.md', 'brief-rebote.md', 'brief-revision.md', 'brief-ticket.md']
 const win = process.platform === 'win32'
 const flat = text => text.replace(/\s+/g, ' ')
 // The stack markers start unset, so a probe never inherits them from the session running the tests.
@@ -54,7 +55,8 @@ describe('#394 Caveman as a perk', () => {
       for (const agent of Object.keys(WRAPPERS)) assert.doesNotMatch(read(wrapper(env.home, agent)), /ORCA_STACK_MODE=auto/, agent)
       assert.doesNotMatch(env.block, /caveman|perk:/i)
       assert.ok(env.block.includes('tests que se piden: son lo que el humano espera recibir.\n- Engram es solo memoria'), 'no empty line left')
-      for (const name of CORE) assert.doesNotMatch(read(path.join(env.stack, name)), /caveman/i, name)
+      for (const name of CORE) assert.doesNotMatch(read(path.join(env.stack, name)), /cave(man|crew)/i, name)
+      for (const name of BRIEFS) assert.doesNotMatch(read(path.join(ROOT, 'assets', 'stack', name)), /caveman/i, name)
       for (const root of ['.claude', '.agents']) {
         assert.doesNotMatch(read(path.join(env.home, root, 'skills', 'orca-stack-policy', 'SKILL.md')), /caveman/i, root)
       }
@@ -84,6 +86,7 @@ describe('#394 Caveman as a perk', () => {
       assert.match(fragment, /Caveman communication policy\./)
       assert.match(fragment, /Caveman is communication-only\. In `auto`, compress filler and repetitive prose only when it saves tokens/)
       assert.match(fragment, /`ORCA_STACK_MODE`, `ORCA_STACK_CAVEMAN_LEVEL`/)
+      assert.match(fragment, /Its cavecrew workers would duplicate provider\/Orca control\./)
       assert.match(fragment, /`caveman` — communication-only mode; Auto is selected in Orca, not by a provider hook\./)
       assert.match(fragment, /Caveman follows the Orca Agent Stack setting for the summary only; preserve citations and uncertainty even when compressed\./)
       assert.match(fragment, /Caveman only compresses optional prose/)

@@ -13,9 +13,9 @@ Este fragmento lo instala `orca-stack global` junto a `MAIN.md`, `ORCA-STACK.md`
 
 ### Authority order (`ORCA-STACK.md`)
 
-Ponytail takes its own level, right after the specialized skill for the current role (level 4) and before Caveman communication policy (when that perk is on) and provider defaults:
+Ponytail takes its own level, right after the specialized skill for the current role (level 4), before Caveman communication policy (when that perk is on) and before Provider defaults, which move down one level:
 
-5. Ponytail implementation policy.
+- Ponytail implementation policy.
 
 ### Methodology contract (`ORCA-STACK.md`)
 
@@ -61,3 +61,7 @@ findings belong to the correctness review. When it finds a non-Lean *Must fix*
 limit is a decision, not a finding. Do not flag required
 validation, security, accessibility, error handling, acceptance tests, or ADR
 constraints. Do not apply fixes.
+
+### orca-stack-policy skill
+
+Apply the Ponytail implementation policy: Ponytail only minimizes an approved implementation.
