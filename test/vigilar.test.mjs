@@ -593,7 +593,7 @@ describe('orca-stack vigilar (#195)', () => {
     const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
     const step = n => contract.split(/\r?\n/).find(line => line.startsWith(`${n}. `))
     assert.ok(step(5).includes('un solo Monitor de fondo armado con `orca-stack vigilar <n...>`'))
-    assert.ok(step(5).includes('En marcha Proactive, armalo con `--consultas`'))
+    assert.ok(step(5).includes('Armalo siempre con `--consultas`'))
     assert.ok(step(5).includes('Antes de rearmarlo, matá el anterior'))
     assert.ok(!step(5).includes('gh pr list --json'))
     assert.ok(step(7).includes('justo antes de cada intento de `gh pr merge <n>`, corré `orca-stack vigilar --merge-de-main <n>`'))

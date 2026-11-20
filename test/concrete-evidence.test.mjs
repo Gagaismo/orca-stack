@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, test } from 'node:test'
 
 import { renderBrief } from '../src/despacho.mjs'
+import { applyPerks, perksOf } from '../src/perks.mjs'
 import { policyBlock } from '../src/templates.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -74,7 +75,8 @@ describe('issue 302: only concrete evidence blocks a review', () => {
   })
 
   test('Rule 6: the AGENTS.md copy of the contract block matches assets/stack/CONTRATO.md', () => {
-    assert.ok(read('AGENTS.md').includes(contract.replace(/\s+$/, '')))
+    // #393: the repo's own config has no perks, so its block is the asset with every perk span dropped.
+    assert.ok(read('AGENTS.md').includes(applyPerks(contract, perksOf({})).replace(/\s+$/, '')))
   })
 
   test('Preserve: revisar renders the new blocker format and keeps its markers', () => {

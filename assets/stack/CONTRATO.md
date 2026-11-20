@@ -2,7 +2,7 @@
 
 Este bloque lo mantiene orca-stack y describe cómo trabajan los agentes en este repo. Las reglas del proyecto que están fuera del bloque valen por encima de él cuando nombran la regla que cambian. Es igual en todos los proyectos: lo que cambia de un repo a otro vive en `.orca-stack.json` y se lee de ahí, no de este texto. Al final del bloque están las rutas de la política general y de los briefs por rol.
 
-Los encabezados `## Evidencia`, `## Desvíos del ticket`, `## BLOQUEA`, `## SUGERENCIAS`, `## Arena` y `## Swarm`, y las líneas `Implementador: <agente>`, `Revisor: <agente>`, `Commit: <sha>`, `Verificado por main: hallazgos <n,…> corregidos en <sha>`, `Decidido por main: <hallazgo> — <razón>`, `Rebote: <sha>`, `Rebote CI: <sha>`, `Rebote conflicto: <sha>`, `Marcha: <lazy|medium|proactive>`, `Esperando marcha: <items>`, `Consulta: <agente>`, `Respuesta de main:` y `Respuesta del humano:`, son marcas fijas del protocolo: no se traducen aunque el resto del texto vaya en otro idioma, porque la sesión de `main` las busca literalmente.
+Los encabezados `## Evidencia`, `## Desvíos del ticket`, `## BLOQUEA`, `## SUGERENCIAS`, `## Arena` y `## Swarm`, y las líneas `Implementador: <agente>`, `Revisor: <agente>`, `Commit: <sha>`, `Verificado por main: hallazgos <n,…> corregidos en <sha>`, `Decidido por main: <hallazgo> — <razón>`, `Rebote: <sha>`, `Rebote CI: <sha>`, `Rebote conflicto: <sha>`, <!-- perk:marchas -->`Marcha: <lazy|medium|proactive>`, `Esperando marcha: <items>`, <!-- /perk:marchas -->`Consulta: <agente>`, `Respuesta de main:` y `Respuesta del humano:`, son marcas fijas del protocolo: no se traducen aunque el resto del texto vaya en otro idioma, porque la sesión de `main` las busca literalmente.
 
 ### Configuración del proyecto
 
@@ -37,12 +37,14 @@ El rol lo da el checkout, no el agente. Comparalo con `git rev-parse --git-dir` 
 
 Si el repo todavía tiene `CONTEXT.md` en vez de `GLOSSARY.md`, leelo como si fuera `GLOSSARY.md`; el setup lo renombra.
 
-Si sos `main` (o la sesión única en modo `un-agente`), leé `~/orca/stack/MAIN.md` entero antes de actuar: ahí están el Ciclo de `main`, las Marchas, el Despacho, los Permisos de `main` y Arena y swarm.
+Si sos `main` (o la sesión única en modo `un-agente`), leé `~/orca/stack/MAIN.md` entero antes de actuar: ahí están el Ciclo de `main`, el Despacho, los Permisos de `main` y Arena y swarm.
 
+<!-- perk:marchas -->
 ### Marchas
 
-Esta sección es solo de `main` y está en `~/orca/stack/MAIN.md`.
+Esta sección es solo de `main` y está en `~/orca/stack/MARCHAS.md`, el fragmento del perk de marchas.
 
+<!-- /perk:marchas -->
 ### Agentes
 
 | Agente | Implementa | Revisa | Cómo trabaja |
