@@ -1057,7 +1057,7 @@ describe('orca-stack vigilar (#254)', () => {
     assert.deepEqual(h.out, ['pr-mergeado #250 PR #251 df9e86a', 'tanda-cerrada #7 #250'])
   })
 
-  test('Issue 254 Rule 7: the manual events table has pr-en-conflicto with rebote; MAIN.md step 5 names it next to worker-en-pausa; AGENTS.md equals the asset; vigilar --help lists it', async () => {
+  test('Issue 254 Rule 7: the manual events table has pr-en-conflicto with rebote; MAIN.md step 5 names it next to worker-detenido; AGENTS.md equals the asset; vigilar --help lists it', async () => {
     const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs', 'manual.md'), 'utf8')
     const row = manual.split(/\r?\n/).find(line => line.startsWith('| `pr-en-conflicto #<n> PR #<pr> <sha>`'))
     assert.ok(row, 'manual events row')
@@ -1065,7 +1065,7 @@ describe('orca-stack vigilar (#254)', () => {
 
     const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
     const step5 = contract.split(/\r?\n/).find(line => line.startsWith('5. '))
-    assert.ok(step5.includes('`worker-en-pausa #<n> <agente>`'))
+    assert.ok(step5.includes('`worker-detenido #<n> <agente>: terminó sin abrir un PR`'))
     assert.ok(step5.includes('`pr-en-conflicto #<n> PR #<pr> <sha>`'))
     assert.ok(step5.includes('`orca-stack rebote <pr>`'))
 
@@ -1829,6 +1829,14 @@ describe('orca-stack vigilar (#399)', () => {
     const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs', 'manual.md'), 'utf8')
     assert.ok(manual.includes('| `worker-detenido #<n> <agente>: <motivo>`'), 'manual lists worker-detenido')
     assert.ok(manual.includes('| `worker-trabado #<n> <agente>: <motivo>`'), 'manual lists worker-trabado')
+    assert.ok(!manual.includes('worker-en-pausa'), 'manual no longer references worker-en-pausa')
+
+    const mainDoc = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
+    assert.ok(!mainDoc.includes('worker-en-pausa'), 'MAIN.md no longer references worker-en-pausa')
+    const step5 = mainDoc.split(/\r?\n/).find(line => line.startsWith('5. '))
+    const diag = mainDoc.split(/\r?\n/).find(line => line.startsWith('Ante `diagnostico #<n> <agente>`'))
+    assert.ok(step5.includes('`worker-detenido #<n> <agente>: terminó sin abrir un PR`'), 'MAIN.md step 5 names worker-detenido')
+    assert.ok(diag.includes('`worker-detenido #<n> <agente>: terminó sin abrir un PR`'), 'MAIN.md diagnostico paragraph names worker-detenido')
   })
 
   test('PRESERVE: vigilarCommand keeps existing PR, CI, merge-de-main, and umbrella events', async () => {
