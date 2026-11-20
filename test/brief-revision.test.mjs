@@ -88,6 +88,11 @@ describe('brief-revision', () => {
     assert.ok(brief.includes('Revisor: subagente (gpt-6)'))
   })
 
+  test('issue 385 Preserve: revisar retains its review instructions', () => {
+    const brief = renderBrief('review', { REPO: 'repo', PR: '7', IMPLEMENTER: 'codex', SHA: 'abc123', BASE: 'main', VERIFICATION: 'npm test', AGENT: 'agy' })
+    assert.ok(brief.includes('What to review'))
+    assert.ok(brief.includes('Revisor: agy'))
+  })
   test('issue 385 Rule 6: template requires nada alone and directs reservations and unread coverage', () => {
     const brief = readFileSync(path.join(PACKAGE_ROOT, 'assets/stack/brief-revision.md'), 'utf8')
     assert.ok(brief.includes('`nada` alone on its line, without clarification'))
