@@ -2562,14 +2562,102 @@ describe('rebote', () => {
     assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
   })
 
-  test('Rule 5: two prior distinct CI bounces reach the human, while the current sha retry is allowed', async () => {
-    const exhausted = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1\nRebote CI: old2' }] }))
-    await assert.rejects(reboteCommand({}, '12', exhausted.io), /dos rebotes de CI.*humano/i)
-    assert.equal(exhausted.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+  // Issue #396: a cap of four CI bounces; the third and fourth need a `Diagnóstico: main` on the head.
+  describe('issue #396: CI bounces past the second need a Diagnóstico de main, up to four', () => {
+    const red = [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }]
+    const at = minute => `2026-11-20T10:${String(minute).padStart(2, '0')}:00Z`
+    const ciMark = (sha, minute) => ({ body: `Rebote CI: ${sha}`, createdAt: at(minute) })
+    const diagnosis = (commit, hypothesis, minute) => ({ body: `Diagnóstico: main\nCausa: the fixture times out\nProbado: raising the timeout\nSiguiente hipótesis: ${hypothesis}\nCommit: ${commit}`, createdAt: at(minute) })
+    const ciPr = comments => pr({ reviews: [], statusCheckRollup: red, comments })
+    const launches = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    const commented = env => env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+    const markerOf = env => env.written.find(([file]) => file.endsWith('-comment.md'))?.[1]
+    const briefOf = env => env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    const refused = async (comments, line) => {
+      const env = bounceEnv(ciPr(comments))
+      await assert.rejects(reboteCommand({}, '12', env.io), error => error.message === line)
+      assert.equal(launches(env).length, 0)
+      assert.ok(!commented(env))
+      assert.equal(markerOf(env), undefined)
+      assert.equal(briefOf(env), undefined)
+    }
 
-    const sameSha = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1' }, { body: 'Rebote CI: abc123' }] }))
-    await reboteCommand({}, '12', sameSha.io)
-    assert.equal(sameSha.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: abc123\n')
+    test('R1: CI bounces 1 and 2 need no diagnosis', async () => {
+      for (const comments of [[], [ciMark('old1', 1)]]) {
+        const env = bounceEnv(ciPr(comments))
+        await reboteCommand({}, '12', env.io)
+        assert.equal(launches(env).length, 1)
+        assert.equal(markerOf(env), 'Rebote CI: abc123\n')
+      }
+      // A relaunch on a head that already has its marker is still bounce 2, not 3.
+      const sameSha = bounceEnv(ciPr([ciMark('old1', 1), ciMark('abc123', 2)]))
+      await reboteCommand({}, '12', sameSha.io)
+      assert.equal(markerOf(sameSha), 'Rebote CI: abc123\n')
+    })
+
+    test('R2: CI bounces 3 and 4 run with a Diagnóstico de main on the head published after the latest Rebote CI:, and its hypothesis reaches the brief', async () => {
+      const third = bounceEnv(ciPr([ciMark('old1', 1), ciMark('old2', 2), diagnosis('abc123', 'the Windows runner lacks the fixture locale', 3)]))
+      await reboteCommand({}, '12', third.io)
+      assert.equal(launches(third).length, 1)
+      assert.equal(markerOf(third), 'Rebote CI: abc123\n')
+      assert.match(briefOf(third), /the Windows runner lacks the fixture locale/)
+
+      const fourth = bounceEnv(ciPr([ciMark('old1', 1), ciMark('old2', 2), diagnosis('old3', 'first idea', 3), ciMark('old3', 4), diagnosis('abc123', 'the cache key ignores the lockfile', 5)]))
+      await reboteCommand({}, '12', fourth.io)
+      assert.equal(launches(fourth).length, 1)
+      assert.equal(markerOf(fourth), 'Rebote CI: abc123\n')
+      assert.match(briefOf(fourth), /the cache key ignores the lockfile/)
+      assert.doesNotMatch(briefOf(fourth), /first idea/)
+
+      // A diagnosis posted before the latest Rebote CI: marker does not count.
+      await refused([ciMark('old1', 1), diagnosis('abc123', 'too early', 2), ciMark('old2', 3)], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
+    })
+
+    test('R3: refused CI bounces print one line naming the failed condition, publish no marker and launch nothing', async () => {
+      await refused([ciMark('old1', 1), ciMark('old2', 2)], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
+      await refused([ciMark('old1', 1), ciMark('old2', 2), ciMark('old3', 3)], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 4')
+      // A Diagnóstico de main naming an older head does not unlock bounce 3.
+      await refused([ciMark('old1', 1), ciMark('old2', 2), diagnosis('old2', 'retry on the new head', 3)], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
+      // Another author's Diagnóstico does not count either.
+      await refused([ciMark('old1', 1), ciMark('old2', 2), { ...diagnosis('abc123', 'mine', 3), body: diagnosis('abc123', 'mine', 3).body.replace('Diagnóstico: main', 'Diagnóstico: codex') }], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
+      for (const hypothesis of ['ninguna', '', '`ninguna`', '**ninguna**']) {
+        await refused([ciMark('old1', 1), ciMark('old2', 2), diagnosis('abc123', hypothesis, 3)], 'rebote: el Diagnóstico de main sobre abc123 no trae una Siguiente hipótesis')
+      }
+      await refused([ciMark('old1', 1), ciMark('old2', 2), ciMark('old3', 3), ciMark('old4', 4), diagnosis('abc123', 'one more try', 5)], 'rebote: tope de 4 rebotes de CI alcanzado en el PR #12')
+      // The cap is checked before the diagnosis: without one, a fifth bounce still names the cap.
+      await refused([ciMark('old1', 1), ciMark('old2', 2), ciMark('old3', 3), ciMark('old4', 4)], 'rebote: tope de 4 rebotes de CI alcanzado en el PR #12')
+
+      // Through the CLI: exit code 1 and a single line.
+      const env = bounceEnv(ciPr([ciMark('old1', 1), ciMark('old2', 2)]))
+      const errors = []
+      const original = console.error
+      console.error = text => errors.push(String(text))
+      let code
+      try {
+        code = await main(['rebote', '12'], env.io)
+      } finally {
+        console.error = original
+      }
+      assert.equal(code, 1)
+      assert.deepEqual(errors, ['✖ rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3'])
+      assert.equal(launches(env).length, 0)
+      assert.ok(!commented(env))
+    })
+
+    test('R4: with CI bounces spent, the review bounce, the conflict bounce and the pending and CANCELLED refusals behave as before', async () => {
+      const spent = [ciMark('old1', 1), ciMark('old2', 2), ciMark('old3', 3), ciMark('old4', 4)]
+      // Green CI with a current blocking review: a review bounce, whatever the CI count.
+      const review = bounceEnv(pr({ comments: spent }))
+      await reboteCommand({}, '12', review.io)
+      assert.equal(markerOf(review), 'Rebote: abc123\nRonda: 1\n')
+      const pending = bounceEnv(pr({ reviews: [], comments: spent, statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', status: 'IN_PROGRESS' }] }))
+      await assert.rejects(reboteCommand({}, '12', pending.io), /todavía tiene checks pendientes en abc123: unit/)
+      const cancelled = bounceEnv(pr({ reviews: [], comments: spent, statusCheckRollup: [{ __typename: 'CheckRun', name: 'job', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/987/job/1' }] }))
+      await assert.rejects(reboteCommand({}, '12', cancelled.io), /checks CANCELLED en abc123[\s\S]*gh run rerun 987 --failed/)
+      const conflict = bounceEnv(pr({ reviews: [], comments: spent, mergeable: 'CONFLICTING', baseRefName: 'main' }), { 'git fetch': okRes(''), 'git merge-tree': { status: 1, stdout: 'tree\0a.mjs\0', stderr: '' }, 'git log': okRes('') })
+      await reboteCommand({}, '12', conflict.io)
+      assert.equal(markerOf(conflict), 'Rebote conflicto: abc123\n')
+    })
   })
 
   test('Rule 6: CI markers do not consume a later review bounce on a new head', async () => {
@@ -2733,7 +2821,7 @@ describe('rebote', () => {
         { body: 'Rebote CI: oldsha2' },
       ],
     }))
-    await assert.rejects(reboteCommand({}, '12', twoCiBounces.io), /dos rebotes de CI distintos.*humano/i)
+    await assert.rejects(reboteCommand({}, '12', twoCiBounces.io), error => error.message === 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
   })
 
   test('Rule 10: existing worktree guards still apply to a CI bounce', async () => {
@@ -3168,7 +3256,7 @@ describe('rebote', () => {
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(clean), { 'orca worktree': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'working' }] }] } }) }).io), /agente vivo/)
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [{ body: 'Commit: abc123\n## BLOQUEA\n1. (inferida, interpretación): product disagreement' }] })).io), /interpretación/)
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, statusCheckRollup: [{ __typename: 'CheckRun', name: 'job', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/987/job/1' }] })).io), /gh run rerun 987 --failed/)
-      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1\nRebote CI: old2' }] })).io), /dos rebotes de CI/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1\nRebote CI: old2' }] })).io), /falta un Diagnóstico de main sobre abc123 para el rebote de CI 3/)
 
       const plain = bounceEnv(pr(clean))
       await reboteCommand({ dryRun: true }, '12', plain.io)
