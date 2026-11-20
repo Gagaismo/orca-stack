@@ -60,7 +60,7 @@ Sin leer: <every path of the diff you did not read, comma-separated, or nada>
 
 `## Cobertura` is required in every review. A review that leaves a path matching `riesgo` unread is partial: it must list that path under `Sin leer:`, and main does not count it for that path. For a PR over 1500 changed lines (`gh pr view {{PR}} --json additions,deletions`), review by layers: first every path that matches a `riesgo` glob of .orca-stack.json, then the rest; whatever you did not reach goes under `Sin leer:`.
 
-With no blockers, `## BLOQUEA` says `nada`. If the repo has no CI, add the line `Suite: <command> en verde` under `Revisor:` after running the suite. If the diff is a one-way door and the PR's `## Merge Danger` says otherwise, say so in SUGERENCIAS.
+With no blockers, `## BLOQUEA` says `nada` alone on its line, without clarification. Reservations go in `## SUGERENCIAS` and unread material in `## Cobertura`. For example, `nada identificado en la cobertura parcial` does not count as a clean review. If the repo has no CI, add the line `Suite: <command> en verde` under `Revisor:` after running the suite. If the diff is a one-way door and the PR's `## Merge Danger` says otherwise, say so in SUGERENCIAS.
 
 Tag a blocker `implementación` when the code breaks a clear rule, or `interpretación` when author and reviewer read a rule differently. An `interpretación` blocker is a requirements gap for the human: tell `main` to send it to the human; `main` must not settle it with `Decidido por main`.
 

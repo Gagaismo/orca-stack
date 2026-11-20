@@ -82,7 +82,14 @@ const reviewOf = body => {
   const verdict = at < 0 ? undefined : lines.slice(at + 1).find(line => line !== '')
   const lenses = named[2] === undefined ? undefined : named[2].split(',').map(lens => lens.trim().toLowerCase()).filter(lens => lens !== '')
 
-  return { reviewer: named[1].toLowerCase(), commit, clean: verdict?.toLowerCase() === 'nada', lenses, body }
+  return { reviewer: named[1].toLowerCase(), commit, clean: verdict?.toLowerCase() === 'nada', verdict, lenses, body }
+}
+
+const blockerReason = review => {
+  if (!/^nada/i.test(review.verdict ?? '') || review.clean) return 'tiene bloqueos'
+  const chars = Array.from(review.verdict)
+  const verdict = chars.length > 80 ? chars.slice(0, 80).join('') + '\u2026' : review.verdict
+  return `no dice "nada" solo en ## BLOQUEA: "${verdict}"`
 }
 
 // main's `RDD: <sha> (<lentes>)` request for this head, its lenses sorted, or undefined. A body that is a review is no
@@ -162,7 +169,7 @@ const riskDeny = (n, file, facts, config, now) => {
   const blocked = reviews.find(review => !review.clean)
   if (blocked !== undefined) {
     return (
-      `${prefix} y el review de ${blocked.reviewer} sobre el commit ${sha} tiene bloqueos. ` +
+      `${prefix} y el review de ${blocked.reviewer} sobre el commit ${sha} ${blockerReason(blocked)}. ` +
       'En una ruta de riesgo un bloqueo no se salda con "Decidido por main": corregilo y pedí un review nuevo, o pasale la decisión al humano.'
     )
   }
@@ -378,13 +385,13 @@ const evaluate = (pr, config, root, io, now, ctx) => {
 
   // (a) and (b); with #377's waiver only an unsettled blocker on the head and ## Evidencia remain.
   if (waived) {
-    for (const one of onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))) falta.push(`(a) el review de ${one.reviewer} sobre ${sha7} tiene bloqueos`)
+    for (const one of onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))) falta.push(`(a) el review de ${one.reviewer} sobre ${sha7} ${blockerReason(one)}`)
     if (!/^##\s*Evidencia\b/im.test(normalizeBody(pr.body))) falta.push('(a) reviewParaMerge: false en la base necesita ## Evidencia en el body del PR')
   } else if (implementer === undefined || !FAMILIES.agents.includes(implementer)) {
     falta.push('(a) el body del PR no tiene una línea Implementador: <agente>')
   } else {
     const unsettled = onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))
-    for (const one of unsettled) falta.push(`(a) el review de ${one.reviewer} sobre ${sha7} tiene bloqueos`)
+    for (const one of unsettled) falta.push(`(a) el review de ${one.reviewer} sobre ${sha7} ${blockerReason(one)}`)
     // pi's own RDD review counts when main asked for it (only those are in `reviews`).
     const counted = onHead.filter(one => one.clean && (one.reviewer !== implementer || one.lenses !== undefined))
     const evidence = /^##\s*Evidencia\b/im.test(normalizeBody(pr.body))
