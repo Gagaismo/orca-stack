@@ -5,15 +5,21 @@
   "skills": {
     "principle-make-operations-idempotent": {
       "adapted": false,
-      "upstreamSha256": "7aa9327cf1f1aa057e95d47a0a78bd88a8f9d556b608866fee939d455a53a019"
+      "version": "0.15.43",
+      "commit": "2f87c854fe3e2fcda44ca86b46ede35aad3c46b7",
+      "upstreamSha256": "76ad0a99b6ff2a05a159accfeee48412d62f62774eb8d05bbff26a1f3aa3eab5"
     },
     "principle-attack-the-premise": {
       "adapted": false,
-      "upstreamSha256": "6a932884daad4aa189e9b5d1665226bbc75621d4d2a398fd4003bebd382f4599"
+      "version": "0.15.43",
+      "commit": "2f87c854fe3e2fcda44ca86b46ede35aad3c46b7",
+      "upstreamSha256": "831e916c540f4b6b720b7472aeea6e6ef93996655e36cc2517221f6f2081b480"
     },
     "principle-explain-the-number": {
       "adapted": false,
-      "upstreamSha256": "3c84fbf9a7d9842abcfcd134010782b32092ac3d3fb4aaf9ed5732dca83aa58c"
+      "version": "0.15.43",
+      "commit": "2f87c854fe3e2fcda44ca86b46ede35aad3c46b7",
+      "upstreamSha256": "e6a3f00991f4949cf18a0b5c77dd3126ca4402b8553f88c9c7905e577512676e"
     },
     "create-formal-verification-skill": {
       "adapted": false,

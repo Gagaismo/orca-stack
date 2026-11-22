@@ -16,6 +16,11 @@ const readSkill = (...parts) => readFileSync(path.join(...parts), 'utf8').replac
 const sha256 = text => createHash('sha256').update(text.replace(/\r\n/g, '\n'), 'utf8').digest('hex')
 const provenance = JSON.parse(readSkill(SKILLS, 'pstack-upstream.json'))
 const skill = name => readSkill(SKILLS, name, 'SKILL.md')
+// Where a skill's bytes come from: its own version and commit (#412), else the manifest's top-level pin.
+const pinOf = (manifest, name) => ({
+  version: manifest.skills[name].version ?? manifest.version,
+  commit: manifest.skills[name].commit ?? manifest.commit,
+})
 
 // Skills shipped verbatim (adapted: false): every principle-* folder plus these two (#303) and statechart (#305).
 const FORMAL = ['create-formal-verification-skill', 'maintain-formal-verification-skill']
@@ -37,11 +42,12 @@ describe('vendored pstack principles (upstream v0.15.36)', () => {
     assertVerbatimSet(provenance.skills, folders)
     for (const [name, entry] of unadapted) {
       assert.equal(entry.adapted, false, `${name} must not be adapted`)
-      assert.equal(sha256(skill(name)), skillMdHash(entry), `${name} differs from upstream v0.15.36`)
+      const { version } = pinOf(provenance, name)
+      assert.equal(sha256(skill(name)), skillMdHash(entry), `${name} differs from upstream v${version}`)
       // Corrupting one byte must fail naming the skill
       const corrupted = skill(name) + ' '
       assert.throws(() => {
-        assert.equal(sha256(corrupted), skillMdHash(entry), `${name} differs from upstream v0.15.36`)
+        assert.equal(sha256(corrupted), skillMdHash(entry), `${name} differs from upstream v${version}`)
       }, new RegExp(name))
     }
   })
@@ -225,9 +231,7 @@ describe('#265 re-vendor pstack principles and swarm from 0.15.36', () => {
   test('rule 1: provenance manifest says 0.15.36 and commit c742dd61706fbacc1b95f1a20b7b988cf096ce6c, upstreamSha256 hashes match, and README line names 0.15.36 (commit c742dd6)', () => {
     assert.equal(provenance.version, '0.15.36')
     assert.equal(provenance.commit, 'c742dd61706fbacc1b95f1a20b7b988cf096ce6c')
-    assert.equal(provenance.skills['principle-make-operations-idempotent'].upstreamSha256, '7aa9327cf1f1aa057e95d47a0a78bd88a8f9d556b608866fee939d455a53a019')
-    assert.equal(provenance.skills['principle-attack-the-premise'].upstreamSha256, '6a932884daad4aa189e9b5d1665226bbc75621d4d2a398fd4003bebd382f4599')
-    assert.equal(provenance.skills['principle-explain-the-number'].upstreamSha256, '3c84fbf9a7d9842abcfcd134010782b32092ac3d3fb4aaf9ed5732dca83aa58c')
+    // #412 moved the three principles to 0.15.43 (2f87c85); their pins are checked in the #412 block.
     assert.equal(provenance.skills['arena'].upstreamSha256, 'd0adeca6c9b19d43d90ed8f0484f0ddd362f05006d628b8f4cc6c9b55fa4d2b3')
     assert.equal(provenance.skills['swarm'].upstreamSha256, 'fea6bfbbf21e067a4e2d2ebab034bc3af508118e9df1abc9d2ba040d58a6df3a')
     const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
@@ -252,7 +256,7 @@ describe('#265 re-vendor pstack principles and swarm from 0.15.36', () => {
     }
   })
 
-  test('rule 3: principle-explain-the-number is a byte-for-byte copy of upstream at commit c742dd6, negative: 0.15.31 description no longer ships', () => {
+  test('rule 3: principle-explain-the-number is a byte-for-byte copy of upstream at its recorded commit, negative: 0.15.31 description no longer ships', () => {
     const text = skill('principle-explain-the-number')
     assert.equal(sha256(text), provenance.skills['principle-explain-the-number'].upstreamSha256)
     assert.match(text, /^disable-model-invocation:\s*true$/m)
@@ -628,5 +632,100 @@ describe('#305 vendored statechart with per-file hashes (upstream v0.15.36)', ()
     } finally {
       cleanup(home)
     }
+  })
+})
+
+describe('#412 re-vendor the three pstack principles from 0.15.43 (2f87c85)', () => {
+  const OLD = { version: '0.15.36', commit: 'c742dd61706fbacc1b95f1a20b7b988cf096ce6c' }
+  const NEW = { version: '0.15.43', commit: '2f87c854fe3e2fcda44ca86b46ede35aad3c46b7' }
+  // sha256 of pstack/skills/<name>/SKILL.md at 2f87c854 (unchanged up to 0b46ec3, pstack 0.15.46).
+  const UPSTREAM = {
+    'principle-attack-the-premise': '831e916c540f4b6b720b7472aeea6e6ef93996655e36cc2517221f6f2081b480',
+    'principle-explain-the-number': 'e6a3f00991f4949cf18a0b5c77dd3126ca4402b8553f88c9c7905e577512676e',
+    'principle-make-operations-idempotent': '76ad0a99b6ff2a05a159accfeee48412d62f62774eb8d05bbff26a1f3aa3eab5',
+  }
+  const assertPinsTruthful = manifest => {
+    for (const name of Object.keys(manifest.skills)) {
+      assert.deepEqual(pinOf(manifest, name), name in UPSTREAM ? NEW : OLD, `${name} provenance names the wrong upstream commit`)
+    }
+  }
+
+  test('R1: the three principles are byte-for-byte copies of upstream at 2f87c854 recorded with their own version and commit, and changing one byte fails naming the skill', () => {
+    for (const [name, hash] of Object.entries(UPSTREAM)) {
+      assert.deepEqual(provenance.skills[name], { adapted: false, ...NEW, upstreamSha256: hash })
+      assert.equal(sha256(skill(name)), hash, `${name} differs from upstream v0.15.43`)
+      assert.throws(() => assert.equal(sha256(skill(name) + ' '), hash, `${name} differs from upstream v0.15.43`), new RegExp(name))
+    }
+  })
+
+  test('R2: every other vendored skill still resolves to 0.15.36 c742dd6, negative: a single top-level 0.15.43 pin or a principle without its own pin is rejected naming the skill', () => {
+    assert.deepEqual({ version: provenance.version, commit: provenance.commit }, OLD)
+    assertPinsTruthful(provenance)
+    const topLevelOnly = structuredClone(provenance)
+    Object.assign(topLevelOnly, NEW)
+    for (const name of Object.keys(UPSTREAM)) {
+      delete topLevelOnly.skills[name].version
+      delete topLevelOnly.skills[name].commit
+    }
+    assert.throws(() => assertPinsTruthful(topLevelOnly), /create-formal-verification-skill|statechart|arena|swarm/)
+    const unpinned = structuredClone(provenance)
+    delete unpinned.skills['principle-explain-the-number'].commit
+    assert.throws(() => assertPinsTruthful(unpinned), /principle-explain-the-number/)
+  })
+
+  test('R3: the three keep disable-model-invocation: true and the description lines the MAIN.md and brief triggers paraphrase', () => {
+    const descriptions = {
+      'principle-attack-the-premise': 'description: "Apply when two or more fixes that share one premise have failed the same gate. Write the premise down and test it directly before you write another fix that assumes it."',
+      'principle-explain-the-number': 'description: "Apply before you measure, and before you trust, report, or act on a number you measured: a speedup, a regression, a throughput, a latency, or an eval result. Find what limits it, and rule out that it measured something other than the work you think."',
+      'principle-make-operations-idempotent': 'description: "Apply when designing commands, lifecycle steps, or processing loops that run amid crashes, restarts, and retries. Converge to the same end state regardless of partial prior runs."',
+    }
+    for (const [name, line] of Object.entries(descriptions)) {
+      const text = skill(name)
+      assert.match(text, /^disable-model-invocation:\s*true$/m, `${name} missing disable-model-invocation: true`)
+      assert.ok(text.split('\n').includes(line), `${name} description changed`)
+    }
+    const main = read(path.join(ROOT, 'assets', 'stack', 'MAIN.md'))
+    assert.match(main, /Antes de actuar sobre un número medido que viene de una investigación, de una tabla de Evidencia o de una retro:\s*leé `~\/\.claude\/skills\/principle-explain-the-number\/SKILL\.md`\./)
+    assert.match(main, /Antes de decidir qué sigue en pie después de la segunda ronda de review o de CI, o de pasárselo al humano:\s*leé `~\/\.claude\/skills\/principle-attack-the-premise\/SKILL\.md`\./)
+  })
+
+  test('R4: negative: arena and swarm are not re-vendored, their entries and adaptation notes still name 0.15.36', () => {
+    assert.deepEqual(provenance.skills.arena, {
+      adapted: true,
+      upstreamSha256: 'd0adeca6c9b19d43d90ed8f0484f0ddd362f05006d628b8f4cc6c9b55fa4d2b3',
+      shippedSha256: '7e4a44eedfaa02ea9333b7b6210074078ba1c938ba7bc03f1a044155afbcaa4c',
+    })
+    assert.deepEqual(provenance.skills.swarm, {
+      adapted: true,
+      upstreamSha256: 'fea6bfbbf21e067a4e2d2ebab034bc3af508118e9df1abc9d2ba040d58a6df3a',
+      shippedSha256: '44eef5766263162698dde1082176907079e1c027279e8c1bc64166d0ec46ef26',
+    })
+    for (const name of ['arena', 'swarm']) {
+      assert.equal(sha256(skill(name)), provenance.skills[name].shippedSha256, `${name} changed`)
+      assert.match(skill(name), /Adapted from pstack \(`cursor\/plugins`, version 0\.15\.36\)/)
+    }
+  })
+
+  test('R5: negative: no statechart file changes, its 31 files still hash to the c742dd6 map', () => {
+    const entry = provenance.skills.statechart
+    assert.deepEqual(Object.keys(entry).sort(), ['adapted', 'files'])
+    assert.deepEqual(pinOf(provenance, 'statechart'), OLD)
+    assert.equal(Object.keys(entry.files).length, 31)
+    for (const [rel, hash] of Object.entries(entry.files)) {
+      const data = readFileSync(path.join(SKILLS, 'statechart', ...rel.split('/')))
+      const actual = data.includes(0) ? createHash('sha256').update(data).digest('hex') : sha256(data.toString('utf8'))
+      assert.equal(actual, hash, `statechart/${rel} changed`)
+    }
+  })
+
+  test('R6: the README pstack credit row names every recorded pin, 0.15.43 (commit 2f87c85) for the three principles and 0.15.36 (commit c742dd6) for the rest', () => {
+    const row = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
+    assert.ok(row, 'README has no pstack row in "Origen y licencias"')
+    for (const name of Object.keys(provenance.skills)) {
+      const { version, commit } = pinOf(provenance, name)
+      assert.ok(row.includes(`\`${version}\``) && row.includes(`\`${commit.slice(0, 7)}\``), `README row does not name ${name}'s pin ${version} ${commit.slice(0, 7)}`)
+    }
+    assert.match(row, /`principle-make-operations-idempotent`, `principle-attack-the-premise` y `principle-explain-the-number`, versión `0\.15\.43`, commit `2f87c85`/)
+    assert.match(row, /versión `0\.15\.36`, commit `c742dd6`/)
   })
 })
