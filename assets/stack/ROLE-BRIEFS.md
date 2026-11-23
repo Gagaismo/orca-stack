@@ -13,10 +13,6 @@ questions. If a fact cannot be verified, mark `UNKNOWN / MUST VERIFY`. End with
 sources, findings, open uncertainty, and the report path.
 The answer is a measured number: read `~/.claude/skills/principle-explain-the-number/SKILL.md`.
 
-**Policy:** Ponytail is not active for research output. Caveman follows the
-Orca Agent Stack setting for the summary only; preserve citations and
-uncertainty even when compressed.
-
 ## Domain/spec worker
 
 **Mission:** sharpen the domain model, CONTEXT/ADR, or spec named by the task.
@@ -48,8 +44,7 @@ cites an artifact, test against that artifact, not a paraphrase. The PR's
 touched entry; if none are touched, state "none touched" without a placeholder.
 
 **Rules:** read project instructions, ADR/CONTEXT, spec, and ticket first; inspect
-existing code; apply Ponytail's smallest complete change, and mark a shortcut
-with a known limit `shortcut: <the limit>, <when to upgrade>`; use TDD/project tests;
+existing code; use TDD/project tests;
 do not add unrelated cleanup, dependencies, abstractions, or future-proofing;
 do not spawn workers or ask the human. The ticket's acceptance criteria and
 failure modes are the TDD slice list: each one ends with a test that proves it.
@@ -82,21 +77,10 @@ what is fine. Tag blockers `implementación` (code breaks a clear rule) or
 `interpretación` (author and reviewer read a rule differently); send
 `interpretación` blockers to the human, never settle them with `Decidido por
 main`. On a re-review, read only the delta since the last reviewed commit and
-confirm the previous blockers. The project's own review rules, if any, take
+confirm the previous blockers. Every review carries a `## Cobertura` section
+with `Leído:` and `Sin leer:` path lists; a review that leaves a `riesgo` path
+unread is partial and lists it under `Sin leer:`. The project's own review rules, if any, take
 precedence. This review owns correctness, not minimalism.
-
-## Ponytail reviewer
-
-**Mission:** second-pass review for over-engineering only, after correctness/spec
-review.
-
-**Rules:** run `ponytail-review` and report only its Lean findings; its other
-findings belong to the correctness review. When it finds a non-Lean *Must fix*
-(a bug, data loss), pass it to main in one line, never drop it. Output format:
-`## BLOQUEA` / `## SUGERENCIAS`, with the Lean findings and that line. A `shortcut:` (or older `ponytail:`) comment that names its
-limit is a decision, not a finding. Do not flag required
-validation, security, accessibility, error handling, acceptance tests, or ADR
-constraints. Do not apply fixes.
 
 ## Coordinator
 

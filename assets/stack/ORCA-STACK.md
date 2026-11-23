@@ -10,17 +10,6 @@ Provider instruction files point here for the durable policy.
   worker placement, settlement, cleanup, and coordinator/worker boundaries.
 - **Matt Pocock skills**: engineering methodology: grill-with-docs -> domain
   modeling -> CONTEXT/ADRs -> spec -> tickets -> TDD implementation -> review.
-- **Ponytail (modular)**: implementation policy only: avoid unnecessary work and
-  choose the smallest correct solution after understanding the task and code.
-  Orca Auto applies it to implementation turns; it never overrides requirements.
-  Its level is `lite`, `full` or `ultra` (the wrappers set `full`), and a
-  shortcut with a known limit gets a `shortcut: <the limit>, <when to upgrade>`
-  code comment.
-- **Caveman (modular)**: communication compression. Orca Auto applies it when
-  the work is token-heavy, but never compresses code, commands, paths, exact
-  errors, decisions, risks, uncertainty, tests, or acceptance evidence.
-  Its level is a caveman 3.2.0 mode: `caveman`, `ultracave` or `megacave` (the
-  wrappers set `caveman`).
 - **Engram**: persistent memory only. It is not an authority or a scheduler.
 - **Gentle Shell (Pi)**: another engineer on the team with its own methodology
   (it may use ODD). It implements tickets, reviews with Judgment Day, and is
@@ -32,34 +21,12 @@ Provider instruction files point here for the durable policy.
 
 1. Orca runtime, active Dispatch, and worker contract.
 2. Project instructions, ADRs, CONTEXT, spec, and ticket acceptance criteria.
-3. Main's current gear, which only turns the closed gear-knob list below. It never broadens anything above it.
-4. Role brief supplied by the coordinator (research, implementation, review, etc.).
-5. Specialized skill for the current role.
-6. Ponytail implementation policy.
-7. Caveman communication policy.
-8. Provider defaults.
+3. Role brief supplied by the coordinator (research, implementation, review, etc.).
+4. Specialized skill for the current role.
+5. Provider defaults.
 
 A lower layer cannot cancel, replace, or broaden a higher layer. If a generic
 minimalism rule conflicts with an explicit requirement, preserve the requirement.
-If a communication rule would hide evidence, use normal prose for that passage.
-
-## Gear knobs
-
-These are the only process settings that a gear may turn. Every knob cites its source by heading. The contract's "Ciclo de `main`" references are checked against the shipped contract by CI. The gentle-ai ODD headings cited for K1-K3 and K5 are external to this repository and are intentionally unchecked; the check covers only citations to the shipped contract and policy.
-
-- **K1 — Exploration depth** changes how deeply main explores before deciding; it does not change the evidence required by the task. Internal heading: CONTRATO.md — Ciclo de `main`; external gentle-ai ODD heading: Evidence budget rule (unchecked).
-- **K2 — Delegation of main's own work** changes how readily main delegates its own work; it does not change Orca's worker ownership or dispatch lifecycle. Internal heading: CONTRATO.md — Ciclo de `main`; external gentle-ai ODD heading: Mandatory Delegation Triggers (unchecked).
-- **K3 — Research and assumption challenge** changes how readily main recommends optional research or challenges a consequential premise; it does not decide product questions for the human. Internal heading: CONTRATO.md — Ciclo de `main`; external gentle-ai ODD heading: Resolve uncertainty (unchecked).
-- **K4 — Gentle Shell consults above a floor** changes extra consults beyond any required floor; it does not remove a required consult. Internal heading: CONTRATO.md — Ciclo de `main`.
-- **K5 — Non-product questions** changes how readily main asks non-product questions; it does not move the human's product decisions to main. Internal heading: CONTRATO.md — Ciclo de `main`; external gentle-ai ODD heading: Ask trigger (unchecked).
-- **K6 — Beyond-request proposals** changes whether main proposes additional work; proposals do not authorize implementation. Internal heading: CONTRATO.md — Ciclo de `main`.
-- **K7 — Worker supervision** changes whether main supervises workers when the human requests it in Proactive; it does not change worker lifecycle ownership. Internal heading: CONTRATO.md — Ciclo de `main`.
-- **K8 — Narration amount** changes how much main narrates; it does not omit evidence, decisions, risks, uncertainty, or test results. Internal heading: CONTRATO.md — Avances.
-- **K9 — Watch cadence** changes how often main checks progress; it does not change the requirement to preserve worker and dispatch ownership. Internal heading: CONTRATO.md — Ciclo de `main`.
-- **K10 — Effort and model** changes the effort or model used for main's own work; it does not change the provider routing configured for workers. Internal heading: ORCA-STACK.md — Provider routing.
-- **K11 — Arena/swarm readiness** changes how readily main considers an arena or swarm; who authorizes it and its cost cap stay fixed. Internal heading: CONTRATO.md — Arena y swarm.
-
-Everything outside K1-K11 is a fixed rule. A new or unclear rule becomes a gear knob only if it passes the four-harm test: could the human get something different unknowingly, could it cause an irreversible effect, could it corrupt shared state, or could it produce a false report? A later ticket may add a knob only by passing that test and recording it in its resolution. Caveman, Ponytail, and Engram are orthogonal to gears.
 
 ## Worker contract
 
@@ -91,27 +58,10 @@ do not wait for Orca receipts that will not come.
 
 Planning follows Matt's skills (`grill-with-docs`, `to-spec`, `to-tickets`, triggered
 by the human) and implementation follows gentle-ai ODD for Claude, Codex and
-Antigravity sessions; Pi follows its own methodology (it may use ODD). Ponytail
-may reduce the
-implementation footprint inside an approved ticket; it may not remove research,
-domain modeling, explicit spec obligations, ADR decisions, security, validation,
-accessibility, data-loss handling, or required tests. `ponytail-review` is a
-second pass after correctness/spec review; it reports only and never applies
-changes. It reviews quality as a whole (bugs, risk, scale, tests, speed, lean);
-the Ponytail reviewer role keeps only its Lean findings and passes any
-non-Lean *Must fix* to main in one line. `ponytail-audit` is
-opt-in and repo-wide.
+Antigravity sessions; Pi follows its own methodology (it may use ODD).
 
 Ticket authoring rules are defined in `~/orca/stack/MAIN.md` ("Ciclo de `main`", step 2).
 `main` follows them when writing tickets; do not copy a second version here.
-
-## Communication contract
-
-Caveman is communication-only. In `auto`, compress filler and repetitive prose
-only when it saves tokens; use normal prose for research, security warnings,
-irreversible-action confirmations, exact evidence, or when compression could
-change order or meaning. The official-build integration below intentionally does not pretend to add
-controls that the official Orca UI does not provide.
 
 ## Provider routing
 
@@ -132,7 +82,16 @@ Do not launch agents by hand: from the main checkout, `orca-stack despachar <iss
 brief from a template, check that every repo path the brief cites exists in the worktree, launch the agent
 in an Orca terminal and send it the brief. They refuse to start when the issue is assigned, the agent is
 not in `agentes.usa`, a worktree or a live agent already exists, or the reviewer wrote the PR. If one fails,
-show its error; do not rebuild the dispatch by hand.
+show its error; do not rebuild the dispatch by hand. `revisar` and `rebote` close the `done` terminals and empty
+shells of the worktree they reuse themselves, and refuse only while an agent works there.
+
+RDD consent for a dispatched worker comes from orca-stack's policy, `agentes.<agent>.rddConsentimiento` in the
+merged config: `"politica"` (the default) answers `declined` on the worker's own candidate and `granted` on main's
+`RDD:` request for that head, without asking the human; `"humano"` makes a supervised ticket worker ask main with
+`orca orchestration ask`, with only the consent's choices as closed options, and a session that is not supervised
+(a review or a bounce) ask the human through a `Consulta:`.
+`reviewParaMerge: false` in `.orca-stack.json` (read only from the copy committed on the PR's base branch on GitHub, never from the checkout) makes `orca-stack estado` drop the step-7 review requirement for repos that merge on green CI; CI, `## Evidencia`, unsettled blockers on the head, migrations and `riesgo` reviews still count (#377). `migraciones` in `.orca-stack.json`, `{ "glob": "<dir>/*.sql", "numero": "^(\\d+)_" }`, makes `orca-stack estado` require
+that every migration a PR adds has a number above the highest one on its base branch.
 
 Reference, the launcher each agent gets as the `--command` of `orca terminal create`. They are written for the Orca
 terminal on Windows, which is PowerShell; in a POSIX shell the leading `& ` is dropped and the key is set with
@@ -176,24 +135,16 @@ Each wrapper sets the stack markers, resolves the real provider executable from
 `npx github:Gagaismo/orca-stack doctor` verifies the whole setup. This path preserves official
 Orca updates and existing projects/profiles. It applies to Orca-launched
 terminal agents; it does not add a native Agent Stack section, per-worker
-switches, or new global settings to the official build.
+switches, or new global settings to the official build. The official-build integration intentionally does not pretend to add
+controls that the official Orca UI does not provide.
 
 ## Deliberate exclusions
 
-Do not install the full Ponytail or Caveman lifecycle-hook stacks. Their
-always-on hooks, session-start codebase map, subagent injection, MCP proxy, statusline ownership, cavecrew
-workers, and alternate planning loops would duplicate provider/Orca control.
+Do not install the full lifecycle-hook stacks of the modular skills. Their
+always-on hooks, session-start codebase map, subagent injection, MCP proxy, statusline ownership,
+and alternate planning loops would duplicate provider/Orca control.
 The wrappers own the small safe bridge: launch-scoped environment markers
-(`ORCA_STACK_MODE`, `ORCA_STACK_CAVEMAN_LEVEL`, `ORCA_STACK_PONYTAIL_LEVEL`,
-`ORCA_STACK_POLICY_PATH`).
-The installed modular skills remain available explicitly:
-
-- `ponytail` — implementation policy card, no lifecycle hook.
-- `ponytail-review` — read-only quality review, second pass.
-- `ponytail-audit` / `ponytail-debt` — explicit maintenance tools;
-  `ponytail-debt` lists the `shortcut:` comments and older `ponytail:` ones.
-- `caveman` — communication-only mode; Auto is selected in Orca, not by a
-  provider hook.
+(`ORCA_STACK_POLICY_PATH`, plus those of the perks).
 
 ## Stop criteria
 

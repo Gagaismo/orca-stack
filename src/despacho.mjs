@@ -125,13 +125,17 @@ export const blockOf = (config, agent, now) => {
   return undefined
 }
 
+const AGY_DEFAULT_MODEL = 'gemini-4-neon-high'
 const psQuote = text => `'${text.replace(/'/g, "''")}'`
 const shQuote = text => `'${text.replace(/'/g, "'\\''")}'`
 
 // The command typed into the Orca terminal. `win` is the target shell, not the host: PowerShell on win32 (Orca's
 // terminal there), POSIX elsewhere. Paths follow it.
-export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking }) => {
-  const { model, effort } = modelFor(config, agent, mode)
+export const launcherFor = ({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive = false, supervised = false }) => {
+  const { model: configured, effort } = modelFor(config, agent, mode)
+  // #382: agy's default lives here, not in modelFor, so familyOf (the reviewer family) never sees it.
+  // A blank or non-text agy model counts as unset, the same reading familyOf gives it.
+  const model = agent === 'agy' ? (typeof configured === 'string' && configured.trim() !== '' ? configured.trim() : AGY_DEFAULT_MODEL) : configured
   const P = win ? path.win32 : path.posix
   const wrapper = P.join(home, ...SCRIPTS_REL, wrapperFile(agent === 'claude' || agent === 'agy' ? agent : 'codex', win))
   const bin = (win ? '& ' : '') + `"${wrapper}"`
@@ -146,19 +150,26 @@ export const launcherFor = ({ agent, mode, config, win, home, briefPath, session
   // may wait on a person: the dialog tools are left out and --no-approve skips the project-trust prompt (untrusted, as
   // `pi -p` left it). The stack markers are cleared so they do not leak into Gentle Shell.
   const q = win ? psQuote : shQuote
-  const prompt = `Read and carry out the brief in ${briefPath}. Unattended: never wait for user input.`
+  // #370: a planning session is interactive: the human drives it, so it keeps the dialog tools and no autonomy marker.
+  const prompt = interactive ? `Read the brief in ${briefPath} and follow it; the human drives this session.` : `Read and carry out the brief in ${briefPath}. Unattended: never wait for user input.`
   const tools = PI_TOOLS[mode] ? ` --tools ${q(PI_TOOLS[mode])}` : ''
   // With a profile the orchestrator is the profile's own, not whatever the global settings.json says (a pin never moves it).
   const piFlags = piModel ? ` --model ${q(piModel)}${PI_THINKING.includes(piThinking) ? ` --thinking ${piThinking}` : ''}` : ''
-  const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve --exclude-tools ${q(PI_DIALOG_TOOLS)}${piFlags}${tools} ${q(prompt)}`
+  // #397: a supervised worker gets its brief once, from `orca orchestration worker-start`, not on its command line.
+  const cmd = `pi --no-skills --skill ${q(skills)} --session-id ${session} --no-approve${interactive ? '' : ` --exclude-tools ${q(PI_DIALOG_TOOLS)}`}${piFlags}${tools}${supervised ? '' : ` ${q(prompt)}`}`
   // No ENGRAM_DATA_DIR: since gentle-pi 4.4.0 any explicit Engram selection turns memory off; the worker shares the
   // human's global Engram server instead (#304).
-  const set = [['GENTLE_PI_AUTONOMOUS_MODE', '1'], ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
+  // main-autonomo S3: Gentle Shell answers RDD consent from the policy file only when the pi process itself carries
+  // GENTLE_PI_ORCA_RDD_POLICY=1. The agent's own bash calls cannot change its host's environment, so this is the trust
+  // anchor the review asked for; it is always cleared first so a value inherited from the terminal never leaks in.
+  const policy = rddConsentPolicy(config, 'pi') === 'politica'
+  const set = [...(interactive ? [] : [['GENTLE_PI_AUTONOMOUS_MODE', '1']]), ...(policy && !interactive ? [['GENTLE_PI_ORCA_RDD_POLICY', '1']] : []), ...(config.piClaudeConfigDir ? [['CLAUDE_CONFIG_DIR', config.piClaudeConfigDir]] : [])]
+  const cleared = [...STACK_VARS_CLEARED, 'GENTLE_PI_ORCA_RDD_POLICY', ...(interactive ? ['GENTLE_PI_AUTONOMOUS_MODE'] : [])]
   if (win) {
-    return [`Remove-Item ${STACK_VARS_CLEARED.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
+    return [`Remove-Item ${cleared.map(n => `Env:${n}`).join(', ')} -ErrorAction SilentlyContinue`, ...set.map(([k, v]) => `$env:${k} = ${psQuote(v)}`), cmd].join('; ')
   }
 
-  return [`unset ${STACK_VARS_CLEARED.join(' ')}`, `export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`, cmd].join('; ')
+  return [`unset ${cleared.join(' ')}`, ...(set.length > 0 ? [`export ${set.map(([k, v]) => `${k}=${shQuote(v)}`).join(' ')}`] : []), cmd].join('; ')
 }
 
 // Repo-relative paths a brief cites in inline backticks: contains a slash or ends in a known extension, no spaces, not a
@@ -308,6 +319,7 @@ export const renderBrief = (kind, vars, nota) => {
     FANOUT_INSTRUCTIONS: fanoutInstructions(vars.AGENT, nota),
     PI_FOREGROUND: piForeground(vars.AGENT),
     NOTE_SECTION: nota ? `\n## Extra notes from main\n\n${nota.trim()}\n` : '',
+    MIGRACION: vars.MIGRACION ? `\n- If this ticket adds a migration, number it ${vars.MIGRACION} (reserved by orca-stack); if it needs more than one, ask main with \`orca orchestration ask\`.` : '',
   })
 }
 
@@ -355,11 +367,16 @@ const ok = (res, what) => {
 export const shellPrompt = text => /(?:^|\n)\s*PS\s+[A-Za-z]:\\[^\n>]*>\s*$/im.test(text)
 
 // Any "<kind> limit reached" (session, 5-hour, weekly, Opus...) or a limit line naming its reset, not one wording per limit (#292).
-const QUOTA = /quota (reached|exceeded)|usage limit|rate[- ]limit|Resets? in \d|hit your (?:session|usage) limit|\blimit reached\b|\blimit\b.*\bresets?\s+\S/i
+// Codex keeps an informational banner on screen while it works, "⚠ 5h limit: 50% left · resets at 00:57" (main-autonomo
+// S4): a line that says how much is left only stops a launch when nothing is left ("0% left") or it names a hard stop.
+const QUOTA_HARD = /quota (reached|exceeded)|usage limit|hit your (?:session|usage) limit|\blimit reached\b|(?<![\d.])0% left\b/i
+const QUOTA_SOFT = /rate[- ]limit|Resets? in \d|\blimit\b.*\bresets?\s+\S/i
+const PERCENT_LEFT = /\b\d+% left\b/i
+const isQuota = text => QUOTA_HARD.test(text) || (QUOTA_SOFT.test(text) && !PERCENT_LEFT.test(text))
 
 export const quotaLine = lines => {
   if (!Array.isArray(lines)) return undefined
-  return lines.slice(-15).find(line => QUOTA.test(String(line)))
+  return lines.slice(-15).find(line => isQuota(String(line)))
 }
 
 // The reset time a usage-limit line names, as read: "resets 02:20:00" -> "resets 02:20", "Resets in 10h45m" -> "resets in 10h45m";
@@ -390,6 +407,43 @@ const checkPostLaunchScreen = async (io, handle, agent) => {
 // and execute files here." over the "Yes, I trust this folder" / "No, exit" menu.
 const AGY_TRUST = /trust this folder\?|requires permission to read, edit, and execute files here|Yes, I trust this folder/i
 const AGY_TRUST_ENTERS = 3
+
+// agy 1.5.x draws a one-time banner ("Auto is now the default agent mode") or splash ("Introducing Gemini 4 Hydrogen")
+// over its prompt, ending in "esc to dismiss" (#357): Orca reads it as a permission prompt and the brief never arrives.
+const AGY_DISMISS = /esc to dismiss/i
+const AGY_DISMISS_TRIES = 3
+const AGY_EMPTY_PROMPT = /^[\s│┃|]*>[\s│┃|]*$/
+const AGY_DIALOG = /trust this folder\?|Do you want to proceed\?/i
+const SCREEN_LINES = 15
+const screenLines = res => {
+  if (res.status !== 0) return []
+  let tail
+  try { tail = JSON.parse(res.stdout)?.result?.terminal?.tail } catch { return [] }
+  return Array.isArray(tail) ? tail.map(String) : typeof tail === 'string' ? tail.split(/\r?\n/) : []
+}
+const bottomOf = lines => lines.slice(-SCREEN_LINES).join('\n')
+const showsSplash = lines => AGY_DISMISS.test(bottomOf(lines))
+const showsDialog = lines => AGY_DIALOG.test(bottomOf(lines)) || AGY_TRUST.test(bottomOf(lines))
+const readyForInput = lines => !showsSplash(lines) && !showsDialog(lines) && lines.slice(-SCREEN_LINES).some(line => AGY_EMPTY_PROMPT.test(line))
+
+// What a human does when agy did not get its brief: the exact line, typed into the named terminal.
+export const agyNotDelivered = (handle, briefPath) => `agy no recibió el brief. Pegá en la terminal ${handle} esta línea: Read and follow the brief in ${briefPath}`
+
+// With the splash on screen: Esc (a raw ESC byte, no Enter) every 2 s while it stays, at most 3 times, until the empty
+// `>` prompt shows with no dialog or trust screen; otherwise nothing is sent and the human gets the line to paste.
+// Returns the screen lines to send over (unchanged when there was no splash).
+export const dismissAgySplash = async (io, handle, lines, briefPath) => {
+  if (!showsSplash(lines)) return lines
+  let screen = lines
+  for (let i = 0; i < AGY_DISMISS_TRIES; i += 1) {
+    if (showsSplash(screen)) io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', '\u001b'])
+    await io.sleep(2000)
+    screen = screenLines(io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json']))
+    if (readyForInput(screen)) return screen
+    if (showsDialog(screen)) break
+  }
+  throw new Error(agyNotDelivered(handle, briefPath))
+}
 
 const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45) => {
   let last = null
@@ -517,7 +571,7 @@ const piFirstReply = (io, file, after = 0) => {
     const lines = message.stopReason === 'error' ? texts.flatMap(t => (typeof t === 'string' ? t.split(/\r?\n/) : [])) : []
     const auth = lines.find(t => PI_AUTH.test(t))
     // A usage limit is also an error turn: "Claude rate limit (five_hour) — resets 02:20:00: You've hit your session limit" (#292).
-    const quota = lines.find(t => QUOTA.test(t))
+    const quota = lines.find(t => isQuota(t))
     return auth ? { auth: auth.trim() } : quota ? { quota: quota.trim() } : { ok: true }
   }
   return undefined
@@ -538,9 +592,81 @@ const checkPiAuth = async (io, file, configDir, after) => {
   }
 }
 
-export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue }) => {
+// #397: Orca's orchestration commands. A failure carries Orca's own error and is marked, so despachar can release the
+// issue instead of leaving it assigned with no worker.
+const orchestrationError = message => Object.assign(new Error(message), { orchestration: true })
+const orchestrationFailure = (res, what) => {
+  let reason
+  try {
+    const body = JSON.parse(res.stdout)
+    if (body?.ok === false) reason = body.error?.message ?? JSON.stringify(body.error ?? body)
+  } catch {}
+  if (res.status === 0 && reason === undefined) return undefined
+  return `${what} falló: ${String(reason ?? (res.stderr || res.stdout || String(res.error ?? ''))).trim()}`
+}
+const shownArgs = argv => argv.map(a => (/\s|"/.test(a) ? JSON.stringify(a) : a)).join(' ')
+const orchestrate = (io, say, argv) => {
+  say(`orca orchestration ${shownArgs(argv)}`)
+  const res = io.sh('orca', ['orchestration', ...argv])
+  const failure = orchestrationFailure(res, `orca orchestration ${argv[0]}`)
+  if (failure) throw orchestrationError(failure)
+  let body
+  try { body = JSON.parse(res.stdout) } catch { throw orchestrationError(`orca orchestration ${argv[0]} no devolvió JSON: ${(res.stderr || res.stdout).trim().split('\n')[0]}`) }
+  return body?.result ?? body ?? {}
+}
+// The Run bound to main's session, or a new one bound to it when there is none.
+const boundRun = (io, say, objective) => {
+  const current = orchestrate(io, say, ['run-current', '--json'])
+  const bound = current.runId ?? current.run?.id
+  if (typeof bound === 'string' && bound !== '') return bound
+  const created = orchestrate(io, say, ['run-create', '--objective', objective, '--json'])
+  const id = created.runId ?? created.run?.id ?? created.id
+  if (typeof id !== 'string' || id === '') throw orchestrationError('orca orchestration run-create no devolvió el id del Run.')
+  return id
+}
+const startWorker = async (io, say, { agent, handle, briefPath, supervised }) => {
+  const runId = boundRun(io, say, supervised.objective)
+  const argv = ['worker-start', '--run', runId, '--terminal', handle, '--spec-file', briefPath, '--task-title', supervised.title, '--json']
+  const start = () => {
+    say(`orca orchestration ${shownArgs(argv)}`)
+    return io.sh('orca', ['orchestration', ...argv])
+  }
+  let res = start()
+  // #357: agy's trust screen the screen read missed makes Orca refuse with agent_prompt_blocked before the spec is
+  // delivered; Enter confirms the preselected "Yes, I trust this folder", bounded like the trust screen. The retry
+  // reissues the request Orca named (--retry-request), so Orca does not start a second "#<n> agy" Task.
+  for (let i = 0; agent === 'agy' && i < AGY_TRUST_ENTERS && /agent_prompt_blocked/.test(`${res.stdout ?? ''}${res.stderr ?? ''}`); i += 1) {
+    say(`agy muestra un pedido de confianza (agent_prompt_blocked): confirmo la carpeta con Enter (${i + 1}/${AGY_TRUST_ENTERS}).`)
+    io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
+    await io.sleep(2000)
+    const request = requestIdOf(res)
+    if (request && !argv.includes('--retry-request')) argv.push('--retry-request', request)
+    res = start()
+  }
+  const failure = orchestrationFailure(res, 'orca orchestration worker-start')
+  if (!failure) return
+  // Orca exits 1 for outcome_unknown too: the worker may have started, so the issue keeps its assignee.
+  let body
+  try { body = JSON.parse(res.stdout) } catch {}
+  if (!hasValue(body, 'outcome_unknown')) throw orchestrationError(failure)
+  const request = requestIdOf(res)
+  const dispatchId = deepFind(body, ['dispatchId'])
+  const check = request ? `orca orchestration request-show --request ${request} --json` : dispatchId ? `orca orchestration worker-show --dispatch ${dispatchId} --json` : `orca orchestration task-list --run ${runId} --json`
+  throw new Error(`${failure}\nEl resultado de worker-start es desconocido (outcome_unknown): el worker de ${supervised.title} puede estar corriendo, así que el issue sigue asignado. Comprobalo con \`${check}\`.`)
+}
+const hasValue = (value, wanted) => value === wanted || ((isPlain(value) || Array.isArray(value)) && Object.values(value).some(v => hasValue(v, wanted)))
+// The request id Orca names for a reissue: a requestId field, or the id in its "--retry-request <id>" advice.
+const requestIdOf = res => {
+  let body
+  try { body = JSON.parse(res.stdout) } catch {}
+  return deepFind(body, ['requestId', 'request_id']) ?? /--retry-request\s+([^\s.,;]+)/.exec(`${res.stdout ?? ''}${res.stderr ?? ''}`)?.[1]
+}
+
+// `supervised` ({ title, objective }, despachar only): the worker starts with `orca orchestration worker-start` in the
+// Run bound to main instead of getting the brief line typed into its terminal (#397).
+export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue, interactive = false, supervised }) => {
   const say = io.out
-  const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking })
+  const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive, supervised: Boolean(supervised) })
   const act = (cmd, argv, opts = {}) => {
     say(`${dryRun ? '[simulaci\u00f3n] ' : ''}${cmd} ${argv.map(a => (/\s|"/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
 
@@ -550,7 +676,11 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
   say(`Lanzador (${agent}): ${launcher}`)
   const term = act('orca', ['terminal', 'create', '--worktree', `path:${worktree}`, '--title', agent, '--command', launcher, '--json'])
   if (dryRun) {
-    if (agent !== 'pi') say(`[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
+    if (supervised) {
+      if (agent !== 'pi') say(`[simulación] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''}`)
+      say(`[simulación] orca orchestration run-current --json (sin Run de main: orca orchestration run-create --objective ${JSON.stringify(supervised.objective)} --json)`)
+      say(`[simulación] orca orchestration worker-start --run <run> --terminal <terminal> --spec-file ${briefPath} --task-title ${JSON.stringify(supervised.title)} --json`)
+    } else if (agent !== 'pi') say(`[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
     say(`\n--- brief ---\n${brief}`)
 
     return 0
@@ -559,20 +689,52 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
     if (!handle) throw new Error('orca terminal create no devolvi\u00f3 el handle de la terminal.')
     const prompt = `Read and follow the brief in ${briefPath}`
-    const before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
+    let before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
     if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
-    const observed = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', '10', '--json'])
+    if (agent === 'agy') before = (await dismissAgySplash(io, handle, before.split('\n'), briefPath)).join('\n')
+    if (supervised) {
+      await startWorker(io, say, { agent, handle, briefPath, supervised })
+      await checkPostLaunchScreen(io, handle, agent)
+      say(`✔ ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
+
+      return 0
+    }
+    // agy's own failures after the send all mean one thing to the human: the brief did not arrive (#357). Orca's own
+    // reason goes on a second line, so the cause is never hidden behind the line to paste.
+    const fail = message => new Error(agent === 'agy' ? `${agyNotDelivered(handle, briefPath)}${message ? `\nCausa: ${message}` : ''}` : message)
+    const sendBrief = () => io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter', '--wait-submit', '10', '--json'])
+    let observed = sendBrief()
+    // #357, seen live on agy 1.5.9: `orca terminal read --screen` can show the empty `>` prompt while agy is really on
+    // its folder-trust screen, so the trust handling in waitForTui never fires; Orca's send does see it and refuses with
+    // agent_prompt_blocked. Right after launch, in a worktree orca-stack created, Enter confirms the preselected
+    // "Yes, I trust this folder" (as waitForTui does when the read shows it); bounded like the trust screen.
+    for (let i = 0; agent === 'agy' && i < AGY_TRUST_ENTERS && /agent_prompt_blocked/.test(`${observed.stdout ?? ''}${observed.stderr ?? ''}`); i += 1) {
+      say(`agy muestra un pedido de confianza (agent_prompt_blocked): confirmo la carpeta con Enter (${i + 1}/${AGY_TRUST_ENTERS}).`)
+      io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
+      await io.sleep(2000)
+      observed = sendBrief()
+    }
     let sent = observed
     let oldHost = false
     if (observed.status !== 0 && /(?:unknown|unrecognized|unsupported)[^\n]*--wait-submit/i.test(observed.stderr || observed.stdout)) {
       oldHost = true
       sent = io.sh('orca', ['terminal', 'send', '--terminal', handle, '--text', prompt, '--enter'])
     }
+    if (sent.status !== 0 && agent === 'agy') {
+      let reason
+      try { reason = JSON.parse(sent.stdout)?.error?.message } catch {}
+      throw fail(String(reason ?? (sent.stderr || sent.stdout || 'orca terminal send falló')).trim().split(/\r?\n/)[0])
+    }
     ok(sent, 'orca terminal send')
     let started = false
     if (!oldHost) {
-      const receipt = parseJson(sent, 'orca terminal send')
-      if (receipt.ok === false) throw new Error(`orca terminal send no inici\u00f3 el turno: ${receipt.error?.message ?? JSON.stringify(receipt)}`)
+      let receipt
+      try {
+        receipt = parseJson(sent, 'orca terminal send')
+      } catch (error) {
+        throw fail(error.message)
+      }
+      if (receipt.ok === false) throw fail(`orca terminal send no inici\u00f3 el turno: ${receipt.error?.message ?? JSON.stringify(receipt)}`)
       started = submittedTurn(receipt)
     }
     if (!started) started = worktreeAgentStarted(io, worktree)
@@ -580,9 +742,14 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
       const screen = await screenAfterSend(io, handle, before)
       if (screen && !shellPrompt(screen) && !/trust this folder\?/i.test(screen)) started = true
     }
-    if (!started) throw new Error(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
+    if (!started) throw fail(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
     await checkPostLaunchScreen(io, handle, agent)
   } else {
+    if (supervised) {
+      const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
+      if (!handle) throw new Error('orca terminal create no devolvió el handle de la terminal.')
+      await startWorker(io, say, { agent, handle, briefPath, supervised })
+    }
     const { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
     if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
@@ -746,12 +913,13 @@ export const writePin = (io, worktree, commonDir, name) => {
 }
 // The whole dispatch: despachar (kind 'ticket', n = issue) and revisar (kind 'review', n = PR).
 export const dispatch = async (kind, args, io = defaultIo()) => {
-  const { n, agent, nota, perfilPi, dryRun = false, confirmado = false } = args
+  const { n, agent, nota, perfilPi, rutas, dryRun = false, confirmado = false } = args
   const review = kind === 'review'
   const say = io.out
   if (!/^\d+$/.test(String(n ?? ''))) throw new Error(`Falta el número de ${review ? 'PR' : 'issue'}. Uso: orca-stack ${review ? 'revisar <pr>' : 'despachar <issue>'} <agente>.`)
   if (agent === 'codex-cc') throw new Error(CODEX_CC_REMOVED)
   if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido: ${agent ?? '(ninguno)'}. Los agentes son: ${AGENTS.join(', ')}.`)
+  const paths = reviewPaths(rutas, review)
 
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
   if (git.status !== 0) throw new Error('Corr\u00E9 este comando dentro del checkout principal de un repo git.')
@@ -771,6 +939,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   if ((config.agentes?.preguntarAntes ?? []).includes(agent) && !confirmado) {
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de despacharlo. Si dijo que sí, repetí el comando con --confirmado.`)
   }
+  const consent = review ? undefined : rddConsentPolicy(config, agent)
 
   const remote = getRemoteOrigin(root, io)
 
@@ -825,12 +994,9 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       w => worktreeName(w.path ?? '') === name || (!review && w.repo === repo && w.linkedIssue === Number(n)),
     )
     if (live && (!review || !existing)) throw new Error(`Orca ya tiene un worktree para ${name}${(live.agents ?? []).length > 0 ? ' con un agente vivo' : ''}: ${live.path}.`)
-    if (existing && live) {
-      const agents = live.agents ?? []
-      const active = agents.find(item => /^(working|running|active)$/i.test(item.state ?? item.status ?? ''))
-      if (active) throw new Error(`Orca ya tiene un worktree para ${name} con un agente vivo: ${live.path}.`)
-      const done = agents.find(item => /^done$/i.test(item.state ?? item.status ?? ''))
-      if (done) throw new Error(`La terminal ${done.paneKey ?? done.agentType ?? agent} de ${live.path} sigue abierta en done; cerrala antes de revisar de nuevo.`)
+    // A done terminal or an empty shell in the review worktree is closed right before the reuse (main-autonomo S8).
+    if (existing && live && (live.agents ?? []).some(item => LIVE_AGENT.test(item.state ?? item.status ?? ''))) {
+      throw new Error(`Orca ya tiene un worktree para ${name} con un agente vivo: ${live.path}.`)
     }
     if (existing && !live) throw new Error(`Orca no muestra ${existingPath}; no puedo comprobar que no haya una terminal abierta antes de reutilizarlo.`)
   } else if (!dryRun) {
@@ -850,6 +1016,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
 
   let fetchedOrigin = false
   let hasCodingStandards = false
+  let migration
   const briefFor = branch => renderBrief(kind, {
     REPO: repo,
     REMOTE_HOST: remote.host,
@@ -861,13 +1028,13 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     CUERPO_PR: config.verificacion?.cuerpoPR,
     PI_REVIEW: config.agentes?.pi?.review,
     HAS_CODING_STANDARDS: hasCodingStandards,
-    ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n) }),
+    ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n), MIGRACION: migration?.texto }),
     ...(review ? {
       DELTA_INSTRUCTIONS: previousHead ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : 'This is the first review round; review the full PR.',
       PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
       PUBLISH_COMMAND: `gh pr review ${n} --comment --body-file ${reviewPath}`,
     } : {}),
-  }, nota)
+  }, nota) + partialReviewSection(paths)
   // Validate the cited paths against the tree the worktree will be created from, before any side effect.
   const tree = io.sh('git', ['ls-tree', '-r', '--name-only', startRef], { cwd: root })
   if (tree.status === 0) {
@@ -901,6 +1068,14 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     const fetched = io.sh('git', ['fetch', 'origin'], { cwd: root })
     if (fetched.status !== 0) throw new Error(`git fetch origin falló, no asigné ni creé nada: ${(fetched.stderr || fetched.stdout || String(fetched.error)).trim()}`)
   }
+  // main-autonomo-2 S2: the migration number is reserved after the fetch and before the issue is assigned; a second
+  // dispatch of the same issue gets the number it already holds. Loaded here only: migraciones.mjs reaches estado.mjs,
+  // which imports this module.
+  if (!review && config.migraciones !== undefined) {
+    const { reserve } = await import('./migraciones.mjs')
+    migration = reserve({ issue: n, config, base, commonDir, root, io, dryRun })
+    if (migration) say(dryRun ? `[simulación] Migración que reservaría para #${n}: ${migration.texto}` : `Migración ${migration.reused ? 'ya reservada' : 'reservada'} para #${n}: ${migration.texto}`)
+  }
   const left = { assigned: false, worktree: null, brief: null }
   if (!review) {
     act('gh', ['issue', 'edit', String(n), '--add-assignee', '@me'], { cwd: root })
@@ -914,6 +1089,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       ensureCandidateWorktreesExclude({ root, commonDir, io, dryRun, say })
     }
     if (existing) {
+      if (ps.status === 0) closeIdleTerminals(io, worktree, { dryRun, refusal: `Orca ya tiene un worktree para ${name} con un agente vivo: ${worktree}.` })
       say(`${dryRun ? '[simulación] ' : ''}Reutilizo ${worktree} desde ${previousHead} para revisar ${sha}.`)
       act('git', ['checkout', '--detach', sha], { cwd: worktree })
       branch = undefined
@@ -943,26 +1119,34 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       if (!dryRun) io.rename(reviewPath, archivedReviewPath)
     }
     say(`${dryRun ? '[simulación] ' : ''}brief -> ${briefPath}`)
+    if (paths) say(`${dryRun ? '[simulación] ' : ''}Review parcial por diseño: ${paths.join(', ')}`)
     if (!dryRun) {
       io.mkdirp(path.dirname(briefPath))
       io.writeFile(briefPath, brief)
       left.brief = briefPath
+      if (consent === 'politica') writeRddConsent(io, worktree, [])
     }
     await launchInWorktree({
       agent, mode, worktree, briefPath, brief, session, config, win, home: io.home, skills,
       piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun,
       piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: review ? undefined : n,
+      supervised: review ? undefined : { title: `#${n} ${agent}`, objective: `orca-stack ${repo}: tickets despachados por main` },
     })
 
     return 0
   } catch (error) {
+    // #397: Orca refused the supervised start, so no worker runs: the issue is released, not left assigned.
+    if (!dryRun && error.orchestration && left.assigned) {
+      say(`gh issue edit ${n} --remove-assignee @me`)
+      if (io.sh('gh', ['issue', 'edit', String(n), '--remove-assignee', '@me'], { cwd: root }).status === 0) left.assigned = false
+    }
     if (!dryRun) say(leftover(left, n, base))
     throw error
   }
 }
 
-const command = kind => async (flags, n, agent) =>
-  dispatch(kind, { n, agent, nota: flags.nota, dryRun: flags.dryRun, confirmado: flags.confirmado, perfilPi: flags.perfilPi })
+const command = kind => async (flags, n, agent, io) =>
+  dispatch(kind, { n, agent, nota: flags.nota, dryRun: flags.dryRun, confirmado: flags.confirmado, perfilPi: flags.perfilPi, rutas: flags.rutas }, io)
 export const despacharCommand = command('ticket')
 export const revisarCommand = command('review')
 
@@ -994,6 +1178,30 @@ const humanAnswers = (io, root, pr) => {
     }
   })
   return [...(pr.comments ?? []), ...fromIssues].filter(isAnswer)
+}
+
+export const CI_BOUNCE_CAP = 4
+
+// #396: the newest comment or review that starts with `Diagnóstico: main`, names the head on its `Commit:` line and
+// was posted after the newest `Rebote CI:` marker, by date; an item without a date is never after a marker.
+// hypothesis is its `Siguiente hipótesis:`, or undefined when it is empty or `ninguna`.
+const mainDiagnosis = (items, namesHead) => {
+  const timeOf = item => Date.parse(String(item?.createdAt ?? item?.submittedAt ?? ''))
+  const lastMark = Math.max(-Infinity, ...items.filter(item => /^Rebote CI:\s*\S+\s*$/im.test(reviewBody(item))).map(item => {
+    const at = timeOf(item)
+    return Number.isNaN(at) ? Infinity : at
+  }))
+  const found = items
+    .map(item => ({ body: reviewBody(item), at: timeOf(item) }))
+    .filter(({ body, at }) => /^Diagnóstico:[ \t]*main(?:[ \t]|$)/im.test(body.trimStart().split(/\r?\n/)[0]) && !Number.isNaN(at) && at > lastMark &&
+      namesHead(/^\s*Commit:\s*(\S+)\s*$/mi.exec(body)?.[1]))
+    .sort((a, b) => a.at - b.at)
+    .at(-1)
+  if (!found) return undefined
+  const hypothesis = /^\s*Siguiente hipótesis:[ \t]*(.*)$/mi.exec(found.body)?.[1]?.trim() ?? ''
+  // `ninguna` copied with markdown (`ninguna`, **ninguna**, ninguna.) is still no hypothesis.
+  const plain = hypothesis.replace(/[`*_]/g, '').trim().replace(/\.$/, '').trim()
+  return { hypothesis: plain === '' || plain.toLowerCase() === 'ninguna' ? undefined : hypothesis }
 }
 
 const MARKER_ATTEMPTS = 3
@@ -1037,15 +1245,91 @@ const bounceProfile = (io, { agent, worktree, perfilPi, config, commonDir }) => 
 // Orca's live agent states: working (older Orca: running/active), or blocked/waiting on a dialog; only done is not live.
 const LIVE_AGENT = /^(working|running|active|blocked|waiting)$/i
 
-const refuseLiveAgent = (io, worktree) => {
+// main-autonomo S8: revisar and rebote refuse only a live agent; a done terminal or an empty shell (no agent record, a
+// shell prompt on screen) of that worktree they close themselves, and say which. A terminal Orca places in another
+// worktree, one whose screen cannot be read and any other terminal without a record are left alone.
+export const closeIdleTerminals = (io, worktree, { dryRun = false, refusal }) => {
   const ps = io.sh('orca', ['worktree', 'ps', '--json'])
   if (ps.status !== 0) throw new Error(`Orca no contesta (orca worktree ps): ${(ps.stderr || ps.stdout).trim()}`)
-  const rows = parseJson(ps, 'orca worktree ps').result?.worktrees ?? []
-  const row = rows.find(item => samePath(item.path ?? '', worktree))
-  if ((row?.agents ?? []).some(item => LIVE_AGENT.test(item.state ?? item.status ?? ''))) {
-    throw new Error(`Hay un agente vivo en ${worktree}; cerralo antes de rebotar.`)
+  const row = (parseJson(ps, 'orca worktree ps').result?.worktrees ?? []).find(item => samePath(item.path ?? '', worktree))
+  const agents = row?.agents ?? []
+  const stateOf = item => String(item?.state ?? item?.status ?? '')
+  if (agents.some(item => LIVE_AGENT.test(stateOf(item)))) throw new Error(refusal)
+  if (!row) return []
+  const listed = io.sh('orca', ['terminal', 'list', '--worktree', `path:${worktree}`, '--json'])
+  let terminals
+  try { terminals = JSON.parse(listed.stdout)?.result?.terminals } catch {}
+  if (listed.status !== 0 || !Array.isArray(terminals)) throw new Error(`orca terminal list falló para ${worktree}: ${(listed.stderr || listed.stdout).trim().split(/\r?\n/)[0]}. No cerré nada.`)
+  const records = new Map(agents.map(item => [item.paneKey, item]))
+  const idle = terminals.flatMap(terminal => {
+    if (!terminal?.handle || !terminal.worktreePath || !samePath(terminal.worktreePath, worktree)) return []
+    const record = records.get(`${terminal.tabId}:${terminal.leafId}`)
+    if (record) return /^done$/i.test(stateOf(record)) ? [[terminal.handle, 'done']] : []
+    const res = io.sh('orca', ['terminal', 'read', '--terminal', terminal.handle, '--screen', '--json'])
+    let tail
+    try { tail = res.status === 0 ? JSON.parse(res.stdout)?.result?.terminal?.tail : undefined } catch {}
+    const lines = Array.isArray(tail) ? tail.map(String) : typeof tail === 'string' ? tail.split(/\r?\n/) : []
+    const last = lines.filter(line => line.trim() !== '').at(-1)
+    return last && shellPrompt(last) ? [[terminal.handle, 'shell vacía']] : []
+  })
+  for (const [handle, reason] of idle) {
+    if (dryRun) {
+      io.out(`[simulación] Cerraría la terminal ${handle} (${reason}) de ${worktree}.`)
+      continue
+    }
+    ok(io.sh('orca', ['terminal', 'close', '--terminal', handle, '--json']), `orca terminal close ${handle}`)
+    io.out(`Cerré la terminal ${handle} (${reason}) de ${worktree}.`)
   }
+
+  return idle.map(([handle]) => handle)
 }
+
+const refuseLiveAgent = (io, worktree, dryRun) =>
+  closeIdleTerminals(io, worktree, { dryRun, refusal: `Hay un agente vivo en ${worktree}; cerralo antes de rebotar.` })
+
+// main-autonomo S3: how a worker answers RDD's consent. "politica" (the default) leaves the answer in a file Gentle Shell
+// reads; "humano" keeps the old behaviour, where the worker asks.
+export const rddConsentPolicy = (config, agent) => {
+  const value = config.agentes?.[agent]?.rddConsentimiento
+  if (value === undefined || value === 'politica') return 'politica'
+  if (value === 'humano') return 'humano'
+  throw new Error(`agentes.${agent}.rddConsentimiento tiene que ser "politica" o "humano", no ${JSON.stringify(value)}.`)
+}
+
+export const RDD_CONSENT_REL = ['orca-stack', 'rdd-consentimiento.json']
+
+// Written in the worktree's own git dir (a linked worktree has one per worktree), so it never shows in git status.
+// keepExisting (reanudar): a resumed worker keeps the file it has, so a head main granted for an RDD review that
+// paused on a Consulta: is still granted when it resumes.
+export const writeRddConsent = (io, worktree, granted, { keepExisting = false } = {}) => {
+  const res = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir'], { cwd: worktree })
+  const gitDir = res.status === 0 ? res.stdout.split(/\r?\n/)[0].trim() : ''
+  if (gitDir === '') throw new Error(`No pude leer el git dir de ${worktree} (git rev-parse --git-dir): ${(res.stderr || res.stdout || String(res.error ?? '')).trim()}`)
+  const file = path.join(path.resolve(worktree, gitDir), ...RDD_CONSENT_REL)
+  if (keepExisting && io.exists(file)) {
+    io.out(`Consentimiento RDD (política): dejo ${file} como está.`)
+    return file
+  }
+  const text = JSON.stringify({ version: 1, granted })
+  io.mkdirp(path.dirname(file))
+  io.writeFile(file, `${text}\n`)
+  io.out(`Consentimiento RDD (política): ${file} = ${text}`)
+
+  return file
+}
+
+// main-autonomo S12: `revisar --rutas a,b` asks for a review of those paths only.
+const reviewPaths = (rutas, review) => {
+  if (rutas === undefined) return undefined
+  if (!review) throw new Error('--rutas solo vale para revisar.')
+  const paths = [...new Set(String(rutas).split(',').map(item => item.trim()).filter(Boolean))]
+  if (paths.length === 0) throw new Error('--rutas necesita al menos una ruta: --rutas <ruta,ruta>.')
+
+  return paths
+}
+const partialReviewSection = paths => paths
+  ? `\n## Partial review by design\n\nmain asked for a review of these paths only (\`revisar --rutas\`): read each of them in full against the PR diff; you do not have to read the rest of the diff. Under \`## Cobertura\`, list them on \`Leído:\` and every other path the PR changes on \`Sin leer:\`.\n\n${paths.map(item => `- \`${item}\``).join('\n')}\n`
+  : ''
 
 export const CONTINUE_LINE = 'You were stopped before finishing this bounce (for example by a usage limit). The worktree keeps your work in progress (a merge in progress stays in progress): continue it, do not abort or reset it.'
 
@@ -1064,7 +1348,8 @@ const continueBounce = async ({ n, pr, agent, root, repo, config, commonDir, per
   if (!io.exists(bounceBrief)) throw new Error(`No encuentro el brief del rebote ${bounceBrief}; no hay rebote que continuar.`)
   const worktree = prWorktree(io, root, pr, n)
   const profile = bounceProfile(io, { agent, worktree, perfilPi, config, commonDir })
-  refuseLiveAgent(io, worktree)
+  const consent = rddConsentPolicy(config, agent)
+  refuseLiveAgent(io, worktree, dryRun)
   const sessionPath = path.join(io.home, 'orca', 'briefs', `${name}.session`)
   let session = agent === 'pi' && io.exists(sessionPath) ? io.readFile(sessionPath).trim() : ''
   if (!session) {
@@ -1083,6 +1368,7 @@ const continueBounce = async ({ n, pr, agent, root, repo, config, commonDir, per
   const brief = `${CONTINUE_LINE}\n\n${io.readFile(bounceBrief)}`
   if (!dryRun) io.writeFile(briefPath, brief)
   say(`${sim}brief -> ${briefPath}`)
+  if (consent === 'politica' && !dryRun) writeRddConsent(io, worktree, [])
   const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
   try {
     await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })
@@ -1134,6 +1420,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
   if (rdd && agent !== 'pi') throw new Error(`--rdd solo vale para un PR de pi (Implementador: ${agent}).`)
   if (rdd && !rddMode(config, agent)) throw new Error('--rdd necesita agentes.pi.review: "rdd" en la config del repo.')
+  const consent = rddConsentPolicy(config, agent)
 
   const sha = pr.headRefOid
   if (typeof sha !== 'string' || sha.trim() === '') throw new Error(`No pude obtener headRefOid del PR #${n}.`)
@@ -1218,10 +1505,17 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     throw new Error(`El PR #${n} todavía tiene checks pendientes en ${sha}: ${pendingChecks.map(checkName).join(', ')}. Esperá a que termine la CI antes de rebotar.`)
   }
   const failedChecks = analysis.realFailures.map(({ check }) => check)
+  // #396: k is the CI bounce being attempted, the distinct heads already CI-bounced (the current one aside) plus one.
+  // Bounces 3 and 4 need a `Diagnóstico: main` on the head, posted after the latest `Rebote CI:`; never a fifth.
+  let ciHypothesis
   if (failedChecks.length > 0) {
-    const previousCiShas = new Set(ciMarkers.filter(marker => marker !== sha))
-    if (previousCiShas.size >= 2) {
-      throw new Error(`Ya hubo dos rebotes de CI distintos para el PR #${n}; la CI sigue roja en ${sha}. Pasalo al humano para resolverlo.`)
+    const k = new Set(ciMarkers.filter(marker => marker !== sha)).size + 1
+    if (k > CI_BOUNCE_CAP) throw new Error(`rebote: tope de ${CI_BOUNCE_CAP} rebotes de CI alcanzado en el PR #${n}`)
+    if (k > 2) {
+      const diagnosis = mainDiagnosis(allReviews, namesHead)
+      if (!diagnosis) throw new Error(`rebote: falta un Diagnóstico de main sobre ${sha} para el rebote de CI ${k}`)
+      if (!diagnosis.hypothesis) throw new Error(`rebote: el Diagnóstico de main sobre ${sha} no trae una Siguiente hipótesis`)
+      ciHypothesis = diagnosis.hypothesis
     }
   }
   const blockers = rdd ? [] : allReviews.filter(item => {
@@ -1260,7 +1554,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
         ? `\n  Cancelled siblings (following from this failure): ${siblings.map(checkName).join(', ')}`
         : ''
       return `- **${checkName(check)}**\n  Link: ${url || '(no link available)'}${jobId ? `\n  Inspect: \`gh run view --job ${jobId} --log-failed\`` : ''}${siblingText}`
-    }).join('\n')
+    }).join('\n') + (ciHypothesis ? `\n\nmain's diagnosis of this head (\`Diagnóstico: main\`), the hypothesis to test in this bounce: ${ciHypothesis}` : '')
     : 'None.'
 
   const worktree = prWorktree(io, root, pr, n)
@@ -1278,7 +1572,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     if (ancestry.status === 1) throw new Error(`El worktree ${worktree} est\u00E1 en ${head}, no en el head del PR ${sha}.`)
     if (ancestry.status !== 0) throw new Error(`No pude comprobar si el worktree ${worktree} (${head}) est\u00E1 atr\u00E1s del head del PR ${sha}: ${(ancestry.stderr || ancestry.stdout || '').trim()}`)
   }
-  refuseLiveAgent(io, worktree)
+  refuseLiveAgent(io, worktree, dryRun)
   if (head !== sha) {
     if (!dryRun) ok(io.sh('git', ['merge', '--ff-only', sha], { cwd: worktree }), 'git merge --ff-only')
     say(`${dryRun ? '[simulaci\u00F3n] ' : ''}Adelant\u00E9 el worktree de ${head.slice(0, 7)} a ${sha.slice(0, 7)} (el head del PR).`)
@@ -1349,6 +1643,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (!dryRun) {
     io.mkdirp(path.dirname(briefPath))
     io.writeFile(briefPath, brief)
+    // "declined lo propio, granted si pide main": only main's RDD request on this head grants it.
+    if (consent === 'politica') writeRddConsent(io, worktree, rdd ? [sha] : [])
   }
   say(`${dryRun ? '[simulaci\u00F3n] ' : ''}brief -> ${briefPath}`)
   await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })

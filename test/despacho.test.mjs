@@ -5,7 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief } from '../src/despacho.mjs'
+import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief, revisarCommand } from '../src/despacho.mjs'
 import { main, parseArgs } from '../src/cli.mjs'
 import { isConsultaComment } from '../src/consultas.mjs'
 import { layout } from '../src/util.mjs'
@@ -141,12 +141,17 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = 
       }
       if (args[0] === 'terminal' && args[1] === 'send' && args.includes('--wait-submit')) return json({ result: { submission: 'submitted', turnStarted: true } })
       if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'], latestCursor: calls.length } } })
+      // A worktree Orca lists with no open terminals (main-autonomo S8 lists them before reusing a worktree).
+      if (args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: [] } })
+      // #397: despachar starts its worker in the Run bound to main.
+      if (args[0] === 'orchestration' && args[1] === 'run-current') return json({ ok: true, result: { runId: 'run_main' } })
+      if (args[0] === 'orchestration' && args[1] === 'worker-start') return json({ ok: true, result: { taskId: 'task_1', dispatchId: 'ctx_1', status: 'ready' } })
       return okRes()
     },
   }
-  // Calls that change something: every gh issue edit, orca worktree create, terminal create/send, git fetch.
+  // Calls that change something: every gh issue edit, orca worktree create, terminal create/send/close, git fetch.
   const writes = () =>
-    calls.filter(c => (c[0] === 'gh' && c[2] === 'edit') || (c[0] === 'orca' && (c[2] === 'create' || c[2] === 'send')) || (c[0] === 'git' && c[1] === 'fetch'))
+    calls.filter(c => (c[0] === 'gh' && c[2] === 'edit') || (c[0] === 'orca' && (c[2] === 'create' || c[2] === 'send' || c[2] === 'close' || c[2] === 'run-create' || c[2] === 'worker-start')) || (c[0] === 'git' && c[1] === 'fetch'))
 
   return { io, calls, out, written, writes, sleeps }
 }
@@ -469,10 +474,17 @@ describe('revisar: one worktree per reviewer', () => {
     assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
   })
 
-  test('Rule 3: a done review terminal blocks reuse and names the terminal to close', async () => {
-    const { env } = reusable({ agents: [{ state: 'done', paneKey: 'pane-review-9-agy' }] })
-    await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /terminal pane-review-9-agy .*sigue abierta en done; cerrala/)
-    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  // main-autonomo S8 replaces the old refusal: revisar closes a done review terminal itself and reuses the worktree.
+  test('Rule 3 (S8): a done review terminal is closed by revisar, which names it and reuses the worktree', async () => {
+    const reviewWorktree = path.join(path.dirname(root), 'revision-9-agy')
+    const { env } = reusable({
+      agents: [{ state: 'done', paneKey: 'tab-a:leaf-a' }],
+      over: { 'orca terminal list': json({ result: { terminals: [{ handle: 'term_done', tabId: 'tab-a', leafId: 'leaf-a', worktreePath: reviewWorktree }] } }) },
+    })
+    assert.equal(await run('review', { n: '9', agent: 'agy' }, env), 0)
+    assert.ok(env.calls.some(call => call.join(' ') === 'orca terminal close --terminal term_done --json'))
+    assert.ok(env.out.includes(`Cerré la terminal term_done (done) de ${reviewWorktree}.`))
+    assert.ok(env.calls.some(call => call.join(' ') === 'git checkout --detach bbb222'))
   })
 
   test('Rule 4: the same PR head cannot be reviewed twice by one reviewer', async () => {
@@ -570,8 +582,9 @@ describe('despachar: the TUI wait', () => {
   test('a still screen is stable even though every read carries a new request id', async () => {
     const env = fakeIo()
     await run('ticket', { n: '7', agent: 'claude' }, env)
-    const sent = env.calls.find(c => c[1] === 'terminal' && c[2] === 'send')
-    assert.ok(sent?.includes('--text') && sent.some(a => String(a).startsWith('Read and follow the brief in ')))
+    // #397: once the screen is still, despachar starts the worker with worker-start.
+    assert.equal(env.calls.filter(c => c[1] === 'orchestration' && c[2] === 'worker-start').length, 1)
+    assert.ok(!env.calls.some(c => c[1] === 'terminal' && c[2] === 'send'))
   })
 
   test('codex trust screen fails with the repo trust hint and never sends the brief', async () => {
@@ -601,6 +614,8 @@ describe('despachar: the TUI wait', () => {
     env.io.sh = (cmd, args, opts) => {
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') timeline.push(`read ${reads < trustReads ? 'trust' : 'tui'}`)
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send') timeline.push(args.includes('--text') ? 'brief' : 'enter')
+      // #397: despachar hands the brief over with worker-start.
+      if (cmd === 'orca' && args[0] === 'orchestration' && args[1] === 'worker-start') timeline.push('brief')
       return sh(cmd, args, opts)
     }
     return { env, timeline }
@@ -656,9 +671,8 @@ describe('despachar: the TUI wait', () => {
     assert.ok(!codex.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send'))
     const claude = fakeIo()
     await run('ticket', { n: '7', agent: 'claude' }, claude)
-    const sends = claude.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
-    assert.equal(sends.length, 1)
-    assert.ok(sends[0].includes('--text'))
+    assert.equal(claude.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send').length, 0)
+    assert.equal(claude.calls.filter(c => c[0] === 'orca' && c[1] === 'orchestration' && c[2] === 'worker-start').length, 1)
   })
 
   test('revisar applies the same trust check before sending its brief', async () => {
@@ -688,13 +702,15 @@ describe('despachar: the TUI wait', () => {
     assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
   })
 
+  // #397: despachar starts its worker with worker-start; revisar still sends the brief line, so it carries these.
+  const reviewOf = over => fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }), ...over })
   test('only an observed submitted turn prints dispatch success', async () => {
-    const env = fakeIo({
+    const env = reviewOf({
       'orca terminal send': args => args.includes('--wait-submit')
         ? json({ result: { submission: 'submitted', turnStarted: true } })
         : okRes(),
     })
-    await run('ticket', { n: '7', agent: 'claude' }, env)
+    await run('review', { n: '9', agent: 'claude' }, env)
     const send = env.calls.find(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
     assert.ok(send.includes('--wait-submit') && send.includes('--json'))
     assert.ok(env.out.some(line => line.includes('✔ claude despachado')))
@@ -702,13 +718,13 @@ describe('despachar: the TUI wait', () => {
 
   test('an old host without --wait-submit falls back to a changed terminal screen', async () => {
     let reads = 0
-    const env = fakeIo({
+    const env = reviewOf({
       'orca terminal read': () => json({ result: { terminal: { tail: [reads++ < 3 ? 'ready' : 'prompt submitted'] } } }),
       'orca terminal send': args => args.includes('--wait-submit')
         ? { status: 1, stdout: '', stderr: 'unknown option --wait-submit' }
         : okRes(),
     })
-    await run('ticket', { n: '7', agent: 'claude' }, env)
+    await run('review', { n: '9', agent: 'claude' }, env)
     const sends = env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
     assert.equal(sends.length, 2)
     assert.ok(sends[0].includes('--wait-submit') && !sends[1].includes('--wait-submit'))
@@ -716,21 +732,21 @@ describe('despachar: the TUI wait', () => {
   })
 
   test('an accepted but unobserved prompt is not reported as a started turn', async () => {
-    const env = fakeIo({
+    const env = reviewOf({
       'orca terminal send': args => args.includes('--wait-submit')
         ? json({ result: { inputAccepted: true, turnStarted: false } })
         : okRes(),
       'orca terminal read': args => json({ result: { terminal: { tail: ['ready'] } } }),
     })
-    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, env), /no hay evidencia.*turno haya arrancado/i)
+    await assert.rejects(run('review', { n: '9', agent: 'claude' }, env), /no hay evidencia.*turno haya arrancado/i)
     assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
   })
 
   test('a send transport error prints recovery details and never reports success', async () => {
-    const env = fakeIo({
+    const env = reviewOf({
       'orca terminal send': { status: 1, stdout: '', stderr: 'agent_prompt_blocked' },
     })
-    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, env), /agent_prompt_blocked/)
+    await assert.rejects(run('review', { n: '9', agent: 'claude' }, env), /agent_prompt_blocked/)
     assert.ok(env.out.join('\n').includes('El despacho quedó a medias'))
     assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
   })
@@ -980,8 +996,8 @@ describe('briefs', () => {
     assert.ok(brief.includes('Mirá `src/app.ts` antes de empezar.'))
     assert.ok(!brief.includes('{{'))
     assert.notEqual(read(file).charCodeAt(0), 0xfeff)
-    assert.deepEqual(env.writes().map(c => c.slice(0, 3).join(' ')), ['git fetch origin', 'gh issue edit', 'orca worktree create', 'orca terminal create', 'orca terminal send'])
-    assert.deepEqual(env.calls.find(c => c[2] === 'send').slice(3), ['--terminal', 'term_1', '--text', `Read and follow the brief in ${file}`, '--enter', '--wait-submit', '10', '--json'])
+    assert.deepEqual(env.writes().map(c => c.slice(0, 3).join(' ')), ['git fetch origin', 'gh issue edit', 'orca worktree create', 'orca terminal create', 'orca orchestration worker-start'])
+    assert.deepEqual(env.calls.find(c => c[2] === 'worker-start').slice(3), ['--run', 'run_main', '--terminal', 'term_1', '--spec-file', file, '--task-title', '#7 agy', '--json'])
   })
 
   test('review brief: sha, implementer, axes, red check and format', async () => {
@@ -1024,6 +1040,38 @@ describe('launchers', () => {
     assert.match(launcherFor({ ...base, agent: 'claude' }), /^& ".*claude-orca-stack\.cmd" --dangerously-skip-permissions$/)
     const config = { agentes: { modelos: { agy: 'gemini-x' } } }
     assert.match(launcherFor({ ...base, agent: 'agy', config }), /agy-orca-stack\.cmd" --dangerously-skip-permissions --model gemini-x$/)
+  })
+
+  test('issue 382 Rule 1: agy without a configured model launches with --model gemini-4-neon-high', () => {
+    for (const config of [{}, { agentes: { modelos: {} } }, { agentes: { modelos: { agy: '  ' } } }, { agentes: { modelos: { agy: { modelo: 123 } } } }]) {
+      assert.equal(launcherFor({ ...base, agent: 'agy', config }), '& "C:\\Users\\me\\orca\\stack\\scripts\\agy-orca-stack.cmd" --dangerously-skip-permissions --model gemini-4-neon-high')
+      assert.equal(launcherFor({ ...base, agent: 'agy', config, win: false, home: '/home/me' }), '"/home/me/orca/stack/scripts/agy-orca-stack.sh" --dangerously-skip-permissions --model gemini-4-neon-high')
+    }
+  })
+
+  test('issue 382 Rule 2: a configured agy model wins over the default', () => {
+    const scripts = 'C:\\Users\\me\\orca\\stack\\scripts'
+    assert.equal(launcherFor({ ...base, agent: 'agy', config: { agentes: { modelos: { agy: 'gemini-x' } } } }), `& "${scripts}\\agy-orca-stack.cmd" --dangerously-skip-permissions --model gemini-x`)
+    const split = { agentes: { modelos: { agy: { implementar: { modelo: 'gemini-3.8-flash-high' } } } } }
+    const launcher = launcherFor({ ...base, agent: 'agy', config: split })
+    assert.equal(launcher, `& "${scripts}\\agy-orca-stack.cmd" --dangerously-skip-permissions --model gemini-3.8-flash-high`)
+    assert.ok(!launcher.includes('gemini-4-neon-high'))
+  })
+
+  test('issue 382 Rule 3: a missing agy mode falls back to the default', () => {
+    const config = { agentes: { modelos: { agy: { implementar: { modelo: 'gemini-3.8-flash-high' } } } } }
+    assert.match(launcherFor({ ...base, agent: 'agy', config, mode: 'review' }), /agy-orca-stack\.cmd" --dangerously-skip-permissions --model gemini-4-neon-high$/)
+    const reviewOnly = { agentes: { modelos: { agy: { revisar: { modelo: 'gemini-x' } } } } }
+    assert.match(launcherFor({ ...base, agent: 'agy', config: reviewOnly }), /--model gemini-4-neon-high$/)
+    assert.match(launcherFor({ ...base, agent: 'agy', config: reviewOnly, mode: 'review' }), /--model gemini-x$/)
+  })
+
+  test('issue 382 Rule 4: the default is only for agy, claude and codex get no unconfigured --model', () => {
+    for (const config of [{}, { agentes: { modelos: {} } }]) {
+      for (const win of [true, false]) {
+        for (const agent of ['claude', 'codex']) assert.ok(!launcherFor({ ...base, agent, config, win }).includes('--model'), `${agent} (win: ${win})`)
+      }
+    }
   })
 
   test('the target platform, not the host, decides the wrapper and the paths', () => {
@@ -1072,6 +1120,15 @@ describe('launchers', () => {
     assert.ok(env.out.some(line => line.startsWith('[simulaci\u00f3n] orca terminal create') && line.includes(JSON.stringify(codexLauncher()))))
   })
 
+  test('issue 382 Rule 1: despachar and revisar launch agy with --model gemini-4-neon-high', async () => {
+    const prView = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) }
+    for (const [kind, n, over] of [['ticket', '7', {}], ['review', '9', prView]]) {
+      const env = fakeIo(over)
+      await run(kind, { n, agent: 'agy', dryRun: true }, env)
+      assert.match(env.out.find(line => line.startsWith('Lanzador (agy):')), /agy-orca-stack\.(cmd|sh)" --dangerously-skip-permissions --model gemini-4-neon-high$/, kind)
+    }
+  })
+
   test('issue 236 Rule 5: despachar and revisar launch as before, codex only gains the flag', async () => {
     const prView = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }) }
     const claude = `& "${path.win32.join(home, 'orca', 'stack', 'scripts', 'claude-orca-stack.cmd')}" --dangerously-skip-permissions`
@@ -1084,16 +1141,38 @@ describe('launchers', () => {
     }
   })
 
+  test('#370: an interactive pi launch (planning session) drops the unattended prompt, the dialog-tool exclusion and the autonomy and RDD-policy variables', () => {
+    const ps = launcherFor({ ...base, agent: 'pi', config: {}, interactive: true })
+    assert.ok(ps.endsWith("pi --no-skills --skill 'C:\\skills' --session-id proj-7 --no-approve 'Read the brief in C:\\b.md and follow it; the human drives this session.'"), ps)
+    assert.ok(!ps.includes('Unattended') && !ps.includes('--exclude-tools'), ps)
+    assert.ok(!ps.includes("$env:GENTLE_PI_AUTONOMOUS_MODE = '1'") && !ps.includes("$env:GENTLE_PI_ORCA_RDD_POLICY = '1'"), ps)
+    assert.ok(ps.includes('Env:GENTLE_PI_AUTONOMOUS_MODE') && ps.includes('Env:GENTLE_PI_ORCA_RDD_POLICY'), 'both are cleared, so the terminal cannot leak them')
+    const sh = launcherFor({ ...base, agent: 'pi', win: false, config: {}, interactive: true, home: '/h', briefPath: '/b.md', skills: '/s' })
+    assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && !sh.includes('export ') && sh.includes('GENTLE_PI_AUTONOMOUS_MODE'), sh)
+  })
+
+  test('S3: pi is launched with GENTLE_PI_ORCA_RDD_POLICY=1 under politica (the default), and without it under humano', () => {
+    const ps = launcherFor({ ...base, agent: 'pi', config: {} })
+    assert.ok(ps.includes("$env:GENTLE_PI_ORCA_RDD_POLICY = '1'"), ps)
+    const sh = launcherFor({ ...base, agent: 'pi', win: false, config: { agentes: { pi: { rddConsentimiento: 'politica' } } } })
+    assert.ok(sh.includes("GENTLE_PI_ORCA_RDD_POLICY='1'"), sh)
+    const humano = launcherFor({ ...base, agent: 'pi', config: { agentes: { pi: { rddConsentimiento: 'humano' } } } })
+    assert.ok(!humano.includes('$env:GENTLE_PI_ORCA_RDD_POLICY ='), humano)
+    assert.ok(humano.includes('Env:GENTLE_PI_ORCA_RDD_POLICY'), 'an inherited value is cleared too')
+    const humanoSh = launcherFor({ ...base, agent: 'pi', win: false, config: { agentes: { pi: { rddConsentimiento: 'humano' } } } })
+    assert.ok(!humanoSh.includes("GENTLE_PI_ORCA_RDD_POLICY='1'") && humanoSh.includes('unset ORCA_STACK_AGENT') && humanoSh.includes('GENTLE_PI_ORCA_RDD_POLICY'), humanoSh)
+  })
+
   test('pi: clears the stack markers, sets autonomy and the Claude account', () => {
     const config = { piClaudeConfigDir: 'C:\\Users\\me\\.claude-pi' }
     const ps = launcherFor({ ...base, agent: 'pi', config })
     assert.ok(ps.startsWith('Remove-Item Env:ORCA_STACK_AGENT, Env:ORCA_STACK_MODE'))
-    assert.ok(ps.includes('Env:ORCA_STACK_CAVEMAN_LEVEL -ErrorAction SilentlyContinue'))
+    assert.ok(ps.includes('Env:ORCA_STACK_CAVEMAN_LEVEL, Env:GENTLE_PI_ORCA_RDD_POLICY -ErrorAction SilentlyContinue'))
     assert.ok(ps.includes("$env:GENTLE_PI_AUTONOMOUS_MODE = '1'") && ps.includes("$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\me\\.claude-pi'"))
     assert.ok(ps.endsWith("pi --no-skills --skill 'C:\\skills' --session-id proj-7 --no-approve --exclude-tools 'ask_user_choice,ask_user_question' 'Read and carry out the brief in C:\\b.md. Unattended: never wait for user input.'"))
     assert.ok(!ps.includes('--tools'), "a ticket keeps all of pi's tools: subagents, SDD, engram")
     const sh = launcherFor({ ...base, agent: 'pi', win: false, mode: 'review', home: '/h', briefPath: '/b.md', skills: '/s' })
-    assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && sh.includes("export GENTLE_PI_AUTONOMOUS_MODE='1';"))
+    assert.ok(sh.startsWith('unset ORCA_STACK_AGENT ') && sh.includes("export GENTLE_PI_AUTONOMOUS_MODE='1' GENTLE_PI_ORCA_RDD_POLICY='1';"))
     assert.ok(sh.includes("--tools 'read,bash,grep,find,ls,codemode,mem_current_project,mem_context,mem_search,mem_get_observation'") && !sh.includes('CLAUDE_CONFIG_DIR'))
   })
 
@@ -1250,11 +1329,15 @@ describe('issue #277: pi workers run as an interactive TUI', () => {
     await run('ticket', { n: '7', agent: 'pi' }, ticket)
     const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: claude', number: 9 }) })
     await run('review', { n: '9', agent: 'pi' }, review)
+    assert.match(launched(review), /'Read and carry out the brief in [^']+\.md\. Unattended: never wait for user input\.'$/)
+    // #397: the ticket brief is pi's first message through worker-start, not on its command line.
+    assert.doesNotMatch(launched(ticket), /Read and carry out the brief/)
+    const start = ticket.calls.find(c => c[1] === 'orchestration' && c[2] === 'worker-start')
+    assert.equal(start[start.indexOf('--spec-file') + 1], path.join(home, 'orca', 'briefs', 'proj-7.md'))
     for (const env of [ticket, review]) {
       const command = launched(env)
       assert.match(command, /; pi --no-skills /)
       assert.doesNotMatch(command, /\spi\s+(-p|--print)\b/)
-      assert.match(command, /'Read and carry out the brief in [^']+\.md\. Unattended: never wait for user input\.'$/)
       assert.ok(env.out.some(line => line.includes('\u2714 pi despachado')))
     }
   })
@@ -1531,17 +1614,24 @@ describe('--dry-run', () => {
       await run('ticket', { n: '7', agent, dryRun: true }, env)
       const output = env.out.join('\n')
       const briefPath = path.join(home, 'orca', 'briefs', 'proj-7.md')
-      const launcher = launcherFor({ agent, mode: 'ticket', config: PROJECT, win: true, home, briefPath, session: 'proj-7', skills: agent === 'pi' ? 'C:\\pi\\gentle-pi\\skills' : null })
+      const launcher = launcherFor({ agent, mode: 'ticket', config: PROJECT, win: true, home, briefPath, session: 'proj-7', skills: agent === 'pi' ? 'C:\\pi\\gentle-pi\\skills' : null, supervised: true })
+      // #397: the worker starts in main's Run with worker-start; pi has no TUI wait.
+      const supervised = [
+        `[simulación] orca orchestration run-current --json (sin Run de main: orca orchestration run-create --objective "orca-stack proj: tickets despachados por main" --json)`,
+        `[simulación] orca orchestration worker-start --run <run> --terminal <terminal> --spec-file ${briefPath} --task-title "#7 ${agent}" --json`,
+      ]
       const start = env.out.findIndex(line => line.startsWith(`Lanzador (${agent}):`))
       const launchLines = env.out.slice(start)
 
       assert.equal(launchLines[0], `Lanzador (${agent}): ${launcher}`)
       assert.equal(launchLines[1], `[simulaci\u00f3n] orca terminal create --worktree path:<worktree> --title ${agent} --command ${JSON.stringify(launcher)} --json`)
       if (agent !== 'pi') {
-        assert.equal(launchLines[2], `[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
+        assert.deepEqual(launchLines.slice(2, 5), [`[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''}`, ...supervised])
       } else {
         assert.ok(!output.includes('esperar la TUI'))
+        assert.deepEqual(launchLines.slice(2, 4), supervised)
       }
+      assert.ok(!output.includes('enviar: Read and follow the brief'))
       assert.ok(!env.writes().some(call => call[0] === 'orca' && call[1] === 'terminal'))
     }
   })
@@ -2253,6 +2343,12 @@ describe('rebote', () => {
     assert.equal(env.out.find(line => line.startsWith('Lanzador (codex):')), `Lanzador (codex): ${codexLauncher()}`)
   })
 
+  test('issue 382 Rule 1: rebote relaunches an agy author with --model gemini-4-neon-high', async () => {
+    const env = bounceEnv(pr({ body: 'Implementador: agy' }))
+    await reboteCommand({ dryRun: true }, '12', env.io)
+    assert.match(env.out.find(line => line.startsWith('Lanzador (agy):')), /agy-orca-stack\.(cmd|sh)" --dangerously-skip-permissions --model gemini-4-neon-high$/)
+  })
+
   test('Rule 9: refuses missing Implementador marker', async () => {
     await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ body: 'no author' })).io), /no tiene la l\u00EDnea "Implementador/)
   })
@@ -2466,14 +2562,102 @@ describe('rebote', () => {
     assert.equal(env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
   })
 
-  test('Rule 5: two prior distinct CI bounces reach the human, while the current sha retry is allowed', async () => {
-    const exhausted = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1\nRebote CI: old2' }] }))
-    await assert.rejects(reboteCommand({}, '12', exhausted.io), /dos rebotes de CI.*humano/i)
-    assert.equal(exhausted.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal').length, 0)
+  // Issue #396: a cap of four CI bounces; the third and fourth need a `Diagnóstico: main` on the head.
+  describe('issue #396: CI bounces past the second need a Diagnóstico de main, up to four', () => {
+    const red = [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }]
+    const at = minute => `2026-11-20T10:${String(minute).padStart(2, '0')}:00Z`
+    const ciMark = (sha, minute) => ({ body: `Rebote CI: ${sha}`, createdAt: at(minute) })
+    const diagnosis = (commit, hypothesis, minute) => ({ body: `Diagnóstico: main\nCausa: the fixture times out\nProbado: raising the timeout\nSiguiente hipótesis: ${hypothesis}\nCommit: ${commit}`, createdAt: at(minute) })
+    const ciPr = comments => pr({ reviews: [], statusCheckRollup: red, comments })
+    const launches = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+    const commented = env => env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+    const markerOf = env => env.written.find(([file]) => file.endsWith('-comment.md'))?.[1]
+    const briefOf = env => env.written.find(([file]) => file.endsWith('proj-pr-12-rebote.md'))?.[1]
+    const refused = async (comments, line) => {
+      const env = bounceEnv(ciPr(comments))
+      await assert.rejects(reboteCommand({}, '12', env.io), error => error.message === line)
+      assert.equal(launches(env).length, 0)
+      assert.ok(!commented(env))
+      assert.equal(markerOf(env), undefined)
+      assert.equal(briefOf(env), undefined)
+    }
 
-    const sameSha = bounceEnv(pr({ reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1' }, { body: 'Rebote CI: abc123' }] }))
-    await reboteCommand({}, '12', sameSha.io)
-    assert.equal(sameSha.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote CI: abc123\n')
+    test('R1: CI bounces 1 and 2 need no diagnosis', async () => {
+      for (const comments of [[], [ciMark('old1', 1)]]) {
+        const env = bounceEnv(ciPr(comments))
+        await reboteCommand({}, '12', env.io)
+        assert.equal(launches(env).length, 1)
+        assert.equal(markerOf(env), 'Rebote CI: abc123\n')
+      }
+      // A relaunch on a head that already has its marker is still bounce 2, not 3.
+      const sameSha = bounceEnv(ciPr([ciMark('old1', 1), ciMark('abc123', 2)]))
+      await reboteCommand({}, '12', sameSha.io)
+      assert.equal(markerOf(sameSha), 'Rebote CI: abc123\n')
+    })
+
+    test('R2: CI bounces 3 and 4 run with a Diagnóstico de main on the head published after the latest Rebote CI:, and its hypothesis reaches the brief', async () => {
+      const third = bounceEnv(ciPr([ciMark('old1', 1), ciMark('old2', 2), diagnosis('abc123', 'the Windows runner lacks the fixture locale', 3)]))
+      await reboteCommand({}, '12', third.io)
+      assert.equal(launches(third).length, 1)
+      assert.equal(markerOf(third), 'Rebote CI: abc123\n')
+      assert.match(briefOf(third), /the Windows runner lacks the fixture locale/)
+
+      const fourth = bounceEnv(ciPr([ciMark('old1', 1), ciMark('old2', 2), diagnosis('old3', 'first idea', 3), ciMark('old3', 4), diagnosis('abc123', 'the cache key ignores the lockfile', 5)]))
+      await reboteCommand({}, '12', fourth.io)
+      assert.equal(launches(fourth).length, 1)
+      assert.equal(markerOf(fourth), 'Rebote CI: abc123\n')
+      assert.match(briefOf(fourth), /the cache key ignores the lockfile/)
+      assert.doesNotMatch(briefOf(fourth), /first idea/)
+
+      // A diagnosis posted before the latest Rebote CI: marker does not count.
+      await refused([ciMark('old1', 1), diagnosis('abc123', 'too early', 2), ciMark('old2', 3)], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
+    })
+
+    test('R3: refused CI bounces print one line naming the failed condition, publish no marker and launch nothing', async () => {
+      await refused([ciMark('old1', 1), ciMark('old2', 2)], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
+      await refused([ciMark('old1', 1), ciMark('old2', 2), ciMark('old3', 3)], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 4')
+      // A Diagnóstico de main naming an older head does not unlock bounce 3.
+      await refused([ciMark('old1', 1), ciMark('old2', 2), diagnosis('old2', 'retry on the new head', 3)], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
+      // Another author's Diagnóstico does not count either.
+      await refused([ciMark('old1', 1), ciMark('old2', 2), { ...diagnosis('abc123', 'mine', 3), body: diagnosis('abc123', 'mine', 3).body.replace('Diagnóstico: main', 'Diagnóstico: codex') }], 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
+      for (const hypothesis of ['ninguna', '', '`ninguna`', '**ninguna**']) {
+        await refused([ciMark('old1', 1), ciMark('old2', 2), diagnosis('abc123', hypothesis, 3)], 'rebote: el Diagnóstico de main sobre abc123 no trae una Siguiente hipótesis')
+      }
+      await refused([ciMark('old1', 1), ciMark('old2', 2), ciMark('old3', 3), ciMark('old4', 4), diagnosis('abc123', 'one more try', 5)], 'rebote: tope de 4 rebotes de CI alcanzado en el PR #12')
+      // The cap is checked before the diagnosis: without one, a fifth bounce still names the cap.
+      await refused([ciMark('old1', 1), ciMark('old2', 2), ciMark('old3', 3), ciMark('old4', 4)], 'rebote: tope de 4 rebotes de CI alcanzado en el PR #12')
+
+      // Through the CLI: exit code 1 and a single line.
+      const env = bounceEnv(ciPr([ciMark('old1', 1), ciMark('old2', 2)]))
+      const errors = []
+      const original = console.error
+      console.error = text => errors.push(String(text))
+      let code
+      try {
+        code = await main(['rebote', '12'], env.io)
+      } finally {
+        console.error = original
+      }
+      assert.equal(code, 1)
+      assert.deepEqual(errors, ['✖ rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3'])
+      assert.equal(launches(env).length, 0)
+      assert.ok(!commented(env))
+    })
+
+    test('R4: with CI bounces spent, the review bounce, the conflict bounce and the pending and CANCELLED refusals behave as before', async () => {
+      const spent = [ciMark('old1', 1), ciMark('old2', 2), ciMark('old3', 3), ciMark('old4', 4)]
+      // Green CI with a current blocking review: a review bounce, whatever the CI count.
+      const review = bounceEnv(pr({ comments: spent }))
+      await reboteCommand({}, '12', review.io)
+      assert.equal(markerOf(review), 'Rebote: abc123\nRonda: 1\n')
+      const pending = bounceEnv(pr({ reviews: [], comments: spent, statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', status: 'IN_PROGRESS' }] }))
+      await assert.rejects(reboteCommand({}, '12', pending.io), /todavía tiene checks pendientes en abc123: unit/)
+      const cancelled = bounceEnv(pr({ reviews: [], comments: spent, statusCheckRollup: [{ __typename: 'CheckRun', name: 'job', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/987/job/1' }] }))
+      await assert.rejects(reboteCommand({}, '12', cancelled.io), /checks CANCELLED en abc123[\s\S]*gh run rerun 987 --failed/)
+      const conflict = bounceEnv(pr({ reviews: [], comments: spent, mergeable: 'CONFLICTING', baseRefName: 'main' }), { 'git fetch': okRes(''), 'git merge-tree': { status: 1, stdout: 'tree\0a.mjs\0', stderr: '' }, 'git log': okRes('') })
+      await reboteCommand({}, '12', conflict.io)
+      assert.equal(markerOf(conflict), 'Rebote conflicto: abc123\n')
+    })
   })
 
   test('Rule 6: CI markers do not consume a later review bounce on a new head', async () => {
@@ -2637,7 +2821,7 @@ describe('rebote', () => {
         { body: 'Rebote CI: oldsha2' },
       ],
     }))
-    await assert.rejects(reboteCommand({}, '12', twoCiBounces.io), /dos rebotes de CI distintos.*humano/i)
+    await assert.rejects(reboteCommand({}, '12', twoCiBounces.io), error => error.message === 'rebote: falta un Diagnóstico de main sobre abc123 para el rebote de CI 3')
   })
 
   test('Rule 10: existing worktree guards still apply to a CI bounce', async () => {
@@ -2812,7 +2996,7 @@ describe('rebote', () => {
 
     test('Rule 2: opening the PR is the last change to the branch', () => {
       const after = ticketBrief('claude').split('gh pr create --base main --head branch')[1]
-      assert.ok(after.includes('Opening the PR is the last change to the branch: after `gh pr create`, write your final summary and end your turn. Push again only when main relaunches you with `orca-stack rebote` or `orca-stack reanudar`.'))
+      assert.ok(after.includes('Opening the PR is the last change to the branch: after `gh pr create`, write your final summary, send `worker_done` ok (see Finish) and end your turn. Push again only when main relaunches you with `orca-stack rebote` or `orca-stack reanudar`.'))
     })
 
     test('Rule 3: the Evidencia table comes first, then at most two code-review rounds, all before the PR', () => {
@@ -3072,7 +3256,7 @@ describe('rebote', () => {
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr(clean), { 'orca worktree': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'working' }] }] } }) }).io), /agente vivo/)
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [{ body: 'Commit: abc123\n## BLOQUEA\n1. (inferida, interpretación): product disagreement' }] })).io), /interpretación/)
       await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, statusCheckRollup: [{ __typename: 'CheckRun', name: 'job', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'https://github.com/org/repo/actions/runs/987/job/1' }] })).io), /gh run rerun 987 --failed/)
-      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1\nRebote CI: old2' }] })).io), /dos rebotes de CI/)
+      await assert.rejects(reboteCommand({}, '12', bounceEnv(pr({ ...clean, reviews: [], statusCheckRollup: [{ __typename: 'CheckRun', name: 'unit', conclusion: 'FAILURE' }], comments: [{ body: 'Rebote CI: old1\nRebote CI: old2' }] })).io), /falta un Diagnóstico de main sobre abc123 para el rebote de CI 3/)
 
       const plain = bounceEnv(pr(clean))
       await reboteCommand({ dryRun: true }, '12', plain.io)
@@ -3300,13 +3484,14 @@ describe('rebote', () => {
 
     test('Rule 2: The brief\'s general rule covers every notice, not only questions, including caps set in --nota', () => {
       const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
-      const generalNoticeRule = 'Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`.'
-      assert.ok(ticket.includes(generalNoticeRule), 'brief-ticket.md must carry the general notice rule covering questions, caps, and deviations')
+      // #398: a question goes through `orca orchestration ask`; a notice that is not a question still starts with Consulta:.
+      const generalNoticeRule = 'Anything you post for main on GitHub that is not a question (a cap you passed) starts with `Consulta: {{AGENT}}`; a question, including a deviation that needs a decision, goes through `orca orchestration ask`.'
+      assert.ok(ticket.includes(generalNoticeRule), 'brief-ticket.md must carry the general notice rule for notices that are not questions')
       assert.ok(!ticket.includes('Questions start with `Consulta: {{AGENT}}`.'), 'brief-ticket.md must not limit Consulta: to questions only')
 
       for (const agent of AGENTS) {
         const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '278', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' }, 'cap diff at 1000 lines')
-        assert.ok(brief.includes(`Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with \`Consulta: ${agent}\`.`), `${agent} brief must render general notice rule`)
+        assert.ok(brief.includes(`Anything you post for main on GitHub that is not a question (a cap you passed) starts with \`Consulta: ${agent}\`; a question, including a deviation that needs a decision, goes through \`orca orchestration ask\`.`), `${agent} brief must render general notice rule`)
         assert.ok(brief.includes('cap diff at 1000 lines'), `${agent} brief must carry the --nota cap`)
       }
     })
@@ -3641,4 +3826,452 @@ describe('rebote', () => {
   })
 })
 
+describe('main-autonomo T1: launcher false negatives', () => {
+  const WORKING = '\u2022 Working (12s \u2022 esc to interrupt)'
+  const BANNER = '\u26A0 5h limit: 50% left \u00B7 resets at 00:57'
+  const EMPTY = '\u26A0 5h limit: 0% left \u00B7 resets at 00:57'
+  const HIT = "\u25A0 You've hit your usage limit. Try again at 00:57."
+  const screen = lines => () => json({ result: { terminal: { tail: lines } } })
+  const reviewPr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }) }
+  const bouncePr = (overrides = {}) => ({
+    state: 'OPEN', headRefName: 'feat/fix', headRefOid: 'abc123', body: 'Implementador: codex', statusCheckRollup: [],
+    reviews: [{ body: 'Revisor: agy\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, concreta, implementaci\u00F3n): fix it.', url: 'https://example.test/review/1' }],
+    comments: [], ...overrides,
+  })
+  const bounceIo = (pull = bouncePr(), extra = {}, config = PROJECT) => {
+    const env = fakeIo({ 'gh pr': json(pull), 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`), 'git status': okRes(''), ...extra }, { config })
+    const original = env.io.sh
+    env.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes(`${pull.headRefOid}\n`) : original(cmd, args, opts)
+    env.io.now = () => 100
+    env.io.modifiedAt = () => 101
+    return env
+  }
+  const closes = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'close')
+  const creates = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+  const consentFile = () => path.join(root, '.git', 'orca-stack', 'rdd-consentimiento.json')
+  const consentWrites = env => env.written.filter(([file]) => file === consentFile())
 
+  describe('S4: the codex quota banner', () => {
+    test('quotaLine treats "N% left" with N>0 as information and keeps 0% left and the hard phrases as quota', () => {
+      assert.equal(quotaLine([WORKING, BANNER]), undefined)
+      assert.equal(quotaLine([WORKING, '\u26A0 Weekly limit: 3% left \u00B7 resets in 2d']), undefined)
+      assert.equal(quotaLine([WORKING, EMPTY]), EMPTY)
+      assert.equal(quotaLine([WORKING, HIT]), HIT)
+      // PRESERVE: the #292 wordings still count.
+      for (const line of ['Weekly limit reached \u00B7 resets Mon 9am', "You've hit your session limit \u00B7 resets 4:30am", '\u26A0 Individual quota reached\u2026 Resets in 10h45m19s']) assert.equal(quotaLine(['ready', line]), line)
+    })
+
+    test('despachar, revisar and rebote succeed when codex shows Working and the 50% banner', async () => {
+      const ticket = fakeIo({ 'orca terminal read': screen([WORKING, BANNER]) })
+      assert.equal(await run('ticket', { n: '7', agent: 'codex' }, ticket), 0)
+      assert.ok(ticket.out.some(line => line.startsWith(`\u2714 codex despachado en ${worktree}`)))
+      const review = fakeIo({ ...reviewPr, 'orca terminal read': screen([WORKING, BANNER]) })
+      assert.equal(await run('review', { n: '9', agent: 'codex' }, review), 0)
+      const bounce = bounceIo(bouncePr(), { 'orca terminal read': screen([WORKING, BANNER]) })
+      assert.equal(await reboteCommand({}, '12', bounce.io), 0)
+      assert.ok(bounce.out.includes('Rebote: abc123'))
+    })
+
+    test('negative: 0% left or "You\'ve hit your usage limit" still fails with the quota message', async () => {
+      for (const line of [EMPTY, HIT]) {
+        const env = fakeIo({ 'orca terminal read': screen([WORKING, line]) })
+        await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), error =>
+          error.message === `La terminal de codex (term_1) muestra un l\u00edmite de cuota; el turno no est\u00e1 ejecut\u00e1ndose: ${line}`)
+        assert.ok(!env.out.some(l => l.includes('\u2714 codex despachado')))
+      }
+    })
+  })
+
+  describe('S8: revisar and rebote close done terminals and empty shells themselves', () => {
+    const reviewWorktree = () => path.join(path.dirname(root), 'revision-9-agy')
+    const terminalsOf = wt => [
+      { handle: 'term_done', tabId: 'tab-a', leafId: 'leaf-a', worktreePath: wt },
+      { handle: 'term_shell', tabId: 'tab-b', leafId: 'leaf-b', worktreePath: wt },
+      { handle: 'term_other', tabId: 'tab-c', leafId: 'leaf-c', worktreePath: wt },
+    ]
+    const reads = { term_shell: ['PS C:\\x>'], term_other: ['node server.js', 'listening on 3000'] }
+    const readByHandle = args => json({ result: { terminal: { tail: reads[args[args.indexOf('--terminal') + 1]] ?? ['ready'] } } })
+    const reviewEnv = agents => {
+      const wt = reviewWorktree()
+      return fakeIo({
+        'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9 }),
+        'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${wt}\nHEAD aaa111\nbranch refs/heads/revision-9-agy\n`),
+        'git status': okRes(''),
+        'git rev-parse HEAD': okRes('aaa111\n'),
+        'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+        'orca worktree ps': json({ result: { worktrees: [{ path: wt, agents }] } }),
+        'orca terminal list': json({ result: { terminals: terminalsOf(wt) } }),
+        'orca terminal read': readByHandle,
+      })
+    }
+
+    test('revisar closes the done terminal and the empty shell, prints both, leaves a busy terminal and reviews', async () => {
+      const env = reviewEnv([{ state: 'done', paneKey: 'tab-a:leaf-a' }])
+      assert.equal(await run('review', { n: '9', agent: 'agy' }, env), 0)
+      assert.deepEqual(closes(env).map(call => call.slice(3)), [['--terminal', 'term_done', '--json'], ['--terminal', 'term_shell', '--json']])
+      assert.ok(env.out.includes(`Cerr\u00e9 la terminal term_done (done) de ${reviewWorktree()}.`))
+      assert.ok(env.out.includes(`Cerr\u00e9 la terminal term_shell (shell vac\u00eda) de ${reviewWorktree()}.`))
+      assert.equal(creates(env).length, 1)
+    })
+
+    test('revisar --dry-run names what it would close and closes nothing', async () => {
+      const env = reviewEnv([{ state: 'done', paneKey: 'tab-a:leaf-a' }])
+      assert.equal(await run('review', { n: '9', agent: 'agy', dryRun: true }, env), 0)
+      assert.equal(closes(env).length, 0)
+      assert.ok(env.out.includes(`[simulaci\u00f3n] Cerrar\u00eda la terminal term_done (done) de ${reviewWorktree()}.`))
+    })
+
+    test('revisar refuses a working, running, active, blocked or waiting agent and closes nothing', async () => {
+      for (const state of ['working', 'running', 'active', 'blocked', 'waiting']) {
+        const env = reviewEnv([{ state, paneKey: 'tab-a:leaf-a' }])
+        await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), error => error.message === `Orca ya tiene un worktree para revision-9-agy con un agente vivo: ${reviewWorktree()}.`, state)
+        assert.equal(closes(env).length, 0, state)
+        assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'), state)
+        assert.deepEqual(env.writes(), [], state)
+      }
+    })
+
+    test('rebote closes the done terminal and the empty shell of the PR worktree before relaunching the author', async () => {
+      const env = bounceIo(bouncePr(), {
+        'orca worktree ps': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'done', paneKey: 'tab-a:leaf-a' }] }] } }),
+        'orca terminal list': json({ result: { terminals: terminalsOf(worktree) } }),
+        'orca terminal read': readByHandle,
+      })
+      assert.equal(await reboteCommand({}, '12', env.io), 0)
+      assert.deepEqual(closes(env).map(call => call[4]), ['term_done', 'term_shell'])
+      assert.ok(env.out.includes(`Cerr\u00e9 la terminal term_done (done) de ${worktree}.`))
+      assert.ok(env.out.includes(`Cerr\u00e9 la terminal term_shell (shell vac\u00eda) de ${worktree}.`))
+      const close = env.calls.findIndex(call => call[0] === 'orca' && call[2] === 'close')
+      const create = env.calls.findIndex(call => call[0] === 'orca' && call[2] === 'create')
+      assert.ok(close >= 0 && close < create)
+    })
+
+    test('rebote refuses a live agent with its message and closes nothing', async () => {
+      for (const state of ['working', 'blocked', 'waiting']) {
+        const env = bounceIo(bouncePr(), {
+          'orca worktree ps': json({ result: { worktrees: [{ path: worktree, agents: [{ state: 'done', paneKey: 'tab-a:leaf-a' }, { state, paneKey: 'tab-c:leaf-c' }] }] } }),
+          'orca terminal list': json({ result: { terminals: terminalsOf(worktree) } }),
+          'orca terminal read': readByHandle,
+        })
+        await assert.rejects(reboteCommand({}, '12', env.io), error => error.message === `Hay un agente vivo en ${worktree}; cerralo antes de rebotar.`, state)
+        assert.equal(closes(env).length, 0, state)
+        assert.equal(creates(env).length, 0, state)
+        assert.ok(!env.calls.some(call => call[0] === 'gh' && call[2] === 'comment'), state)
+      }
+    })
+  })
+
+  describe('S3: the RDD consent policy file', () => {
+    const RDD_PROJECT = { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { ...PROJECT.agentes.pi, review: 'rdd' } } }
+    const withConsent = (config, agent, value) => ({ ...config, agentes: { ...config.agentes, [agent]: { ...config.agentes[agent], rddConsentimiento: value } } })
+    const piBounce = (config = RDD_PROJECT) => {
+      const env = bounceIo(bouncePr({ body: 'Implementador: pi\nCloses #7', reviews: [] }), {}, config)
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      return env
+    }
+
+    test('despachar writes {"version":1,"granted":[]} in the worktree git dir by default and with "politica"', async () => {
+      for (const config of [PROJECT, withConsent(PROJECT, 'codex', 'politica')]) {
+        const env = fakeIo({}, { config })
+        await run('ticket', { n: '7', agent: 'codex' }, env)
+        assert.deepEqual(consentWrites(env).map(([, text]) => text), ['{"version":1,"granted":[]}\n'])
+        assert.ok(env.calls.some(call => call.join(' ') === 'git rev-parse --path-format=absolute --git-dir'))
+        assert.ok(env.out.includes(`Consentimiento RDD (pol\u00edtica): ${consentFile()} = {"version":1,"granted":[]}`))
+      }
+    })
+
+    test('negative: with "humano" despachar writes no consent file; --dry-run writes none either', async () => {
+      const human = fakeIo({}, { config: withConsent(PROJECT, 'codex', 'humano') })
+      await run('ticket', { n: '7', agent: 'codex' }, human)
+      assert.deepEqual(consentWrites(human), [])
+      assert.ok(!human.out.some(line => line.startsWith('Consentimiento RDD')))
+      const dry = fakeIo()
+      await run('ticket', { n: '7', agent: 'codex', dryRun: true }, dry)
+      assert.deepEqual(consentWrites(dry), [])
+    })
+
+    test('an unknown rddConsentimiento value is refused before any side effect', async () => {
+      const env = fakeIo({}, { config: withConsent(PROJECT, 'codex', 'siempre') })
+      await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), error => error.message === 'agentes.codex.rddConsentimiento tiene que ser "politica" o "humano", no "siempre".')
+      assert.deepEqual(env.writes(), [])
+      assert.deepEqual(env.written, [])
+    })
+
+    test('rebote writes granted [] and rebote --rdd writes granted [<headRefOid>]', async () => {
+      const bounce = bounceIo()
+      await reboteCommand({}, '12', bounce.io)
+      assert.deepEqual(consentWrites(bounce).map(([, text]) => text), ['{"version":1,"granted":[]}\n'])
+      const rdd = piBounce()
+      await reboteCommand({ rdd: 'risk' }, '12', rdd.io)
+      assert.deepEqual(consentWrites(rdd).map(([, text]) => text), ['{"version":1,"granted":["abc123"]}\n'])
+      assert.ok(rdd.out.includes(`Consentimiento RDD (pol\u00edtica): ${consentFile()} = {"version":1,"granted":["abc123"]}`))
+    })
+
+    test('negative: rebote --rdd with "humano" writes nothing', async () => {
+      const env = piBounce(withConsent(RDD_PROJECT, 'pi', 'humano'))
+      await reboteCommand({ rdd: 'risk' }, '12', env.io)
+      assert.deepEqual(consentWrites(env), [])
+      assert.equal(creates(env).length, 1)
+    })
+  })
+
+  describe('S12: revisar --rutas', () => {
+    test('the review brief lists only the given paths and the run says it is partial by design', async () => {
+      const env = fakeIo({ ...reviewPr, 'git ls-tree -r': okRes('src/app.ts\nsrc/b.ts\nREADME.md\n') })
+      assert.equal(await revisarCommand({ rutas: 'src/app.ts, src/b.ts' }, '9', 'codex', env.io), 0)
+      const brief = env.written.find(([file]) => file.endsWith('proj-revision-9-codex.md'))?.[1]
+      assert.match(brief, /\n## Partial review by design\n\nmain asked for a review of these paths only \(`revisar --rutas`\)/)
+      assert.ok(brief.includes('\n- `src/app.ts`\n- `src/b.ts`\n'))
+      assert.ok(!brief.includes('`README.md`'))
+      assert.ok(env.out.includes('Review parcial por dise\u00f1o: src/app.ts, src/b.ts'))
+    })
+
+    test('without --rutas the brief has no partial section', async () => {
+      const env = fakeIo(reviewPr)
+      await revisarCommand({}, '9', 'codex', env.io)
+      assert.doesNotMatch(env.written[0][1], /Partial review by design/)
+      assert.ok(!env.out.some(line => line.startsWith('Review parcial')))
+    })
+
+    test('an empty --rutas, a missing path or --rutas on despachar is refused before any side effect', async () => {
+      const empty = fakeIo(reviewPr)
+      await assert.rejects(revisarCommand({ rutas: ' , ' }, '9', 'codex', empty.io), error => error.message === '--rutas necesita al menos una ruta: --rutas <ruta,ruta>.')
+      assert.deepEqual(empty.writes(), [])
+      const missing = fakeIo(reviewPr)
+      await assert.rejects(revisarCommand({ rutas: 'src/nope.ts' }, '9', 'codex', missing.io), /El brief cita rutas que no existen en origin\/feat[\s\S]*src\/nope\.ts/)
+      assert.deepEqual(missing.writes(), [])
+      const ticket = fakeIo()
+      await assert.rejects(dispatch('ticket', { n: '7', agent: 'codex', rutas: 'src/app.ts' }, ticket.io), error => error.message === '--rutas solo vale para revisar.')
+      assert.deepEqual(ticket.writes(), [])
+    })
+  })
+})
+
+// #357 (main-autonomo-2 S1): agy 1.5.x draws a one-time banner or splash over its prompt that ends in "esc to dismiss".
+describe('agy: banner and splash before the brief (#357)', () => {
+  // Recorded on 2026-11-12 (Antigravity CLI 1.5.7, #356) and 2026-11-14 (1.5.9, centro-estudiantes-tuc #49).
+  const BANNER_157 = ['Antigravity CLI 1.5.7', 'Gemini 4 Hydrogen (High)', 'Auto is now the default agent mode', 'Press Shift+Tab to switch agent modes', 'esc to dismiss', '>']
+  const SPLASH_159 = ['┃ Introducing Gemini 4 Hydrogen', '┃ Our daily driver for rapid coding and dependable agentic execution!', '┃ esc to dismiss']
+  const PROMPT = ['Antigravity CLI 1.5.9', 'Gemini 4 Hydrogen (High)', '>']
+  const ESC = '\u001b'
+  const isEsc = args => args[0] === 'terminal' && args[1] === 'send' && args[args.indexOf('--text') + 1] === ESC
+  // #397: despachar hands its brief over with worker-start; revisar and rebote still send the line.
+  const isBrief = args => (args[0] === 'orchestration' && args[1] === 'worker-start') || (args[0] === 'terminal' && args[1] === 'send' && String(args[args.indexOf('--text') + 1] ?? '').startsWith('Read and follow the brief in '))
+  // The splash stays until `escs` Escapes reached agy; `after` is the screen once it is gone.
+  const splashIo = ({ splash = SPLASH_159, escs = 1, after = PROMPT, over = {}, envFor = fakeIo } = {}) => {
+    let sentEscs = 0
+    const timeline = []
+    const env = envFor({
+      ...over,
+      'orca terminal read': () => {
+        const tail = sentEscs >= escs ? after : splash
+        timeline.push(`read ${tail === splash ? 'splash' : 'prompt'}`)
+        return json({ result: { terminal: { tail } } })
+      },
+    })
+    const { sh, sleep } = env.io
+    env.io.sleep = async ms => { timeline.push(`sleep ${ms}`); return sleep(ms) }
+    env.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && isEsc(args)) { sentEscs += 1; timeline.push('esc') }
+      if (cmd === 'orca' && isBrief(args)) timeline.push('brief')
+      return sh(cmd, args, opts)
+    }
+    const escCalls = () => env.calls.filter(c => c[0] === 'orca' && isEsc(c.slice(1)))
+    const briefCalls = () => env.calls.filter(c => c[0] === 'orca' && isBrief(c.slice(1)))
+    return { env, timeline, escCalls, briefCalls }
+  }
+  const briefOf = env => env.written.find(([file]) => file.endsWith('.md') && !file.endsWith('.review.md'))[0]
+  const s1 = (briefPath, handle = 'term_1') => `agy no recibió el brief. Pegá en la terminal ${handle} esta línea: Read and follow the brief in ${briefPath}`
+
+  test('S1: despachar dismisses the 1.5.7 banner with one Esc, confirms the empty prompt and sends the brief once', async () => {
+    const { env, timeline, escCalls, briefCalls } = splashIo({ splash: BANNER_157 })
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    assert.deepEqual(escCalls(), [['orca', 'terminal', 'send', '--terminal', 'term_1', '--text', ESC]])
+    assert.equal(briefCalls().length, 1)
+    const esc = timeline.indexOf('esc')
+    assert.deepEqual(timeline.slice(esc, esc + 4), ['esc', 'sleep 2000', 'read prompt', 'brief'])
+    assert.ok(env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('S1: revisar sends Esc every 2 s while the 1.5.9 splash stays, at most 3, and the brief only once it is gone', async () => {
+    const { env, timeline, escCalls, briefCalls } = splashIo({ escs: 3, over: { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) } })
+    await run('review', { n: '9', agent: 'agy' }, env)
+    assert.equal(escCalls().length, 3)
+    for (const i of timeline.flatMap((step, i) => step === 'esc' ? [i] : [])) assert.equal(timeline[i + 1], 'sleep 2000')
+    assert.ok(timeline.indexOf('brief') > timeline.lastIndexOf('esc'))
+    assert.equal(timeline[timeline.indexOf('brief') - 1], 'read prompt')
+    assert.equal(briefCalls().length, 1)
+    assert.ok(env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('S1: rebote dismisses the splash before it sends the bounce brief', async () => {
+    const pull = { state: 'OPEN', headRefName: 'feat/fix', headRefOid: 'abc123', body: 'Implementador: agy', statusCheckRollup: [], comments: [],
+      reviews: [{ body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, concreta, implementación): fix it.\n\n## SUGERENCIAS\n(none)', url: 'https://example.test/review/1' }] }
+    const envFor = over => {
+      const env = fakeIo({ 'gh pr': json(pull), 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`), 'git status': okRes(''), ...over })
+      const original = env.io.sh
+      env.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('abc123\n') : original(cmd, args, opts)
+      return env
+    }
+    const { env, timeline, escCalls, briefCalls } = splashIo({ envFor })
+    await reboteCommand({}, '12', env.io)
+    assert.equal(escCalls().length, 1)
+    assert.ok(timeline.indexOf('esc') < timeline.indexOf('brief'))
+    assert.equal(briefCalls().length, 1)
+    assert.ok(briefCalls()[0].at(-5).endsWith('proj-pr-12-rebote.md'))
+  })
+
+  test('S1 negative: a splash still on screen after 3 Escs fails with the line to paste and never sends the brief', async () => {
+    const { env, escCalls, briefCalls } = splashIo({ escs: Infinity })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), error => {
+      assert.equal(error.message, s1(briefOf(env)))
+      return true
+    })
+    assert.equal(escCalls().length, 3)
+    assert.equal(briefCalls().length, 0)
+    assert.ok(!env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('S1 negative: a dialog or the trust screen after the Esc gets no brief', async () => {
+    for (const after of [['Do you want to proceed?', '> 1. Yes', '2. No'], ['Antigravity CLI requires permission to read, edit, and execute files here.', '> Yes, I trust this folder', 'No, exit']]) {
+      const { env, briefCalls } = splashIo({ after })
+      await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), error => {
+        assert.equal(error.message, s1(briefOf(env)))
+        return true
+      })
+      assert.equal(briefCalls().length, 0, after[0])
+    }
+  })
+
+  // Recorded live on 2026-11-15 (Antigravity CLI 1.5.9): `orca terminal read --screen` showed the empty `>` prompt while
+  // agy was really on its folder-trust screen, and Orca's own send refused with this.
+  const BLOCKED = { status: 1, stdout: JSON.stringify({ ok: false, error: { code: 'agent_prompt_blocked', message: 'agent_prompt_blocked The agent is showing a permission or trust prompt; to answer it, send --text and --enter as separate commands. Terminal prompt request ID: req-1. Re-issue the exact command with --retry-request req-1 --wait-submit <seconds>; do not retry it without that ID.' } }), stderr: '' }
+  const isLoneEnter = args => args[0] === 'terminal' && args[1] === 'send' && args.includes('--enter') && !args.includes('--text')
+
+  test('#357 live: a send refused with agent_prompt_blocked (trust screen the screen read missed) gets one Enter, then the brief goes through once', async () => {
+    let blocked = 1
+    const live = splashIo({ splash: PROMPT, over: { 'orca orchestration worker-start': () => blocked-- > 0 ? BLOCKED : json({ ok: true, result: { taskId: 'task_1' } }) } })
+    await run('ticket', { n: '7', agent: 'agy' }, live.env)
+    const sends = live.env.calls.filter(c => c[0] === 'orca' && ((c[1] === 'terminal' && c[2] === 'send') || c[2] === 'worker-start')).map(c => (isLoneEnter(c.slice(1)) ? 'enter' : isBrief(c.slice(1)) ? 'brief' : 'other'))
+    assert.deepEqual(sends, ['brief', 'enter', 'brief'])
+    // #397: the retry reissues the request Orca named, so no second "#7 agy" Task is started.
+    assert.deepEqual(live.env.calls.filter(c => c[2] === 'worker-start').map(c => c.slice(c.indexOf('--json') + 1)), [[], ['--retry-request', 'req-1']])
+    assert.ok(live.env.out.some(line => line.includes('agy muestra un pedido de confianza (agent_prompt_blocked): confirmo la carpeta con Enter (1/3).')), live.env.out.join('\n'))
+    assert.ok(live.env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('#357 live negative: blocked three times fails with the line to paste and Orca\'s reason; claude never gets the extra Enter', async () => {
+    // #397: despachar reports Orca's refusal of worker-start and releases the issue.
+    const refused = splashIo({ splash: PROMPT, over: { 'orca orchestration worker-start': BLOCKED } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, refused.env), error => {
+      assert.ok(error.message.startsWith('orca orchestration worker-start falló: agent_prompt_blocked'), error.message)
+      return true
+    })
+    assert.equal(refused.briefCalls().length, 4)
+    assert.equal(refused.env.calls.filter(c => c[0] === 'orca' && isLoneEnter(c.slice(1))).length, 3)
+    assert.ok(refused.env.calls.some(c => c.join(' ') === 'gh issue edit 7 --remove-assignee @me'))
+    const claude = splashIo({ splash: PROMPT, over: { 'orca orchestration worker-start': BLOCKED } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, claude.env))
+    assert.equal(claude.env.calls.filter(c => c[0] === 'orca' && isLoneEnter(c.slice(1))).length, 0)
+    assert.equal(claude.briefCalls().length, 1)
+  })
+
+  test('S1: when the brief still does not arrive after the Esc, agy fails with exactly the line to paste, sent once', async () => {
+    // #397: despachar starts with worker-start (S3 of #397 covers its failure); revisar still sends the line.
+    const pr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) }
+    const refused = splashIo({ over: { ...pr, 'orca terminal send': args => args.includes('--wait-submit') ? { status: 1, stdout: '', stderr: 'send failed: terminal closed' } : okRes() } })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, refused.env), error => {
+      assert.equal(error.message, `${s1(briefOf(refused.env))}\nCausa: send failed: terminal closed`)
+      return true
+    })
+    assert.equal(refused.briefCalls().length, 1)
+    const unobserved = splashIo({ over: { ...pr, 'orca terminal send': args => args.includes('--wait-submit') ? json({ result: { inputAccepted: true, turnStarted: false } }) : okRes() } })
+    await assert.rejects(run('review', { n: '9', agent: 'agy' }, unobserved.env), error => {
+      assert.ok(error.message.startsWith(`${s1(briefOf(unobserved.env))}\nCausa: `), error.message)
+      return true
+    })
+    assert.equal(unobserved.briefCalls().length, 1)
+    assert.ok(!unobserved.env.out.some(line => line.includes('✔ agy despachado')))
+  })
+
+  test('S1 PRESERVE: claude and codex never get an Esc, even with "esc to dismiss" on screen', async () => {
+    for (const agent of ['claude', 'codex']) {
+      const { env, escCalls, briefCalls } = splashIo({ escs: Infinity })
+      await run('ticket', { n: '7', agent }, env)
+      assert.equal(escCalls().length, 0, agent)
+      assert.equal(briefCalls().length, 1, agent)
+    }
+  })
+})
+
+describe('main-autonomo-2 S2: despachar reserves the migration number', () => {
+  const MIGRACIONES = { ...PROJECT, migraciones: { glob: 'db/migrations/*.sql', numero: '^(\\d+)_' } }
+  const LINE = n => `- If this ticket adds a migration, number it ${n} (reserved by orca-stack); if it needs more than one, ask main with \`orca orchestration ask\`.`
+  const registry = () => path.join(root, '.git', 'orca-stack', 'migraciones.json')
+  const briefPath = () => path.join(home, 'orca', 'briefs', 'proj-7.md')
+  // origin/main holds 00011 and 00012; issues not named in `states` are open; `prs` answers gh pr list --state all.
+  const migrationIo = ({ states = {}, prs = [], config = MIGRACIONES } = {}) => fakeIo({
+    'git ls-tree': args => okRes(args.includes('--') ? 'db/migrations/00011_users.sql\ndb/migrations/00012_roles.sql\n' : 'src/app.ts\n'),
+    'gh issue': args => (args[1] === 'view' && args[4] === 'state' ? json({ state: states[args[2]] ?? 'OPEN' }) : null),
+    'gh pr': args => (args[1] === 'list' ? json(prs) : null),
+  }, { config })
+  const briefOf = env => env.written.filter(([file]) => file === briefPath()).at(-1)?.[1]
+
+  test('S2: the first dispatch reserves max(origin/main, open reservations) + 1, padded, and the brief names it', async () => {
+    write(registry(), JSON.stringify({ reservas: { 9: { numero: 13, texto: '00013', at: '2026-11-15T00:00:00.000Z' } } }))
+    const env = migrationIo()
+    assert.equal(await run('ticket', { n: '7', agent: 'agy' }, env), 0)
+    const saved = JSON.parse(readFileSync(registry(), 'utf8'))
+    assert.deepEqual(Object.keys(saved.reservas).sort(), ['7', '9'])
+    assert.equal(saved.reservas['7'].numero, 14)
+    assert.equal(saved.reservas['7'].texto, '00014')
+    assert.ok(env.out.includes('Migración reservada para #7: 00014'), env.out.join('\n'))
+    assert.ok(briefOf(env).includes(`not a paraphrase of it.\n${LINE('00014')}\n`), briefOf(env))
+    assert.ok(env.calls.some(c => c.join(' ') === 'git ls-tree -r --name-only origin/main -- db/migrations'))
+  })
+
+  test('S2 negative: dispatching the same issue twice keeps its first number', async () => {
+    write(registry(), JSON.stringify({ reservas: { 7: { numero: 13, texto: '00013', at: '2026-11-15T00:00:00.000Z' }, 9: { numero: 20, texto: '00020', at: '2026-11-15T00:00:00.000Z' } } }))
+    const before = readFileSync(registry(), 'utf8')
+    const env = migrationIo()
+    assert.equal(await run('ticket', { n: '7', agent: 'agy' }, env), 0)
+    assert.equal(readFileSync(registry(), 'utf8'), before)
+    assert.ok(env.out.includes('Migración ya reservada para #7: 00013'), env.out.join('\n'))
+    assert.ok(briefOf(env).includes(LINE('00013')))
+  })
+
+  test('S2 negative: --dry-run says what it would reserve and writes no registry', async () => {
+    const env = migrationIo()
+    assert.equal(await run('ticket', { n: '7', agent: 'agy', dryRun: true }, env), 0)
+    assert.equal(existsSync(registry()), false)
+    assert.ok(env.out.includes('[simulación] Migración que reservaría para #7: 00013'), env.out.join('\n'))
+    assert.ok(env.out.some(line => line.includes(LINE('00013'))))
+  })
+
+  test('S2 negative: a reservation of a closed issue, or of a merged PR, is released and its number is free again', async () => {
+    write(registry(), JSON.stringify({ reservas: { 8: { numero: 13, texto: '00013', at: 'x' }, 9: { numero: 14, texto: '00014', at: 'x' }, 10: { numero: 15, texto: '00015', at: 'x' } } }))
+    const env = migrationIo({ states: { 8: 'CLOSED' }, prs: [{ number: 40, state: 'MERGED', body: 'Closes #9' }, { number: 41, state: 'CLOSED', body: 'Closes #10' }, { number: 42, state: 'OPEN', body: 'Closes #10' }] })
+    assert.equal(await run('ticket', { n: '7', agent: 'agy' }, env), 0)
+    const saved = JSON.parse(readFileSync(registry(), 'utf8'))
+    assert.deepEqual(Object.keys(saved.reservas).sort(), ['10', '7'])
+    assert.equal(saved.reservas['7'].numero, 16)
+  })
+
+  test('S2 negative: without migraciones nothing is reserved and the brief is byte-identical to today', async () => {
+    const env = fakeIo()
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    assert.equal(existsSync(registry()), false)
+    assert.ok(!env.calls.some(c => c[0] === 'gh' && c[1] === 'pr'))
+    const brief = briefOf(env)
+    assert.ok(!brief.includes('migration'))
+    assert.ok(brief.includes('not a paraphrase of it.\n\n## Verification'))
+    assert.ok(!brief.includes('{{'))
+  })
+
+  test('S2: an unreadable registry refuses the dispatch before assigning anything', async () => {
+    write(registry(), 'not json')
+    const env = migrationIo()
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), /No reservo número de migración: no pude leer el registro de migraciones/)
+    assert.ok(!env.calls.some(c => c[0] === 'gh' && c[2] === 'edit'))
+  })
+})

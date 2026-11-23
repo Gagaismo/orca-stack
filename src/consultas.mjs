@@ -1,6 +1,7 @@
 import path from 'node:path'
 
 import { defaultIo } from './despacho.mjs'
+import { startsWithMarker } from './marcas.mjs'
 
 export const STORE_REL = ['orca-stack', 'consultas-reportadas.json']
 
@@ -67,9 +68,9 @@ export const fetchComments = (item, root, io) => {
 export const isConsultaComment = (comment, stackAccount) => {
   const author = comment?.author?.login?.trim().toLowerCase()
   if (author !== stackAccount) return false
-  const body = comment?.body ?? ''
 
-  return /^\s*Consulta:/m.test(body) && body.trimStart().startsWith('Consulta:')
+  // A BOM or blank lines before the marker do not hide it (#365); a quoted `> Consulta:` is not one.
+  return startsWithMarker(comment?.body, 'Consulta')
 }
 
 export const consultasCommand = async (flags = {}, items = [], io = defaultIo()) => {

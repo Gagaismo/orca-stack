@@ -190,7 +190,7 @@ describe('the repository itself', () => {
 
   test('every copy of the shared config module matches shared/orca-config.ts', () => {
     const shared = readFileSync(path.join(ROOT, 'shared', 'orca-config.ts'), 'utf8')
-    for (const mod of ['puente-gentle', 'bandeja-mensajes', 'guardia-despacho', 'tablero-despacho', 'marchas', 'main-md']) {
+    for (const mod of ['puente-gentle', 'bandeja-mensajes', 'guardia-despacho', 'tablero-despacho', 'marchas', 'main-md', 'modo-autonomo']) {
       const copy = readFileSync(path.join(ROOT, 'mods', mod, 'hooks', 'orca-config.ts'), 'utf8')
       assert.equal(copy, shared, `${mod} is out of sync: run npm run sync-shared`)
     }
@@ -234,6 +234,13 @@ describe('the repository itself', () => {
     const literal = /\/\/ BEGIN FAMILIES\s*export const FAMILIES = ([\s\S]*?)(?: as const)?\s*\/\/ END FAMILIES/.exec(shared)?.[1]
     assert.ok(literal, 'shared/orca-config.ts lost its FAMILIES markers')
     assert.deepEqual(JSON.parse(literal), FAMILIES)
+  })
+
+  test('issue 382 Rule 5: agy stays in the gemini family with and without a configured model', () => {
+    for (const mode of ['ticket', 'review']) {
+      for (const config of [{}, { agentes: { modelos: {} } }]) assert.deepEqual(familyOf(config, 'agy', mode), { family: 'gemini', model: undefined }, mode)
+      assert.deepEqual(familyOf({ agentes: { modelos: { agy: 'gemini-x' } } }, 'agy', mode), { family: 'gemini', model: 'gemini-x' }, mode)
+    }
   })
 
   // The mod runs the same cases against shared/orca-config.ts (its copy is mods/puente-gentle/tests/familias.ts).

@@ -1,14 +1,14 @@
 # Guía de setup: stack de agentes con orca-stack
 
-Esta guía deja una máquina y un proyecto listos para trabajar con el stack de agentes: Orca ejecuta, las skills de Matt Pocock definen el método y orca-stack instala la política, los wrappers, Ponytail y los mods de Claude Code. Tiene dos partes. La de la máquina se hace una sola vez. La del proyecto se hace en cada repo y se guía con un cuestionario que cambia según el proyecto arranque de cero o ya esté empezado.
+Esta guía deja una máquina y un proyecto listos para trabajar con el stack de agentes: Orca ejecuta, las skills de Matt Pocock definen el método y orca-stack instala la política, los wrappers, las skills de Ponytail y los mods de Claude Code. Tiene dos partes. La de la máquina se hace una sola vez. La del proyecto se hace en cada repo y se guía con un cuestionario que cambia según el proyecto arranque de cero o ya esté empezado.
 
-Versión de referencia: `orca-stack v0.18.0` (octubre de 2026). Si sale una versión nueva, cambiá la etiqueta `#v0.18.0` en los comandos. Lo marcado `UNKNOWN / MUST VERIFY` no está confirmado: verificalo antes de darlo por cierto.
+Versión de referencia: `orca-stack v0.21.0` (octubre de 2026). Si sale una versión nueva, cambiá la etiqueta `#v0.21.0` en los comandos. Lo marcado `UNKNOWN / MUST VERIFY` no está confirmado: verificalo antes de darlo por cierto.
 
 ---
 
 ## Ruta rápida
 
-1. **Máquina, una sola vez:** `npx github:Gagaismo/orca-stack#v0.18.0 global`, completá los pasos manuales que imprime y verificá con `doctor`.
+1. **Máquina, una sola vez:** `npx github:Gagaismo/orca-stack#v0.21.0 global`, completá los pasos manuales que imprime y verificá con `doctor`.
 2. **Proyecto:** respondé el cuestionario de la Parte 2 y seguí el recorrido que te toca: **A** si arrancás de cero, **B** si ya está empezado.
 3. **Cierre:** corré la verificación final (Parte 5) y commiteá el setup en una rama propia.
 
@@ -20,19 +20,21 @@ Versión de referencia: `orca-stack v0.18.0` (octubre de 2026). Si sale una vers
 | --- | --- | --- |
 | Orca | Corre los Runs, las Tasks, los worktrees y los workers en paralelo | Instalador oficial (github.com/stablyai/orca) |
 | Skills de Matt Pocock | Son el método: grill, spec, tickets, implement con TDD y review | Claude Code: `claude plugin marketplace add mattpocock/skills` y `claude plugin install mattpocock-skills@mattpocock` (versión 1.3.1 o más nueva). Codex y Antigravity: ver la nota debajo |
-| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, Ponytail y los 9 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.18.0 global` |
+| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, las skills de Ponytail (perk opcional) y los 9 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.21.0 global` |
 | Gentle Shell (Pi) | Un segundo orquestador al que Claude consulta en las decisiones | Pi con su instalador oficial (si falta, `global` lo instala con npm); los paquetes los instala `global` |
 | Engram | Memoria entre sesiones (no planifica ni decide) | Instalador propio de Engram |
 | gentle-ai | Context7, permisos de Claude Code y skills extra | Instalador propio de gentle-ai |
-| Caveman | Comprime la prosa larga para ahorrar tokens | Solo las skills: `npx skills add JuliusBrussee/caveman -g` (verificado con la 3.2.0). Si tenés el plugin de Claude Code, desactivalo en las sesiones de Orca: `claude plugin disable caveman@caveman` |
+| Caveman | Comprime la prosa larga para ahorrar tokens (perk opcional, apagado por defecto) | Solo las skills: `npx skills add JuliusBrussee/caveman -g` (verificado con la 3.2.0). Si tenés el plugin de Claude Code, desactivalo en las sesiones de Orca: `claude plugin disable caveman@caveman` |
 | [Impeccable](https://impeccable.style/) (Frontend repos, opcional) | Vocabulario de diseño para agentes (polish, audit, critique, typeset, distill) y detector con 61 checks para defaults de diseño en IA. Licencia: Apache-2.0 | Solo las skills: `npx skills add pbakaus/impeccable`. Instalar solo sus skills, no sus hooks, porque el stack no instala hooks de ciclo de vida de terceros (`ORCA-STACK.md`, "Deliberate exclusions") |
 | [Taste Skill](https://www.tasteskill.dev/) (Frontend repos, opcional) | Reglas de diseño frontend para agentes (tipografía, espaciado, color, layout y motion). Licencia: MIT | Solo las skills: `npx skills add Leonxlnx/taste-skill --skill design-taste-frontend` |
 
-Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con su propio criterio. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`. Ponytail achica la implementación pero nunca saca requisitos, validaciones ni tests.
+Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el método por defecto**. Gentle Shell (Pi) trabaja con su propio criterio. Orca no planifica, solo ejecuta los tickets que salen de `/to-tickets`.
+
+Ponytail y Caveman son perks opcionales, apagados por defecto: se encienden con `{ "perks": { "ponytail": true } }` o `{ "perks": { "caveman": true } }` en una capa de la config (ver [Parte 4](#parte-4-configuración-de-los-mods-dónde-va-cada-cosa)). El contrato que escribe `init` sigue la config fusionada y apunta a `~/orca/stack/PONYTAIL.md` o `~/orca/stack/CAVEMAN.md`, los fragmentos que `global` instala siempre. Los marcadores de los wrappers siguen solo `~/.orca-stack/config.json`: después de cambiar un perk ahí, volvé a correr `orca-stack global`. Con un perk apagado, los wrappers escriben `off` y `doctor` lo acepta. Las skills de Ponytail quedan instaladas en los dos estados, para usar a mano `ponytail-review` y `ponytail-audit`. Con Ponytail encendido, achica la implementación pero nunca saca requisitos, validaciones ni tests.
 
 **Nota sobre las skills de Matt:**
 - El plugin solo las instala para Claude Code. Si Codex o Antigravity van a usarlas, tienen que estar en `~/.agents/skills`: `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`.
-- Instalá el plugin desde el marketplace del propio Matt (`mattpocock/skills`), no desde el oficial: el oficial fija una versión vieja (1.2.3). Matt publica la 1.3.1 con el mismo nombre de plugin, así que `/mattpocock-skills:<skill>` sigue andando. La 1.3 agrega `pr` (cuerpos de PR con evidencia y riesgo de merge), `implement-spec` (implementa una spec con sus tickets en una rama de integración) y `retro` (mirar las sesiones pasadas y proponer mejoras), quita `resolving-merge-conflicts` y solo busca `GLOSSARY.md` en lugar de `CONTEXT.md`.
+- Instalá el plugin desde el marketplace del propio Matt (`mattpocock/skills`), no desde el oficial: el oficial fija una versión vieja (1.2.3). Matt publica la 1.3.1 con el mismo nombre de plugin, así que `/mattpocock-skills:<skill>` sigue andando. Las skills de grill (`grill-me`, `grill-with-docs` y la base que cargan) son de orca-stack: `orca-stack global` reemplaza las copias de Matt (con respaldo), `/grill-with-docs` y `/grill-me` llaman a las de orca-stack, y la de Matt queda en `/mattpocock-skills:grill-with-docs`. La 1.3 agrega `pr` (cuerpos de PR con evidencia y riesgo de merge), `implement-spec` (implementa una spec con sus tickets en una rama de integración) y `retro` (mirar las sesiones pasadas y proponer mejoras), quita `resolving-merge-conflicts` y solo busca `GLOSSARY.md` en lugar de `CONTEXT.md`.
 - Para alimentar `/retro` con las sesiones de todos los agentes (Claude Code, Pi y agy), corré `orca-stack sesiones`: lista las recientes en un formato compacto (`--desde <AAAA-MM-DD>`, `--limite <n>`).
 - Elegí **una sola vía por proveedor**. Si las tenés como plugin y también sueltas en `~/.claude/skills`, quedan duplicadas.
 - Casi todas (`/setup-matt-pocock-skills`, `/wayfinder`, `/grill-with-docs`, `/to-spec`, `/to-tickets`, `/triage`, `/implement`) **solo se activan cuando una persona escribe el comando**: un agente no las puede invocar por su cuenta. En Codex se escriben con `$` en vez de `/`.
@@ -48,28 +50,28 @@ Hay una regla que ordena todo lo demás: **las skills de Matt Pocock son el mét
 - [ ] Claude Code instalado.
 - [ ] En Windows, Go 1.25.10 o más nuevo en el `PATH` (el `postinstall` de gentle-pi compila con Go).
 - [ ] Orca, Engram, gentle-ai y Pi instalados. Si falta alguno, `global` lo detecta y te imprime el comando oficial.
-- [ ] Pi 1.2.0 o más nuevo (gentle-pi 4.7.0 no arranca con uno anterior; el stack se probó con Pi `1.5.2`) y Engram 3.4.0 o más nuevo (con uno anterior, Gentle Shell deja la memoria apagada).
+- [ ] Pi 1.2.0 o más nuevo (gentle-pi 4.8.0 no arranca con uno anterior; el stack se probó con Pi `1.5.2`) y Engram 3.4.0 o más nuevo (con uno anterior, Gentle Shell deja la memoria apagada).
 - [ ] Opcional, solo para la skill `statechart` (dibuja y verifica modelos TLA+): Node 22.18 a 22.x, Node 23.6 o más nuevo, Bun 1.1.5 o más nuevo, o Deno 2.0 o más nuevo, y `mise` en el `PATH`. La primera corrida descarga TLC y Java con mise y necesita red; con `TLA2TOOLS` (ruta a `tla2tools.jar`) y `JAVA` (un `java` 11 o más nuevo) se saltea mise. En Windows nativo no corre, porque arranca `/bin/sh`: usala desde WSL o un contenedor. `doctor` avisa (⚠, nunca ✖) si falta algo de esto.
 
 ### Instalar
 
 ```bash
 # 1. Mirá qué va a hacer, sin escribir nada
-npx github:Gagaismo/orca-stack#v0.18.0 global --dry-run
+npx github:Gagaismo/orca-stack#v0.21.0 global --dry-run
 
 # 2. Instalá (--humano fija cómo te nombran los mods; si no, sale de git config user.name)
-npx github:Gagaismo/orca-stack#v0.18.0 global --humano "Tu nombre"
+npx github:Gagaismo/orca-stack#v0.21.0 global --humano "Tu nombre"
 
 # 3. Verificá, parado en la raíz de un proyecto
-npx github:Gagaismo/orca-stack#v0.18.0 doctor
+npx github:Gagaismo/orca-stack#v0.21.0 doctor
 ```
 
 - `global` respalda todo lo que toca en `~/.orca-stack/backups/<fecha>/` y anota lo que instaló en `~/.orca-stack/state.json`. `remove` lo deshace.
-- Si Pi, gentle-pi, pi-claude-bridge o gentle-engram faltan o están en otra versión, `global` instala la versión fijada **aunque no uses `--force`** (`pi install npm:gentle-pi@4.7.0`, `npm i -g gentle-pi@4.7.0`, `pi install npm:pi-claude-bridge@0.12.0` y `pi install npm:gentle-engram@0.7.0`). Si querés conservar tus versiones de Pi, agregá `--skip-pi`.
+- Si Pi, gentle-pi, pi-claude-bridge o gentle-engram faltan o están en otra versión, `global` instala la versión fijada **aunque no uses `--force`** (`pi install npm:gentle-pi@4.8.0`, `npm i -g gentle-pi@4.8.0`, `pi install npm:pi-claude-bridge@0.12.0` y `pi install npm:gentle-engram@0.7.0`). Si querés conservar tus versiones de Pi, agregá `--skip-pi`. Si `~/.pi/agent/settings.json` carga un paquete desde una carpeta local (por ejemplo tu fork de Gentle Shell en lugar de `npm:gentle-pi`), `global` no instala la versión npm de ese paquete: dice `uso tu checkout local en <ruta>` y avisa si tu checkout es anterior a la versión fijada; `doctor` lo cuenta como instalado.
 - Un Pi anterior a `1.5.2` se actualiza con `pi update --self` (va a la última versión) y, si sigue anterior, `global` no instala los paquetes y falla; si falta Pi, lo instala con `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.5.2` (sin `npm`, imprime el instalador oficial y sigue sin Pi); un Pi más nuevo no se toca, solo avisa. Si `pi update --self` no lo deja en `1.5.2` o más nuevo, actualizá Pi con el comando oficial que imprime y volvé a correrlo.
 - Los workers de pi y la consulta a Gentle Shell comparten tu memoria de Engram (`~/.engram`, el servidor global): `gentle-engram` les da las herramientas de memoria y orca-stack no les fija `ENGRAM_DATA_DIR`, que desde gentle-pi 4.4.0 apaga la memoria.
-- Gentle Shell se actualiza volviendo a correr `global`. Desde gentle-pi 4.2.0, `gentle-shell update` reinstala solo el paquete global dueño del Pi que corre, y si no puede probar qué paquete global es dueño de Pi, no toca nada.
-- Al final, `global` sugiere `doctor` e `init` sin la etiqueta de versión. Usalos con `#v0.18.0`.
+- Gentle Shell se actualiza volviendo a correr `global`. Desde gentle-pi 4.2.0, `gentle-shell update` reinstala solo el paquete global dueño del Pi que corre, y si no puede probar qué paquete global es dueño de Pi, no toca nada. Si ya tenés gentle-shell autocontenido (`gentle-shell upgrade` desde la 4.8.0: `%LOCALAPPDATA%\gentle-shell` en Windows, `~/.gentle-shell` en macOS y Linux) en `4.8.0` o más nuevo, `global` no corre `npm i -g gentle-pi`, para no taparlo en el PATH; si es anterior, falla y te pide `gentle-shell upgrade`.
+- Al final, `global` sugiere `doctor` e `init` sin la etiqueta de versión. Usalos con `#v0.21.0`.
 
 ### Pasos manuales que imprime `global`
 
@@ -77,7 +79,7 @@ npx github:Gagaismo/orca-stack#v0.18.0 doctor
 2. Abrí `pi` y corré `/login`. Sin login, Gentle Shell no responde.
 3. Corré `gh auth login` (lo necesitan el tablero de PRs y el puente).
 4. Corré `gentle-ai sync`.
-5. Instalá las skills de Matt Pocock (Claude Code con el marketplace de Matt y, para agy y codex, `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`) y Caveman con los comandos del mapa.
+5. Instalá las skills de Matt Pocock (Claude Code con el marketplace de Matt y, para agy y codex, `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`) y, si vas a encender el perk `caveman`, Caveman con los comandos del mapa.
 6. Reiniciá Claude Code: los mods se cargan en las sesiones nuevas.
 
 Además, instalá lo que `global` marque como faltante.
@@ -330,7 +332,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 2. **Contrato:** creá `AGENTS.md` a partir de la plantilla del Apéndice B, con las respuestas de C4 y del bloque F. **Todavía no crees `CLAUDE.md`.**
 3. **Método:** escribí `/setup-matt-pocock-skills` (B1 a B3). Como todavía no hay `CLAUDE.md`, la skill escribe su sección en `AGENTS.md`, que es lo que querés.
 4. **Punteros:** creá `CLAUDE.md` y `GEMINI.md` con una sola línea: `@AGENTS.md`.
-5. **orca-stack:** `npx github:Gagaismo/orca-stack#v0.18.0 init`. A `CLAUDE.md` le pone un bloque corto, y el bloque completo, con el contrato de trabajo, va en `AGENTS.md`. Además crea `.orca-stack.json`, un `.orca-stack.local.json` vacío y la línea en `.gitignore`.
+5. **orca-stack:** `npx github:Gagaismo/orca-stack#v0.21.0 init`. A `CLAUDE.md` le pone un bloque corto, y el bloque completo, con el contrato de trabajo, va en `AGENTS.md`. Además crea `.orca-stack.json`, un `.orca-stack.local.json` vacío y la línea en `.gitignore`.
 6. **Config de los mods:** completá los dos `.orca-stack*.json` con las respuestas de D y E. Si no despachás con scripts y no tenés destinatarios, no hay nada que agregar.
 7. **Worktrees:** creá `orca.yaml` y `.worktreeinclude` (C1 a C3).
 8. **Orquestación:** agregá `docs/agents/orchestration.md` y `orca-dag.md` (G).
@@ -392,7 +394,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 
 ## Parte 5: verificación final
 
-- [ ] `npx github:Gagaismo/orca-stack#v0.18.0 doctor`, corrido **desde la raíz del proyecto**, termina con `0 fallas` y cada aviso está entendido.
+- [ ] `npx github:Gagaismo/orca-stack#v0.21.0 doctor`, corrido **desde la raíz del proyecto**, termina con `0 fallas` y cada aviso está entendido.
 - [ ] `AGENTS.md` tiene **un solo** bloque `orca-stack:begin` / `orca-stack:end`, sin restos de `orca-stack:auto`.
 - [ ] `CLAUDE.md` y `GEMINI.md` importan `AGENTS.md`.
 - [ ] `AGENTS.md` nombra los comandos de test y typecheck (C4).

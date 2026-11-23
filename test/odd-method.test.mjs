@@ -121,7 +121,7 @@ describe('Reglas 1-8', () => {
     const out = env.out.join('\n')
 
     assert.ok(out.includes('ODD step 1 (Authorize): this brief is your explicit authorization to implement the ticket.'))
-    assert.ok(out.includes('Step 3 (Resolve uncertainty): product questions go to the issue as a comment'))
+    assert.ok(out.includes('Step 3 (Resolve uncertainty): product questions go to main with `orca orchestration ask`'))
     assert.ok(out.includes('never stop and wait'))
   })
 

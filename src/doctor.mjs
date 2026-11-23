@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+import { mergedPerks, perkProblems, perksOf } from './perks.mjs'
 import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { CODEX_DOC_DEFAULT, readCodexDocBytes } from './codex-doc-bytes.mjs'
@@ -11,14 +12,15 @@ import { loadState } from './ctx.mjs'
 import { PI_PROVIDERS, disallowedModels } from './despacho.mjs'
 import { compareVersions, driftWarnings } from './drift.mjs'
 import { stackVars } from './global.mjs'
+import { readPersonalConfig } from './gentle.mjs'
 import { knownSddLeftovers } from './sdd-cleanup.mjs'
 import { removeAnyBlock } from './marker.mjs'
 import { checkPathCommand } from './path-command.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
-import { installedPackageVersion, piBinary, piModulesDir, piTooOld, resolveGentleSkills } from './pi.mjs'
+import { describeCheckout, installedPackageVersion, localPiPackages, npmGlobalRoot, piBinary, piModulesDir, piTooOld, readBundledShell, resolveGentleSkills } from './pi.mjs'
 import { codexCodemodeStatus, piCodemodeStatus } from './codemode.mjs'
 import { parseSettings } from './settings.mjs'
-import { assetPath, listDirs, wrapperFile } from './templates.mjs'
+import { assetPath, listDirs, stackMarkers, wrapperFile } from './templates.mjs'
 import { PACKAGE_ROOT, binaryVersion, homeDir, isWindows, layout, run, samePath, tilde, which } from './util.mjs'
 
 const ICON = { ok: '✔', warn: '⚠', fail: '✖' }
@@ -282,7 +284,7 @@ export const doctorCommand = async flags => {
 
   // Policy docs
   section('Política del stack')
-  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md']) {
+  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md', 'PONYTAIL.md', 'CAVEMAN.md']) {
     const file = path.join(L.stackDir, name)
     if (!existsSync(file)) {
       add('fail', name, `falta ${tilde(file, home)}`)
@@ -297,6 +299,9 @@ export const doctorCommand = async flags => {
   section('Wrappers de proveedores')
   const win = isWindows()
   const vars = stackVars(L)
+  // The markers global writes for the perks of the personal layer (#394). A perk that is off also accepts its marker
+  // unset or empty; any other value is stale.
+  const expected = stackMarkers(perksOf(readPersonalConfig(L)))
   for (const agent of Object.keys(WRAPPERS)) {
     const file = path.join(L.scriptsDir, wrapperFile(agent, win))
     if (!existsSync(file)) {
@@ -305,10 +310,11 @@ export const doctorCommand = async flags => {
     }
     const probe = run(file, ['--orca-stack-self-test'], { timeout: 20_000 })
     const policy = /ORCA_STACK_POLICY_PATH=(.+)/.exec(probe.stdout)?.[1]?.trim()
-    const markers =
-      /ORCA_STACK_MODE=auto/.test(probe.stdout) &&
-      /ORCA_STACK_CAVEMAN_LEVEL=caveman/.test(probe.stdout) &&
-      /ORCA_STACK_PONYTAIL_LEVEL=full/.test(probe.stdout)
+    const markers = Object.entries(expected).every(([name, value]) => {
+      const shown = new RegExp(`^${name}=(.*)$`, 'm').exec(probe.stdout)?.[1]?.trim() ?? ''
+
+      return shown === value || (value === 'off' && shown === '')
+    })
     const healthy = probe.status === 0 && markers && policy && existsSync(policy)
     if (healthy) {
       add('ok', `${agent}-orca-stack --orca-stack-self-test`, 'marcadores y política OK')
@@ -404,7 +410,14 @@ export const doctorCommand = async flags => {
     } else {
       add(version === PINNED.pi ? 'ok' : 'warn', `pi ${version ?? '(versión ilegible)'}`, version === PINNED.pi ? tilde(bin, home) : `el stack se probó con ${PINNED.pi}`)
     }
+    const local = localPiPackages(L)
     for (const pkg of PI_PACKAGES) {
+      const checkout = local.get(pkg.name)
+      if (checkout) {
+        const { label, older, note } = describeCheckout(pkg, checkout)
+        add(older ? 'warn' : 'ok', label, `checkout local en ${checkout.dir}${note ? `; ${note}` : ''}`)
+        continue
+      }
       const have = installedPackageVersion(piModulesDir(L), pkg.name)
       if (have === null) {
         add('fail', `${pkg.name}`, `no está instalado en Pi (esperado ${pkg.version})`)
@@ -412,7 +425,25 @@ export const doctorCommand = async flags => {
         add(have === pkg.version ? 'ok' : 'warn', `${pkg.name} ${have}`, have === pkg.version ? '' : `esperado ${pkg.version}`)
       }
     }
-    add(which('gentle-shell') ? 'ok' : 'warn', 'comando gentle-shell', which('gentle-shell') ? '' : 'falta `npm i -g gentle-pi@' + PINNED.gentlePi + '`')
+    // gentle-shell's self-contained install counts even before its bin reaches this terminal's PATH (#359).
+    const bundled = readBundledShell(L)
+    if (bundled?.shell) {
+      if (compareVersions(bundled.shell, PINNED.gentlePi) >= 0) {
+        add('ok', 'comando gentle-shell', `${bundled.shell} autocontenido en ${tilde(bundled.dir, home)}`)
+      } else {
+        add('warn', 'comando gentle-shell', `${bundled.shell} autocontenido es anterior a ${PINNED.gentlePi}: ejecutá gentle-shell upgrade`)
+      }
+      const root = npmGlobalRoot()
+      const globalVersion = root ? installedPackageVersion(root, 'gentle-pi') : null
+      if (globalVersion) {
+        add('warn', `gentle-pi ${globalVersion} global de npm`, 'puede tapar en el PATH al gentle-shell autocontenido: ejecutá `npm uninstall -g gentle-pi`')
+      }
+    } else {
+      if (bundled) {
+        add('warn', 'gentle-shell autocontenido', `no pude leer la versión de ${bundled.file}`)
+      }
+      add(which('gentle-shell') ? 'ok' : 'warn', 'comando gentle-shell', which('gentle-shell') ? '' : 'falta `npm i -g gentle-pi@' + PINNED.gentlePi + '`')
+    }
     const skills = resolveGentleSkills(L)
     if (skills) {
       add('ok', 'skills de gentle-pi (como las resuelve puente-gentle)', `${tilde(skills.dir, home)} [${skills.source}]`)
@@ -570,6 +601,11 @@ export const doctorCommand = async flags => {
     for (const key of retiredAgentKeys(config)) {
       add('warn', 'agente retirado', `codex-cc ya no existe: sacalo de ${file} (${key}).`)
     }
+  }
+
+  // Perks (#393): a value that is not a boolean counts as off, and doctor says so.
+  for (const { label, detail } of perkProblems({ perks: mergedPerks(personal, committed, local) })) {
+    add('warn', label, detail)
   }
 
   // codex on Windows reads files through PowerShell 5.1 (#58). Off Windows or without codex, not even the title prints.

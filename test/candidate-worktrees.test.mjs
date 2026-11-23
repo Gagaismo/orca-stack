@@ -93,6 +93,9 @@ const makeFakeIo = (repoRoot, wtDir, over = {}) => {
       if (args[0] === 'terminal' && args[1] === 'read') {
         return { status: 0, stdout: JSON.stringify({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'] } } }), stderr: '' }
       }
+      // #397: despachar starts its worker in the Run bound to main.
+      if (args[0] === 'orchestration' && args[1] === 'run-current') return { status: 0, stdout: JSON.stringify({ ok: true, result: { runId: 'run_main' } }), stderr: '' }
+      if (args[0] === 'orchestration' && args[1] === 'worker-start') return { status: 0, stdout: JSON.stringify({ ok: true, result: { taskId: 'task_1' } }), stderr: '' }
       return { status: 0, stdout: '', stderr: '' }
     },
   }

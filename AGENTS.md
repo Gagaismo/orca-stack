@@ -3,7 +3,9 @@
 
 Este bloque lo mantiene orca-stack y describe cómo trabajan los agentes en este repo. Las reglas del proyecto que están fuera del bloque valen por encima de él cuando nombran la regla que cambian. Es igual en todos los proyectos: lo que cambia de un repo a otro vive en `.orca-stack.json` y se lee de ahí, no de este texto. Al final del bloque están las rutas de la política general y de los briefs por rol.
 
-Los encabezados `## Evidencia`, `## Desvíos del ticket`, `## BLOQUEA`, `## SUGERENCIAS`, `## Arena` y `## Swarm`, y las líneas `Implementador: <agente>`, `Revisor: <agente>`, `Commit: <sha>`, `Verificado por main: hallazgos <n,…> corregidos en <sha>`, `Decidido por main: <hallazgo> — <razón>`, `Rebote: <sha>`, `Rebote CI: <sha>`, `Rebote conflicto: <sha>`, `Marcha: <lazy|medium|proactive>`, `Esperando marcha: <items>`, `Consulta: <agente>`, `Respuesta de main:` y `Respuesta del humano:`, son marcas fijas del protocolo: no se traducen aunque el resto del texto vaya en otro idioma, porque la sesión de `main` las busca literalmente.
+Los encabezados `## Evidencia`, `## Desvíos del ticket`, `## BLOQUEA`, `## SUGERENCIAS`, `## Arena` y `## Swarm`, y las líneas `Implementador: <agente>`, `Revisor: <agente>`, `Commit: <sha>`, `Verificado por main: hallazgos <n,…> corregidos en <sha>`, `Decidido por main: <hallazgo> — <razón>`, `Rebote: <sha>`, `Rebote CI: <sha>`, `Rebote conflicto: <sha>`, `Consulta: <agente>`, `Diagnóstico: <agente>`, `Respuesta de main:` y `Respuesta del humano:`, son marcas fijas del protocolo: no se traducen aunque el resto del texto vaya en otro idioma, porque la sesión de `main` las busca literalmente.
+
+Un comentario `Diagnóstico: <agente>` incluye las líneas `Causa:`, `Probado:` y `Siguiente hipótesis:` (puede ser `ninguna`).
 
 ### Configuración del proyecto
 
@@ -38,11 +40,7 @@ El rol lo da el checkout, no el agente. Comparalo con `git rev-parse --git-dir` 
 
 Si el repo todavía tiene `CONTEXT.md` en vez de `GLOSSARY.md`, leelo como si fuera `GLOSSARY.md`; el setup lo renombra.
 
-Si sos `main` (o la sesión única en modo `un-agente`), leé `~/orca/stack/MAIN.md` entero antes de actuar: ahí están el Ciclo de `main`, las Marchas, el Despacho, los Permisos de `main` y Arena y swarm.
-
-### Marchas
-
-Esta sección es solo de `main` y está en `~/orca/stack/MAIN.md`.
+Si sos `main` (o la sesión única en modo `un-agente`), leé `~/orca/stack/MAIN.md` entero antes de actuar: ahí están el Ciclo de `main`, el Despacho, los Permisos de `main` y Arena y swarm.
 
 ### Agentes
 
@@ -156,7 +154,7 @@ Sin bloqueos, `## BLOQUEA` dice `nada`. Sin CI, el revisor corre la suite comple
 | La interfaz de un módulo o dónde va un seam | `codebase-design` |
 | Un paso que solo puede hacer un humano | `wizard` |
 
-En Claude se invocan con `/mattpocock-skills:<skill>`, con el slash al principio del mensaje. En agy y codex se piden en prosa. `grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano. Si una invocación no toma, abrí el `SKILL.md` por ruta y seguilo.
+En Claude se invocan con `/mattpocock-skills:<skill>`, con el slash al principio del mensaje; `grill-with-docs` y `grill-me` son de orca-stack (solo preguntan lo que el agente no puede resolver sin el humano) y se invocan como `/grill-with-docs` y `/grill-me`. En agy y codex se piden en prosa. `grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano. Si una invocación no toma, abrí el `SKILL.md` por ruta y seguilo.
 
 ### Avances
 
@@ -168,9 +166,8 @@ Política canónica: `~/orca/stack/ORCA-STACK.md` (se puede cambiar con `$ORCA_S
 Si faltan, corré `npx github:Gagaismo/orca-stack global`.
 
 - El runtime de Orca y el Dispatch activo manejan el ciclo de vida, la delegación, los workers, el cierre y la limpieza. Un worker ejecuta su brief: no arranca otro flujo de trabajo ni espera al humano.
-- Planificación con las skills de Matt Pocock (grill-with-docs, to-spec, to-tickets, disparadas por el humano), e implementación con gentle-ai ODD en todo el stack. Gentle Shell (Pi) trabaja con la suya y puede usar ODD. Ponytail se aplica en el trabajo de implementación con el nivel configurado, pero nunca contra un requisito explícito.
+- Planificación con las skills de Matt Pocock (grill-with-docs, to-spec, to-tickets, disparadas por el humano), e implementación con gentle-ai ODD en todo el stack. Gentle Shell (Pi) trabaja con la suya y puede usar ODD.
 - Respetá los requisitos explícitos de la spec, el ticket y los ADRs, y también la validación, la seguridad, la accesibilidad, el manejo de errores, la protección contra pérdida de datos y los tests que se piden: son lo que el humano espera recibir.
-- Caveman sigue el ajuste Auto/Off del stack y comprime solo prosa pesada en tokens. Conservá el código, los comandos, las rutas, los errores exactos, las decisiones, los riesgos, las dudas, los tests y la evidencia de aceptación.
 - Engram es solo memoria: no es autoridad ni planificador. Para las reglas de cada rol, leé la política canónica.
 - Las reglas de los mods de Claude Code para este proyecto están en `.orca-stack.json` (se commitea) y `.orca-stack.local.json` (local, ignorado por git); las personales, en `~/.orca-stack/config.json`.
 <!-- orca-stack:end -->

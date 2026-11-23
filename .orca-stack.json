@@ -9,8 +9,7 @@
       "codex",
       "pi"
     ],
-    "preguntarAntes": [
-    ],
+    "preguntarAntes": [],
     "pi": {
       "review": "rdd"
     }
@@ -22,6 +21,7 @@
   },
   "riesgo": [],
   "merge": "main merges on its own as soon as CI is green (no reviews in this repo for now, see AGENTS.md Project rules)",
+  "reviewParaMerge": false,
   "despliegue": {
     "despues": false
   },

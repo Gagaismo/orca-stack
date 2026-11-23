@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, blockOf, defaultIo, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, readPin, refuseGlobalOverStalePin, shellPrompt, writePin } from './despacho.mjs'
+import { AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, shellPrompt, writePin, writeRddConsent } from './despacho.mjs'
 import { identityOf, isDialog, paneAgents, stackAgent, piIdle, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { samePath } from './util.mjs'
 
@@ -15,12 +15,20 @@ const parse = res => {
   }
 }
 const detail = res => (res.stderr || res.stdout || String(res.error ?? '')).trim().split(/\r?\n/)[0]
+// main-autonomo S5: a worker's own turn, told apart from a review or a subagent in the same worktree: no parent pane, and
+// its prompt names a brief in ~/orca/briefs that is not a review brief (ticket, reanudar, rebote or continuation).
+const BRIEF_IN_PROMPT = /[\\/]orca[\\/]briefs[\\/]([^\s\\/]+)\.md\b/
+const isWorkerRecord = record => {
+  const brief = BRIEF_IN_PROMPT.exec(String(record?.prompt ?? ''))?.[1]
+  return !record?.parentPaneKey && brief !== undefined && !/(?:^|-)revision-/.test(brief)
+}
+const recordTime = record => Number(record?.updatedAt ?? record?.stateStartedAt ?? 0) || 0
 const prMatchesIssue = (pr, issue, branches) =>
   (pr.closingIssuesReferences ?? []).some(ref => String(ref.number) === issue) ||
   branches.includes(pr.headRefName) ||
   new RegExp(`^\\s*Closes\\s+#${issue}\\b`, 'im').test(pr.body ?? '')
 
-const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt, beforeSend) => {
+const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, beforeSend) => {
   const { handle } = target.terminal
   const screen = readScreen(io, handle)
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
@@ -37,12 +45,15 @@ const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt, beforeS
   const line = `Message from main: ${url} . Continue the ticket per your brief: ${briefPath}.`
   const argv = ['terminal', 'send', '--terminal', handle, '--text', line, '--enter', '--wait-submit', '10', '--json']
   if (flags.dryRun) {
+    if (target.identity === 'agy' && /esc to dismiss/i.test(screen.join('\n'))) io.out(`[simulaci\u{f3}n] cerrar el aviso de agy con Esc en ${handle} antes de enviar la l\u{ed}nea`)
     io.out(`[simulaci\u{f3}n] orca ${argv.map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
     io.out(`Terminal: ${handle}, worker de #${n} en ${target.worktree}`)
     io.out(`L\u{ed}nea: ${line}`)
     return true
   }
 
+  // agy's "esc to dismiss" banner or splash (#357): dismissed before anything else reaches the terminal.
+  if (target.identity === 'agy') await dismissAgySplash(io, handle, screen, briefPath)
   beforeSend()
   markAttempt()
   const sent = io.sh('orca', argv)
@@ -54,13 +65,16 @@ const sendToPaused = (flags, n, url, briefPath, target, io, markAttempt, beforeS
     return true
   }
   if (receipt?.accepted === false || /No input was sent/i.test(`${sent.stdout}${sent.stderr}`)) {
+    if (target.identity === 'agy') throw new Error(agyNotDelivered(handle, briefPath))
     throw new Error(`orca terminal send no envi\u{f3} nada a ${handle}: ${receipt?.refusedReason ?? detail(sent)}. No reintento.`)
   }
+  // The no-resend guard stays; agy, whose empty prompt kept the line out before (#357), names the line to paste instead.
+  if (target.identity === 'agy') throw new Error(agyNotDelivered(handle, briefPath))
   throw new Error(`No hay recibo de entrega de orca terminal send en ${handle}: la l\u{ed}nea pudo haber llegado. No la reenv\u{ed}o; revis\u{e1} la terminal antes de volver a reanudar.`)
 }
 
 export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) => {
-  if (!/^\d+$/.test(String(item ?? '')) || !url) throw new Error('Uso: orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--dry-run].')
+  if (!/^\d+$/.test(String(item ?? '')) || !url) throw new Error('Uso: orca-stack reanudar <issue> <url-del-comentario> [--terminal <handle>] [--confirmado] [--perfil-pi <nombre>] [--dry-run].')
   const n = String(Number(item))
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
   if (git.status !== 0) throw new Error('Corr\u{e9} este comando dentro del checkout principal de un repo git.')
@@ -147,10 +161,25 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   }
 
   const done = agentRecords.filter(agent => stateOf(agent) === 'done')
-  if (done.length > 1) throw new Error(`Hay ${done.length} agentes done en el worktree de #${n}: no adivino a cu\u{e1}l reanudar.`)
   const records = paneAgents(row)
   const workers = terminals.map(terminal => ({ terminal, record: records.get(`${terminal.tabId}:${terminal.leafId}`), identity: identityOf(terminal, records.get(`${terminal.tabId}:${terminal.leafId}`)) }))
   const identifiedWorkers = workers.filter(worker => worker.identity)
+  // Which done agent to resume: --terminal names it; otherwise the only one, or the newest worker record's terminal.
+  let chosen = done.length === 1 ? done[0] : undefined
+  if (flags.terminal !== undefined) {
+    const handle = String(flags.terminal)
+    const picked = workers.find(worker => worker.terminal.handle === handle)
+    if (!picked) throw new Error(`La terminal ${handle} no est\u{e1} en el worktree de #${n} (${workers.map(worker => worker.terminal.handle).join(', ') || 'ninguna'}): no reanudo.`)
+    if (stateOf(picked.record) !== 'done') throw new Error(`La terminal ${handle} de #${n} no tiene un agente en done (${stateOf(picked.record) || 'sin agente'}): no reanudo.`)
+    chosen = picked.record
+  } else if (done.length > 1) {
+    const newest = done.filter(isWorkerRecord).sort((a, b) => recordTime(b) - recordTime(a))[0]
+    if (!newest || !workers.some(worker => worker.record?.paneKey === newest.paneKey)) {
+      const handles = workers.filter(worker => stateOf(worker.record) === 'done').map(worker => worker.terminal.handle)
+      throw new Error(`Hay ${done.length} agentes done en el worktree de #${n}: no adivino a cu\u{e1}l reanudar. Eleg\u{ed} uno con --terminal <handle> (${handles.join(', ') || 'ninguna terminal listada'}).`)
+    }
+    chosen = newest
+  }
   if (agentRecords.length === 0) {
     for (const { terminal } of workers) {
       const screen = readScreen(io, terminal.handle)
@@ -160,8 +189,8 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
       }
     }
   }
-  const target = done.length === 1
-    ? workers.find(worker => worker.record?.paneKey === done[0].paneKey) ?? { record: done[0], identity: stackAgent(done[0].agentType) }
+  const target = chosen
+    ? workers.find(worker => worker.record?.paneKey === chosen.paneKey) ?? { record: chosen, identity: stackAgent(chosen.agentType) }
     : identifiedWorkers.length === 1 ? identifiedWorkers[0] : undefined
   let agent = target?.identity ?? stackAgent(target?.record?.agentType)
   const originalPath = path.join(io.home, 'orca', 'briefs', `${repo}-${n}.md`)
@@ -181,6 +210,9 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de relanzarlo. Si dijo que s\u{ed}, repet\u{ed} el comando con --confirmado.`)
   }
   if (flags.perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
+  const consent = rddConsentPolicy(config, agent)
+  // main-autonomo S3: the worker's own candidate is declined; written just before the line or the relaunch reaches it.
+  const writeConsent = () => { if (consent === 'politica') writeRddConsent(io, row.path, [], { keepExisting: true }) }
   // Like rebote: the worktree pin decides, so the orchestrator follows the same profile as the subagents. --perfil-pi
   // replaces a pin that can no longer be honored; with neither (and no config), a relaunch fails closed. Sending a line
   // to a paused pi launches nothing, so it needs no profile; a --perfil-pi there is still checked and rewrites the pin,
@@ -201,8 +233,9 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
 
   if (target?.terminal && stateOf(target.record) === 'done') {
     target.worktree = row.path
-    const handled = sendToPaused(flags, n, url, originalPath, target, io, markAttempt, () => {
+    const handled = await sendToPaused(flags, n, url, originalPath, target, io, markAttempt, () => {
       if (needsPin(profile)) writePin(io, row.path, commonDir, profile.name)
+      writeConsent()
     })
     if (handled) return 0
   }
@@ -221,6 +254,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     io.mkdirp(path.dirname(briefPath))
     io.writeFile(briefPath, brief)
     markAttempt()
+    writeConsent()
   }
   const session = `${repo}-${n}-reanudar-${(io.now ?? Date.now)()}`
   await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: n })

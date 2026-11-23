@@ -1,6 +1,6 @@
 # Ticket brief: issue #{{ISSUE}} ({{REPO}})
 
-You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask by commenting on the issue (gh issue comment {{ISSUE}} --body-file <file>), then continue with whatever is not blocked. Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait.
+You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked. Anything you post for main on GitHub that is not a question (a cap you passed) starts with `Consulta: {{AGENT}}`; a question, including a deviation that needs a decision, goes through `orca orchestration ask`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait. The answer to an `ask` is different: it arrives as Orca mail, not as a comment.
 
 ## Setup
 
@@ -11,7 +11,9 @@ You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this 
 - {{SUBAGENTS_INSTRUCTION}}
 - **RED:** Write one test per rule in `## Reglas`, covering the examples, edges and errors each rule names. If the ticket has no `## Reglas`, use its acceptance criteria and failure modes as the RED list. Each item ends with a test that proves it.
 - **PRESERVE:** Write one test per existing public entry the change touches, even when the ticket did not ask for it. A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job.
-- **Nothing else:** do not add extra cases for their own sake. When a rule cites an artifact (such as a path in `## Reglas`), test against that artifact, not a paraphrase of it.
+- **Diagnosis:** You have two attempts per cause (a red check, a test that will not pass, or an unreproducible failure). Fixing an unrelated failure does not use an attempt for this cause. After the second failed attempt, publish `Diagnóstico: {{AGENT}}` with `Causa:`, `Probado:` and `Siguiente hipótesis:` (or `ninguna`) and stop; the worker does not push or open a PR to hide the failure. Post it on the open PR, otherwise on the issue, and finish with `worker_done` partial (see Finish).
+- **RED setup:** Building the RED test has one setup self-fix that does not count toward the two attempts per cause. If it still cannot reproduce the failure, publish a diagnosis with `Causa: no se pudo reproducir <la regla>` and stop.
+- **Nothing else:** do not add extra cases for their own sake. When a rule cites an artifact (such as a path in `## Reglas`), test against that artifact, not a paraphrase of it.{{MIGRACION}}
 
 ## Verification
 
@@ -41,7 +43,7 @@ When the work is done and verified, push the branch and open the PR with a body 
 
 gh pr create --base {{BASE}} --head {{BRANCH}} --title "<title>" --body-file <file>
 
-Opening the PR is the last change to the branch: after `gh pr create`, write your final summary and end your turn. Push again only when main relaunches you with `orca-stack rebote` or `orca-stack reanudar`.
+Opening the PR is the last change to the branch: after `gh pr create`, write your final summary, send `worker_done` ok (see Finish) and end your turn. Push again only when main relaunches you with `orca-stack rebote` or `orca-stack reanudar`.
 
 The body is UTF-8 without a BOM (Windows PowerShell's `Out-File` and `Set-Content -Encoding utf8` write one) and has exactly this shape. The headings and the `Implementador:` and `Closes` lines are literal protocol markers: do not translate them.
 
@@ -67,6 +69,37 @@ Closes #{{ISSUE}}
 
 If you want to change GLOSSARY.md or docs/adr, do not edit them: propose it in the PR body under `## Propuesta para GLOSSARY.md` or `## Propuesta de ADR`.
 
+## Finish
+
+Orca started you as a supervised worker in main's Run: your last action is exactly one `worker_done`, with the `--task-id`, `--dispatch-id` and `--from` values Orca's preamble gave you. Orca only accepts `--outcome succeeded` or `--outcome failed`.
+
+- ok: the PR is open.
+
+```
+orca orchestration send --type worker_done --outcome succeeded --subject "#{{ISSUE}} ok" --body "<PR url and a one-line summary>" --task-id <task-id> --dispatch-id <dispatch-id> --from <handle>
+```
+
+- partial: you stopped with a diagnosis. Publish the `Diagnóstico: {{AGENT}}` on GitHub first: on the open PR (gh pr comment <pr> --body-file <file>), otherwise on the issue (gh issue comment {{ISSUE}} --body-file <file>). Then send its text:
+
+```
+orca orchestration send --type worker_done --outcome failed --subject "#{{ISSUE}} partial" --body "<the Diagnóstico: text>" --task-id <task-id> --dispatch-id <dispatch-id> --from <handle>
+```
+
+If Orca's preamble gave you no task id (you were relaunched outside main's Run), skip the `worker_done`.
+
+## Questions to main
+
+Orca started you as a supervised worker, so your questions to main go through Orca, not GitHub:
+
+```
+orca orchestration ask --question "<question>" --options "<recommended>,<other options>"
+```
+
+- Asking: put your recommended option first; main may also reply with a typed answer instead of an option. The call returns at once: continue with the tasks that do not depend on the answer, then end your turn. Orca wakes you with the answer.
+- Closed decisions stay closed: an RDD consent or an exact-token decision (an answer that must be one exact value) never accepts a typed answer. List only the closed options, and if the reply is not exactly one of them, ask again; never act on it.
+- Edit surfaces: a file outside what the ticket covers is never self-authorized. Propose it with `ask` (the path and why), continue with independent tasks, and edit it only after a `reply` that approves it; record what was approved under `## Desvíos del ticket`. Editing an unrelated module without a `reply` approving it breaks this rule.
+- If Orca's preamble gave you no task id (you were relaunched outside main's Run), ask with a `Consulta: {{AGENT}}` comment on the issue instead.
+
 ## Unattended progress
 
 A missing tool or skill prerequisite is not a blocker: do that step inline, note it under ## Desvíos del ticket, and open the PR.
@@ -78,6 +111,7 @@ After posting a Consulta:, the next action is a tool call on work that is not bl
 - Smallest correct change: no unrelated cleanup, no new dependencies, no speculative abstractions.
 - If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket.
 - Do not review PRs, do not merge, do not spawn other workers.
+- If RDD asks for consent on your own candidate (an RDD you would start before the PR), the orca-stack policy answer is `declined`: pi's Gentle Shell answers it by itself (orca-stack launched it with `GENTLE_PI_ORCA_RDD_POLICY=1` and wrote the policy file in this worktree's git dir), and any other agent answers `declined` itself; never ask the human. This holds while `agentes.{{AGENT}}.rddConsentimiento` in .orca-stack.json is absent or `"politica"` (the default); with `"humano"`, ask main with `orca orchestration ask` instead, with only the consent's choices as closed options (see `## Questions to main`).
 - Fan-out: {{FANOUT_INSTRUCTIONS}}
 - Finish with a summary: what you did, what you found, tests run, remaining risk.
 - The ticket touches a command, lifecycle step or loop that can run again after a crash, retry or rerun: read `~/.claude/skills/principle-make-operations-idempotent/SKILL.md`.
@@ -95,7 +129,7 @@ After posting a Consulta:, the next action is a tool call on work that is not bl
 - Follow ODD (explore, classify, track, implement, close). The feature is `issue-{{ISSUE}}`. Its document is `odd/tasks/issue-{{ISSUE}}.md` plus the Engram mirror `odd/issue-{{ISSUE}}/tasks`. Never commit `odd/`.
 - The ticket's `## Reglas` are the feature's acceptance criteria. The existing RED and PRESERVE rules above override ODD test-first applicability: one test per rule and one per touched public entry.
 - Check off each `T<n>` of the issue's `## Tareas` in the issue body as soon as it is done (`gh issue edit {{ISSUE}} --body-file <file>`, changing only that checkbox). An issue without `## Tareas` has nothing to check off.
-- ODD step 1 (Authorize): this brief is your explicit authorization to implement the ticket. Step 3 (Resolve uncertainty): product questions go to the issue as a comment (`gh issue comment {{ISSUE}} --body-file <file>`), then continue with whatever is not blocked; never stop and wait.
+- ODD step 1 (Authorize): this brief is your explicit authorization to implement the ticket. Step 3 (Resolve uncertainty): product questions go to main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked; never stop and wait.
 - This brief is the repository policy for delivery: commit work units, push the branch and open the PR yourself. Delivery strategy is always a single PR (`single-pr`), never ask.
 - If Engram is unavailable or reports `ambiguous_project`, mark the mirror pending and continue; never ask.
 {{NOTE_SECTION}}

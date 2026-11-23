@@ -19,22 +19,29 @@ const LIVE = ['working', 'blocked', 'waiting']
 // 4.7.0 the frame is a rule ("─ ❀ implementing… ─── INSERT ─") and idle reads "─ ✿ waiting for input ─── INSERT ─";
 // before, a box ("╭─ ❀ implementing… ──╮"), with the petal standing alone when idle ("╭─ ✿ ─────╮").
 // The transcript may quote either frame, so Pi is judged on its current frame alone: the last frame line on screen.
-// Codex and agy workers share the spinner pattern.
+// Codex and agy workers share the spinner pattern. Codex also draws its turn as "• Working (32m • esc to interrupt)": a
+// bullet, no ellipsis (main-autonomo S7).
 const SPINNER = /^\s*[·✢✳✶✻✽]\s+\S[^\n]*…\s*\(\d+[smh]/mu
+const CODEX_WORKING = /^\s*•\s+\S[^\n]*\(\d+[smh][^\n]*esc to interrupt\)/mu
 const PI_FRAME = /^\s*╭?─ [✿❀❁✾] /u
 const PI_BUSY = /^\s*╭?─ [✿❀❁✾] [a-z]+… /u
 const PI_IDLE = /^\s*(?:╭─ ✿ ─+╮\s*$|─ ✿ waiting for input ─)/u
 const piFrame = screen => screen.slice(-SPINNER_LINES).findLast(line => PI_FRAME.test(line)) ?? ''
 const spinning = screen => SPINNER.test(screen.slice(-SPINNER_LINES).join('\n'))
+const working = screen => spinning(screen) || CODEX_WORKING.test(screen.slice(-SPINNER_LINES).join('\n'))
 const TURN_RUNNING = {
   claude: spinning,
   pi: screen => PI_BUSY.test(piFrame(screen)),
-  codex: spinning,
-  agy: spinning,
-  antigravity: spinning,
+  codex: working,
+  agy: working,
+  antigravity: working,
 }
+export const turnRunning = (agent, screen) => Boolean(TURN_RUNNING[agent]?.(screen))
 export const piIdle = screen => PI_IDLE.test(piFrame(screen))
-const DIALOG = /trust this folder\?|Do you want to proceed\?|Esc to cancel/i
+// "Esc to cancel" alone is agy's footer while it works (main-autonomo S7): it marks a dialog only next to a question.
+const DIALOG = /trust this folder\?|Do you want to proceed\?/i
+const ESC_TO_CANCEL = /Esc to cancel/i
+const QUESTION = /\?\s*$/m
 // The spinner and dialogs render at the bottom; the transcript above them may quote the same words.
 export const SPINNER_LINES = 25
 const DIALOG_LINES = 15
@@ -47,7 +54,7 @@ const parse = res => {
   }
 }
 const detail = res => (res.stderr || res.stdout || String(res.error ?? '')).trim().split(/\r?\n/)[0]
-const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
+export const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
 
 export const worktreeRows = io => {
   const res = io.sh('orca', ['worktree', 'ps', '--json'])
@@ -99,9 +106,10 @@ export const workerTerminals = (worktree, n, io) => {
   return terminals
 }
 
-// The title fallback (despachar names the terminal after its agent) only picks a target together with a live Orca
-// agent record: a dead terminal keeps that title.
-export const identityOf = (terminal, record) => stackAgent(terminal.agentIdentity ?? record?.agentType ?? (AGENTS.includes(terminal.title) ? terminal.title : undefined))
+// The title (despachar names the terminal after its agent) only picks a target together with a live Orca agent record:
+// a dead terminal keeps that title. main-autonomo S6: what orca-stack recorded (the title despachar gives the terminal, then Orca's agent record) wins over
+// the identity Orca detects in the pane, which once read a pi worker as claude.
+export const identityOf = (terminal, record) => stackAgent((AGENTS.includes(terminal.title) ? terminal.title : undefined) ?? record?.agentType ?? terminal.agentIdentity)
 
 // Orca names some agents differently from the stack (WRAPPERS[agent].orcaKey): Orca's `antigravity` is agy (#330).
 export const stackAgent = raw => Object.keys(WRAPPERS).find(agent => WRAPPERS[agent].orcaKey === raw) ?? raw
@@ -114,7 +122,11 @@ export const readScreen = (io, handle) => {
   return (Array.isArray(tail) ? tail.join('\n') : String(tail)).split(/\r?\n/)
 }
 
-export const isDialog = screen => DIALOG.test(screen.slice(-DIALOG_LINES).join('\n'))
+export const isDialog = screen => {
+  const text = screen.slice(-DIALOG_LINES).join('\n')
+
+  return DIALOG.test(text) || (ESC_TO_CANCEL.test(text) && QUESTION.test(text))
+}
 
 export const validateAnswerComment = (item, url, root, remote, io) => {
   // Every session shares one gh account, so a comment by any other account is not main's (#128, decision 7).

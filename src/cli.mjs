@@ -3,13 +3,16 @@ import { PINNED, PI_MIN_VERSION } from './constants.mjs'
 import { consultasCommand } from './consultas.mjs'
 import { briefRevisionCommand, despacharCommand, reboteCommand, revisarCommand } from './despacho.mjs'
 import { doctorCommand } from './doctor.mjs'
+import { estadoCommand } from './estado.mjs'
 import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
+import { limpiarCommand } from './limpiar.mjs'
 import { removeCommand } from './remove.mjs'
 import { reanudarCommand } from './reanudar.mjs'
 import { sesionesCommand } from './sesiones.mjs'
 import { vigilarCommand } from './vigilar.mjs'
 import { packageVersion } from './util.mjs'
+import { planificarCommand } from './planificar.mjs'
 
 const USAGE = `orca-stack ${packageVersion()}: instala el stack de agentes (política de Orca, skills, wrappers, Pi + Gentle Shell y mods de Claude Code).
 
@@ -31,9 +34,12 @@ Comandos:
   avisar    Le toca el timbre a un worker con el turno en curso: una línea con la URL de la respuesta de main.
   reanudar  Reanuda un worker detenido con una respuesta de main o relanza su trabajo en el mismo worktree.
   vigilar   Vigila los PRs de una tanda para el Monitor: solo emite eventos, retoma donde quedó e ignora los merges de main.
+  planificar Abre la sesión de planificación de un issue paraguas: worktree de Orca en docs/<slug> y pi con el brief de planificación.
+  estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
+  limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar) Muestra cada acci\u00F3n sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
@@ -41,7 +47,7 @@ Opciones:
   --confirmado     (despachar, revisar, rebote, reanudar) El humano dijo que s\u00ED a un agente de agentes.preguntarAntes.
   --continuar      (rebote) Retoma al autor de un rebote que se cortó antes de pushear (por ejemplo, sin cuota): mismo worktree, misma sesión de pi, sin marcador nuevo.
   --rdd <lentes>   (rebote) Le pide a pi un review RDD de su propio PR con esas lentes (risk, resilience, readability, reliability), sin hallazgos ni marcador Rebote.
-  --perfil-pi <nombre> (despachar, revisar, rebote, reanudar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver --help del comando).
+  --perfil-pi <nombre> (despachar, revisar, rebote, reanudar, planificar) Perfil de modelos de gentle-pi para el worktree de un despacho a pi (ver --help del comando).
   --modelo <modelo>  (brief-revision) Modelo del subagente revisor.
   --desde <AAAA-MM-DD>  (sesiones) Desde qué día (por defecto: los últimos 2 días).
   --limite <n>     (sesiones) Cuántas sesiones mostrar (por defecto: 10).
@@ -52,6 +58,10 @@ Opciones:
   --una-vez        (vigilar) Consulta una sola vez y sale.
   --consultas      (vigilar) En cada vuelta corre también el chequeo de \`consultas\` para los mismos items.
   --merge-de-main <pr> (vigilar) Registra que main está por mergear <pr> y sale, sin imprimir nada.
+  --paraguas <n>   (vigilar) Vigila los sub-issues del issue paraguas <n>: un evento por cada tanda nueva de tickets publicada.
+  --json           (estado) Imprime un objeto JSON por PR (un arreglo si son varios) y sale con 0 solo si están listos.
+  --terminal <handle> (reanudar) Reanuda el agente de esa terminal de Orca cuando el worktree tiene varios en done.
+  --rutas <a,b>    (revisar) El review lee solo esas rutas y lo declara en ## Cobertura.
   -v, --version    Muestra la versión.
   -h, --help       Muestra esta ayuda (también \`orca-stack <comando> --help\`).
 
@@ -63,7 +73,7 @@ const COMMAND_HELP = {
   global: `orca-stack global [--dry-run] [--force] [--skip-pi] [--limpiar-sdd] [--humano <nombre>]
 
 Instala a nivel usuario:
-  1. ~/orca/stack/ORCA-STACK.md, ROLE-BRIEFS.md y MAIN.md (las reglas de main)
+  1. ~/orca/stack/ORCA-STACK.md, ROLE-BRIEFS.md y MAIN.md (las reglas de main), y MARCHAS.md, PONYTAIL.md y CAVEMAN.md (los fragmentos de los perks)
   2. Wrappers claude/codex/agy-orca-stack (.cmd en Windows, .sh en el resto) en ~/orca/stack/scripts
   3. Skills propias en ~/.claude/skills y ~/.agents/skills
   4. Mods en ~/.claude/mods y sus rutas en env.CLAUDE_CODE_PLUGIN_DIRS de ~/.claude/settings.json
@@ -104,11 +114,17 @@ Sirve de entrada para \`/retro\`.
 Desde el checkout principal del repo (agentes: claude, agy, codex, pi). Se niega si el setup está pendiente, si el
 agente no está en agentes.usa, si está en agentes.preguntarAntes sin --confirmado, si el issue está cerrado o asignado, o si ya hay
 un worktree o un agente vivo para ese ticket. Asigna el issue, crea el worktree con \`orca worktree create\`, escribe el brief en
-~/orca/briefs, comprueba que cada ruta que cita exista en el worktree, lanza el agente en una terminal de Orca y le manda el brief.
+~/orca/briefs, comprueba que cada ruta que cita exista en el worktree, lanza el agente en una terminal de Orca y lo arranca con
+\`orca orchestration worker-start\` en el Run ligado a main (\`run-current\`, o \`run-create\` si no hay uno), con el brief como spec:
+el brief le llega una sola vez, también a pi. Si falla un comando de orca orchestration, imprime el error de Orca, lista lo que
+quedó y le saca el assignee al issue.
 Con --dry-run muestra el plan y el brief y no escribe nada.
 Imprime \`Rama: <rama>\` con la rama que devolvió Orca; en --dry-run aclara que Orca define la rama al crear el worktree.
 Después de confirmar el inicio, despachar, revisar y rebote leen tres veces la pantalla, salvo pi, con pausas de 5 segundos;
 fallan ante un mensaje de cuota o si el último renglón no vacío volvió al prompt de PowerShell. No detectan prompts de bash ni cmd.exe.
+El banner de codex que dice cuánto queda (⚠ 5h limit: 50% left · resets at 00:57) no cuenta como cuota, salvo con 0% left.
+Con agentes.<agente>.rddConsentimiento "politica" (por defecto) escribe en el git dir del worktree orca-stack/rdd-consentimiento.json
+con {"version":1,"granted":[]}: el consentimiento de RDD sobre el candidato propio es declined. Con "humano" no lo escribe.
 Con pi leen la sesión nueva de Pi con las mismas pausas y fallan si su primera respuesta es "Failed to authenticate",
 con esa línea y el CLAUDE_CONFIG_DIR usado.
 
@@ -120,11 +136,14 @@ Sin flag y sin agentes.pi.perfil, o con "preguntar", se niega antes de tocar nad
 activo global. agentes.pi.perfil: "global" usa ese perfil activo a propósito. Imprime "perfil de Pi: <nombre> (fuente: flag | config |
 pin | global)" y el brief guarda la misma línea.
 `,
-  revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
+  revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--rutas <a,b>] [--dry-run]
 
 Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
 (línea \`Implementador:\`) o si el agente usa un modelo de la misma familia (según \`agentes.modelos\`; pi y claude pueden revisarse entre sí).
-Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, sin agentes ni terminales en done, y su HEAD anterior alcanza el nuevo head del PR; rechaza el mismo head, los commits locales y los perfiles de Pi distintos.
+Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, sin un agente trabajando, y su HEAD anterior alcanza el nuevo head del PR; rechaza el mismo head, los commits locales y los perfiles de Pi distintos.
+Las terminales en done y las shells vacías de ese worktree las cierra sola antes de reutilizarlo, y dice cuáles cerró.
+Con --rutas <a,b> (rutas separadas por coma) el review lee solo esas rutas y lista en ## Cobertura lo que leyó (Leído:) y lo que no (Sin leer:);
+ese review cuenta para el paso 7 solo si ninguna ruta de Sin leer: es de riesgo.
 `,
   rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--continuar] [--rdd <lentes>] [--dry-run]
 
@@ -134,6 +153,8 @@ salvo que despu\u00E9s del review haya un comentario \`Respuesta del humano:\` e
 El rebote por review se cuenta por el \`Commit:\` de cada review: un \`Rebote: <sha>\` de un head anterior no frena ning\u00FAn rebote, y un head que avanz\u00F3 rebota si tiene un review bloqueante propio.
 Un worktree limpio que solo est\u00E1 atr\u00E1s del head (por ejemplo, tras \`gh pr update-branch\`) se adelanta con \`git merge --ff-only <sha>\`.
 Para CI roja agrega los checks fallidos al brief y publica \`Rebote CI: <sha>\`; publica \`Rebote: <sha>\` solo con bloqueos de review.
+Los rebotes de CI 1 y 2 no piden nada más; el 3 y el 4 exigen un comentario que empiece con \`Diagnóstico: main\`, con \`Commit: <headRefOid>\` y una \`Siguiente hipótesis:\` que no esté vacía ni sea \`ninguna\`
+y publicado después del último \`Rebote CI:\`; la hipótesis va al brief. No hay quinto rebote de CI. Si falta algo, se niega en una línea, sin marcador ni relanzar.
 Con bloqueos de review imprime y publica, en el mismo comentario, \`Ronda: <n>\` debajo de \`Rebote: <sha>\`: n es la cantidad de SHAs distintos de los \`Rebote:\` anteriores, sin contar el head actual, m\u00E1s uno (\`Rebote CI:\` y \`Rebote conflicto:\` no suman rondas).
 Desde la ronda 2 imprime, sin publicarla ni frenar el rebote, una l\u00EDnea que recuerda la se\u00F1al de swarm de diagn\u00F3stico del contrato.
 El brief de un rebote por review le pide al autor nombrar la clase de defecto de cada hallazgo, corregir todas sus instancias en el diff y decir en su comentario cu\u00E1les otras revis\u00F3.
@@ -150,6 +171,9 @@ Con --rdd <lentes> (de 1 a 4 distintas entre risk, resilience, readability, reli
 solo con \`Implementador: pi\` y agentes.pi.review: "rdd" en la config. No exige review bloqueante ni mira CI o conflictos; el brief (brief-rdd.md)
 le pide publicar \`Revisor: pi (RDD: <lentes>)\` y \`Commit: <sha>\`. No publica marcador \`Rebote*\`: publica en el PR \`RDD: <sha> (<lentes>)\`, el pedido sin el que puente-gentle no cuenta el review.
 Se niega si ya hay sobre el head un review RDD de pi con ese pedido, y no vale con --continuar (su brief y su sesión van aparte: -rdd).
+Cierra sola las terminales en done y las shells vacías del worktree, y dice cuáles cerró; se niega solo con un agente trabajando.
+Con agentes.<agente>.rddConsentimiento "politica" (por defecto) escribe el consentimiento RDD del worktree: granted para el head con --rdd,
+declined sin él. Con "humano" no lo escribe.
 `,
   'brief-revision': `orca-stack brief-revision <pr> --modelo <modelo> [--dry-run]
 
@@ -163,7 +187,7 @@ Emite una sola línea "consulta nueva en #<n>" por cada comentario nuevo y recue
 `,
   avisar: `orca-stack avisar <issue|pr> <url-del-comentario> [--dry-run]
 
-El timbre de Proactive: cuando main responde la pregunta de un worker, le escribe en su terminal una sola línea fija
+El timbre: cuando main responde la pregunta de un worker, le escribe en su terminal una sola línea fija
 ("Message from main: <url>") con la URL del comentario y nada de su texto, para que la lea sin esperar a su PR.
 Encuentra la terminal por el worktree de este repo enlazado a <n> (con un PR, el de su rama), buscado solo entre los de
 \`git worktree list\` porque los selectores de Orca abarcan todos los repos, y, si un rebote dejó dos, elige la del agente vivo. Manda solo mientras el turno del worker está en curso: se niega si ya terminó, si la
@@ -173,7 +197,7 @@ Se niega si el comentario no es de la cuenta del stack (\`gh api user\`), no est
 informa la falla y no reenvía.
 Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
 `,
-  reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--dry-run]
+  reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--terminal <handle>] [--dry-run]
 
 Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una línea con la URL de la respuesta; si ya salió,
 lo relanza en su worktree existente con el brief original y la URL al principio. Exige que la respuesta sea un comentario real
@@ -183,10 +207,39 @@ Usa --confirmado solo después de que el humano haya confirmado relanzar un agen
 Un worker de pi se relanza con el modelo y el thinking del orquestador del perfil que fija su worktree (.pi/gentle-ai/profile.json).
 Sin pin y sin agentes.pi.perfil se niega como despachar. Si el pin nombra un perfil que ya no existe, repetí con --perfil-pi <nombre>:
 el flag elige el perfil y reescribe el pin.
+Con --terminal <handle> reanuda el agente de esa terminal de Orca cuando el worktree tiene varios agentes en done.
 Con --dry-run muestra qué enviaría o lanzaría sin escribir el brief ni tocar la terminal.
+`,
+  estado: `orca-stack estado [<pr>...] [--json]
+
+De solo lectura: para cada PR (sin argumentos, cada PR abierto sobre ramaBase; uno mergeado o cerrado, solo si lo nombrás)
+lee una vez \`gh pr view <n> --json number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state\`
+y dice qué le falta para el paso 7 de MAIN.md sobre su head actual:
+  (a) un review sin bloqueos de alguien que no sea el Implementador:, o Verificado por main: / Decidido por main:, o, con
+      agentes.pi.review "rdd" y un PR de pi, un review RDD de pi pedido con RDD: o un Sin review: (con ## Evidencia);
+  (b) que esos comentarios lleven Commit: igual al head (el sha puede ir entre backticks);
+  (c) que cada check termine en SUCCESS, SKIPPED o NEUTRAL y ninguno siga pendiente;
+  (d) en una ruta de riesgo, el segundo review que exige puente-gentle.
+Un review con ## Cobertura cuenta solo si ninguna ruta de Sin leer: es de riesgo; uno que se declara parcial sin
+## Cobertura no cuenta. Con migraciones {"glob","numero"} en la config, cada migración que agrega el PR tiene que tener un
+número mayor que la más alta de origin/<base> (hace git fetch origin <base>); si no, imprime el comentario de review que
+main publica para rebotarlo.
+Sin --json imprime una línea por PR:
+  #<pr> <issue> <implementador> head=<sha7> ci=<green|red|pending> review=<quién@sha|missing|stale> riesgo=<yes|no> falta=<...>
+Con --json imprime {"pr":<n>,"head":"<sha de 40>","ok":<bool>,"falta":[…],"merge":<texto o null>} con un PR pedido, o un
+arreglo con varios; "merge" copia la clave merge de la config sin juzgarla. Sale con 0 solo si todos están ok.
+`,
+  limpiar: `orca-stack limpiar [--dry-run]
+
+Para cada worktree de este repo (salvo el checkout principal) cuyo PR se mergeó o se cerró, buscado por su rama o por
+su nombre revision-<pr>-<agente>: cierra sus terminales (orca terminal close --worktree path:<ruta> --all) y lo saca
+(orca worktree rm --worktree path:<ruta>, sin --force ni --delete-branch). Omite e informa los worktrees con cambios sin
+commitear o con un agente trabajando; nunca borra ramas remotas. Es idempotente: una segunda corrida no saca nada.
+Con --dry-run muestra qué sacaría sin tocar nada.
 `,
   vigilar: `orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]
 orca-stack vigilar --merge-de-main <pr>
+orca-stack vigilar --paraguas <n> [--cada <segundos>] [--una-vez] [--dry-run]
 
 Vigila los PRs de los issues <n...> de una tanda, hecho para correr bajo el Monitor: stdout lleva solo eventos, uno
 por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 60) lee \`gh pr list --state all\` y emite:
@@ -194,25 +247,60 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
   ci-verde #<n> PR #<pr> <sha>       todos los checks del head terminaron en verde
   ci-roja #<n> PR #<pr> <sha>: ...   un check terminado falló, venció o se canceló (los lista); uno por corrida,
                                      también si un gh run rerun --failed vuelve a fallar en el mismo head
+  diagnostico #<n> <agente>          diagn\u00f3stico de un worker en el issue o PR
   review-publicado #<pr> <agente> <sha> bloquea=<n>  review publicado en el PR
   head-nuevo #<pr> <sha>             camb\u00F3 el head del PR
   pr-en-conflicto #<n> PR #<pr> <sha>
                                      el PR quedó en conflicto con la base; uno por head (rebote, con el worker detenido)
   pr-mergeado #<n> PR #<pr> <sha>    el PR se mergeó y main no registró ese merge
   pr-cerrado #<n> PR #<pr>           el PR se cerró sin mergear
+  worker-detenido #<n> <agente>: <motivo>
+                                     worker sin PR detenido (cuota, volvió al shell, terminó sin abrir un PR) + última línea
+  worker-trabado #<n> <agente>: <motivo>
+                                     pantalla sin cambios (30m en working, o 4m en otro estado sin PR) + última línea
   vigilar-ciego: <error>             tres vueltas seguidas sin poder leer GitHub (una vez por corte)
+  worker-terminado #<n> <agente> ok|partial
+                                     un worker del Run de main mandó worker_done (ok si succeeded, partial si failed)
+                                     o escaló (partial)
+  consulta #<n> <agente> <message_id>
+                                     un worker del Run de main preguntó con \`orca orchestration ask\`; main responde con
+                                     \`orca orchestration reply --id <message_id>\` (o un gate para el humano)
   tanda-cerrada #<n> #<m>...         terminaron todos los items; sale con 0
+En cada vuelta lee también el buzón del Run de Orca ligado a main (\`orca orchestration run-current\`), con
+\`orca orchestration check --all\`, que no marca nada como leído, y nombra cada worker por el título "#<n> <agente>" de
+su tarea (las tareas con otro título se ignoran). Sin Run ligado vigila solo GitHub; si Orca falla, lo dice una vez
+por corte en stderr y sigue con GitHub.
 Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue o por una línea
 \`Closes #<n>\` en su cuerpo; nunca por adivinar el nombre de la rama. Un issue cerrado sin PR cuenta como terminado.
 Guarda lo emitido en <git-common-dir>/orca-stack/vigilar.json: rearmado con los mismos argumentos, retoma sin repetir.
 Si el proceso que lo lanzó desaparece (el Monitor venció o se paró), sale en menos de 5 segundos con su gh u orca.
 --una-vez consulta una vez y sale; --dry-run consulta una vez y no escribe nada; --consultas corre en cada vuelta el
-chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor en Proactive).
+chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor).
 
 --merge-de-main <pr> registra el head del PR en <git-common-dir>/orca-stack/vigilar-merges.json y sale sin imprimir
 nada en stdout. main lo corre justo antes de cada intento de \`gh pr merge <pr>\`, también después de
 \`gh pr update-branch\`: un merge de ese head hecho dentro de los 30 minutos siguientes al registro no emite
 pr-mergeado, aunque el watcher lo vea más tarde. Con un PR ya mergeado o cerrado sale con 1 y no registra nada.
+
+--paraguas <n> vigila una sesión de planificación (\`orca-stack planificar <n>\`): cada --cada segundos lee los sub-issues
+del issue paraguas con \`gh api repos/{owner}/{repo}/issues/<n>/sub_issues\` y emite
+  planificacion-publicada #<n> #<a>,#<b>,…   una tanda nueva de sub-issues, cuando dejó de crecer entre dos vueltas
+                                             seguidas (to-tickets los crea de a uno)
+Nada por comentarios, ediciones ni issues que no son sub-issues del paraguas. Guarda lo avisado en vigilar.json (clave
+paraguas:<n>): rearmado, no repite; los sub-issues que el paraguas ya tenía al correr planificar no cuentan como nuevos.
+Sale con 0 cuando el paraguas se cierra. No acepta otros items ni --consultas.
+`,
+  planificar: `orca-stack planificar <issue-paraguas> [--perfil-pi <nombre>] [--dry-run]
+
+Desde el checkout principal, con el setup completo. Lee el paraguas con \`gh issue view <n> --json number,title,state,body\`
+y se niega, antes de tocar nada, si está cerrado o si su título está vacío (o no deja un slug). Hace git fetch origin, crea
+con \`orca worktree create\` un worktree de Orca <repo>-planificacion-<n> (con su tarjeta, enlazado al paraguas) en la rama
+docs/<slug> (el slug sale del título) desde origin/<ramaBase>, escribe el brief en ~/orca/briefs/<repo>-planificacion-<n>.md y
+lanza pi ahí en modo interactivo: la sesión la maneja el humano (grill-with-docs, to-spec, to-tickets), commitea solo docs en
+esa rama y la pushea, y publica los tickets como sub-issues del paraguas. Confirma que la sesión de pi arrancó.
+Marca como ya avisados los sub-issues que el paraguas tenía, para \`orca-stack vigilar --paraguas <n>\`.
+El perfil de Pi se elige como en despachar (--perfil-pi o agentes.pi.perfil). Se niega si ya hay un worktree en esa rama.
+Con --dry-run muestra el plan y el brief y no crea nada.
 `,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
@@ -251,6 +339,17 @@ export const parseArgs = argv => {
     else if (arg === '--with-pi') flags.withPi = true
     else if (arg === '--una-vez') flags.unaVez = true
     else if (arg === '--consultas') flags.consultas = true
+    else if (arg === '--json') flags.json = true
+    else if (arg === '--terminal' || arg === '--rutas') {
+      flags[arg.slice(2)] = argv[i + 1] ?? ''
+      i += 1
+    } else if (arg.startsWith('--terminal=') || arg.startsWith('--rutas=')) {
+      flags[arg.slice(2, arg.indexOf('='))] = arg.slice(arg.indexOf('=') + 1)
+    }
+    else if (arg === '--paraguas') {
+      flags.paraguas = argv[i + 1] ?? ''
+      i += 1
+    } else if (arg.startsWith('--paraguas=')) flags.paraguas = arg.slice('--paraguas='.length)
     else if (arg === '--cada' || arg === '--merge-de-main') {
       flags[arg === '--cada' ? 'cada' : 'mergeDeMain'] = argv[i + 1] ?? ''
       i += 1
@@ -280,6 +379,19 @@ export const parseArgs = argv => {
   }
   if (flags.humano !== undefined && (flags.humano === '' || flags.humano.startsWith('--'))) {
     throw new Error('--humano necesita un nombre.')
+  }
+  // Options that belong to one command only: any other command keeps refusing them, as before they existed.
+  for (const [flag, owner] of [['json', 'estado'], ['terminal', 'reanudar'], ['rutas', 'revisar'], ['paraguas', 'vigilar']]) {
+    if (flags[flag] !== undefined && rest[0] !== undefined && rest[0] !== owner) throw new Error(`Opción desconocida: --${flag}`)
+  }
+  if (flags.terminal !== undefined && (flags.terminal.trim() === '' || flags.terminal.startsWith('--'))) {
+    throw new Error('--terminal necesita el handle de una terminal de Orca (orca terminal list).')
+  }
+  if (flags.paraguas !== undefined && (flags.paraguas.trim() === '' || flags.paraguas.startsWith('--'))) {
+    throw new Error('--paraguas necesita el número del issue paraguas.')
+  }
+  if (flags.rutas !== undefined && (flags.rutas.split(',').every(one => one.trim() === '') || flags.rutas.startsWith('--'))) {
+    throw new Error('--rutas necesita una o más rutas separadas por coma.')
   }
 
   return { command: rest[0], flags, rest }
@@ -339,6 +451,12 @@ export const main = async (argv, io) => {
         return await reanudarCommand(flags, rest[1], rest[2])
       case 'vigilar':
         return await vigilarCommand(flags, rest.slice(1))
+      case 'planificar':
+        return await planificarCommand(flags, rest[1], io)
+      case 'estado':
+        return await estadoCommand(flags, rest.slice(1), io)
+      case 'limpiar':
+        return await limpiarCommand(flags, io)
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 

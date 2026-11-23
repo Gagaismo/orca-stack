@@ -25,6 +25,8 @@ if (process.env.FAKE_GH_SLOW) {
   setTimeout(() => {}, 120000)
 } else if (args[0] === 'pr' && args[1] === 'list') {
   console.log(JSON.stringify([{ number: 70, state: 'OPEN', headRefName: 'b', headRefOid: '${SHA}', mergedAt: null, body: '', closingIssuesReferences: [{ number: 7 }], statusCheckRollup: [], mergeable: 'MERGEABLE' }]))
+} else if (args[0] === 'issue' && args[1] === 'view' && args.includes('comments')) {
+  console.log(JSON.stringify({ comments: [] }))
 } else {
   console.log('{}')
 }
@@ -95,7 +97,14 @@ const ghPids = file => existsSync(file) && readFileSync(file, 'utf8').split(' ')
 const dirs = []
 const stray = []
 after(() => {
-  for (const pid of stray) if (alive(pid)) process.kill(pid, 'SIGKILL')
+  for (const pid of stray) {
+    // It can exit on its own between alive() and kill(): ESRCH then means it is already gone (seen on windows CI).
+    try {
+      if (alive(pid)) process.kill(pid, 'SIGKILL')
+    } catch (error) {
+      if (error.code !== 'ESRCH') throw error
+    }
+  }
   for (const dir of dirs) cleanup(dir)
 })
 

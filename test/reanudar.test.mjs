@@ -431,6 +431,12 @@ describe('orca-stack reanudar (#214)', () => {
     await assert.rejects(() => reanudarCommand({ dryRun: true }, ISSUE, URL, unknown.io), /agente conocido/)
   })
 
+  test('issue 382: reanudar relaunches agy with --model gemini-4-neon-high', async () => {
+    const gone = harness({ agents: [{ paneKey: 'tab-9:leaf-9', state: 'done', agentType: 'antigravity' }], terminals: [] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, gone.io), 0)
+    assert.ok(gone.outputs.includes('Lanzador (agy): "/home/orca/stack/scripts/agy-orca-stack.sh" --dangerously-skip-permissions --model gemini-4-neon-high'), gone.outputs.join('\n'))
+  })
+
   test('issue 330 Rule 4: Orca\'s antigravity agentType is agy; an unknown agentType still refuses', async () => {
     // The 2026-11-08 state: antigravity:done with its live TUI, despachar's terminal titled agy.
     const live = harness({ agent: 'antigravity', terminals: [{ handle: 'term-1', tabId: 'tab-1', leafId: 'leaf-1', title: 'agy', worktreePath: WT }] })
@@ -479,7 +485,7 @@ describe('orca-stack reanudar (#214)', () => {
   test('Rule 10: contract names pause recovery and init renders the managed block into AGENTS', () => {
     // Issue 325: steps 5 and Despacho moved to MAIN.md; the AGENTS.md block sends main there.
     const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
-    assert.ok(contract.includes('worker-en-pausa #<n> <agente>'))
+    assert.ok(contract.includes('worker-detenido #<n> <agente>: terminó sin abrir un PR'))
     assert.match(contract, /`orca-stack avisar` y `orca-stack reanudar` son las \u00FAnicas formas en que main llega a una terminal de worker/)
     assert.ok(contract.includes('orca-stack reanudar <issue> <url-del-comentario>'))
     const init = spawnSync(process.execPath, [path.join(PACKAGE_ROOT, 'bin', 'orca-stack.mjs'), 'init'], { cwd: PACKAGE_ROOT, encoding: 'utf8' })
@@ -753,5 +759,174 @@ describe('reanudar: an open PR whose bounce stopped (#292)', () => {
     const ghDown = harness({ pr: true })
     await assert.rejects(() => reanudarCommand({}, ISSUE, URL, ghDown.io), error => error.message === OLD)
     assert.equal(ghDown.sends().length, 0)
+  })
+})
+
+describe('main-autonomo T1: reanudar picks the worker and trusts what orca-stack recorded', () => {
+  const PI_IDLE = ['● PR opened.', '╭─ ✿ ────────────────────────────╮', '│ type, or / for commands        │', '╰────────────────────────────────╯']
+  const briefLine = name => `Read and follow the brief in ${path.join('/home', 'orca', 'briefs', `${name}.md`)}`
+  const term = (n, title, agentIdentity = title) => ({ handle: `term-${n}`, tabId: `tab-${n}`, leafId: `leaf-${n}`, title, agentIdentity, worktreePath: WT })
+  const THREE = [term(1, 'codex'), term(2, 'claude'), term(3, 'codex')]
+  const BRIEF_ONLY = [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')]
+  const sentTo = h => h.sends().map(({ args }) => args[args.indexOf('--terminal') + 1])
+  const textOf = h => h.sends().map(({ args }) => args[args.indexOf('--text') + 1])
+  const withRoot = (config, run) => async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'orca-stack-main-autonomo-'))
+    writeFileSync(path.join(root, '.orca-stack.json'), JSON.stringify({ setup: 'completo', modo: 'multiagente', ...config }))
+    try {
+      await run(root)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  test('S5: with several done agents it resumes the terminal of the newest worker record, never a review or a subagent', async () => {
+    const h = harness({
+      terminals: THREE,
+      agents: [
+        { paneKey: 'tab-1:leaf-1', state: 'done', agentType: 'codex', prompt: briefLine('orca-stack-212'), updatedAt: 100 },
+        { paneKey: 'tab-2:leaf-2', state: 'done', agentType: 'claude', prompt: briefLine('orca-stack-revision-81-claude'), updatedAt: 300 },
+        { paneKey: 'tab-3:leaf-3', state: 'done', agentType: 'codex', prompt: `Message from main: ${URL} . Continue the ticket per your brief: ${BRIEF_PATH}.`, updatedAt: 200 },
+        { paneKey: 'tab-9:leaf-9', parentPaneKey: 'tab-3:leaf-3', state: 'done', agentType: 'codex', prompt: briefLine('orca-stack-212'), updatedAt: 400 },
+      ],
+    })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.deepEqual(sentTo(h), ['term-3'])
+    assert.deepEqual(textOf(h), [LINE])
+  })
+
+  test('S5: --terminal <handle> overrides the choice', async () => {
+    const agents = [1, 2, 3].map(n => ({ paneKey: `tab-${n}:leaf-${n}`, state: 'done', agentType: n === 2 ? 'claude' : 'codex' }))
+    const h = harness({ terminals: THREE, agents })
+    assert.equal(await reanudarCommand({ terminal: 'term-1' }, ISSUE, URL, h.io), 0)
+    assert.deepEqual(sentTo(h), ['term-1'])
+    assert.deepEqual(textOf(h), [LINE])
+  })
+
+  test('S5 negative: no worker record and no --terminal keeps the refusal, now naming --terminal and the handles', async () => {
+    const agents = [1, 2, 3].map(n => ({ paneKey: `tab-${n}:leaf-${n}`, state: 'done', agentType: 'codex' }))
+    const h = harness({ terminals: THREE, agents })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error =>
+      error.message === 'Hay 3 agentes done en el worktree de #212: no adivino a cuál reanudar. Elegí uno con --terminal <handle> (term-1, term-2, term-3).')
+    assert.equal(h.sends().length, 0)
+    assert.deepEqual(Object.keys(h.files), BRIEF_ONLY)
+  })
+
+  test('S5 negative: --terminal naming a terminal outside the worktree, or one without a done agent, is refused', async () => {
+    const agents = [{ paneKey: 'tab-1:leaf-1', state: 'done', agentType: 'codex' }, { paneKey: 'tab-3:leaf-3', state: 'done', agentType: 'codex' }]
+    const outside = harness({ terminals: THREE, agents })
+    await assert.rejects(() => reanudarCommand({ terminal: 'term-9' }, ISSUE, URL, outside.io), error =>
+      error.message === 'La terminal term-9 no está en el worktree de #212 (term-1, term-2, term-3): no reanudo.')
+    const noAgent = harness({ terminals: THREE, agents })
+    await assert.rejects(() => reanudarCommand({ terminal: 'term-2' }, ISSUE, URL, noAgent.io), error =>
+      error.message === 'La terminal term-2 de #212 no tiene un agente en done (sin agente): no reanudo.')
+    for (const h of [outside, noAgent]) {
+      assert.equal(h.sends().length, 0)
+      assert.deepEqual(Object.keys(h.files), BRIEF_ONLY)
+    }
+  })
+
+  test('S6: a pi pane that Orca detects as claude is resumed as pi', withRoot({ agentes: { usa: ['pi'], preguntarAntes: [] } }, async root => {
+    for (const agentType of ['pi', 'claude']) {
+      const h = pinned(harness({ root, screen: PI_IDLE, terminals: [term(1, 'pi', 'claude')], agents: [{ paneKey: 'tab-1:leaf-1', state: 'done', agentType }] }))
+      assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0, agentType)
+      assert.deepEqual(sentTo(h), ['term-1'], agentType)
+      assert.deepEqual(textOf(h), [LINE], agentType)
+    }
+  }))
+
+  test('S6 PRESERVE: without a stack title, Orca\'s record and then its detected identity still decide', async () => {
+    const h = harness({ terminals: [term(1, '✳ Brief', 'codex')], agents: [{ paneKey: 'tab-1:leaf-1', state: 'done', agentType: 'codex' }] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.deepEqual(sentTo(h), ['term-1'])
+  })
+
+  test('S3: resuming a paused worker or relaunching an exited one writes {"version":1,"granted":[]} in its git dir', async () => {
+    const consent = path.join(ROOT, '.git', 'orca-stack', 'rdd-consentimiento.json')
+    const paused = harness()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, paused.io), 0)
+    assert.equal(paused.files[consent], '{"version":1,"granted":[]}\n')
+    assert.ok(paused.outputs.includes(`Consentimiento RDD (política): ${consent} = {"version":1,"granted":[]}`))
+    assert.ok(paused.calls.some(({ args, cwd }) => args.join(' ') === 'rev-parse --path-format=absolute --git-dir' && cwd === WT))
+    const relaunch = harness({ state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, relaunch.io), 0)
+    assert.equal(relaunch.files[consent], '{"version":1,"granted":[]}\n')
+  })
+
+  test('S3: reanudar keeps an existing policy file, so main\'s granted head survives a paused RDD review', async () => {
+    const consent = path.join(ROOT, '.git', 'orca-stack', 'rdd-consentimiento.json')
+    const h = harness()
+    h.files[consent] = '{"version":1,"granted":["abc1234def"]}\n'
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.files[consent], '{"version":1,"granted":["abc1234def"]}\n')
+    assert.ok(h.outputs.includes(`Consentimiento RDD (política): dejo ${consent} como está.`))
+  })
+
+  test('S3 negative: with "humano" reanudar writes no consent file', withRoot({ agentes: { usa: ['codex'], preguntarAntes: [], codex: { rddConsentimiento: 'humano' } } }, async root => {
+    const h = harness({ root })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(h.sends().length, 1)
+    assert.ok(!Object.keys(h.files).some(file => file.endsWith('rdd-consentimiento.json')))
+  }))
+
+  // #357 (main-autonomo-2 S1): a paused agy behind its "esc to dismiss" splash, recorded on 2026-11-14 (Antigravity CLI 1.5.9).
+  const SPLASH = ['\u{2503} Introducing Gemini 4 Hydrogen', '\u{2503} Our daily driver for rapid coding and dependable agentic execution!', '\u{2503} esc to dismiss']
+  const AGY_PROMPT = ['Antigravity CLI 1.5.9', 'Gemini 4 Hydrogen (High)', '>']
+  const ESC = '\u{1b}'
+  const S1_LINE = `agy no recibi\u{f3} el brief. Peg\u{e1} en la terminal term-1 esta l\u{ed}nea: Read and follow the brief in ${BRIEF_PATH}`
+  const agyHarness = ({ escs = 1, send } = {}) => {
+    const h = harness({ agent: 'agy', screen: SPLASH, ...(send ? { send } : {}) })
+    const original = h.io.sh
+    let sentEscs = 0
+    h.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send' && args[args.indexOf('--text') + 1] === ESC) {
+        sentEscs += 1
+        h.calls.push({ cmd, args })
+        return ok('')
+      }
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
+        h.calls.push({ cmd, args })
+        return json({ result: { terminal: { tail: sentEscs >= escs ? AGY_PROMPT : SPLASH } } })
+      }
+      return original(cmd, args, opts)
+    }
+    const escSends = () => h.sends().filter(({ args }) => args[args.indexOf('--text') + 1] === ESC)
+    const lineSends = () => h.sends().filter(({ args }) => args[args.indexOf('--text') + 1] === LINE)
+    const attempted = () => Object.keys(h.files).some(file => file.endsWith('reanudar.json'))
+    return { ...h, escSends, lineSends, attempted }
+  }
+
+  test('S1: reanudar dismisses agy\'s splash with Esc and sends the resume line once to the empty prompt', async () => {
+    const h = agyHarness()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.deepEqual(h.escSends().map(({ args }) => args), [['terminal', 'send', '--terminal', 'term-1', '--text', ESC]])
+    assert.equal(h.lineSends().length, 1)
+    assert.ok(h.sends().indexOf(h.escSends()[0]) < h.sends().indexOf(h.lineSends()[0]))
+  })
+
+  test('S1 negative: a splash that stays after 3 Escs fails with the line to paste, sends no resume line and records no attempt', async () => {
+    const h = agyHarness({ escs: Infinity })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error => error.message === S1_LINE)
+    assert.equal(h.escSends().length, 3)
+    assert.equal(h.lineSends().length, 0)
+    assert.equal(h.attempted(), false)
+  })
+
+  test('S1: agy with no delivery receipt fails with exactly the line to paste and never resends', async () => {
+    const h = agyHarness({ send: ok('') })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error => error.message === S1_LINE)
+    assert.equal(h.lineSends().length, 1)
+    assert.equal(h.attempted(), true)
+    // The attempt is recorded: a second run with the same comment sends nothing.
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /Ya intenté reanudar con el comentario 6205678817/)
+    assert.equal(h.lineSends().length, 1)
+  })
+
+  test('S1 PRESERVE: codex with no delivery receipt keeps the no-resend guard message and gets no Esc', async () => {
+    const h = harness({ send: ok('') })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error =>
+      error.message === 'No hay recibo de entrega de orca terminal send en term-1: la l\u{ed}nea pudo haber llegado. No la reenv\u{ed}o; revis\u{e1} la terminal antes de volver a reanudar.')
+    assert.equal(h.sends().length, 1)
+    assert.equal(h.sends()[0].args[h.sends()[0].args.indexOf('--text') + 1], LINE)
   })
 })

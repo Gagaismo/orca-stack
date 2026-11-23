@@ -108,6 +108,19 @@ test('Rule 6: a contract without Marchas leaves the mod inert', async ($, on) =>
   expect(h.registered).not.toContain('marcha')
 })
 
+test('#393 R5: with gears off (no Marchas heading) there is no /marcha, no effort change and no footer label', async ($, on) => {
+  const h = setup(on, { contract: WITHOUT_MARCHAS, store: { 'marchas:session-1': { gear: 'lazy', shiftedAt: 1 } } })
+  const turns = observeSteps(on)
+  await start($)
+  await turns.run($, 'xhigh')
+
+  expect(h.registered).not.toContain('marcha')
+  expect(turns.requests[0]?.effort).toBe('xhigh')
+  const footer = await band($)
+  expect(await footer.find({ type: 'Text', text: /Lazy|Medium|Proactive/ })).toBeUndefined()
+  await footer.unmount()
+})
+
 test('Rule 7: pending setup does not turn gears off', async ($, on) => {
   const h = setup(on)
   await start($)
