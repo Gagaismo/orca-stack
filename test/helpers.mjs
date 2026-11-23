@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { accessSync, chmodSync, constants, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
@@ -27,6 +27,8 @@ const TOOL_CANDIDATES = process.platform === 'win32'
       node: ['node'],
       git: ['git'],
       npm: ['npm'],
+      sh: ['sh'],
+      dirname: ['dirname'],
     }
 
 const isInside = (dir, parent) => {
@@ -37,6 +39,14 @@ const isInside = (dir, parent) => {
 }
 
 const hasOrcaCommand = dir => ORCA_COMMANDS.some(name => existsSync(path.join(dir, name)))
+
+const isWritableDir = dir => {
+  try {
+    return existsSync(dir) && (accessSync(dir, constants.W_OK), true)
+  } catch {
+    return false
+  }
+}
 
 const findToolInDir = (dir, tool) => {
   for (const name of TOOL_CANDIDATES[tool]) {
@@ -105,8 +115,8 @@ const shimDirFor = tools => {
   return dir
 }
 
-// Filters machine PATH directories that hold an orca-stack command while keeping node, git and npm reachable.
-export const isolatePath = (rawPath, { ambientOnly = false, home, exclude = [] } = {}) => {
+// Filters machine PATH directories that hold an orca-stack command (or, on POSIX, are writable) while keeping core tools reachable.
+export const isolatePath = (rawPath, { ambientOnly = false, home, exclude = [], platform = process.platform } = {}) => {
   const ambientDirs = (process.env.PATH || process.env.Path || '').split(path.delimiter).filter(Boolean)
   const execDir = path.dirname(process.execPath)
   const dirs = String(rawPath ?? '').split(path.delimiter).filter(Boolean)
@@ -114,8 +124,8 @@ export const isolatePath = (rawPath, { ambientOnly = false, home, exclude = [] }
   for (const dir of dirs) {
     if (exclude.some(ex => samePath(dir, ex))) continue
     const isMachineDir = !isInside(dir, home) && (!ambientOnly || samePath(dir, execDir) || ambientDirs.some(a => samePath(a, dir)))
-    if (isMachineDir && hasOrcaCommand(dir)) {
-      const tools = ['node', 'git', 'npm'].map(tool => [tool, findToolInDir(dir, tool)]).filter(([, found]) => found)
+    if (isMachineDir && (hasOrcaCommand(dir) || (platform !== 'win32' && isWritableDir(dir)))) {
+      const tools = Object.keys(TOOL_CANDIDATES).map(tool => [tool, findToolInDir(dir, tool)]).filter(([, found]) => found)
       if (tools.length > 0) out.push(shimDirFor(tools))
       continue
     }

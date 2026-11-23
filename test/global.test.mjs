@@ -157,6 +157,36 @@ describe('global', () => {
     }
   })
 
+  test('isolates global from a writable machine directory on the process PATH across repeated runs', () => {
+    const machineDir = tempDir('machine-path')
+    const machineToolDir = tempDir('machine-tool-path')
+    const envPathKey = pathKey()
+    const originalPath = process.env[envPathKey]
+    try {
+      const posixIsolated = isolatePath(machineDir, { home, platform: 'linux' })
+      assert.equal(posixIsolated, '', 'writable POSIX machine PATH dir without core tools must be excluded')
+
+      write(path.join(machineToolDir, 'node'), '#!/bin/sh\necho fake-node\n')
+      const shimmed = isolatePath(machineToolDir, { home, platform: 'linux' })
+      assert.ok(shimmed && !samePath(shimmed, machineToolDir), 'writable POSIX machine PATH dir with node must be replaced by a shim dir')
+
+      process.env[envPathKey] = [machineDir, originalPath].filter(Boolean).join(path.delimiter)
+      const first = cli(home, ['global', '--skip-pi'])
+      assert.equal(first.status, 0, first.out)
+      assert.equal(existsSync(path.join(machineDir, 'orca-stack')), false)
+      assert.equal(existsSync(path.join(machineDir, 'orca-stack.cmd')), false)
+      const snap = snapshot(home)
+      const second = cli(home, ['global', '--skip-pi'])
+      assert.equal(second.status, 0, second.out)
+      assert.deepEqual(snapshot(home), snap)
+    } finally {
+      if (originalPath === undefined) delete process.env[envPathKey]
+      else process.env[envPathKey] = originalPath
+      cleanup(machineDir)
+      cleanup(machineToolDir)
+    }
+  })
+
   test('ignores its npx shim, installs outside npx .bin, and doctor checks the installed command', () => {
     const packageDir = path.join(home, 'npm-cache', 'node_modules', 'orca-stack')
     const npxBinDir = path.join(home, 'npm-cache', 'node_modules', '.bin')
