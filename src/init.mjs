@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { createInterface } from 'node:readline/promises'
 
@@ -91,7 +91,7 @@ const withLintKey = text => {
 }
 
 // #424: a job named orca-stack-lint, or any step that runs the lint (names excluded), is the repo's own lint job.
-const RUNS_LINT = /(?:^|[\s'"/])(?:orca-stack|orca-stack\.mjs|orca-stack#[\w.-]+)\s+lint\b/m
+const RUNS_LINT = /(?:^|[\s'"/])(?:orca-stack|orca-stack\.mjs|orca-stack#[\w.-]+|orca-stack@[\w.-]+)\s+lint\b/m
 const ownLintJob = root => {
   const dir = path.join(root, '.github', 'workflows')
   if (!existsSync(dir)) return null
@@ -104,6 +104,16 @@ const ownLintJob = root => {
   }
 
   return null
+}
+
+// #424: pointing core.hooksPath away from .git/hooks would silently stop the repo's own hooks (husky v4, pre-commit).
+const activeGitHooks = (git, root, env) => {
+  const found = git ? run(git, ['rev-parse', '--git-path', 'hooks'], { cwd: root, env, timeout: 10_000 }) : { status: 1 }
+  if (found.status !== 0) return []
+  const dir = path.resolve(root, found.stdout.trim())
+  if (!existsSync(dir)) return []
+
+  return readdirSync(dir).filter(name => !name.endsWith('.sample') && statSync(path.join(dir, name)).isFile()).sort()
 }
 
 const ttyAsk = () =>
@@ -189,10 +199,13 @@ const installLint = async ({ root, home, stamp, dryRun, prefix, activarHook, ask
   const git = which('git')
   const current = git ? run(git, ['config', '--get', 'core.hooksPath'], { cwd: root, env, timeout: 10_000 }) : { status: 1, stdout: '' }
   const value = current.status === 0 ? current.stdout.trim() : ''
+  const ownHooks = value === '' ? activeGitHooks(git, root, env) : []
   if (value !== '') {
     console.log(value.replace(/^\.\//, '').replace(/[\\/]+$/, '') === HOOKS_DIR
       ? `core.hooksPath: ya apunta a ${HOOKS_DIR}`
       : `core.hooksPath: ya apunta a ${value}, no lo cambio; para usar el hook, llamá a ${LINT_HOOK} desde tus hooks`)
+  } else if (ownHooks.length > 0) {
+    console.log(`core.hooksPath: no lo cambio, el repo ya tiene hooks propios en .git/hooks (${ownHooks.join(', ')}); para usar el hook, llamá a ${LINT_HOOK} desde tu .git/hooks/pre-push`)
   } else if (!dryRun && !existsSync(full(LINT_HOOK))) {
     console.log(`core.hooksPath: no lo cambié, falta ${LINT_HOOK}`)
   } else if (dryRun && (activarHook || ask)) {

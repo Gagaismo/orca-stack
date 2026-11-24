@@ -147,7 +147,7 @@ También crea `orca.yaml` y `.worktreeinclude` si faltan; si ya existen, no los 
 
 Si una escritura falla (por ejemplo, un archivo `.github` en el camino), `init` sigue con las demás piezas, nombra la que no escribió con el error y sale con 1; otra corrida completa lo que falta sin duplicar nada. Una segunda corrida no cambia nada. `init` solo escribe los archivos: commitearlos y abrir el PR en cada repo es otro paso.
 
-`core.hooksPath`: si no está puesto, `init` pregunta en una terminal interactiva antes de correr `git config core.hooksPath .githooks`. Si decís que no, o la corrida no es interactiva y no pasaste `--activar-hook`, no lo cambia e imprime ese comando para activarlo a mano. Con `--activar-hook` lo pone sin preguntar. Si ya apunta a `.githooks` no hace nada; si apunta a otro lado nunca lo pisa, ni con `--activar-hook`: llamá a `.githooks/pre-push` desde tus hooks. Con `--dry-run` muestra qué escribiría y no escribe nada.
+`core.hooksPath`: si no está puesto, `init` pregunta en una terminal interactiva antes de correr `git config core.hooksPath .githooks`. Si decís que no, o la corrida no es interactiva y no pasaste `--activar-hook`, no lo cambia e imprime ese comando para activarlo a mano. Con `--activar-hook` lo pone sin preguntar. Si ya apunta a `.githooks` no hace nada; si apunta a otro lado nunca lo pisa, ni con `--activar-hook`: llamá a `.githooks/pre-push` desde tus hooks. Si `.git/hooks` ya tiene hooks propios (cualquier archivo que no sea `*.sample`, por ejemplo de husky v4 o pre-commit), tampoco lo cambia ni pregunta, ni con `--activar-hook`, porque esos hooks dejarían de correr: llamá a `.githooks/pre-push` desde tu `.git/hooks/pre-push`. Con `--dry-run` muestra qué escribiría y no escribe nada.
 
 #### `doctor`
 

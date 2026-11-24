@@ -105,7 +105,7 @@ describe('init installs the lint (#424)', () => {
   })
 
   test('R2: a repo whose own workflow already runs the lint in a job of another name keeps it byte for byte and gets no second workflow', () => {
-    for (const command of ['node bin/orca-stack.mjs lint', 'npx orca-stack lint']) {
+    for (const command of ['node bin/orca-stack.mjs lint', 'npx orca-stack lint', 'npx -y orca-stack@0.21.0 lint']) {
       const own = `name: CI\r\non: [push]\r\njobs:\r\n  lint:\r\n    name: orca-stack lint\r\n    runs-on: ubuntu-latest\r\n    steps:\r\n      - uses: actions/checkout@v4\r\n      - name: Lint against the Baseline\r\n        run: ${command}\r\n`
       write(file('.github/workflows/ci.yml'), own)
       const result = run()
@@ -203,6 +203,25 @@ describe('init installs the lint (#424)', () => {
     assert.match(result.out, /^core\.hooksPath: ya apunta a \.husky, no lo cambio; para usar el hook, llamá a \.githooks\/pre-push desde tus hooks$/m)
   })
 
+  test('R4: active hooks in .git/hooks keep core.hooksPath unset, even with --activar-hook or interactive, and init says how to call the hook', async t => {
+    const hooksDir = path.join(repo, '.git', 'hooks')
+    write(path.join(hooksDir, 'pre-commit'), '#!/bin/sh\necho propio\n')
+    const before = snapshot(hooksDir)
+    const expected = /^core\.hooksPath: no lo cambio, el repo ya tiene hooks propios en \.git\/hooks \(pre-commit\); para usar el hook, llamá a \.githooks\/pre-push desde tu \.git\/hooks\/pre-push$/m
+    const flagged = run('--activar-hook')
+    assert.equal(flagged.status, 0, flagged.out)
+    assert.match(flagged.out, expected)
+    assert.equal(hooksPath().status, 1, 'core.hooksPath stays unset')
+    assert.deepEqual(snapshot(hooksDir), before)
+
+    const asked = await initWith(t, 's')
+    assert.equal(asked.status, 0, asked.out)
+    assert.deepEqual(asked.asked, [])
+    assert.match(asked.out, expected)
+    assert.equal(hooksPath().status, 1)
+    assert.deepEqual(snapshot(hooksDir), before)
+  })
+
   test('R4: interactive, init asks before setting core.hooksPath; yes sets it', async t => {
     const result = await initWith(t, 's')
     assert.equal(result.status, 0, result.out)
@@ -269,12 +288,12 @@ describe('init installs the lint (#424)', () => {
     const help = cli(home, ['init', '--help'])
     assert.equal(help.status, 0)
     assert.match(help.stdout, /^orca-stack init \[--dry-run\] \[--activar-hook\]/)
-    for (const piece of ['lint', WORKFLOW, HOOK, 'CODING_STANDARDS.md', BASELINE, 'core.hooksPath', 'orca-stack-lint']) assert.ok(help.stdout.includes(piece), piece)
+    for (const piece of ['lint', WORKFLOW, HOOK, 'CODING_STANDARDS.md', BASELINE, 'core.hooksPath', 'orca-stack-lint', '.git/hooks']) assert.ok(help.stdout.includes(piece), piece)
     assert.match(help.stdout, /solo si falta/)
     assert.match(cli(home, ['--help']).stdout, /--activar-hook +\(init\)/)
     const manual = read(path.join(ROOT, 'docs', 'manual.md'))
     const initSection = manual.split('#### `init`')[1].split('\n#### ')[0]
-    for (const piece of ['`lint`', `\`${WORKFLOW}\``, `\`${HOOK}\``, '`CODING_STANDARDS.md`', `\`${BASELINE}\``, '`--activar-hook`', '`core.hooksPath`', HOW_TO_ENABLE]) assert.ok(initSection.includes(piece), piece)
+    for (const piece of ['`lint`', `\`${WORKFLOW}\``, `\`${HOOK}\``, '`CODING_STANDARDS.md`', `\`${BASELINE}\``, '`--activar-hook`', '`core.hooksPath`', HOW_TO_ENABLE, '`.git/hooks`']) assert.ok(initSection.includes(piece), piece)
     assert.match(manual.split('## 7. Qué hay solo en `main`')[1], /\(#424\)/)
   })
 
