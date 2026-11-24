@@ -378,6 +378,59 @@ describe('orca-stack lint comment rules (#419)', () => {
     })
   })
 
+  test('S7: in diff mode an old baselined comment keeps its entry, so a new comment with the same text on an added line is reported', () => {
+    withRepo(({ repo, add, commit, lint }) => {
+      add('old.mjs', 'export function old() {\n  // FIXME\n  return 1\n}\n')
+      const seed = lint(['--sembrar'])
+      assert.equal(seed.status, 0, seed.out)
+      git(repo, 'add', '--', BASELINE)
+      commit('base')
+      git(repo, 'branch', '-M', 'main')
+      git(repo, 'checkout', '-q', '-b', 'feature')
+      add('.orca-stack.json', JSON.stringify({ ramaBase: 'main', lint: { comentarios: { alcance: 'diff' } } }))
+      add('new.mjs', 'export function fresh() {\n  // FIXME\n  return 1\n}\n')
+      commit('feature')
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, `comment-excuse new.mjs:fresh() ${EXCUSE}\n${SUMMARY(1, 0)}`)
+    })
+  })
+
+  test('S7: in diff mode added lines are found in files whose names have a space or non-ASCII characters', () => {
+    withRepo(({ repo, add, commit, lint }) => {
+      add('src/a.mjs', 'export const a = 1\n')
+      commit('base')
+      git(repo, 'branch', '-M', 'main')
+      git(repo, 'checkout', '-q', '-b', 'feature')
+      add('.orca-stack.json', JSON.stringify({ ramaBase: 'main', lint: { comentarios: { alcance: 'diff' } } }))
+      add('with space.mjs', 'export function spaced() {\n  // TODO: hack for now\n  return 1\n}\n')
+      add('dir ñ/año.mjs', 'export function year() {\n  // FIXME\n  return 1\n}\n')
+      commit('feature')
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, [
+        `comment-excuse dir ñ/año.mjs:year() ${EXCUSE}`,
+        `comment-excuse with space.mjs:spaced() ${EXCUSE}`,
+        '',
+      ].join('\n') + SUMMARY(2, 0))
+    })
+  })
+
+  test('S7: in diff mode added lines are found in a file whose name git C-quotes', { skip: process.platform === 'win32' && 'Windows forbids " and \\ in file names' }, () => {
+    withRepo(({ repo, add, commit, lint }) => {
+      add('src/a.mjs', 'export const a = 1\n')
+      commit('base')
+      git(repo, 'branch', '-M', 'main')
+      git(repo, 'checkout', '-q', '-b', 'feature')
+      add('.orca-stack.json', JSON.stringify({ ramaBase: 'main', lint: { comentarios: { alcance: 'diff' } } }))
+      add('say "hi" \\ año.mjs', 'export function quoted() {\n  // FIXME\n  return 1\n}\n')
+      commit('feature')
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, `comment-excuse say "hi" \\ año.mjs:quoted() ${EXCUSE}\n${SUMMARY(1, 0)}`)
+    })
+  })
+
   test('S7: an invalid lint.comentarios.alcance fails naming the key', () => {
     withRepo(({ put, add, lint }) => {
       add('src/a.mjs', 'export const a = 1\n')

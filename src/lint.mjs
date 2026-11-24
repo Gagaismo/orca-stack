@@ -136,6 +136,32 @@ const mergeBase = (root, base) => {
   return found.trim()
 }
 
+const C_ESCAPES = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
+
+// #419: git ends a path with a space with a TAB and C-quotes unusual names (octal escapes are UTF-8 bytes).
+const diffPath = raw => {
+  const text = raw.replace(/\r$/, '').replace(/\t$/, '')
+  if (!text.startsWith('"')) return text.startsWith('b/') ? text.slice(2) : undefined
+  const bytes = []
+  for (let i = 1; i < text.length - 1; i++) {
+    const char = text[i]
+    if (char !== '\\') {
+      bytes.push(...Buffer.from(char, 'utf8'))
+      continue
+    }
+    const octal = /^[0-7]{3}/.exec(text.slice(i + 1))
+    if (octal) {
+      bytes.push(parseInt(octal[0], 8))
+      i += 3
+    } else {
+      bytes.push(C_ESCAPES[text[i + 1]] ?? text.charCodeAt(i + 1))
+      i++
+    }
+  }
+  const unquoted = Buffer.from(bytes).toString('utf8')
+  return unquoted.startsWith('b/') ? unquoted.slice(2) : undefined
+}
+
 const addedLines = (root, base) => {
   const commit = mergeBase(root, base)
   const out = gitOut(root, ['-c', 'core.quotePath=false', 'diff', '--no-color', '--no-ext-diff', '-M', '-U0', '--src-prefix=a/', '--dst-prefix=b/', commit, '--'])
@@ -149,8 +175,9 @@ const addedLines = (root, base) => {
       continue
     }
     if (line.startsWith('+++ ')) {
-      lines = line.startsWith('+++ b/') ? new Set() : undefined
-      if (lines) added.set(line.slice(6).replace(/\r$/, ''), lines)
+      const file = diffPath(line.slice(4))
+      lines = file === undefined ? undefined : new Set()
+      if (lines) added.set(file, lines)
       continue
     }
     const hunk = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line)
@@ -183,10 +210,12 @@ export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir()
   const added = diff ? addedLines(root, config.ramaBase) : undefined
   const files = checkedFiles(root)
   const comments = commentViolations(root, files)
-  const violations = [...longFiles(root, files), ...(diff ? comments.filter(onAddedLine(added)) : comments)]
+  const violations = [...longFiles(root, files), ...comments]
+  // #419: diff mode matches every violation, so old ones keep their entries, and then reports only comments on added lines.
+  const inScope = diff ? (violation => !isCommentRule(violation.rule) || onAddedLine(added)(violation)) : () => true
 
   if (flags.sembrar) {
-    const { unmatched } = match(violations, entries)
+    const unmatched = match(violations, entries).unmatched.filter(inScope)
     if (unmatched.length === 0 && existsSync(path.join(root, BASELINE_FILE))) {
       console.log(`Baseline: sin cambios (${BASELINE_FILE})`)
     } else {
@@ -197,7 +226,8 @@ export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir()
     }
   }
 
-  const { unmatched, stale: expired } = match(violations, entries)
+  const { unmatched: found, stale: expired } = match(violations, entries)
+  const unmatched = found.filter(inScope)
   const stale = diff ? expired.filter(entry => !isCommentRule(entry.rule)) : expired
   if (unmatched.length === 0 && stale.length === 0) {
     console.log(`lint OK: ninguna violación nueva ni entrada vencida (${entries.length} en la Baseline)`)
