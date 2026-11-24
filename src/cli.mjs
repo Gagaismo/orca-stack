@@ -8,6 +8,7 @@ import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
 import { limpiarCommand } from './limpiar.mjs'
 import { lintCommand } from './lint.mjs'
+import { novedadesCommand } from './novedades.mjs'
 import { removeCommand } from './remove.mjs'
 import { reanudarCommand } from './reanudar.mjs'
 import { sesionesCommand } from './sesiones.mjs'
@@ -38,7 +39,8 @@ Comandos:
   planificar Abre la sesión de planificación de un issue paraguas: worktree de Orca en docs/<slug> y pi con el brief de planificación.
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
   limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
-  lint      Revisa el repo (long-file y los comentarios de JS/TS) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
+  novedades Precheck de una automatización de Orca que sondea GitHub: sale con 1 (Orca saltea la corrida) si no hay nada nuevo.
+  lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y los comentarios de JS/TS) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
   --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
@@ -312,10 +314,14 @@ Con --dry-run muestra el plan y el brief y no crea nada.
 `,
   lint: `orca-stack lint [--sembrar]
 
-Dentro de un repo git, revisa cada archivo trackeado (nunca los sin trackear ni los ignorados por .gitignore) con la regla
+Dentro de un repo git, revisa cada archivo trackeado (nunca los sin trackear ni los ignorados por .gitignore) con dos reglas:
 long-file: un archivo de más de 2000 líneas es una violación (cuentan las líneas en blanco, los comentarios y los tests;
-exactamente 2000 pasa). Cada violación nueva sale en una línea con la regla, el archivo, la ubicación y qué hacer:
+exactamente 2000 pasa).
+wide-directory: un directorio con más de 15 entradas es una violación (exactamente 15 pasa). Cuentan sus archivos trackeados
+y sus subdirectorios con algún archivo trackeado; node_modules/ nunca cuenta. La raíz del repo es ./.
+Cada violación nueva sale en una línea con la regla, el archivo o directorio, la cantidad y qué hacer:
   long-file test/foo.mjs: 2345 líneas (máximo 2000) — dividí el archivo
+  wide-directory src/: 37 entradas (máximo 15) — agrupá los archivos relacionados en subdirectorios
 
 En los archivos .js, .mjs, .cjs, .jsx, .ts, .tsx, .mts y .cts aplica la regla de los comentarios de CODING_STANDARDS.md:
   comment-excuse     TODO, FIXME, HACK o XXX (en mayúsculas), o hack, workaround, temporary (salvo "temporary file",
@@ -337,13 +343,14 @@ lint.comentarios.alcance, en la configuración (.orca-stack.json, .orca-stack.lo
   "repo" (por defecto)  revisa los comentarios de todo el repo contra la Baseline
   "diff"                solo marca los comentarios que tocan una línea que el cambio agrega respecto del merge-base
                         de HEAD con ramaBase (o origin/<ramaBase>), con los cambios sin commitear incluidos; las
-                        entradas de comentarios de la Baseline no se evalúan, y long-file sigue igual
+                        entradas de comentarios de la Baseline no se evalúan, y long-file y wide-directory siguen igual
 Un valor distinto, o un ramaBase que falta, no se encuentra o no tiene merge-base con HEAD, falla con 1.
 
 La Baseline es .orca-stack-baseline.json, en la raíz del repo y commiteada: la lista de violaciones que ya existían,
 {"version":1,"entries":[{"rule","file","location","fingerprint"}]}, sin números de línea. Una violación coincide con
 una entrada de su regla por archivo o, si el archivo se movió sin cambios, por fingerprint (el de long-file sale del
-contenido entero); cada entrada cubre una sola violación, así que una copia en otro archivo es nueva. Una entrada de
+contenido entero); cada entrada cubre una sola violación, así que una copia en otro archivo es nueva. La de wide-directory es
+la ruta del directorio: renombrarlo da una violación nueva y una entrada vencida. Una entrada de
 comentario guarda el símbolo como location y el fingerprint del texto del comentario: coincide por archivo, símbolo y
 fingerprint, y si la función se movió a otro archivo o se renombró, por fingerprint.
 lint no acepta --dry-run.
@@ -357,6 +364,18 @@ al prender el lint. Una segunda corrida no cambia nada y nunca saca entradas.
 
 La CI corre el lint y es el chequeo que cuenta. El hook .githooks/pre-push lo corre antes de cada push como aviso
 temprano: se activa por clon con \`git config core.hooksPath .githooks\` y \`git push --no-verify\` lo saltea sin cambiar la CI.
+`,
+  novedades: `orca-stack novedades [<nombre>]
+
+El precheck de una automatización de Orca que sondea GitHub cada pocos minutos:
+  orca automations create ... --precheck "orca-stack novedades"
+Dentro del clon, hace una sola llamada a gh (gh api graphql: el issue y el PR actualizados más recientes, y el head
+y el estado de CI de cada PR abierto) y la compara con la de su última corrida, guardada en
+<git-common-dir>/orca-stack/novedades.json. Sale con 1 si no cambió nada (Orca registra la corrida como skipped_precheck,
+sin correr el agente) y con 0 si hay novedades o es la primera corrida. Si no puede saberlo (gh sin red o sin login, fuera
+de un repo git, gh colgado más de 20 s, un argumento o una opción de más), sale con 0 y lo dice en stderr: el agente corre
+y lo informa, en vez de saltearse para siempre.
+<nombre> separa la última corrida de cada automatización que sondea el mismo clon (por defecto, "default").
 `,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
@@ -462,7 +481,8 @@ export const main = async (argv, io) => {
   } catch (error) {
     console.error(`${error.message}\n\nUsá --help para ver las opciones.`)
 
-    return 2
+    // A precheck that exits non-zero makes Orca skip the run: a typo in novedades must let the agent run and report it.
+    return argv[0] === 'novedades' ? 0 : 2
   }
   const { command, flags, rest } = parsed
   if (flags.version) {
@@ -516,6 +536,8 @@ export const main = async (argv, io) => {
         return await limpiarCommand(flags, io)
       case 'lint':
         return await lintCommand(flags)
+      case 'novedades':
+        return await novedadesCommand(flags, rest.slice(1))
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 
