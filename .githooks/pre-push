@@ -1,0 +1,3 @@
+#!/bin/sh
+# Early warning only (#417): CI's lint job is the gate, and git push --no-verify skips this hook.
+exec node "$(dirname "$0")/../bin/orca-stack.mjs" lint

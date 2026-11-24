@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "rule": "long-file",
+      "file": "test/despacho.test.mjs",
+      "location": "file",
+      "fingerprint": "sha256:c7074430480cd04b"
+    }
+  ]
+}
