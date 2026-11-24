@@ -28,7 +28,6 @@ describe('pinned ast-grep wrapper (#419)', () => {
 
   test('S9: a checksum mismatch fails naming 0.51.3 and never runs the binary', () => {
     withDir(dir => {
-      // A real executable (node) under the override path: if the wrapper ran it unverified, it would write the marker.
       const fake = path.join(dir, path.basename(pinned?.binary ?? 'ast-grep'))
       try {
         linkSync(process.execPath, fake)

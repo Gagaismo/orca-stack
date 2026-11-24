@@ -2,6 +2,12 @@
   "version": 1,
   "entries": [
     {
+      "rule": "comment-excuse",
+      "file": "src/estado.mjs",
+      "location": "globToRegExp()",
+      "fingerprint": "sha256:8da6ae7f868bbadb"
+    },
+    {
       "rule": "long-file",
       "file": "test/despacho.test.mjs",
       "location": "file",
