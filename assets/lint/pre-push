@@ -1,0 +1,6 @@
+#!/bin/sh
+# Early warning only (#424): the orca-stack-lint CI job is the gate, and git push --no-verify skips this hook.
+if command -v orca-stack >/dev/null 2>&1; then
+  exec orca-stack lint
+fi
+exec {{LINT_COMMAND}}

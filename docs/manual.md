@@ -89,7 +89,7 @@ Reglas que sostienen todo lo demás:
 | Comando | Para qué | Dónde se corre |
 | --- | --- | --- |
 | `global` | Instalación a nivel usuario, idempotente, con respaldo | Cualquier carpeta |
-| `init` | Cablea el proyecto actual (`AGENTS.md`, `CLAUDE.md`, `.orca-stack*.json`) | Dentro de un repo git |
+| `init` | Cablea el proyecto actual (`AGENTS.md`, `CLAUDE.md`, `.orca-stack*.json`) e instala el lint | Dentro de un repo git |
 | `doctor` | Verifica la instalación con sondeos reales | Idealmente la raíz del proyecto |
 | `remove` | Deshace lo que instaló `global` | Cualquier carpeta |
 | `despachar` | Despacha un ticket a un agente | Checkout principal (sesión de `main`) |
@@ -136,6 +136,18 @@ También crea `orca.yaml` y `.worktreeinclude` si faltan; si ya existen, no los 
 
 - `orca.yaml`: Orca corre `scripts.setup` en cada worktree nuevo apenas lo crea. Con `package-lock.json` el setup es `npm install`; si `init` no detecta un paso de instalación, no escribe script de setup. No prende `worktree.sharedDirectories` (un `node_modules` compartido por symlink): un worker que cambia dependencias se las cambiaría a los demás. Orca lee `orca.yaml` de la rama de la que parte el worktree, así que rige recién después de mergearlo. Si en Settings → Repository ya tenías el setup como comando local, poné Command source & orca.yaml en `orca.yaml only`: con `Run both`, el `npm install` corre dos veces.
 - `.worktreeinclude`: los archivos locales ignorados por git que Orca copia a cada worktree nuevo, en rutas literales (Orca saltea los globs y las negaciones con un aviso). Lista `.orca-stack.local.json`; nunca pongas secretos ahí. Una ruta que no existe en una máquina simplemente no se copia.
+
+**`[solo en main]`** `init` también instala [`orca-stack lint`](#lint) en el repo que cablea, con cinco piezas. Escribe cada una solo si falta, nunca pisa lo que el repo ya tiene y dice, por pieza, si la escribió o la salteó y por qué:
+
+- La clave `lint` en `.orca-stack.json`: `{"enabled": true, "comentarios": {"alcance": "repo"}}`, el lint prendido con la regla de los comentarios sobre todo el repo. Si ya hay una clave `lint`, aunque sea `{"enabled": false}`, no se toca. Agregarla no cambia el resto del archivo y deja un respaldo. Con `lint.enabled` en `false`, `orca-stack lint` imprime una línea que dice que está apagado y en qué archivo, sale con 0 y no escribe nada (tampoco con `--sembrar`).
+- `.github/workflows/orca-stack-lint.yml`, un workflow nuevo con un job `orca-stack-lint` que corre `npx --yes github:Gagaismo/orca-stack#v<versión> lint`. No se crea si el archivo ya existe o si otro workflow de `.github/workflows/` ya tiene un job `orca-stack-lint`; `init` nunca edita tus workflows.
+- `.githooks/pre-push`, el aviso temprano: corre `orca-stack lint` (o el mismo `npx`) antes de cada push.
+- `CODING_STANDARDS.md`, con la tabla de la regla de los comentarios igual a la de orca-stack. Si el archivo ya existe no se toca; si no tiene la tabla, `init` avisa que le falta la regla.
+- `.orca-stack-baseline.json`, sembrada con las violaciones actuales de los archivos trackeados más los que escribió `init` (y la Baseline misma), así que el job queda en verde después de commitear lo que escribió `init`. Con `lint.enabled` en `false` no se crea.
+
+Si una escritura falla (por ejemplo, un archivo `.github` en el camino), `init` sigue con las demás piezas, nombra la que no escribió con el error y sale con 1; otra corrida completa lo que falta sin duplicar nada. Una segunda corrida no cambia nada. `init` solo escribe los archivos: commitearlos y abrir el PR en cada repo es otro paso.
+
+`core.hooksPath`: si no está puesto, `init` pregunta en una terminal interactiva antes de correr `git config core.hooksPath .githooks`. Si decís que no, o la corrida no es interactiva y no pasaste `--activar-hook`, no lo cambia e imprime ese comando para activarlo a mano. Con `--activar-hook` lo pone sin preguntar. Si ya apunta a `.githooks` no hace nada; si apunta a otro lado nunca lo pisa, ni con `--activar-hook`: llamá a `.githooks/pre-push` desde tus hooks. Con `--dry-run` muestra qué escribiría y no escribe nada.
 
 #### `doctor`
 
@@ -340,6 +352,8 @@ El alcance de las reglas de comentarios sale de `lint.comentarios.alcance` en la
 ```
 
 Con `"repo"` (por defecto) revisa los comentarios de todo el repo contra la Baseline. Con `"diff"` solo marca los comentarios que tocan una línea que el cambio agrega respecto del merge-base de `HEAD` con `ramaBase` (o `origin/<ramaBase>` si la rama local no está), con los cambios sin commitear de archivos trackeados incluidos: una violación que ya existía en una línea sin cambios no sale, y las entradas de comentarios de la Baseline no se evalúan (ninguna sale vencida). `long-file`, `wide-directory` y `module-cycle` funcionan igual en los dos modos. Un valor distinto de `"repo"` o `"diff"`, o un `ramaBase` que falta, no se encuentra o no tiene merge-base con `HEAD` (por ejemplo en un clon shallow), falla con 1 y un mensaje que nombra la clave o la rama.
+
+Con `lint.enabled` en `false` el lint está apagado: imprime una línea que dice que está apagado y en qué archivo de la configuración, sale con 0 y no escribe nada, tampoco con `--sembrar`. Sin la clave, o con `true`, revisa como siempre; otro valor falla con 1 nombrando la clave.
 
 La **Baseline** es `.orca-stack-baseline.json`, en la raíz del repo y commiteada: la lista de las violaciones que ya existían, con un mismo formato para todas las reglas (`{"version":1,"entries":[{"rule","file","location","fingerprint"}]}`) y sin números de línea. Una violación coincide con una entrada de su regla por archivo o, si el archivo se movió sin cambios, por su fingerprint (el de `long-file` sale del contenido entero del archivo, así que dos archivos que solo comparten el encabezado no se confunden; un archivo que se movió y cambió cuenta como violación nueva y entrada vencida). La entrada de `wide-directory` es la regla y la ruta del directorio (`"location":"directory"`, y su fingerprint sale de la ruta): sale de la Baseline solo cuando el directorio baja a 15 entradas o menos, y renombrar un directorio ancho da una violación nueva con la ruta nueva y una entrada vencida con la vieja. Cada entrada cubre una sola violación: una copia en otro archivo es una violación nueva. Una entrada de comentario guarda como `location` el símbolo que lo contiene y como `fingerprint` el del texto del comentario: dos comentarios de una misma función son dos entradas, mover la función dentro del archivo o a otro sigue coincidiendo, y borrar el comentario deja su entrada vencida. La entrada de `module-cycle` es el conjunto de sus módulos, no números de línea: `{"rule":"module-cycle","file":"src/a.mjs","location":"cycle","fingerprint":"sha256:…","members":["src/a.mjs","src/b.mjs"]}`, con `file` el primero de `"members"` y el fingerprint sacado de esas rutas ordenadas. Un ciclo coincide con toda entrada que tenga a todos sus módulos: si se achica (menos módulos, todos de la entrada) sigue pasando, y un ciclo con un módulo que no está en ninguna entrada es nuevo. La entrada vence solo cuando ningún ciclo actual contiene dos o más de sus módulos (o uno que se importa a sí mismo), aunque el ciclo pase por módulos que no están en la entrada: cortar un import mientras otro camino los sigue uniendo en un ciclo la mantiene, y en ese caso el ciclo con el módulo nuevo sale como violación nueva sin que la entrada venza. Una entrada de `module-cycle` sin `"members"` como lista de rutas es una Baseline mal formada. Una entrada cuya violación ya no está en ningún archivo del repo está **vencida**: el lint falla, la nombra y pide sacarla a mano, porque una corrida normal nunca reescribe la Baseline. Sin Baseline, toda violación es nueva; una Baseline mal formada falla nombrando el archivo y no se toca.
 
@@ -722,6 +736,7 @@ Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag 
 - Las reglas de comentarios de `orca-stack lint` para JS/TS (`comment-excuse`, `comment-tautology`, `comment-stale`), ast-grep 0.51.3 fijado y `lint.comentarios.alcance` (#419).
 - La regla `wide-directory` de `orca-stack lint` (#418).
 - La regla `module-cycle` de `orca-stack lint` para JS/TS, con la entrada de Baseline por conjunto de módulos (#420).
+- `orca-stack init` instala el lint en el repo que cablea: la clave `lint`, el workflow `orca-stack-lint`, el hook `.githooks/pre-push`, la Baseline sembrada y `CODING_STANDARDS.md`, cada pieza solo si falta; `--activar-hook` y la pregunta de `core.hooksPath`; `lint.enabled` (#424).
 - `orca-stack novedades`, el precheck de las automatizaciones de sondeo, y los Quick Commands del stack en el [checklist personal de Orca](orca-personal.md) (#433).
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.

@@ -41,7 +41,7 @@ describe('init', () => {
     }
     assert.match(read(path.join(repo, 'CLAUDE.md')), /AGENTS\.md/)
     assert.ok(read(path.join(repo, 'CLAUDE.md')).split('\n').length < 15, 'CLAUDE.md keeps the short block')
-    assert.deepEqual(JSON.parse(read(path.join(repo, '.orca-stack.json'))), { version: 1 })
+    assert.deepEqual(JSON.parse(read(path.join(repo, '.orca-stack.json'))), { version: 1, lint: { enabled: true, comentarios: { alcance: 'repo' } } })
     // Empty: any list here would replace the committed and personal ones (lists are not merged).
     assert.deepEqual(JSON.parse(read(path.join(repo, '.orca-stack.local.json'))), {})
     assert.ok(read(path.join(repo, '.gitignore')).split(/\r?\n/).includes('.orca-stack.local.json'))
@@ -123,7 +123,7 @@ describe('init', () => {
 
   test('is idempotent and never overwrites an existing config', () => {
     run()
-    write(path.join(repo, '.orca-stack.json'), '{"despacho":{"script":"scripts/x.sh"}}\n')
+    write(path.join(repo, '.orca-stack.json'), '{"despacho":{"script":"scripts/x.sh"},"lint":{"enabled":true}}\n')
     const before = snapshot(repo)
     const second = run()
     assert.equal(second.status, 0, second.out)

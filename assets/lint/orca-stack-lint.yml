@@ -1,0 +1,22 @@
+# Written by orca-stack init (#424): the CI gate of orca-stack lint. The .githooks/pre-push hook is only an early warning.
+name: orca-stack lint
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  orca-stack-lint:
+    name: orca-stack lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: orca-stack lint contra la Baseline
+        run: {{LINT_COMMAND}}

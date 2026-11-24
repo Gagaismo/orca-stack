@@ -3,10 +3,11 @@ import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { loadConfig } from './despacho.mjs'
 import { COMMENT_EXTENSIONS, commentViolations, isCommentRule, reportComment } from './lint-comments.mjs'
 import { cycleEntry, isCycleEntry, matchCycles, moduleCycles, reportCycle, validCycleEntry } from './lint-cycles.mjs'
-import { homeDir } from './util.mjs'
+import { homeDir, layout } from './util.mjs'
 
 export const BASELINE_FILE = '.orca-stack-baseline.json'
 const MAX_LINES = 2000
@@ -154,6 +155,31 @@ const alcanceOf = config => {
   throw new Error(`${ALCANCE_KEY} tiene que ser "repo" o "diff", no ${JSON.stringify(value)} (en .orca-stack.json, .orca-stack.local.json o ~/.orca-stack/config.json).`)
 }
 
+const LAYERS = '(en .orca-stack.json, .orca-stack.local.json o ~/.orca-stack/config.json)'
+
+const lintEnabled = config => {
+  const value = config.lint?.enabled
+  if (value === undefined || typeof value === 'boolean') return value !== false
+  throw new Error(`lint.enabled tiene que ser true o false, no ${JSON.stringify(value)} ${LAYERS}.`)
+}
+
+const layerJson = file => {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8').replace(/^﻿/, ''))
+  } catch {
+    return undefined
+  }
+}
+
+// #424: loadConfig merges the layers in this order, so the last one that sets lint.enabled is where it is set.
+const enabledSource = (home, root) => [
+  [layout(home).config, '~/.orca-stack/config.json'],
+  [path.join(root, PROJECT_CONFIG), PROJECT_CONFIG],
+  [path.join(root, PROJECT_LOCAL_CONFIG), PROJECT_LOCAL_CONFIG],
+].filter(([file]) => layerJson(file)?.lint?.enabled !== undefined).at(-1)?.[1]
+
+export const lintOff = (home, root) => `lint apagado: lint.enabled es false en ${enabledSource(home, root)}; no se revisó nada.`
+
 const mergeBase = (root, base) => {
   if (typeof base !== 'string' || base === '') throw new Error(`${ALCANCE_KEY} "diff" necesita ramaBase en la configuración del repo.`)
   const ref = [base, `origin/${base}`].find(candidate => gitOut(root, ['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`]) !== undefined)
@@ -228,14 +254,9 @@ const byKey = (a, b) => a.rule.localeCompare(b.rule) || a.file.localeCompare(b.f
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
-export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir() } = {}) => {
-  if (flags.dryRun) throw new Error('lint no acepta --dry-run: sin --sembrar no escribe nada, y --sembrar existe para escribir la Baseline.')
-  const root = repoRoot(cwd)
-  let entries = readBaseline(root)
-  const config = loadConfig(home, root)
+const inspect = (root, config, files) => {
   const diff = alcanceOf(config) === 'diff'
   const added = diff ? addedLines(root, config.ramaBase) : undefined
-  const files = checkedFiles(root)
   const comments = commentViolations(root, files)
   const violations = [...longFiles(root, files), ...wideDirectories(files), ...comments]
   const scripts = files.filter(file => COMMENT_EXTENSIONS.has(path.extname(file).toLowerCase()) && readText(path.join(root, file)) !== undefined)
@@ -245,26 +266,55 @@ export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir()
   // #419: out-of-scope violations match first, so a new identical comment never takes an old one's entry; the report keeps violation order.
   const ordered = [...violations.filter(violation => !inScope(violation)), ...violations.filter(inScope)]
   // #420: module-cycle entries match by member set, apart from the one-to-one match of the other rules.
-  const matchInScope = () => {
+  const matchInScope = entries => {
     const { unmatched, stale } = match(ordered, entries.filter(entry => !isCycleEntry(entry)))
     const left = new Set(unmatched)
     const cycleMatch = matchCycles(cycles, entries.filter(isCycleEntry))
     return { unmatched: violations.filter(violation => left.has(violation) && inScope(violation)), stale, cycles: cycleMatch.unmatched, staleCycles: cycleMatch.stale }
   }
+  return { diff, matchInScope }
+}
+
+const sembrar = (root, entries, matchInScope) => {
+  const { unmatched, cycles: newCycles } = matchInScope(entries)
+  if (unmatched.length === 0 && newCycles.length === 0 && existsSync(path.join(root, BASELINE_FILE))) return { entries, added: undefined }
+  const added = [...unmatched.map(({ rule, file, location, fingerprint: print }) => ({ rule, file, location, fingerprint: print })), ...newCycles.map(cycleEntry)]
+  const next = [...entries, ...added].sort(byKey)
+  writeFileSync(path.join(root, BASELINE_FILE), `${JSON.stringify({ version: 1, entries: next }, null, 2)}\n`)
+  return { entries: next, added: added.length }
+}
+
+// #424: init seeds the Baseline of a repo it wires over the tracked files plus the ones it wrote and the Baseline
+// itself, so the lint passes once the human commits init's output.
+export const seedBaseline = (cwd, { home = homeDir(), extraFiles = [] } = {}) => {
+  const root = repoRoot(cwd)
+  const config = loadConfig(home, root)
+  if (!lintEnabled(config)) return { disabled: true }
+  const candidates = [...new Set([...extraFiles, BASELINE_FILE])]
+  const ignored = new Set(nulList(spawnSync('git', ['check-ignore', '--no-index', '-z', '--', ...candidates], { cwd: root, encoding: 'utf8' }).stdout ?? ''))
+  const files = [...new Set([...checkedFiles(root), ...candidates.filter(file => !ignored.has(file))])].sort()
+  const { matchInScope } = inspect(root, config, files)
+  return sembrar(root, readBaseline(root), matchInScope)
+}
+
+export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir() } = {}) => {
+  if (flags.dryRun) throw new Error('lint no acepta --dry-run: sin --sembrar no escribe nada, y --sembrar existe para escribir la Baseline.')
+  const root = repoRoot(cwd)
+  const config = loadConfig(home, root)
+  if (!lintEnabled(config)) {
+    console.log(lintOff(home, root))
+    return 0
+  }
+  let entries = readBaseline(root)
+  const { diff, matchInScope } = inspect(root, config, checkedFiles(root))
 
   if (flags.sembrar) {
-    const { unmatched, cycles: newCycles } = matchInScope()
-    if (unmatched.length === 0 && newCycles.length === 0 && existsSync(path.join(root, BASELINE_FILE))) {
-      console.log(`Baseline: sin cambios (${BASELINE_FILE})`)
-    } else {
-      const added = [...unmatched.map(({ rule, file, location, fingerprint: print }) => ({ rule, file, location, fingerprint: print })), ...newCycles.map(cycleEntry)]
-      entries = [...entries, ...added].sort(byKey)
-      writeFileSync(path.join(root, BASELINE_FILE), `${JSON.stringify({ version: 1, entries }, null, 2)}\n`)
-      console.log(`Baseline: ${plural(added.length, 'entrada nueva', 'entradas nuevas')} en ${BASELINE_FILE}`)
-    }
+    const seeded = sembrar(root, entries, matchInScope)
+    entries = seeded.entries
+    console.log(seeded.added === undefined ? `Baseline: sin cambios (${BASELINE_FILE})` : `Baseline: ${plural(seeded.added, 'entrada nueva', 'entradas nuevas')} en ${BASELINE_FILE}`)
   }
 
-  const { unmatched, stale: expired, cycles: newCycles, staleCycles } = matchInScope()
+  const { unmatched, stale: expired, cycles: newCycles, staleCycles } = matchInScope(entries)
   const stale = [...(diff ? expired.filter(entry => !isCommentRule(entry.rule)) : expired), ...staleCycles]
   if (unmatched.length === 0 && newCycles.length === 0 && stale.length === 0) {
     console.log(`lint OK: ninguna violación nueva ni entrada vencida (${entries.length} en la Baseline)`)

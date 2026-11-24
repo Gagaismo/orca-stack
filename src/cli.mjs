@@ -24,7 +24,7 @@ Uso:
 
 Comandos:
   global    Instalación a nivel usuario (idempotente). Hace respaldo de todo lo que modifica.
-  init      Cablea el proyecto actual (git): AGENTS.md, CLAUDE.md y los archivos .orca-stack*.json.
+  init      Cablea el proyecto actual (git): AGENTS.md, CLAUDE.md, los archivos .orca-stack*.json y el lint (CI, hook, Baseline y CODING_STANDARDS.md).
   doctor    Verifica la instalación con sondeos reales y sale con código 1 si hay fallas.
   remove    Deshace lo que instaló \`global\`, según ~/.orca-stack/state.json.
   despachar Despacha un ticket a un agente: worktree en Orca, brief y lanzamiento (desde el checkout principal).
@@ -66,6 +66,7 @@ Opciones:
   --json           (estado) Imprime un objeto JSON por PR (un arreglo si son varios) y sale con 0 solo si están listos.
   --terminal <handle> (reanudar) Reanuda el agente de esa terminal de Orca cuando el worktree tiene varios en done.
   --rutas <a,b>    (revisar) El review lee solo esas rutas y lo declara en ## Cobertura.
+  --activar-hook   (init) Apunta core.hooksPath a .githooks sin preguntar, salvo que ya apunte a otro lado.
   --sembrar        (lint) Agrega a la Baseline cada violación actual que no tenga entrada (se usa una vez, al prender el lint).
   -v, --version    Muestra la versión.
   -h, --help       Muestra esta ayuda (también \`orca-stack <comando> --help\`).
@@ -93,11 +94,29 @@ Instala a nivel usuario:
 Es idempotente: una segunda corrida no cambia nada ni genera respaldos nuevos.
 --limpiar-sdd respalda y mueve solo restos SDD conocidos a ~/.orca-stack/backups; sin la opci\u00f3n no mueve ninguno.
 `,
-  init: `orca-stack init [--dry-run]
+  init: `orca-stack init [--dry-run] [--activar-hook]
 
 Dentro de un repo git: agrega un bloque <!-- orca-stack:begin --> a AGENTS.md y CLAUDE.md (los crea si faltan),
 crea .orca-stack.json (reglas del proyecto, se commitea) y .orca-stack.local.json (local, ignorado) y
 agrega .orca-stack.local.json a .gitignore. No pisa archivos de config que ya existan.
+
+Instala el lint (\`orca-stack lint\`) con cinco piezas, cada una solo si falta:
+  1. la clave lint en .orca-stack.json: {"enabled": true, "comentarios": {"alcance": "repo"}}; si ya hay una clave lint,
+     aunque sea {"enabled": false}, no se toca. Agregarla no cambia el resto del archivo (con respaldo).
+  2. .github/workflows/orca-stack-lint.yml, con un job orca-stack-lint que corre el lint con npx; no se crea si el
+     archivo existe o si otro workflow de .github/workflows ya tiene un job orca-stack-lint. Nunca edita tus workflows.
+  3. .githooks/pre-push, el aviso temprano que corre el lint antes de cada push.
+  4. CODING_STANDARDS.md con la tabla de la regla de los comentarios; si ya existe no se toca, y si no tiene la tabla, avisa.
+  5. .orca-stack-baseline.json, sembrada con las violaciones actuales de los archivos trackeados más los que escribió
+     init, así que el job queda en verde después de commitear lo que escribió init. Con lint.enabled false no se crea.
+Dice, por pieza, si la escribió o la salteó y por qué. Si una escritura falla, sigue con las demás, nombra la que
+no escribió y sale con 1; otra corrida completa lo que falta sin duplicar nada. Una segunda corrida no cambia nada.
+
+core.hooksPath: si no está puesto, init pregunta (en una terminal interactiva) antes de correr
+\`git config core.hooksPath .githooks\`. Si decís que no, o la corrida no es interactiva y no pasaste --activar-hook,
+no lo cambia e imprime ese comando para activarlo a mano. Con --activar-hook lo pone sin preguntar. Si ya apunta a
+.githooks no hace nada; si apunta a otro lado nunca lo pisa, ni con --activar-hook: llamá a .githooks/pre-push desde tus hooks.
+Con --dry-run muestra qué escribiría y no escribe nada.
 `,
   doctor: `orca-stack doctor [--offline] [--skip-pi]
 
@@ -356,6 +375,9 @@ lint.comentarios.alcance, en la configuración (.orca-stack.json, .orca-stack.lo
                         entradas de comentarios de la Baseline no se evalúan, y long-file y wide-directory siguen igual
 Un valor distinto, o un ramaBase que falta, no se encuentra o no tiene merge-base con HEAD, falla con 1.
 
+lint.enabled: false apaga el lint: imprime una línea que dice que está apagado y en qué archivo, sale con 0 y no escribe
+nada (tampoco con --sembrar). Sin la clave, o con true, revisa como siempre; otro valor falla con 1.
+
 La Baseline es .orca-stack-baseline.json, en la raíz del repo y commiteada: la lista de violaciones que ya existían,
 {"version":1,"entries":[{"rule","file","location","fingerprint"}]}, sin números de línea. Una violación coincide con
 una entrada de su regla por archivo o, si el archivo se movió sin cambios, por fingerprint (el de long-file sale del
@@ -432,6 +454,7 @@ export const parseArgs = argv => {
     else if (arg === '--consultas') flags.consultas = true
     else if (arg === '--json') flags.json = true
     else if (arg === '--sembrar') flags.sembrar = true
+    else if (arg === '--activar-hook') flags.activarHook = true
     else if (arg === '--terminal' || arg === '--rutas') {
       flags[arg.slice(2)] = argv[i + 1] ?? ''
       i += 1
@@ -473,8 +496,8 @@ export const parseArgs = argv => {
     throw new Error('--humano necesita un nombre.')
   }
   // Options that belong to one command only: any other command keeps refusing them, as before they existed.
-  for (const [flag, owner] of [['json', 'estado'], ['terminal', 'reanudar'], ['rutas', 'revisar'], ['paraguas', 'vigilar'], ['sembrar', 'lint']]) {
-    if (flags[flag] !== undefined && rest[0] !== undefined && rest[0] !== owner) throw new Error(`Opción desconocida: --${flag}`)
+  for (const [flag, owner, name = flag] of [['json', 'estado'], ['terminal', 'reanudar'], ['rutas', 'revisar'], ['paraguas', 'vigilar'], ['sembrar', 'lint'], ['activarHook', 'init', 'activar-hook']]) {
+    if (flags[flag] !== undefined && rest[0] !== undefined && rest[0] !== owner) throw new Error(`Opción desconocida: --${name}`)
   }
   if (flags.terminal !== undefined && (flags.terminal.trim() === '' || flags.terminal.startsWith('--'))) {
     throw new Error('--terminal necesita el handle de una terminal de Orca (orca terminal list).')
