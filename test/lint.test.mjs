@@ -133,9 +133,13 @@ describe('orca-stack lint (#417)', () => {
       assert.equal(moved.stdout, OK(1))
 
       add('test/moved.test.mjs', lines(100, 'big'))
-      add('test/other.test.mjs', lines(2400, 'big'))
+      add('test/other.test.mjs', lines(2345, 'big'))
       const elsewhere = lint()
       assert.equal(elsewhere.status, 0, `the same fingerprint still violates in another file: ${elsewhere.out}`)
+
+      add('test/other.test.mjs', lines(2345, 'big').replace('const line51 = 51', 'const changed = 51'))
+      const sameHeader = lint()
+      assert.equal(sameHeader.status, 1, `a shared header with another body is a new violation: ${sameHeader.out}`)
 
       add('test/other.test.mjs', lines(2400, 'other'))
       const both = lint()
@@ -189,6 +193,13 @@ describe('orca-stack lint (#417)', () => {
       assert.equal(second.status, 0, second.out)
       assert.match(second.stdout, /^Baseline: sin cambios \(\.orca-stack-baseline\.json\)$/m)
       assert.equal(baseline(), seeded)
+
+      add('src/new.mjs', lines(2100, 'new'))
+      const dryRun = lint('--sembrar', '--dry-run')
+      assert.equal(dryRun.status, 1, dryRun.out)
+      assert.match(dryRun.out, /✖ lint no acepta --dry-run/)
+      assert.equal(baseline(), seeded)
+      git(repo, 'rm', '-q', '--cached', 'src/new.mjs')
 
       git(repo, 'mv', 'src/huge.mjs', 'src/renamed.mjs')
       const afterMove = lint('--sembrar')

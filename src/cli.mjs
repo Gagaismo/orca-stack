@@ -314,8 +314,9 @@ exactamente 2000 pasa). Cada violación nueva sale en una línea con la regla, e
 
 La Baseline es .orca-stack-baseline.json, en la raíz del repo y commiteada: la lista de violaciones que ya existían,
 {"version":1,"entries":[{"rule","file","location","fingerprint"}]}, sin números de línea. Una violación coincide con
-una entrada de su regla por archivo o, si el código se movió a otro archivo, por fingerprint (el de long-file sale de las
-primeras 20 líneas no vacías); cada entrada cubre una sola violación, así que una copia en otro archivo es nueva.
+una entrada de su regla por archivo o, si el archivo se movió sin cambios, por fingerprint (el de long-file sale del
+contenido entero); cada entrada cubre una sola violación, así que una copia en otro archivo es nueva.
+lint no acepta --dry-run.
 Una entrada cuya violación ya no está en ningún archivo del repo está vencida: el lint falla y pide sacarla a mano.
 Sin Baseline, todas las violaciones son nuevas; una Baseline mal formada falla nombrando el archivo y nunca se reescribe.
 Sale con 0 y una línea "lint OK" si toda violación tiene su entrada y ninguna está vencida; si no, con 1 y el reporte.

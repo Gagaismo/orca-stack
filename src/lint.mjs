@@ -5,7 +5,6 @@ import path from 'node:path'
 
 export const BASELINE_FILE = '.orca-stack-baseline.json'
 const MAX_LINES = 2000
-const FINGERPRINT_LINES = 20
 const ENTRY_KEYS = ['rule', 'file', 'location', 'fingerprint']
 
 const gitOut = (cwd, args) => {
@@ -23,9 +22,15 @@ const repoRoot = cwd => {
 const nulList = text => text.split('\0').filter(Boolean)
 
 // Tracked files minus the tracked ones that .gitignore now excludes: untracked and ignored files are never checked.
+const listFiles = (root, args) => {
+  const out = gitOut(root, ['ls-files', '-z', ...args])
+  if (out === undefined) throw new Error(`git ls-files falló en ${root}: el lint no puede saber qué archivos revisar.`)
+  return nulList(out)
+}
+
 const checkedFiles = root => {
-  const tracked = nulList(gitOut(root, ['ls-files', '-z']) ?? '')
-  const ignored = new Set(nulList(gitOut(root, ['ls-files', '-z', '--cached', '--ignored', '--exclude-standard']) ?? ''))
+  const tracked = listFiles(root, [])
+  const ignored = new Set(listFiles(root, ['--cached', '--ignored', '--exclude-standard']))
   return [...new Set(tracked)].filter(file => !ignored.has(file)).sort()
 }
 
@@ -48,9 +53,10 @@ const countLines = text => {
   return text.endsWith('\n') ? breaks : breaks + 1
 }
 
+// The whole file, so two files that share only a header (a license, the imports) never share a fingerprint.
 const fingerprint = text => {
-  const head = (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text).split(/\r?\n/).map(line => line.trimEnd()).filter(line => line !== '').slice(0, FINGERPRINT_LINES)
-  return `sha256:${createHash('sha256').update(head.join('\n')).digest('hex').slice(0, 16)}`
+  const normalized = (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text).replace(/\r\n/g, '\n')
+  return `sha256:${createHash('sha256').update(normalized).digest('hex').slice(0, 16)}`
 }
 
 const longFiles = (root, files) => {
@@ -110,6 +116,7 @@ const byKey = (a, b) => a.rule.localeCompare(b.rule) || a.file.localeCompare(b.f
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
 export const lintCommand = async (flags, { cwd = process.cwd() } = {}) => {
+  if (flags.dryRun) throw new Error('lint no acepta --dry-run: sin --sembrar no escribe nada, y --sembrar existe para escribir la Baseline.')
   const root = repoRoot(cwd)
   let entries = readBaseline(root)
   const violations = longFiles(root, checkedFiles(root))

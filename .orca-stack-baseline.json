@@ -5,7 +5,7 @@
       "rule": "long-file",
       "file": "test/despacho.test.mjs",
       "location": "file",
-      "fingerprint": "sha256:26ca0a10b2c27e59"
+      "fingerprint": "sha256:c7074430480cd04b"
     }
   ]
 }
