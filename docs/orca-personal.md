@@ -18,6 +18,10 @@ Los nombres de los menús salen de la referencia de Settings de Orca (<https://w
   - Dónde: Settings → Workspace Cleanup para las reglas globales, y en los ajustes de cada proyecto, Workspace cleanup → Cleanup rules.
   - Valor: reglas globales apagadas (vienen apagadas); en los proyectos donde trabajan los tickets, la limpieza apagada; reglas propias solo en los proyectos de bots y automatizaciones.
   - Por qué: `limpiar` conserva los worktrees con cambios sin commitear o con un agente vivo; una regla de limpieza más amplia podría borrarlos en segundos.
+- [ ] **Quick Commands del stack en cada proyecto.**
+  - Dónde: Settings → Quick Commands, con scope Project, en cada proyecto que usa el stack. Orca los guarda en sus ajustes, no en un archivo del repo, así que `init` no los escribe.
+  - Valor: exactamente cuatro: `Estado` → `orca-stack estado`, `Vigilar` → `orca-stack vigilar` (sin Enter al final, para escribir los números de la tanda), `Limpiar` → `orca-stack limpiar` y `Doctor` → `orca-stack doctor`. Ninguno es un comando destructivo ni un merge: `limpiar` omite los worktrees con cambios sin commitear o con un agente trabajando.
+  - Por qué: los comandos de todos los días quedan a un toque, desde el escritorio o desde el teléfono.
 
 ## Lo que configura el stack
 
