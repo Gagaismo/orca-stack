@@ -28,5 +28,5 @@ Source: Matt Pocock, https://x.com/mattpocockuk/status/2123798388227403983.
 ## Consequences
 
 - Repos that turned the Ponytail perk on get a warning for one release, then lose it.
-- centro-estudiantes changes its CS-4 standard, which today requires a `shortcut:` comment, in its own PR.
+- A client repo whose standard requires `shortcut:` comments changes that standard in its own PR.
 - The rule applies by default to existing code too: the existing comments it flags go into each repo's Baseline instead of failing CI, and new ones fail.

@@ -18,4 +18,4 @@ The comment rule of [ADR 0002](0002-deprecate-ponytail-adopt-comment-rule.md) an
 - Every repo gets a new pinned dependency, ast-grep, checked by version and checksum.
 - Rules are written per language: JavaScript/TypeScript in the pilot, then Go, Python and Shell.
 - Besides comments, the lint carries six structural checks, each with its own Baseline: module-cycle, tangle, field-leak, shallow-module, long-file and wide-directory.
-- Per the gentle-ai-architect assessment of agentes-samu (2026-11-24): keep OpenClaw and Node, structural checks in ratchet for JS and Shell now, Python warn-only until its CI runs the Python suites.
+- Per the gentle-ai-architect assessment of a client repo built on a Node agent runtime (2026-11-24): keep its runtime and Node, structural checks in ratchet for JS and Shell now, and Python rules warn-only in repos whose CI does not run their Python suites yet.
