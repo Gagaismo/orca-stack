@@ -63,3 +63,89 @@ export const setCard = (io, selector, fields) => {
 
   return false
 }
+
+// #431: Orca's managed accounts of one agent. The stack only lists and selects them (never adds one, never reads an
+// account's home) and keeps account ids, never emails. pi and other agents have no Orca accounts.
+const PROVIDERS = { claude: 'claude', codex: 'codex', agy: 'antigravity' }
+const ACCOUNTS_REL = ['orca-stack', 'cuentas.json']
+// A quota episode of an agent starts at its first quota stop and ends 5 hours later (the shortest quota window): an
+// older record is dropped, so every account counts as having quota again. Within an episode an exhausted account is
+// never selected again, so two exhausted accounts never loop.
+const EPISODE_MS = 5 * 60 * 60 * 1000
+
+const episodeOf = (io, commonDir, agent) => {
+  const file = path.join(commonDir, ...ACCOUNTS_REL)
+  let all = {}
+  try {
+    all = JSON.parse(io.readFile(file)) ?? {}
+  } catch {}
+  const now = (io.now ?? Date.now)()
+  const episode = all[agent] && now - all[agent].at <= EPISODE_MS ? all[agent] : { at: now, exhausted: [], resumed: {} }
+  const save = () => {
+    io.mkdirp(path.dirname(file))
+    io.writeFile(`${file}.${process.pid}.tmp`, JSON.stringify({ ...all, [agent]: episode }, null, 2) + '\n')
+    io.rename(`${file}.${process.pid}.tmp`, file)
+  }
+
+  return { episode, save }
+}
+
+const account = (io, args) => {
+  let res
+  try {
+    res = io.sh('orca', ['account', ...args, '--json'])
+  } catch (error) {
+    res = { status: null, stdout: '', stderr: '', error }
+  }
+  let body
+  try {
+    body = JSON.parse(res.stdout)
+  } catch {}
+  if (res.status === 0 && !res.error && body && body.ok !== false) return body.result ?? {}
+  const why = String(body?.error?.message ?? (res.stderr || res.stdout || res.error || `salió con ${res.status}`)).trim().split(/\r?\n/)[0]
+  throw new Error(`orca account ${args[0]} falló: ${why}`)
+}
+
+// After a quota stop of `agent` on `issue`: { line } when the worker can resume on another account of the same agent,
+// { error } (one line) when Orca could not list or select, and {} when no account is left; the last two leave the agent
+// blocked as today. A worker not yet resumed after the episode's switch ran on the old account, so it resumes on the
+// selected one with no new select. `launchedNow` (despachar) says the worker just ran on the active account and the
+// caller relaunches it; otherwise the issue stays pending until `reanudar` relaunches it.
+export const switchAccount = (io, commonDir, agent, issue, { launchedNow = false } = {}) => {
+  const provider = PROVIDERS[agent]
+  if (!provider) return {}
+  const { episode: ep, save } = episodeOf(io, commonDir, agent)
+  const key = String(issue)
+  try {
+    const listed = account(io, ['list', '--agent', provider])[provider] ?? {}
+    const active = listed.activeAccountId == null ? null : String(listed.activeAccountId)
+    if (launchedNow || ep.to === undefined || ep.to !== active || key in ep.resumed) {
+      if (active !== null) ep.exhausted = [...new Set([...ep.exhausted, active])]
+      const to = (listed.accounts ?? []).map(entry => String(entry?.id ?? '')).find(id => id !== '' && !ep.exhausted.includes(id))
+      if (to === undefined) {
+        save()
+        return {}
+      }
+      account(io, ['select', '--agent', provider, '--account', to])
+      Object.assign(ep, { from: active ?? 'system', to, resumed: {} })
+    }
+    ep.resumed[key] = !launchedNow
+    save()
+
+    return { line: `cuenta cambiada: ${agent} ${ep.from} → ${ep.to}` }
+  } catch (error) {
+    return { error: error.message }
+  }
+}
+
+// Whether `reanudar` must relaunch `issue` after an account switch (a paused session keeps its account); `done` clears it.
+export const pendingAfterSwitch = (io, commonDir, agent, issue, done = false) => {
+  const { episode, save } = episodeOf(io, commonDir, agent)
+  if (episode.resumed[String(issue)] !== true) return false
+  if (done) {
+    episode.resumed[String(issue)] = false
+    save()
+  }
+
+  return true
+}

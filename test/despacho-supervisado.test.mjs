@@ -34,7 +34,9 @@ afterEach(() => {
 })
 
 // Every external call is recorded; `orch` answers `orca orchestration <verb>` by verb.
-const fakeIo = (orch = {}, { card } = {}) => {
+// #431: `account` answers `orca account`; the first `quota` terminals created show a usage limit after the launch.
+const fakeIo = (orch = {}, { card, account, quota = 0 } = {}) => {
+  let terminals = 0
   write(path.join(root, '.orca-stack.json'), JSON.stringify(PROJECT))
   const calls = []
   const out = []
@@ -80,8 +82,12 @@ const fakeIo = (orch = {}, { card } = {}) => {
       if (cmd === 'orca' && args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })
       if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'set' && card) return card
       if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'create') return json({ result: { worktree: { path: worktree, branch: 'refs/heads/proj-7' } } })
-      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') return json({ result: { terminal: { handle: 'term_1' } } })
-      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') return json({ result: { terminal: { tail: ['ready'] } } })
+      if (cmd === 'orca' && args[0] === 'account' && account) return account(args)
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') return json({ result: { terminal: { handle: `term_${++terminals}` } } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
+        const n = Number(args[args.indexOf('--terminal') + 1].slice(5))
+        return json({ result: { terminal: { tail: n <= quota ? ['ready', "You've hit your usage limit."] : ['ready'] } } })
+      }
       return okRes()
     },
   }
@@ -227,5 +233,28 @@ describe('#430 despachar: worktree card', () => {
       assert.ok(!brief.includes('orca worktree set'), brief.slice(0, 80))
       assert.ok(!brief.includes('--workspace-status'), brief.slice(0, 80))
     }
+  })
+})
+
+describe('#431 despachar: out of quota right after the launch', () => {
+  const switcher = () => {
+    let active = 'c1'
+    return args => {
+      if (args[1] === 'select') active = args[args.indexOf('--account') + 1]
+      return json({ ok: true, result: { claude: { accounts: [{ id: 'c1' }, { id: 'c2' }], activeAccountId: active } } })
+    }
+  }
+  const accountCalls = env => env.calls.filter(c => c[0] === 'orca' && c[1] === 'account').map(c => c.join(' '))
+
+  test('S8: a quota stop at launch selects another claude account and relaunches the worker once in the same run; a second quota fails as today', async () => {
+    const env = fakeIo({}, { account: switcher(), quota: 1 })
+    assert.equal(await dispatch('ticket', { n: '7', agent: 'claude' }, env.io), 0)
+    assert.deepEqual(accountCalls(env), ['orca account list --agent claude --json', 'orca account select --agent claude --account c2 --json'])
+    assert.ok(env.out.includes('cuenta cambiada: claude c1 → c2'))
+    assert.equal(env.orchestration().filter(c => c[0] === 'worker-start').length, 2)
+
+    const twice = fakeIo({}, { account: switcher(), quota: 2 })
+    await assert.rejects(() => dispatch('ticket', { n: '7', agent: 'claude' }, twice.io), /term_2\) muestra un límite de cuota/)
+    assert.equal(accountCalls(twice).length, 2)
   })
 })

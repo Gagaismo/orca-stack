@@ -202,7 +202,8 @@ Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
 Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una línea con la URL de la respuesta; si ya salió,
 lo relanza en su worktree existente con el brief original y la URL al principio. Exige que la respuesta sea un comentario real
 de la cuenta del stack o del humano (del issue o de su PR abierto), y se niega si el worker sigue trabajando, si ya hay un PR abierto
-y la respuesta es del issue, o si el worktree está sucio.
+y la respuesta es del issue, o si el worktree está sucio. Un worker que quedó pendiente tras un \`cuenta cambiada:\` se relanza
+(nunca una línea a la sesión pausada, que conserva su cuenta) aunque el worktree esté sucio.
 Usa --confirmado solo después de que el humano haya confirmado relanzar un agente de agentes.preguntarAntes.
 Un worker de pi se relanza con el modelo y el thinking del orquestador del perfil que fija su worktree (.pi/gentle-ai/profile.json).
 Sin pin y sin agentes.pi.perfil se niega como despachar. Si el pin nombra un perfil que ya no existe, repetí con --perfil-pi <nombre>:
@@ -256,6 +257,10 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
   pr-cerrado #<n> PR #<pr>           el PR se cerró sin mergear
   worker-detenido #<n> <agente>: <motivo>
                                      worker sin PR detenido (cuota, volvió al shell, terminó sin abrir un PR) + última línea
+  cuenta cambiada: <agente> <de> → <a>
+                                     tras una cuota, seleccionó otra cuenta de Orca del mismo agente (ids; reanudar relanza)
+  cuenta no cambiada: <agente> — <error>
+                                     orca account list o select falló; el agente sigue sin cuota
   worker-trabado #<n> <agente>: <motivo>
                                      pantalla sin cambios (30m en working, o 4m en otro estado sin PR) + última línea
   vigilar-ciego: <error>             tres vueltas seguidas sin poder leer GitHub (una vez por corte)

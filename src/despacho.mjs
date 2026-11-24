@@ -5,7 +5,7 @@ import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { ensureCandidateWorktreesExclude } from './candidate-worktrees.mjs'
 import { analyzeChecks, isHigherRunId, isPending, latestChecks } from './checks.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
-import { setCard } from './orca.mjs'
+import { setCard, switchAccount } from './orca.mjs'
 import { resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
 import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
@@ -1133,12 +1133,24 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       left.brief = briefPath
       if (consent === 'politica') writeRddConsent(io, worktree, [])
     }
-    await launchInWorktree({
+    const launch = () => launchInWorktree({
       agent, mode, worktree, briefPath, brief, session, config, win, home: io.home, skills,
       piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun,
       piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: review ? undefined : n,
       supervised: review ? undefined : { title: `#${n} ${agent}`, objective: `orca-stack ${repo}: tickets despachados por main` },
     })
+    try {
+      await launch()
+    } catch (error) {
+      // #431: out of quota right after the launch: switch to another Orca account of the agent and relaunch once. A
+      // second quota stop, no account left or a failed list or select fail as before.
+      if (review || dryRun || error.quota === undefined) throw error
+      const switched = switchAccount(io, commonDir, agent, n, { launchedNow: true })
+      if (switched.error) say(`cuenta no cambiada: ${agent} — ${switched.error}`)
+      if (!switched.line) throw error
+      say(switched.line)
+      await launch()
+    }
 
     return 0
   } catch (error) {

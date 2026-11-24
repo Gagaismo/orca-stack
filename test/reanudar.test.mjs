@@ -930,3 +930,15 @@ describe('main-autonomo T1: reanudar picks the worker and trusts what orca-stack
     assert.equal(h.sends()[0].args[h.sends()[0].args.indexOf('--text') + 1], LINE)
   })
 })
+
+describe('#431 reanudar: a worker an account switch left pending', () => {
+  test('S8: a quota-stopped worker pending in its agent\'s episode is relaunched, even with a dirty worktree, instead of getting a line in its paused session', async () => {
+    const h = harness({ screen: ["You've hit your usage limit."], dirty: ' M file.js\n' })
+    const episode = path.join(ROOT, '.git', 'orca-stack', 'cuentas.json')
+    h.files[episode] = JSON.stringify({ codex: { at: 1760616000000, exhausted: ['x1'], from: 'x1', to: 'x2', resumed: { 212: true } } })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.ok(!h.sends().some(({ args }) => args.includes(LINE)))
+    assert.equal(h.calls.filter(({ cmd, args }) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create').length, 1)
+    assert.deepEqual(JSON.parse(h.files[episode]).codex.resumed, { 212: false })
+  })
+})

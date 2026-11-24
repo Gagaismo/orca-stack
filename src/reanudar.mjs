@@ -2,6 +2,7 @@ import path from 'node:path'
 
 import { AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, shellPrompt, writePin, writeRddConsent } from './despacho.mjs'
 import { identityOf, isDialog, paneAgents, stackAgent, piIdle, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
+import { pendingAfterSwitch } from './orca.mjs'
 import { samePath } from './util.mjs'
 
 const LIVE = ['working', 'running', 'active', 'blocked', 'waiting']
@@ -231,7 +232,10 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
 
   if (!io.exists(originalPath)) throw new Error(`No encuentro el brief original ${originalPath}; no relanzo sin \u{e9}l.`)
 
-  if (target?.terminal && stateOf(target.record) === 'done') {
+  // #431: a worker an account switch left pending is relaunched, work in progress included: its paused session would keep
+  // the old account.
+  const afterSwitch = pendingAfterSwitch(io, commonDir, agent, n)
+  if (!afterSwitch && target?.terminal && stateOf(target.record) === 'done') {
     target.worktree = row.path
     const handled = await sendToPaused(flags, n, url, originalPath, target, io, markAttempt, () => {
       if (needsPin(profile)) writePin(io, row.path, commonDir, profile.name)
@@ -243,7 +247,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
 
   const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: row.path })
   if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${row.path}: ${detail(status)}`)
-  if (status.stdout.trim() !== '') throw new Error(`El worktree ${row.path} est\u{e1} sucio; guard\u{e1} o descart\u{e1} sus cambios antes de relanzar.`)
+  if (status.stdout.trim() !== '' && !afterSwitch) throw new Error(`El worktree ${row.path} est\u{e1} sucio; guard\u{e1} o descart\u{e1} sus cambios antes de relanzar.`)
 
   originalBrief ??= io.readFile(originalPath)
   if (profile) for (const line of piProfileLines(profile)) io.out(`${flags.dryRun ? '[simulaci\u{f3}n] ' : ''}${line}`)
@@ -258,6 +262,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   }
   const session = `${repo}-${n}-reanudar-${(io.now ?? Date.now)()}`
   await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: n })
+  if (afterSwitch && !flags.dryRun) pendingAfterSwitch(io, commonDir, agent, n, true)
 
   return 0
 }
