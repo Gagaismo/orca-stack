@@ -113,6 +113,19 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node scripts/check-evidencia.mjs "$RUNNER_TEMP/pr-body.md"
 
+  # The gate that counts for the lint (#417): the pre-push hook in .githooks is only an early warning.
+  lint:
+    name: orca-stack lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Lint against the Baseline
+        run: node bin/orca-stack.mjs lint
+
   # TLC on the Rebote model (formal/rebote, skill verify-rebote): every config must give its expected result.
   formal:
     name: TLC formal/rebote
@@ -145,6 +158,7 @@ jobs:
       - evidencia
       - mods
       - formal
+      - lint
     if: always()
     runs-on: ubuntu-latest
     steps:

@@ -229,6 +229,35 @@ describe('orca-stack lint (#417)', () => {
     })
   })
 
+  test('R10: CI runs orca-stack lint in a job that ci-ok requires', () => {
+    const workflow = readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8')
+    const job = workflow.match(/^ {2}lint:\r?\n(?: {4}.*\r?\n|\r?\n)+/m)?.[0] ?? ''
+    assert.match(job, /^ {8}run: node bin\/orca-stack\.mjs lint\r?$/m)
+    const ciOk = workflow.slice(workflow.indexOf('\n  ci-ok:'))
+    assert.match(ciOk, /^ {6}- lint\r?$/m)
+  })
+
+  test('R10: the pre-push hook runs the lint as an early warning and --no-verify skips only the hook', () => {
+    withRepo(({ dir, repo, add }) => {
+      const remote = path.join(dir, 'remote.git')
+      git(dir, 'init', '-q', '--bare', remote)
+      git(repo, 'remote', 'add', 'origin', remote)
+      add('test/big.test.mjs', lines(2345, 'big'))
+      git(repo, 'commit', '-q', '-m', 'add a long file')
+      const hooks = path.join(ROOT, '.githooks').replaceAll('\\', '/')
+      const push = (...extra) => spawnSync('git', ['-c', `core.hooksPath=${hooks}`, 'push', ...extra, 'origin', 'HEAD:refs/heads/main'], { cwd: repo, encoding: 'utf8' })
+
+      const blocked = push()
+      assert.notEqual(blocked.status, 0, blocked.stderr)
+      assert.match(blocked.stdout + blocked.stderr, /long-file test\/big\.test\.mjs: 2345 líneas \(máximo 2000\) — dividí el archivo/)
+      assert.equal(spawnSync('git', ['ls-remote', remote], { encoding: 'utf8' }).stdout, '')
+
+      const skipped = push('--no-verify')
+      assert.equal(skipped.status, 0, skipped.stderr)
+      assert.match(spawnSync('git', ['ls-remote', remote], { encoding: 'utf8' }).stdout, /refs\/heads\/main/)
+    })
+  })
+
   test('R12: lint --help and the manual describe the command, the Baseline and --sembrar', () => {
     const home = tempDir('lint-help')
     try {
