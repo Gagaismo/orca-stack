@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
@@ -29,11 +29,7 @@ describe('pinned ast-grep wrapper (#419)', () => {
   test('S9: a checksum mismatch fails naming 0.51.3 and never runs the binary', { skip: !pinned && `no pinned ast-grep for ${platformKey()}` }, () => {
     withDir(dir => {
       const fake = path.join(dir, path.basename(pinned?.binary ?? 'ast-grep'))
-      try {
-        linkSync(process.execPath, fake)
-      } catch {
-        copyFileSync(process.execPath, fake)
-      }
+      copyFileSync(process.execPath, fake)
       const marker = path.join(dir, 'ran')
       const env = { ...process.env, ORCA_STACK_AST_GREP: fake }
       const args = ['-e', `require('fs').writeFileSync(${JSON.stringify(marker)}, '')`]
@@ -92,13 +88,15 @@ describe('pinned ast-grep wrapper (#419)', () => {
       delete env.ORCA_STACK_AST_GREP
       const copy = path.join(dir, pinned.binary)
       copyFileSync(verifyAstGrep({ env }), copy)
+      const stamp = Math.floor(Date.now() / 1000) - 3600
+      utimesSync(copy, stamp, stamp)
       const overrideEnv = { ...env, ORCA_STACK_AST_GREP: copy }
       assert.equal(verifyAstGrep({ env: overrideEnv }), copy)
       const before = statSync(copy)
       const bytes = readFileSync(copy)
       bytes[bytes.length - 1] ^= 0xff
       writeFileSync(copy, bytes)
-      utimesSync(copy, before.atimeMs / 1000, before.mtimeMs / 1000)
+      utimesSync(copy, stamp, stamp)
       const after = statSync(copy)
       assert.equal(after.size, before.size)
       assert.equal(after.mtimeMs, before.mtimeMs)
