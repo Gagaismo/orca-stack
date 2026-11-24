@@ -79,3 +79,26 @@ _Avoid_: merge, combine
 
 **Swarm**:
 One question spread over parallel subagents doing read work, each on its own slice or racing on the whole, whose results come back as one published aggregated report. Reading different areas to give main context is delegation, not a swarm. A race that writes is an arena.
+
+### Code comments and lint
+
+The four comment types come from Matt Pocock's comment rule; every code comment is exactly one of them.
+
+**Tautology**:
+A code comment that only repeats what the code already shows.
+
+**Excuse**:
+A code comment that justifies a hacky implementation instead of fixing it, so the hack spreads through the code. A Ponytail `shortcut:` comment is one.
+_Avoid_: shortcut comment, known-limit comment
+
+**Stale**:
+A code comment that refers to code or implementation details that no longer hold.
+_Avoid_: outdated comment
+
+**Decision Record**:
+A code comment that documents an important, non-obvious decision about the code; the only kind allowed, and only when it cites an ADR or an issue `#n`.
+_Avoid_: rationale comment, why-comment
+
+**Baseline**:
+A repo's list of the existing violations of a structural or comment check, each identified by its content and logical location (file, rule, symbol), never by line number. An entry leaves it only when the violation is gone from the whole repo, so moving code never shrinks it. Spanish: *línea base*.
+_Avoid_: ratchet file, allowlist, línea de base
