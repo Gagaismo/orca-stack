@@ -39,4 +39,11 @@ describe('#419 CODING_STANDARDS.md', () => {
     assert.match(standards, /docs\/adr\/0002-deprecate-ponytail-adopt-comment-rule\.md/)
     assert.match(standards, /docs\/adr\/0003-ast-grep-for-lint\.md/)
   })
+
+  test('S3, S4: the lint section matches the code: uppercase markers, the temporary-file exception and the tautology size limit', () => {
+    const standards = readFileSync(STANDARDS, 'utf8')
+    assert.match(standards, /`TODO`, `FIXME`, `HACK` o `XXX` en mayúsculas/)
+    assert.match(standards, /"temporary" seguido de file, directory/)
+    assert.match(standards, /de dos a seis palabras/)
+  })
 })

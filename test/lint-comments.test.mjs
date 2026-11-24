@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
-import { cleanup, cli, tempDir } from './helpers.mjs'
+import { ROOT, cleanup, cli, tempDir } from './helpers.mjs'
 
 const BASELINE = '.orca-stack-baseline.json'
 const EXCUSE = '(Excuse) — borralo y abrí un issue para arreglar la implementación'
@@ -36,10 +36,11 @@ const withRepo = run => {
     git(repo, 'rm', '-q', '--cached', '--', rel)
     rmSync(path.join(repo, rel))
   }
+  const commit = message => git(repo, 'commit', '-q', '-m', message)
   const lint = (args = [], env = {}) => cli(home, ['lint', ...args], { cwd: repo, env: { ORCA_STACK_AST_GREP: '', ...env } })
   const baseline = () => readFileSync(path.join(repo, BASELINE), 'utf8')
   try {
-    run({ dir, repo, put, add, remove, lint, baseline })
+    run({ dir, repo, put, add, remove, commit, lint, baseline })
   } finally {
     cleanup(dir)
   }
@@ -72,11 +73,15 @@ const EXCUSES = [
   '  // Written to a temporary file and renamed, so a reader never sees half a file.',
   '  return 6',
   '}',
+  'export function walk() {',
+  '  // recorre todo el árbol y anota cada hoja',
+  '  return 7',
+  '}',
   '',
 ].join('\n')
 
 describe('orca-stack lint comment rules (#419)', () => {
-  test('S3: each Excuse example is flagged with the open-an-issue action; TODO(#123) and a temporary file pass', () => {
+  test('S3: each Excuse example is flagged with the open-an-issue action; TODO(#123), a temporary file and a lowercase Spanish todo pass', () => {
     withRepo(({ add, lint }) => {
       add('src/excuse.mjs', EXCUSES)
       const result = lint()
@@ -329,5 +334,105 @@ describe('orca-stack lint comment rules (#419)', () => {
       ].sort())
       assert.equal(lines.at(-1), SUMMARY(9, 0).trimEnd())
     })
+  })
+
+  test('S7: by default the lint checks the whole repo, so an existing Excuse on an unchanged line is reported', () => {
+    withRepo(({ repo, add, commit, lint }) => {
+      add('src/old.mjs', 'export function old() {\n  // FIXME\n  return 1\n}\n')
+      commit('base')
+      git(repo, 'branch', '-M', 'main')
+      git(repo, 'checkout', '-q', '-b', 'feature')
+      add('.orca-stack.json', JSON.stringify({ ramaBase: 'main', lint: { comentarios: { alcance: 'repo' } } }))
+      add('src/new.mjs', 'export const n = 1\n')
+      commit('feature')
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, `comment-excuse src/old.mjs:old() ${EXCUSE}\n${SUMMARY(1, 0)}`)
+    })
+  })
+
+  test('S7: with lint.comentarios.alcance "diff" only comments on lines added since ramaBase are reported, committed or not', () => {
+    withRepo(({ repo, put, add, commit, lint }) => {
+      const long = Array.from({ length: 2001 }, (_, i) => `const v${i} = ${i}`).join('\n') + '\n'
+      add('src/old.mjs', ['export function old() {', '  // FIXME', '  /*', '   * keeps the cache warm', '   */', '  return 1', '}', ''].join('\n'))
+      add('src/long.mjs', long)
+      commit('base')
+      git(repo, 'branch', '-M', 'main')
+      git(repo, 'checkout', '-q', '-b', 'feature')
+      add('.orca-stack.json', JSON.stringify({ ramaBase: 'main', lint: { comentarios: { alcance: 'diff' } } }))
+      add(BASELINE, JSON.stringify({ version: 1, entries: [{ rule: 'comment-excuse', file: 'src/gone.mjs', location: 'gone()', fingerprint: 'sha256:0000000000000000' }] }))
+      add('src/old.mjs', ['export function old() {', '  // FIXME', '  /*', '   * keeps the cache warm', '   * temporary workaround', '   */', '  return 1', '}', ''].join('\n'))
+      add('src/added.mjs', 'export function added() {\n  // TODO: hack for now\n  return 1\n}\n')
+      add('src/local.ts', 'export function local(): number {\n  return 1\n}\n')
+      commit('feature')
+      put('src/local.ts', 'export function local(): number {\n  // XXX\n  return 1\n}\n')
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, [
+        'long-file src/long.mjs: 2001 líneas (máximo 2000) — dividí el archivo',
+        `comment-excuse src/added.mjs:added() ${EXCUSE}`,
+        `comment-excuse src/local.ts:local() ${EXCUSE}`,
+        `comment-excuse src/old.mjs:old() ${EXCUSE}`,
+        '',
+      ].join('\n') + SUMMARY(4, 0))
+    })
+  })
+
+  test('S7: an invalid lint.comentarios.alcance fails naming the key', () => {
+    withRepo(({ put, add, lint }) => {
+      add('src/a.mjs', 'export const a = 1\n')
+      put('.orca-stack.local.json', JSON.stringify({ lint: { comentarios: { alcance: 'cambios' } } }))
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.match(result.out, /✖ lint\.comentarios\.alcance tiene que ser "repo" o "diff", no "cambios"/)
+      assert.doesNotMatch(result.out, /lint OK/)
+    })
+  })
+
+  test('S7: in diff mode a ramaBase that does not resolve, or has no merge-base with HEAD, fails naming the ref', () => {
+    withRepo(({ repo, put, add, commit, lint }) => {
+      add('src/a.mjs', 'export const a = 1\n')
+      commit('base')
+      put('.orca-stack.json', JSON.stringify({ ramaBase: 'nope', lint: { comentarios: { alcance: 'diff' } } }))
+      const missing = lint()
+      assert.equal(missing.status, 1, missing.out)
+      assert.match(missing.out, /✖ lint\.comentarios\.alcance "diff": no se encontró la rama base nope ni origin\/nope/)
+
+      const branch = git(repo, 'rev-parse', '--abbrev-ref', 'HEAD').trim()
+      git(repo, 'checkout', '-q', '--orphan', 'other')
+      commit('unrelated')
+      git(repo, 'checkout', '-q', branch)
+      put('.orca-stack.json', JSON.stringify({ ramaBase: 'other', lint: { comentarios: { alcance: 'diff' } } }))
+      const unrelated = lint()
+      assert.equal(unrelated.status, 1, unrelated.out)
+      assert.match(unrelated.out, /✖ lint\.comentarios\.alcance "diff": HEAD no tiene merge-base con other/)
+
+      put('.orca-stack.json', JSON.stringify({ lint: { comentarios: { alcance: 'diff' } } }))
+      const noBase = lint()
+      assert.equal(noBase.status, 1, noBase.out)
+      assert.match(noBase.out, /✖ lint\.comentarios\.alcance "diff" necesita ramaBase/)
+    })
+  })
+
+  test('S15: lint --help and the manual describe the comment rules, the Decision Record, ast-grep 0.51.3 and lint.comentarios.alcance', () => {
+    const home = tempDir('lint-comments-help')
+    let help
+    try {
+      help = cli(home, ['lint', '--help'])
+    } finally {
+      cleanup(home)
+    }
+    assert.equal(help.status, 0)
+    const manual = readFileSync(path.join(ROOT, 'docs', 'manual.md'), 'utf8')
+    for (const text of [help.stdout, manual]) {
+      for (const rule of ['comment-excuse', 'comment-tautology', 'comment-stale']) assert.ok(text.includes(rule), rule)
+      assert.match(text, /Decision Record/)
+      assert.match(text, /ast-grep 0\.51\.3/)
+      assert.match(text, /npm ci/)
+      assert.match(text, /lint\.comentarios\.alcance/)
+      assert.match(text, /"diff"/)
+      assert.match(text, /Go, Python, Shell/)
+      assert.match(text, /comment-excuse src\/x\.mjs:foo\(\) \(Excuse\) — borralo y abrí un issue para arreglar la implementación/)
+    }
   })
 })

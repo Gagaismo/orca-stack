@@ -101,7 +101,7 @@ Reglas que sostienen todo lo demás:
 | `vigilar` | Monitor de una tanda de PRs | Checkout principal |
 | `estado` | Qué le falta a cada PR para el paso 7, de solo lectura (con `--json`, la atestación) | Checkout principal |
 | `limpiar` | Cierra terminales y saca worktrees de PRs mergeados o cerrados | Checkout principal |
-| `lint` | Revisa el repo contra su Baseline (`long-file`) **`[solo en main]`** | Dentro de un repo git (también la CI y el hook `pre-push`) |
+| `lint` | Revisa el repo contra su Baseline (`long-file` y los comentarios de JS/TS) **`[solo en main]`** | Dentro de un repo git (también la CI y el hook `pre-push`) |
 | `planificar` | Abre una sesión de planificación interactiva en su propio worktree `docs/<slug>` | Checkout principal |
 | `sesiones` | Lista sesiones recientes de Claude, Pi y agy (entrada de `/retro`) | Cualquier carpeta |
 
@@ -315,7 +315,25 @@ orca-stack lint --sembrar   # una vez, al prender el lint: anota las violaciones
 
 Revisa cada archivo trackeado del repo; nunca los sin trackear ni los que ignora `.gitignore` (por ejemplo `node_modules/`). Por ahora tiene una sola regla, `long-file`: un archivo de más de 2000 líneas es una violación (cuentan las líneas en blanco, los comentarios y los tests; exactamente 2000 pasa). Cada violación nueva sale en una línea que nombra la regla, el archivo, la ubicación y qué hacer, por ejemplo `long-file test/foo.mjs: 2345 líneas (máximo 2000) — dividí el archivo`.
 
-La **Baseline** es `.orca-stack-baseline.json`, en la raíz del repo y commiteada: la lista de las violaciones que ya existían, con un mismo formato para todas las reglas (`{"version":1,"entries":[{"rule","file","location","fingerprint"}]}`) y sin números de línea. Una violación coincide con una entrada de su regla por archivo o, si el archivo se movió sin cambios, por su fingerprint (el de `long-file` sale del contenido entero del archivo, así que dos archivos que solo comparten el encabezado no se confunden; un archivo que se movió y cambió cuenta como violación nueva y entrada vencida). Cada entrada cubre una sola violación: una copia en otro archivo es una violación nueva. Una entrada cuya violación ya no está en ningún archivo del repo está **vencida**: el lint falla, la nombra y pide sacarla a mano, porque una corrida normal nunca reescribe la Baseline. Sin Baseline, toda violación es nueva; una Baseline mal formada falla nombrando el archivo y no se toca.
+En los archivos `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx`, `.mts` y `.cts` aplica también la parte mecánica de la regla de los comentarios de [`CODING_STANDARDS.md`](../CODING_STANDARDS.md#qué-revisa-el-lint) ([ADR 0002](adr/0002-deprecate-ponytail-adopt-comment-rule.md)):
+
+- `comment-excuse`: `TODO`, `FIXME`, `HACK` o `XXX` en mayúsculas (un "todo" en castellano no cuenta), o "hack", "workaround", "temporary" (salvo "temporary file", "temporary directory" y parecidos), "for now", "shortcut:" o "upgrade when". Acción: borralo y abrí un issue para arreglar la implementación.
+- `comment-tautology`: solo los casos claros, un comentario corto de una línea que repite la sentencia que sigue, como `// increment i` arriba de `i++`. Acción: borralo.
+- `comment-stale`: un comentario que nombra un identificador en forma de código (`fooBar()` o un `` `foo_bar` `` entre backticks) que ya no está en el código del archivo. Acción: borralo.
+
+Un comentario que cita un issue (`#123`), un ADR (`ADR 0002`) o un link a `docs/adr/0002-…` es un Decision Record y pasa; un "ver el ADR" sin número no. Nunca se marcan los shebangs, los encabezados de licencia, las directivas (`eslint-…`, `@ts-…`, `prettier-ignore`, `c8 ignore`…), el JSDoc con tags de tipo (`@type`, `@param`…) ni un `//` dentro de un string. La ubicación es la función, el método o la clase que contiene el comentario (o la declaración que le sigue), o `<módulo>`, sin números de línea: `comment-excuse src/x.mjs:foo() (Excuse) — borralo y abrí un issue para arreglar la implementación`. Go, Python, Shell, Markdown y los demás lenguajes no dan hallazgos de comentarios.
+
+Los comentarios se leen con ast-grep 0.51.3 ([ADR 0003](adr/0003-ast-grep-for-lint.md)), fijado por versión y sha256 en Windows x64 y Linux x64. Viene como dependencia opcional y lo instala `npm ci` en la instalación de orca-stack (sin `--omit=optional`); `ORCA_STACK_AST_GREP` apunta a otro binario, que también se verifica. Si el repo tiene algún archivo JS/TS y ast-grep falta, tiene otra versión o su checksum no coincide, el lint sale con 1 nombrando la versión fijada y nunca corre un binario sin verificar ni pasa en silencio. Un repo sin archivos JS/TS no lo necesita.
+
+El alcance de las reglas de comentarios sale de `lint.comentarios.alcance` en la configuración de tres capas ([4.5](#45-configuración-en-tres-capas)):
+
+```json
+{ "lint": { "comentarios": { "alcance": "diff" } } }
+```
+
+Con `"repo"` (por defecto) revisa los comentarios de todo el repo contra la Baseline. Con `"diff"` solo marca los comentarios que tocan una línea que el cambio agrega respecto del merge-base de `HEAD` con `ramaBase` (o `origin/<ramaBase>` si la rama local no está), con los cambios sin commitear de archivos trackeados incluidos: una violación que ya existía en una línea sin cambios no sale, y las entradas de comentarios de la Baseline no se evalúan (ninguna sale vencida). `long-file` funciona igual en los dos modos. Un valor distinto de `"repo"` o `"diff"`, o un `ramaBase` que falta, no se encuentra o no tiene merge-base con `HEAD` (por ejemplo en un clon shallow), falla con 1 y un mensaje que nombra la clave o la rama.
+
+La **Baseline** es `.orca-stack-baseline.json`, en la raíz del repo y commiteada: la lista de las violaciones que ya existían, con un mismo formato para todas las reglas (`{"version":1,"entries":[{"rule","file","location","fingerprint"}]}`) y sin números de línea. Una violación coincide con una entrada de su regla por archivo o, si el archivo se movió sin cambios, por su fingerprint (el de `long-file` sale del contenido entero del archivo, así que dos archivos que solo comparten el encabezado no se confunden; un archivo que se movió y cambió cuenta como violación nueva y entrada vencida). Cada entrada cubre una sola violación: una copia en otro archivo es una violación nueva. Una entrada de comentario guarda como `location` el símbolo que lo contiene y como `fingerprint` el del texto del comentario: dos comentarios de una misma función son dos entradas, mover la función dentro del archivo o a otro sigue coincidiendo, y borrar el comentario deja su entrada vencida. Una entrada cuya violación ya no está en ningún archivo del repo está **vencida**: el lint falla, la nombra y pide sacarla a mano, porque una corrida normal nunca reescribe la Baseline. Sin Baseline, toda violación es nueva; una Baseline mal formada falla nombrando el archivo y no se toca.
 
 Sale con 0 y una línea `lint OK` cuando toda violación tiene su entrada y ninguna entrada está vencida; si no, con 1 y el reporte. `--sembrar` agrega a la Baseline cada violación actual sin entrada y después revisa como siempre: es idempotente (una segunda corrida no cambia nada) y nunca saca entradas.
 
@@ -669,5 +687,6 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.21.0`, todavía no publicado en un release.
 
 - `orca-stack lint` con la regla `long-file`, la Baseline `.orca-stack-baseline.json`, `--sembrar`, el job `lint` de la CI y el hook `.githooks/pre-push` (#417).
+- Las reglas de comentarios de `orca-stack lint` para JS/TS (`comment-excuse`, `comment-tautology`, `comment-stale`), ast-grep 0.51.3 fijado y `lint.comentarios.alcance` (#419).
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.

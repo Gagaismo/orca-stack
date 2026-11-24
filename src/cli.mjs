@@ -38,7 +38,7 @@ Comandos:
   planificar Abre la sesión de planificación de un issue paraguas: worktree de Orca en docs/<slug> y pi con el brief de planificación.
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
   limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
-  lint      Revisa el repo (long-file: archivos de más de 2000 líneas) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
+  lint      Revisa el repo (long-file y los comentarios de JS/TS) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
   --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
@@ -317,10 +317,35 @@ long-file: un archivo de más de 2000 líneas es una violación (cuentan las lí
 exactamente 2000 pasa). Cada violación nueva sale en una línea con la regla, el archivo, la ubicación y qué hacer:
   long-file test/foo.mjs: 2345 líneas (máximo 2000) — dividí el archivo
 
+En los archivos .js, .mjs, .cjs, .jsx, .ts, .tsx, .mts y .cts aplica la regla de los comentarios de CODING_STANDARDS.md:
+  comment-excuse     TODO, FIXME, HACK o XXX (en mayúsculas), o hack, workaround, temporary (salvo "temporary file",
+                     "temporary directory" y parecidos), for now, shortcut: o upgrade when
+  comment-tautology  un comentario corto de una línea que repite la sentencia que sigue ("// increment i" sobre i++)
+  comment-stale      un comentario que nombra un identificador (fooBar() o \`foo_bar\`) que ya no está en el código del archivo
+Un comentario que cita un issue (#123), un ADR (ADR 0002) o docs/adr/0002-… es un Decision Record y pasa.
+Nunca se marcan los shebangs, los encabezados de licencia, las directivas (eslint-…, @ts-…, prettier-ignore, c8 ignore…),
+el JSDoc con tags de tipo (@type, @param…) ni un // dentro de un string. La ubicación es la función, el método o la clase
+que lo contiene (o la declaración que sigue), o <módulo>:
+  comment-excuse src/x.mjs:foo() (Excuse) — borralo y abrí un issue para arreglar la implementación
+Go, Python, Shell, Markdown y los demás lenguajes no dan hallazgos de comentarios.
+
+Los comentarios se leen con ast-grep 0.51.3, fijado por versión y sha256 (lo instala npm ci en la instalación de
+orca-stack; ORCA_STACK_AST_GREP apunta a otro binario, que también se verifica). Si hay algún archivo JS/TS y ast-grep
+falta, tiene otra versión o no coincide su checksum, el lint falla con 1 nombrando la versión y nunca pasa en silencio.
+
+lint.comentarios.alcance, en la configuración (.orca-stack.json, .orca-stack.local.json o ~/.orca-stack/config.json):
+  "repo" (por defecto)  revisa los comentarios de todo el repo contra la Baseline
+  "diff"                solo marca los comentarios que tocan una línea que el cambio agrega respecto del merge-base
+                        de HEAD con ramaBase (o origin/<ramaBase>), con los cambios sin commitear incluidos; las
+                        entradas de comentarios de la Baseline no se evalúan, y long-file sigue igual
+Un valor distinto, o un ramaBase que falta, no se encuentra o no tiene merge-base con HEAD, falla con 1.
+
 La Baseline es .orca-stack-baseline.json, en la raíz del repo y commiteada: la lista de violaciones que ya existían,
 {"version":1,"entries":[{"rule","file","location","fingerprint"}]}, sin números de línea. Una violación coincide con
 una entrada de su regla por archivo o, si el archivo se movió sin cambios, por fingerprint (el de long-file sale del
-contenido entero); cada entrada cubre una sola violación, así que una copia en otro archivo es nueva.
+contenido entero); cada entrada cubre una sola violación, así que una copia en otro archivo es nueva. Una entrada de
+comentario guarda el símbolo como location y el fingerprint del texto del comentario: coincide por archivo, símbolo y
+fingerprint, y si la función se movió a otro archivo o se renombró, por fingerprint.
 lint no acepta --dry-run.
 Una entrada cuya violación ya no está en ningún archivo del repo está vencida: el lint falla y pide sacarla a mano.
 Sin Baseline, todas las violaciones son nuevas; una Baseline mal formada falla nombrando el archivo y nunca se reescribe.
