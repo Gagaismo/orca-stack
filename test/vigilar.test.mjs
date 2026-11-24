@@ -8,6 +8,7 @@ import { main } from '../src/cli.mjs'
 import { upsertBlock } from '../src/marker.mjs'
 import { policyBlock } from '../src/templates.mjs'
 import { PACKAGE_ROOT } from '../src/util.mjs'
+import { pendingAfterSwitch } from '../src/orca.mjs'
 import { vigilarCommand } from '../src/vigilar.mjs'
 
 const COMMON = '/repo/.git'
@@ -119,6 +120,14 @@ const harness = (world = {}) => {
         if (args.includes('comments')) return world.issueCommentsDown ? fail('comments unavailable') : json({ comments: (world.comments ?? {})[args[2]] ?? [] })
         if ((world.issueDown ?? {})[args[2]]) return fail(world.issueDown[args[2]])
         return json({ state: (world.issues ?? {})[args[2]] ?? 'OPEN' })
+      }
+      // #431: Orca's managed accounts; select moves the active one.
+      if (cmd === 'orca' && args[0] === 'account') {
+        const agent = args[args.indexOf('--agent') + 1]
+        if (world.accountDown?.[args[1]]) return fail(world.accountDown[args[1]])
+        const listed = world.accounts?.[agent] ?? { accounts: [], activeAccountId: null }
+        if (args[1] === 'select') listed.activeAccountId = args[args.indexOf('--account') + 1]
+        return json({ ok: true, result: { [agent]: listed } })
       }
       if (cmd === 'gh' && args[0] === 'api' && args[1] === 'user') return world.userDown ? fail(world.userDown) : json({ login: 'stack-bot' })
       // GitHub's sub-issues REST endpoint answers with the sub-issues as a list of issues.
@@ -1857,5 +1866,94 @@ describe('orca-stack vigilar (#399)', () => {
     await vigilarCommand({ paraguas: '29', unaVez: true }, [], umb.io)
     await vigilarCommand({ paraguas: '29', unaVez: true }, [], umb.io)
     assert.deepEqual(umb.out, ['planificacion-publicada #29 #63,#64'])
+  })
+})
+
+describe('#431 vigilar: a quota stop switches the Orca account of the same agent', () => {
+  const Q = "You've hit your usage limit. Try again at 00:57."
+  const ACCOUNTS = path.join(COMMON, 'orca-stack', 'cuentas.json')
+  const stop = (issue, agentType, handle = `term_${issue}`, screen = ['step', Q], state = 'done') => ({
+    path: `/wt/orca-stack-${issue}`, branch: `Gagaismo/orca-stack-${issue}`, linkedIssue: issue, screen,
+    terminals: [{ handle, title: agentType === 'antigravity' ? 'agy' : agentType }],
+    agents: [{ paneKey: `tab-${handle}:leaf-${handle}`, state, agentType }],
+  })
+  const accounts = (...ids) => ({ accounts: ids.map(id => ({ id, email: `${id}@example.com` })), activeAccountId: ids[0] })
+  const accountCalls = h => h.calls.filter(call => call.startsWith('orca account'))
+  const quotaStop = (n, agent) => `worker-detenido #${n} ${agent}: cuota — ${Q}`
+
+  test('S7: only a quota stop calls orca account; volvió al shell, terminó sin abrir un PR and a stall never do', async () => {
+    for (const screen of [['fatal', 'PS C:\\work>'], ['last step']]) {
+      const h = harness({ worktrees: [stop(7, 'claude', 'term_7', screen)], accounts: { claude: accounts('c1', 'c2') } })
+      await once(h, ['7'])
+      assert.match(h.out[0], /^worker-detenido #7 claude: (volvió al shell|terminó sin abrir un PR) — \S/)
+      assert.deepEqual(accountCalls(h), [])
+    }
+    const stalled = harness({ worktrees: [stop(7, 'claude', 'term_7', ['thinking'], 'idle')], accounts: { claude: accounts('c1', 'c2') } })
+    await once(stalled, ['7'])
+    stalled.world.now = T0 + 5 * MINUTE
+    await once(stalled, ['7'])
+    assert.deepEqual(stalled.out, ['worker-trabado #7 claude: sin cambios por 4m — thinking'])
+    assert.deepEqual(accountCalls(stalled), [])
+  })
+
+  test('S8: a quota stop selects another account of the same agent and reports cuenta cambiada with account ids', async () => {
+    const h = harness({ worktrees: [stop(7, 'antigravity')], accounts: { antigravity: accounts('g1', 'g2') } })
+    await once(h, ['7'])
+    assert.deepEqual(h.out, [quotaStop(7, 'agy'), 'cuenta cambiada: agy g1 → g2'])
+    assert.deepEqual(accountCalls(h), ['orca account list --agent antigravity --json', 'orca account select --agent antigravity --account g2 --json'])
+    assert.deepEqual(JSON.parse(h.files[ACCOUNTS]).agy.resumed, { 7: true })
+  })
+
+  test('S9: pi has no Orca accounts and stays blocked as today; claude never switches to another agent', async () => {
+    const pi = harness({ worktrees: [stop(9, 'pi')], accounts: { claude: accounts('c1', 'c2') } })
+    await once(pi, ['9'])
+    assert.deepEqual(pi.out, [quotaStop(9, 'pi')])
+    assert.deepEqual(accountCalls(pi), [])
+    const claude = harness({ worktrees: [stop(7, 'claude')], accounts: { claude: accounts('c1'), codex: accounts('x1', 'x2') } })
+    await once(claude, ['7'])
+    assert.deepEqual(claude.out, [quotaStop(7, 'claude')])
+    assert.deepEqual(accountCalls(claude), ['orca account list --agent claude --json'])
+  })
+
+  test('S10: with no other account, or once the other hits quota too, the agent stays blocked as today and two exhausted accounts never loop', async () => {
+    const lone = harness({ worktrees: [stop(7, 'claude')], accounts: { claude: accounts('c1') } })
+    await once(lone, ['7'])
+    assert.deepEqual(lone.out, [quotaStop(7, 'claude')])
+    const h = harness({ worktrees: [stop(7, 'claude')], accounts: { claude: accounts('c1', 'c2') } })
+    await once(h, ['7'])
+    assert.deepEqual(drain(h), [quotaStop(7, 'claude'), 'cuenta cambiada: claude c1 → c2'])
+    // The worker reanudar relaunched on c2 (a new terminal) hits quota too, and so does the next one.
+    for (const handle of ['term_7b', 'term_7c']) {
+      pendingAfterSwitch(h.io, COMMON, 'claude', 7, true)
+      h.world.worktrees = [stop(7, 'claude', handle)]
+      await once(h, ['7'])
+      assert.deepEqual(drain(h), [quotaStop(7, 'claude')])
+    }
+    assert.equal(accountCalls(h).filter(call => call.includes(' select ')).length, 1)
+    assert.deepEqual(JSON.parse(h.files[ACCOUNTS]).claude.exhausted, ['c1', 'c2'])
+  })
+
+  test('S11: a failed orca account list or select keeps the agent blocked as today and reports the error line', async () => {
+    for (const [verb, count] of [['list', 1], ['select', 2]]) {
+      const h = harness({ worktrees: [stop(7, 'codex')], accounts: { codex: accounts('x1', 'x2') }, accountDown: { [verb]: 'orca: runtime not running' } })
+      await once(h, ['7'])
+      assert.deepEqual(h.out, [quotaStop(7, 'codex'), `cuenta no cambiada: codex — orca account ${verb} falló: orca: runtime not running`])
+      assert.equal(accountCalls(h).length, count)
+    }
+  })
+
+  test('S12: two workers of the same agent stopping on quota at once cause one select; the second resumes on the selected account', async () => {
+    const h = harness({ worktrees: [stop(7, 'claude'), stop(8, 'claude')], accounts: { claude: accounts('c1', 'c2') } })
+    await once(h, ['7', '8'])
+    assert.deepEqual(h.out, [quotaStop(7, 'claude'), 'cuenta cambiada: claude c1 → c2', quotaStop(8, 'claude'), 'cuenta cambiada: claude c1 → c2'])
+    assert.deepEqual(accountCalls(h), ['orca account list --agent claude --json', 'orca account select --agent claude --account c2 --json', 'orca account list --agent claude --json'])
+    assert.deepEqual(JSON.parse(h.files[ACCOUNTS]).claude.resumed, { 7: true, 8: true })
+  })
+
+  test('S13: the stack only lists and selects Orca accounts and never prints or stores an email', async () => {
+    const h = harness({ worktrees: [stop(7, 'claude')], accounts: { claude: accounts('c1', 'c2') } })
+    await once(h, ['7'])
+    assert.ok(accountCalls(h).length === 2 && accountCalls(h).every(call => /^orca account (list|select) --agent claude /.test(call)))
+    assert.ok(![...h.out, ...h.err, ...Object.values(h.files)].some(text => text.includes('@example.com')))
   })
 })

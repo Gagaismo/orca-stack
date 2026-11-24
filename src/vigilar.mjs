@@ -6,6 +6,7 @@ import { analyzeChecks, checkRunId, isHigherRunId, isStatus, latestChecks } from
 import { consultasCommand, getCommonDir } from './consultas.mjs'
 import { defaultIo, quotaLine, shellPrompt } from './despacho.mjs'
 import { commitOf, markerValue } from './marcas.mjs'
+import { switchAccount } from './orca.mjs'
 import { watchParent } from './parent-watch.mjs'
 import { sha256 } from './util.mjs'
 
@@ -729,7 +730,14 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
     if (allEnded && endedNow) lines.push(`tanda-cerrada ${targets.map(issue => `#${issue}`).join(' ')}`)
     // Diagnosis, like other events, is at-least-once: a crash after stdout and before the cursor write can repeat it.
     // Print first so that a crash does not silently lose the event.
-    for (const line of lines) io.out(line)
+    for (const line of lines) {
+      io.out(line)
+      // #431: a quota stop switches the agent to another Orca account; main resumes the worker with `reanudar`. With no
+      // account left only the stop is told, as before; a failed list or select adds its error line.
+      const quota = flags.dryRun ? null : /^worker-detenido #(\d+) (\S+): cuota /.exec(line)
+      const switched = quota ? switchAccount(io, commonDir, quota[2], quota[1]) : {}
+      if (switched.line || switched.error) io.out(switched.line ?? `cuenta no cambiada: ${quota[2]} — ${switched.error}`)
+    }
     if (!flags.dryRun && JSON.stringify(next) !== JSON.stringify(cursor)) {
       // A failed write never stops the watcher: this run keeps the cursor in memory and prints nothing twice. The file is
       // read again right before the write and only this watcher's items are replaced, so another watcher on the same

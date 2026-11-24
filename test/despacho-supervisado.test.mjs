@@ -34,10 +34,13 @@ afterEach(() => {
 })
 
 // Every external call is recorded; `orch` answers `orca orchestration <verb>` by verb.
-const fakeIo = (orch = {}) => {
+// #431: `account` answers `orca account`; the first `quota` terminals created show a usage limit after the launch.
+const fakeIo = (orch = {}, { card, account, quota = 0 } = {}) => {
+  let terminals = 0
   write(path.join(root, '.orca-stack.json'), JSON.stringify(PROJECT))
   const calls = []
   const out = []
+  const err = []
   const files = new Map()
   const sessionRoot = path.join(home, '.pi', 'agent', 'sessions')
   const sessionDir = path.join(sessionRoot, 'project')
@@ -48,6 +51,7 @@ const fakeIo = (orch = {}) => {
     now: () => 100,
     modifiedAt: () => 101,
     out: line => out.push(line),
+    err: line => err.push(line),
     sleep: async () => {},
     exists: existsSync,
     readFile: file => files.get(file) ?? readFileSync(file, 'utf8'),
@@ -76,9 +80,14 @@ const fakeIo = (orch = {}) => {
       if (cmd === 'git') return okRes('x\n')
       if (cmd === 'gh' && args[0] === 'issue' && args[1] === 'view') return json({ state: 'OPEN', assignees: [], title: 't' })
       if (cmd === 'orca' && args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })
+      if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'set' && card) return card
       if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'create') return json({ result: { worktree: { path: worktree, branch: 'refs/heads/proj-7' } } })
-      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') return json({ result: { terminal: { handle: 'term_1' } } })
-      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') return json({ result: { terminal: { tail: ['ready'] } } })
+      if (cmd === 'orca' && args[0] === 'account' && account) return account(args)
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') return json({ result: { terminal: { handle: `term_${++terminals}` } } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
+        const n = Number(args[args.indexOf('--terminal') + 1].slice(5))
+        return json({ result: { terminal: { tail: n <= quota ? ['ready', "You've hit your usage limit."] : ['ready'] } } })
+      }
       return okRes()
     },
   }
@@ -86,7 +95,9 @@ const fakeIo = (orch = {}) => {
   const briefSends = () => calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send' && c.includes('--text') && String(c[c.indexOf('--text') + 1]).includes('brief'))
   const index = predicate => calls.findIndex(predicate)
 
-  return { io, calls, out, orchestration, briefSends, index }
+  const cards = () => calls.filter(c => c[0] === 'orca' && c[1] === 'worktree' && c[2] === 'set')
+
+  return { io, calls, out, err, orchestration, briefSends, index, cards }
 }
 
 const briefPath = () => path.join(home, 'orca', 'briefs', 'proj-7.md')
@@ -179,5 +190,71 @@ describe('#397 despachar: supervised start', () => {
       assert.match(partial, new RegExp(`Publish the \`Diagnóstico: ${agent}\` on GitHub first: on the open PR \\(gh pr comment <pr> --body-file <file>\\), otherwise on the issue \\(gh issue comment 7 --body-file <file>\\)`), agent)
       assert.ok(partial.includes('Orca only accepts `--outcome succeeded` or `--outcome failed`'), agent)
     }
+  })
+})
+
+describe('#430 despachar: worktree card', () => {
+  const cardSet = agent => ['orca', 'worktree', 'set', '--worktree', `path:${worktree}`, '--comment', `#7 dispatched to ${agent}`, '--workspace-status', 'in-progress', '--json']
+
+  test('#430 S1: despachar sets the card comment "#<n> dispatched to <agent>" and in-progress on the new worktree right after creating it; the issue link stays on create', async () => {
+    for (const agent of ['claude', 'codex', 'agy', 'pi']) {
+      const env = fakeIo()
+      assert.equal(await dispatch('ticket', { n: '7', agent }, env.io), 0, agent)
+      assert.deepEqual(env.cards(), [cardSet(agent)], agent)
+      const created = env.index(c => c[0] === 'orca' && c[1] === 'worktree' && c[2] === 'create')
+      const set = env.index(c => c[0] === 'orca' && c[1] === 'worktree' && c[2] === 'set')
+      const terminal = env.index(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'create')
+      assert.ok(created >= 0 && created < set && set < terminal, agent)
+      const create = env.calls[created]
+      assert.equal(create[create.indexOf('--issue') + 1], '7', agent)
+      assert.deepEqual(env.err, [], agent)
+    }
+  })
+
+  test('#430 S4: when orca worktree set fails in despachar, one warning line goes to stderr and the dispatch still succeeds', async () => {
+    const env = fakeIo({}, { card: { status: 1, stdout: '', stderr: 'orca: runtime not running\nmore detail' } })
+    assert.equal(await dispatch('ticket', { n: '7', agent: 'codex' }, env.io), 0)
+    assert.deepEqual(env.cards(), [cardSet('codex')])
+    assert.deepEqual(env.err, [`⚠ No pude actualizar la tarjeta de path:${worktree} en Orca (orca worktree set): orca: runtime not running. Sigo.`])
+    assert.deepEqual(env.orchestration(), [['run-current', '--json'], workerStart('codex')])
+    assert.ok(env.out.includes(`✔ codex despachado en ${worktree}. Brief: ${briefPath()}`))
+    assert.ok(!env.calls.some(c => c.join(' ').includes('--remove-assignee')))
+  })
+
+  test('#430 S5: no worker brief tells a worker to set card metadata', async () => {
+    const env = fakeIo()
+    assert.equal(await dispatch('ticket', { n: '7', agent: 'codex' }, env.io), 0)
+    const briefs = [readFileSync(briefPath(), 'utf8')]
+    for (const agent of ['claude', 'codex', 'agy', 'pi']) {
+      briefs.push(renderBrief('ticket', { AGENT: agent, ISSUE: '7', REPO: 'proj', BASE: 'main', BRANCH: 'proj-7' }))
+      briefs.push(renderBrief('review', { AGENT: agent, PR: '70', REPO: 'proj', IMPLEMENTER: 'codex', SHA: 'abc1234', BASE: 'main' }))
+    }
+    for (const brief of briefs) {
+      assert.ok(!brief.includes('orca worktree set'), brief.slice(0, 80))
+      assert.ok(!brief.includes('--workspace-status'), brief.slice(0, 80))
+    }
+  })
+})
+
+describe('#431 despachar: out of quota right after the launch', () => {
+  const switcher = () => {
+    let active = 'c1'
+    return args => {
+      if (args[1] === 'select') active = args[args.indexOf('--account') + 1]
+      return json({ ok: true, result: { claude: { accounts: [{ id: 'c1' }, { id: 'c2' }], activeAccountId: active } } })
+    }
+  }
+  const accountCalls = env => env.calls.filter(c => c[0] === 'orca' && c[1] === 'account').map(c => c.join(' '))
+
+  test('S8: a quota stop at launch selects another claude account and relaunches the worker once in the same run; a second quota fails as today', async () => {
+    const env = fakeIo({}, { account: switcher(), quota: 1 })
+    assert.equal(await dispatch('ticket', { n: '7', agent: 'claude' }, env.io), 0)
+    assert.deepEqual(accountCalls(env), ['orca account list --agent claude --json', 'orca account select --agent claude --account c2 --json'])
+    assert.ok(env.out.includes('cuenta cambiada: claude c1 → c2'))
+    assert.equal(env.orchestration().filter(c => c[0] === 'worker-start').length, 2)
+
+    const twice = fakeIo({}, { account: switcher(), quota: 2 })
+    await assert.rejects(() => dispatch('ticket', { n: '7', agent: 'claude' }, twice.io), /term_2\) muestra un límite de cuota/)
+    assert.equal(accountCalls(twice).length, 2)
   })
 })

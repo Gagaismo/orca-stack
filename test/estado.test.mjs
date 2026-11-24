@@ -20,8 +20,8 @@ const fail = stderr => ({ status: 1, stdout: '', stderr })
 const run = (name, conclusion, status = 'COMPLETED') => ({ __typename: 'CheckRun', name, workflowName: 'CI', status, conclusion: status === 'COMPLETED' ? conclusion : '', startedAt: T(0) })
 const GREEN = [run('test', 'SUCCESS'), run('lint', 'SKIPPED'), run('ci-ok', 'SUCCESS')]
 
-const prData = (number, { head = HEAD, body = 'Implementador: codex\n\nCloses #7', comments = [], reviews = [], files = ['src/a.mjs'], checks = GREEN, state = 'OPEN', mergeable = 'MERGEABLE' } = {}) =>
-  ({ number, headRefOid: head, body, comments, reviews, files: files.map(file => ({ path: file, additions: 1, deletions: 0 })), statusCheckRollup: checks, baseRefName: 'main', mergeable, state })
+const prData = (number, { head = HEAD, body = 'Implementador: codex\n\nCloses #7', comments = [], reviews = [], files = ['src/a.mjs'], checks = GREEN, state = 'OPEN', mergeable = 'MERGEABLE', headRefName = 'Gagaismo/orca-stack-7' } = {}) =>
+  ({ number, headRefOid: head, headRefName, body, comments, reviews, files: files.map(file => ({ path: file, additions: 1, deletions: 0 })), statusCheckRollup: checks, baseRefName: 'main', mergeable, state })
 const review = (who, sha, { verdict = 'nada', at = T(5), extra = '' } = {}) => ({ body: `Revisor: ${who}\nCommit: ${sha}\n\n## BLOQUEA\n${verdict}\n\n## SUGERENCIAS\nnada\n${extra}`, submittedAt: at, state: 'COMMENTED' })
 const comment = (body, at = T(5)) => ({ body, createdAt: at, author: { login: 'stack-bot' } })
 
@@ -46,6 +46,18 @@ const harness = (world = {}, config = {}) => {
     sh: (cmd, args) => {
       calls.push([cmd, ...args].join(' '))
       if (cmd === 'git' && args.includes('--git-common-dir')) return okRes(`${root}/.git\n${root}/.git\n${root}\n`)
+      if (cmd === 'git' && args[0] === 'worktree' && args[1] === 'list') {
+        return okRes([{ path: root, branch: 'main' }, ...(world.worktrees ?? [])].map(one => `worktree ${one.path}\nHEAD 1\nbranch refs/heads/${one.branch}\n`).join('\n'))
+      }
+      if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'ps') {
+        return json({ ok: true, result: { worktrees: [{ path: root, branch: 'refs/heads/main', linkedPR: null }, ...(world.worktrees ?? [])].map(one => ({ path: one.path, branch: `refs/heads/${one.branch}`, linkedPR: one.linkedPR ?? null, agents: [] })) } })
+      }
+      if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'set') {
+        if (world.cardDown) return world.cardDown
+        const target = (world.worktrees ?? []).find(one => `path:${one.path}` === args[args.indexOf('--worktree') + 1])
+        if (target && args.includes('--pr')) target.linkedPR = { number: Number(args[args.indexOf('--pr') + 1]), state: 'open' }
+        return json({ ok: true })
+      }
       if (cmd === 'git' && args[0] === 'fetch') return world.fetchDown ? fail(world.fetchDown) : okRes('')
       if (cmd === 'git' && args[0] === 'ls-tree') return okRes((world.baseFiles ?? []).map(file => `${file}\n`).join(''))
       if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'view') {
@@ -67,6 +79,7 @@ const harness = (world = {}, config = {}) => {
 
   return { io, out, err, calls }
 }
+const cards = h => h.calls.filter(call => call.startsWith('orca worktree set'))
 const estado = (h, prs, flags = {}) => estadoCommand(flags, prs, h.io)
 const one = h => {
   assert.equal(h.out.length, 1, h.out.join('\n'))
@@ -89,7 +102,7 @@ describe('orca-stack estado (S1, #366)', () => {
     assert.equal(await estado(h, ['70'], { json: true }), 0)
     assert.deepEqual(h.out, [JSON.stringify({ pr: 70, head: HEAD, ok: true, falta: [], merge: MERGE })])
     assert.deepEqual(h.err, [])
-    assert.ok(h.calls.includes('gh pr view 70 --json number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state,url'))
+    assert.ok(h.calls.includes('gh pr view 70 --json number,headRefOid,headRefName,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state,url'))
 
     const human = harness(world)
     assert.equal(await estado(human, ['70']), 0)
@@ -508,3 +521,65 @@ describe('main-autonomo-2 S2: estado orders migrations by reservation', () => {
     assert.equal(readFileSync(registry(), 'utf8'), 'not json')
   })
 })
+
+describe('#430 estado: worktree card', () => {
+  before(() => {
+    root = tempDir('estado-card-root')
+    home = tempDir('estado-card-home')
+  })
+  after(() => {
+    cleanup(root)
+    cleanup(home)
+  })
+  const LINK = 'orca worktree set --worktree path:/wt/orca-stack-7 --pr 70 --workspace-status in-review --json'
+  const ATTESTATION = JSON.stringify({ pr: 70, head: HEAD, ok: true, falta: [], merge: MERGE })
+
+  test('#430 S2: estado links an open PR to the worktree on its head branch and sets in-review; a second run sends no worktree set', async () => {
+    const world = { prs: [prData(70, { reviews: [review('agy', HEAD)] })], worktrees: [{ path: '/wt/orca-stack-7', branch: 'Gagaismo/orca-stack-7' }] }
+    const h = harness(world)
+    assert.equal(await estado(h, ['70'], { json: true }), 0)
+    assert.deepEqual(h.out, [ATTESTATION])
+    assert.deepEqual(h.err, [])
+    assert.deepEqual(cards(h), [LINK])
+
+    const again = harness(world)
+    assert.equal(await estado(again, ['70'], { json: true }), 0)
+    assert.deepEqual(again.out, [ATTESTATION])
+    assert.deepEqual(cards(again), [])
+  })
+
+  test('#430 S2 negative: estado without a PR, with a PR whose branch has no worktree here, or with a merged PR sends no --pr', async () => {
+    const none = harness({ prs: [], worktrees: [{ path: '/wt/orca-stack-7', branch: 'Gagaismo/orca-stack-7' }] })
+    assert.equal(await estado(none, [], { json: true }), 0)
+    assert.deepEqual(none.out, ['[]'])
+    assert.deepEqual(cards(none), [])
+
+    const elsewhere = harness({ prs: [prData(70, { reviews: [review('agy', HEAD)], headRefName: 'Gagaismo/other' })], worktrees: [{ path: '/wt/orca-stack-7', branch: 'Gagaismo/orca-stack-7' }] })
+    assert.equal(await estado(elsewhere, ['70'], { json: true }), 0)
+    assert.deepEqual(cards(elsewhere), [])
+    assert.deepEqual(elsewhere.err, [])
+
+    const merged = harness({ prs: [prData(70, { reviews: [review('agy', HEAD)], state: 'MERGED' })], worktrees: [{ path: '/wt/orca-stack-7', branch: 'Gagaismo/orca-stack-7' }] })
+    assert.equal(await estado(merged, ['70'], { json: true }), 1)
+    assert.deepEqual(cards(merged), [])
+  })
+
+  test('#430 S4: when orca worktree set fails in estado, one warning line goes to stderr and the stdout attestation and exit code stay the same', async () => {
+    const world = {
+      prs: [prData(70, { reviews: [review('agy', HEAD)] })],
+      worktrees: [{ path: '/wt/orca-stack-7', branch: 'Gagaismo/orca-stack-7' }],
+      cardDown: { status: 1, stdout: JSON.stringify({ ok: false, error: { message: 'worktree not found' } }), stderr: '' },
+    }
+    const h = harness(world)
+    assert.equal(await estado(h, ['70'], { json: true }), 0)
+    assert.deepEqual(h.out, [ATTESTATION])
+    assert.deepEqual(cards(h), [LINK])
+    assert.deepEqual(h.err, ['⚠ No pude actualizar la tarjeta de path:/wt/orca-stack-7 en Orca (orca worktree set): worktree not found. Sigo.'])
+
+    const human = harness(world)
+    assert.equal(await estado(human, ['70']), 0)
+    assert.deepEqual(human.out, ['#70 #7 codex head=abc1234 ci=green review=agy@abc1234 riesgo=no falta='])
+    assert.equal(human.err.length, 1)
+  })
+})
+
