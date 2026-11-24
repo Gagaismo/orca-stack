@@ -213,9 +213,16 @@ export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir()
   const violations = [...longFiles(root, files), ...comments]
   // #419: diff mode matches every violation, so old ones keep their entries, and then reports only comments on added lines.
   const inScope = diff ? (violation => !isCommentRule(violation.rule) || onAddedLine(added)(violation)) : () => true
+  // #419: out-of-scope violations match first, so a new identical comment never takes an old one's entry; the report keeps violation order.
+  const ordered = [...violations.filter(violation => !inScope(violation)), ...violations.filter(inScope)]
+  const matchInScope = () => {
+    const { unmatched, stale } = match(ordered, entries)
+    const left = new Set(unmatched)
+    return { unmatched: violations.filter(violation => left.has(violation) && inScope(violation)), stale }
+  }
 
   if (flags.sembrar) {
-    const unmatched = match(violations, entries).unmatched.filter(inScope)
+    const { unmatched } = matchInScope()
     if (unmatched.length === 0 && existsSync(path.join(root, BASELINE_FILE))) {
       console.log(`Baseline: sin cambios (${BASELINE_FILE})`)
     } else {
@@ -226,8 +233,7 @@ export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir()
     }
   }
 
-  const { unmatched: found, stale: expired } = match(violations, entries)
-  const unmatched = found.filter(inScope)
+  const { unmatched, stale: expired } = matchInScope()
   const stale = diff ? expired.filter(entry => !isCommentRule(entry.rule)) : expired
   if (unmatched.length === 0 && stale.length === 0) {
     console.log(`lint OK: ninguna violación nueva ni entrada vencida (${entries.length} en la Baseline)`)

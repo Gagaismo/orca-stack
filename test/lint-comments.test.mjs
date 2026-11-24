@@ -396,6 +396,24 @@ describe('orca-stack lint comment rules (#419)', () => {
     })
   })
 
+  test('S7: in diff mode an identical comment added above a baselined one in the same symbol is reported', () => {
+    withRepo(({ repo, add, commit, lint }) => {
+      add('old.mjs', 'export function old() {\n  // FIXME\n  return 1\n}\n')
+      const seed = lint(['--sembrar'])
+      assert.equal(seed.status, 0, seed.out)
+      git(repo, 'add', '--', BASELINE)
+      commit('base')
+      git(repo, 'branch', '-M', 'main')
+      git(repo, 'checkout', '-q', '-b', 'feature')
+      add('.orca-stack.json', JSON.stringify({ ramaBase: 'main', lint: { comentarios: { alcance: 'diff' } } }))
+      add('old.mjs', 'export function old() {\n  // FIXME\n  // FIXME\n  return 1\n}\n')
+      commit('feature')
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, `comment-excuse old.mjs:old() ${EXCUSE}\n${SUMMARY(1, 0)}`)
+    })
+  })
+
   test('S7: in diff mode added lines are found in files whose names have a space or non-ASCII characters', () => {
     withRepo(({ repo, add, commit, lint }) => {
       add('src/a.mjs', 'export const a = 1\n')
