@@ -104,6 +104,18 @@ describe('init installs the lint (#424)', () => {
     assert.match(result.out, /^\.github\/workflows\/orca-stack-lint\.yml: no se crea, \.github\/workflows\/ci\.yml ya tiene un job orca-stack-lint$/m)
   })
 
+  test('R2: a repo whose own workflow already runs the lint in a job of another name keeps it byte for byte and gets no second workflow', () => {
+    for (const command of ['node bin/orca-stack.mjs lint', 'npx orca-stack lint']) {
+      const own = `name: CI\r\non: [push]\r\njobs:\r\n  lint:\r\n    name: orca-stack lint\r\n    runs-on: ubuntu-latest\r\n    steps:\r\n      - uses: actions/checkout@v4\r\n      - name: Lint against the Baseline\r\n        run: ${command}\r\n`
+      write(file('.github/workflows/ci.yml'), own)
+      const result = run()
+      assert.equal(result.status, 0, result.out)
+      assert.equal(read(file('.github/workflows/ci.yml')), own)
+      assert.equal(existsSync(file(WORKFLOW)), false)
+      assert.match(result.out, /^\.github\/workflows\/orca-stack-lint\.yml: no se crea, \.github\/workflows\/ci\.yml ya corre orca-stack lint$/m)
+    }
+  })
+
   test('R2: an existing workflow file of the same name and an existing hook file are left byte for byte', () => {
     write(file(WORKFLOW), 'name: mío\r\n')
     write(file(HOOK), '#!/bin/sh\necho mi hook\n')

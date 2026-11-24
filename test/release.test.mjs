@@ -63,6 +63,11 @@ const setupFixture = (opts = {}) => {
     // The release runs init, which would create these if the fixture lacked them (#432).
     'orca.yaml',
     '.worktreeinclude',
+    // The lint pieces orca-stack already has, so init skips them and needs no ast-grep (#424).
+    '.orca-stack-baseline.json',
+    '.githooks',
+    'CODING_STANDARDS.md',
+    path.join('.github', 'workflows', 'ci.yml'),
   ]) {
     cpSync(path.join(ROOT, item), path.join(local, item), { recursive: true })
   }
@@ -83,7 +88,7 @@ const setupFixture = (opts = {}) => {
   const suiteCmd = opts.suite ?? 'node -e "process.exit(0)"'
   writeFileSync(
     path.join(local, '.orca-stack.json'),
-    JSON.stringify({ version: 1, verificacion: { suite: suiteCmd } }, null, 2),
+    JSON.stringify({ version: 1, verificacion: { suite: suiteCmd }, lint: { enabled: true, comentarios: { alcance: 'repo' } } }, null, 2),
   )
 
   if (opts.extraSetup) {

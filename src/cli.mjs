@@ -104,7 +104,8 @@ Instala el lint (\`orca-stack lint\`) con cinco piezas, cada una solo si falta:
   1. la clave lint en .orca-stack.json: {"enabled": true, "comentarios": {"alcance": "repo"}}; si ya hay una clave lint,
      aunque sea {"enabled": false}, no se toca. Agregarla no cambia el resto del archivo (con respaldo).
   2. .github/workflows/orca-stack-lint.yml, con un job orca-stack-lint que corre el lint con npx; no se crea si el
-     archivo existe o si otro workflow de .github/workflows ya tiene un job orca-stack-lint. Nunca edita tus workflows.
+     archivo existe o si otro workflow de .github/workflows ya tiene un job orca-stack-lint o un paso que corre
+     orca-stack lint (o bin/orca-stack.mjs lint). Nunca edita tus workflows.
   3. .githooks/pre-push, el aviso temprano que corre el lint antes de cada push.
   4. CODING_STANDARDS.md con la tabla de la regla de los comentarios; si ya existe no se toca, y si no tiene la tabla, avisa.
   5. .orca-stack-baseline.json, sembrada con las violaciones actuales de los archivos trackeados más los que escribió

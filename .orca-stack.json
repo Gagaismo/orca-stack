@@ -26,5 +26,11 @@
     "despues": false
   },
   "idioma": "English for code, comments, tests, commits and PRs; README, docs/ and CLI strings stay in Spanish until a separate decision",
-  "setup": "completo"
+  "setup": "completo",
+  "lint": {
+    "enabled": true,
+    "comentarios": {
+      "alcance": "repo"
+    }
+  }
 }
