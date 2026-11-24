@@ -40,7 +40,7 @@ Comandos:
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
   limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
   novedades Precheck de una automatización de Orca que sondea GitHub: sale con 1 (Orca saltea la corrida) si no hay nada nuevo.
-  lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y los comentarios de JS/TS) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
+  lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y en JS/TS, los comentarios y module-cycle: módulos que se importan en círculo) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
   --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
@@ -336,7 +336,16 @@ que lo contiene (o la declaración que sigue), o <módulo>:
   comment-excuse src/x.mjs:foo() (Excuse) — borralo y abrí un issue para arreglar la implementación
 Go, Python, Shell, Markdown y los demás lenguajes no dan hallazgos de comentarios.
 
-Los comentarios se leen con ast-grep 0.51.3, fijado por versión y sha256 (lo instala npm ci en la instalación de
+module-cycle, en los mismos archivos JS/TS: los módulos que se importan en círculo (a importa b y b importa a, o
+a → b → c → a) son una violación; una cadena a → b → c no. Cuentan import … from, import './x', export … from y
+require('./x') con un string; no cuentan import type ni export type … from de TS, ningún import() dinámico, los
+paquetes (node:fs, nombres de npm) ni un especificador que no resuelve a un archivo revisado. Un especificador relativo
+resuelve al archivo exacto, o con .mjs, .js, .cjs, .ts, .tsx, .mts, .cts o .jsx, o a /index con esas extensiones.
+Cada ciclo sale como un recorrido cerrado que pasa por todos sus módulos y empieza y termina en el menor:
+  module-cycle src/a.mjs → src/b.mjs → src/a.mjs — dale una dirección a los módulos
+Go, Python, Shell y los demás lenguajes no dan hallazgos de module-cycle.
+
+Los comentarios y los imports se leen con ast-grep 0.51.3, fijado por versión y sha256 (lo instala npm ci en la instalación de
 orca-stack; ORCA_STACK_AST_GREP apunta a otro binario, que también se verifica). Si hay algún archivo JS/TS y ast-grep
 falta, tiene otra versión o no coincide su checksum, el lint falla con 1 nombrando la versión y nunca pasa en silencio.
 
@@ -353,7 +362,13 @@ una entrada de su regla por archivo o, si el archivo se movió sin cambios, por 
 contenido entero); cada entrada cubre una sola violación, así que una copia en otro archivo es nueva. La de wide-directory es
 la ruta del directorio: renombrarlo da una violación nueva y una entrada vencida. Una entrada de
 comentario guarda el símbolo como location y el fingerprint del texto del comentario: coincide por archivo, símbolo y
-fingerprint, y si la función se movió a otro archivo o se renombró, por fingerprint.
+fingerprint, y si la función se movió a otro archivo o se renombró, por fingerprint. La entrada de module-cycle es el
+conjunto de sus módulos: {"rule":"module-cycle","file":<el primero>,"location":"cycle","fingerprint",
+"members":[rutas ordenadas]}. Un ciclo coincide con toda entrada que tenga a todos sus módulos, así que un ciclo que se
+achica sigue pasando y uno con un módulo que no está en ninguna entrada es nuevo. La entrada vence solo cuando ningún
+ciclo actual contiene dos o más de sus módulos (o uno que se importa a sí mismo), aunque pase por módulos de afuera:
+cortar un import mientras otro camino los sigue uniendo en un ciclo la mantiene. En el alcance "diff",
+module-cycle se revisa igual que long-file y wide-directory.
 lint no acepta --dry-run.
 Una entrada cuya violación ya no está en ningún archivo del repo está vencida: el lint falla y pide sacarla a mano.
 Sin Baseline, todas las violaciones son nuevas; una Baseline mal formada falla nombrando el archivo y nunca se reescribe.
