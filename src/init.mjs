@@ -15,6 +15,16 @@ export const POLICY = '~/orca/stack/ORCA-STACK.md'
 export const BRIEFS = '~/orca/stack/ROLE-BRIEFS.md'
 export const MAIN_DOC = '~/orca/stack/MAIN.md'
 
+// Orca's worktree files (#432): the setup step comes from the repo's lockfile, and the include list is the local config.
+const ORCA_YAML_HEAD = '# Orca runs scripts.setup in each new worktree right after creating it.\n# No worktree.sharedDirectories: a worker that changes dependencies would change them for every worktree.\n'
+export const orcaYaml = root =>
+  existsSync(path.join(root, 'package-lock.json'))
+    ? `${ORCA_YAML_HEAD}scripts:\n  setup: |\n    npm install\n`
+    : `${ORCA_YAML_HEAD}# orca-stack init found no install step (no package-lock.json): add one under scripts.setup if worktrees need it.\n`
+export const WORKTREE_INCLUDE =
+  '# Gitignored local files Orca copies into each new worktree.\n# Literal paths only (Orca skips globs and negations); never list secrets such as .env files.\n' +
+  `${PROJECT_LOCAL_CONFIG}\n`
+
 const projectRoot = cwd => {
   const git = which('git')
   if (!git) {
@@ -90,6 +100,8 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
   missing(PROJECT_CONFIG, null, () => JSON.stringify({ version: 1 }, null, 2) + '\n')
   // Empty on purpose: a list here would replace the committed and personal ones (lists are not merged).
   missing(PROJECT_LOCAL_CONFIG, null, () => '{}\n')
+  missing('orca.yaml', root, orcaYaml)
+  missing('.worktreeinclude', null, () => WORKTREE_INCLUDE)
 
   const ignore = path.join(root, '.gitignore')
   const ignoreText = readTextIfExists(ignore)

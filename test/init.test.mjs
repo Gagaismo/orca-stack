@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
+import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
 let home
 let repo
@@ -270,6 +270,86 @@ describe('orca-setup: riesgo globs for single files and match listing (issue #28
     assert.match(s9, /No agregues ningún glob que el humano no haya aceptado/i)
     assert.match(s9, /no toques un `riesgo` existente al (?:volver a correr|rehacer) el setup (?:a menos|salvo) que el humano lo pida/i)
     assert.match(w, /no toques un `riesgo` existente al (?:volver a correr|reejecutar|rehacer)/i)
+  })
+})
+
+describe('#432 orca.yaml and .worktreeinclude', () => {
+  const own = name => read(path.join(ROOT, name))
+  const entries = text => text.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'))
+
+  test('R1: orca-stack commits an orca.yaml whose scripts.setup runs npm install, the same text init generates for a repo with package-lock.json', () => {
+    assert.match(own('orca.yaml'), /^scripts:\n {2}setup: \|\n {4}npm install\n$/m)
+    write(path.join(repo, 'package-lock.json'), '{}\n')
+    assert.equal(run().status, 0)
+    assert.equal(read(path.join(repo, 'orca.yaml')), own('orca.yaml'))
+  })
+
+  test('R2: .worktreeinclude lists literal gitignored paths only, with .orca-stack.local.json, negative: no glob, no negation and no secret', () => {
+    assert.equal(run().status, 0)
+    for (const text of [own('.worktreeinclude'), read(path.join(repo, '.worktreeinclude'))]) {
+      assert.deepEqual(entries(text), ['.orca-stack.local.json'])
+      for (const entry of entries(text)) {
+        assert.doesNotMatch(entry, /[*?[\]]|^!/, `${entry} is not a literal path`)
+        assert.doesNotMatch(entry, /(^|\/)\.(env)\b|\.ssh|\.pem$|\.key$|credential|secret/i, `${entry} is a secret`)
+      }
+    }
+    assert.equal(git(ROOT, 'check-ignore', '-q', '.orca-stack.local.json').status, 0, 'orca-stack does not ignore the path it copies')
+    assert.equal(git(repo, 'check-ignore', '-q', '.orca-stack.local.json').status, 0, 'init does not ignore the path it copies')
+  })
+
+  test('R3: negative: a repo with its own orca.yaml and .worktreeinclude keeps them byte for byte and init says it skipped them', () => {
+    write(path.join(repo, 'orca.yaml'), 'scripts:\r\n  setup: pnpm i\r\n')
+    write(path.join(repo, '.worktreeinclude'), '.vscode/settings.json\n')
+    const result = run()
+    assert.equal(result.status, 0, result.out)
+    assert.equal(read(path.join(repo, 'orca.yaml')), 'scripts:\r\n  setup: pnpm i\r\n')
+    assert.equal(read(path.join(repo, '.worktreeinclude')), '.vscode/settings.json\n')
+    assert.match(result.out, /^orca\.yaml: ya existe, no se toca$/m)
+    assert.match(result.out, /^\.worktreeinclude: ya existe, no se toca$/m)
+    assert.deepEqual(backups(home), [])
+  })
+
+  test('R4: init sets npm install as the setup step when package-lock.json exists, and writes no setup script when it detects none', () => {
+    const none = run()
+    assert.equal(none.status, 0, none.out)
+    assert.match(none.out, /^creo orca\.yaml$/m)
+    assert.match(none.out, /^creo \.worktreeinclude$/m)
+    const bare = read(path.join(repo, 'orca.yaml'))
+    assert.equal(entries(bare).length, 0, 'no setup script without a detected install step')
+    assert.match(bare, /no install step \(no package-lock\.json\)/)
+    cleanup(path.join(repo, 'orca.yaml'))
+    write(path.join(repo, 'package-lock.json'), '{}\n')
+    run()
+    assert.deepEqual(entries(read(path.join(repo, 'orca.yaml'))), ['scripts:', 'setup: |', 'npm install'])
+  })
+
+  test('R5: running init twice changes nothing the second time', () => {
+    write(path.join(repo, 'package-lock.json'), '{}\n')
+    assert.equal(run().status, 0)
+    const before = snapshot(repo)
+    const second = run()
+    assert.equal(second.status, 0, second.out)
+    assert.deepEqual(snapshot(repo), before)
+    assert.deepEqual(backups(home), [])
+    assert.doesNotMatch(second.out, /^creo (orca\.yaml|\.worktreeinclude)$/m)
+  })
+
+  test('R6: negative: neither orca-stack nor init turns on worktree.sharedDirectories', () => {
+    write(path.join(repo, 'package-lock.json'), '{}\n')
+    run()
+    for (const text of [own('orca.yaml'), read(path.join(repo, 'orca.yaml'))]) {
+      assert.deepEqual(entries(text).filter(line => /sharedDirectories|^worktree:/.test(line)), [])
+    }
+  })
+
+  test('R8: the manual describes both files and what init does with them', () => {
+    const manual = read(path.join(ROOT, 'docs', 'manual.md'))
+    const initSection = manual.split('#### `init`')[1].split('\n#### ')[0]
+    assert.match(initSection, /crea `orca\.yaml` y `\.worktreeinclude` si faltan/)
+    assert.match(manual, /`scripts\.setup`/)
+    assert.match(manual, /`\.worktreeinclude`.*rutas literales/)
+    assert.match(manual, /`worktree\.sharedDirectories`/)
+    assert.match(manual, /Command source & orca\.yaml/)
   })
 })
 

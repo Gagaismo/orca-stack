@@ -130,6 +130,11 @@ orca-stack init
 
 Agrega el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` a `AGENTS.md` (con el contrato completo) y uno corto con `@AGENTS.md` a `CLAUDE.md`; crea `.orca-stack.json` y `.orca-stack.local.json` si faltan y agrega este último a `.gitignore`. No pisa configuración existente.
 
+También crea `orca.yaml` y `.worktreeinclude` si faltan; si ya existen, no los toca y dice `ya existe, no se toca`. orca-stack commitea los suyos.
+
+- `orca.yaml`: Orca corre `scripts.setup` en cada worktree nuevo apenas lo crea. Con `package-lock.json` el setup es `npm install`; si `init` no detecta un paso de instalación, no escribe script de setup. No prende `worktree.sharedDirectories` (un `node_modules` compartido por symlink): un worker que cambia dependencias se las cambiaría a los demás. Orca lee `orca.yaml` de la rama de la que parte el worktree, así que rige recién después de mergearlo. Si en Settings → Repository ya tenías el setup como comando local, poné Command source & orca.yaml en `orca.yaml only`: con `Run both`, el `npm install` corre dos veces.
+- `.worktreeinclude`: los archivos locales ignorados por git que Orca copia a cada worktree nuevo, en rutas literales (Orca saltea los globs y las negaciones con un aviso). Lista `.orca-stack.local.json`; nunca pongas secretos ahí. Una ruta que no existe en una máquina simplemente no se copia.
+
 #### `doctor`
 
 ```bash
@@ -348,13 +353,14 @@ Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `
 | `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | Modo "dev perezoso": el cambio más chico que resuelve la tarea; review y auditoría de calidad; ledger de atajos (`shortcut:`); ayuda rápida. Nunca van contra un requisito explícito. Se instalan siempre, para usarlas a mano; sus reglas en el contrato y en `PONYTAIL.md` valen solo con el perk `ponytail` (ver [4.6](#46-perks-y-marchas)) |
 | `arena` | N candidatas en paralelo a la misma tarea, elegir una base e injertar lo mejor de las otras |
 | `swarm` | Fan-out de N workers de solo lectura, que se resuelve en un informe |
+| `sharpen`, `reframe` | Las dispara solo el humano (`/sharpen`, `/reframe`); `main` puede proponerlas en el paso 1 para una idea vaga y espera. `sharpen` hace una tarea más profunda, no más grande, y reescribe el pedido; `reframe` enseña las palabras de experto para lo que se construye y reescribe la descripción con ellas |
 | `principle-attack-the-premise` | Cuando dos arreglos con la misma premisa fallaron en el mismo gate: cuestionar la premisa antes de escribir otro arreglo |
 | `principle-explain-the-number` | Antes de confiar o actuar sobre un número medido: encontrar qué lo limita y descartar que mida otra cosa |
 | `principle-make-operations-idempotent` | Al diseñar comandos o loops que corren entre caídas y reintentos: converger al mismo estado final |
 | `create-formal-verification-skill`, `maintain-formal-verification-skill` | Opcionales, se invocan a mano: generan en el proyecto una skill local de verificación formal (máquinas de estado, carreras e invariantes) y la vuelven a alinear con el código después de cambios; para leer los resultados de TLA+ usan `/statechart` (ver la fila siguiente) |
 | `statechart` | Opcional, se invoca a mano (`/statechart`): verifica un modelo TLA+ con TLC y lo dibuja como statechart de Mermaid, con el camino más corto a cada estado que rompe una regla. Necesita Node 22.18 a 22.x, Node 23.6 o posterior, Bun 1.1.5 o posterior, o Deno 2.0 o posterior (lo exige `scripts/statechart`), `mise` y red en la primera corrida; en Windows, WSL o un contenedor |
 
-No instala las skills de Matt Pocock ni Caveman: ver el [README](../README.md#qué-no-instala-y-por-qué). `grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano; en Claude se escriben `/mattpocock-skills:<skill>`, salvo `grill-with-docs` y `grill-me`, que son de orca-stack (las instala `global`) y se escriben `/grill-with-docs` y `/grill-me`.
+No instala las skills de Matt Pocock ni Caveman: ver el [README](../README.md#qué-no-instala-y-por-qué). `grill-with-docs`, `sharpen`, `reframe`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano; en Claude se escriben `/mattpocock-skills:<skill>`, salvo `grill-with-docs` y `grill-me`, que son de orca-stack (las instala `global`) y se escriben `/grill-with-docs` y `/grill-me`.
 
 ### 4.5 Configuración en tres capas
 
