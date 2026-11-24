@@ -112,7 +112,7 @@ const DIRECTIVE = /^(?:eslint\b|eslint-|global\s|globals\s|jshint\b|jscs:|@ts-|t
 const JSDOC_TYPE = /@(?:type|typedef|param|arg|argument|returns?|template|callback|property|prop|enum|this|satisfies|implements|extends|augments|overload|import|throws|yields)\b/
 const LICENSE = /\b(?:license[ds]?|copyright|spdx-license-identifier)\b|©/i
 const DECISION_RECORD = /(?<![\w&])#\d+\b|\badr[ -]?\d{4}\b|docs\/adr\/\d{4}-/i
-const EXCUSE_MARKER = /(?<![\p{L}\p{N}_])(?:TODO|FIXME|XXX)(?![\p{L}\p{N}_])/u
+const EXCUSE_MARKER = /(?<![\p{L}\p{N}_])(?:TODO|FIXME|HACK|XXX)(?![\p{L}\p{N}_])/u
 const EXCUSE = /\b(?:hack|workarounds?|for now|upgrade when)\b|\btemporary\b(?!\s+(?:files?|dir(?:ector(?:y|ies))?|folders?|paths?|homes?|repos?|cop(?:y|ies)|names?|worktrees?)\b)|\bshortcut:/i
 
 const isLicenseHeader = (comment, text, blanked) => LICENSE.test(text) && blanked.subarray(0, comment.start).toString('utf8').trim() === ''
@@ -223,7 +223,7 @@ export const commentViolations = (root, files) => {
     for (const comment of comments.sort((a, b) => a.start - b.start)) {
       const verdict = classify(comment, context)
       if (!verdict) continue
-      found.push({ rule: verdict.rule, file, location: locate(comment, symbols, blanked), fingerprint: fingerprint(verdict.text), line: comment.line + 1 })
+      found.push({ rule: verdict.rule, file, location: locate(comment, symbols, blanked), fingerprint: fingerprint(verdict.text), line: comment.line + 1, endLine: comment.endLine + 1 })
     }
   }
   return found

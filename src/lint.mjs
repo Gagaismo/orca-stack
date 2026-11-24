@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { loadConfig } from './despacho.mjs'
 import { commentViolations, isCommentRule, reportComment } from './lint-comments.mjs'
+import { homeDir } from './util.mjs'
 
 export const BASELINE_FILE = '.orca-stack-baseline.json'
 const MAX_LINES = 2000
@@ -142,19 +144,110 @@ const match = (violations, entries) => {
   return { unmatched: pending, stale: [...free].sort((a, b) => a - b).map(i => entries[i]) }
 }
 
+const ALCANCE_KEY = 'lint.comentarios.alcance'
+
+const alcanceOf = config => {
+  const value = config.lint?.comentarios?.alcance
+  if (value === undefined || value === 'repo' || value === 'diff') return value ?? 'repo'
+  throw new Error(`${ALCANCE_KEY} tiene que ser "repo" o "diff", no ${JSON.stringify(value)} (en .orca-stack.json, .orca-stack.local.json o ~/.orca-stack/config.json).`)
+}
+
+const mergeBase = (root, base) => {
+  if (typeof base !== 'string' || base === '') throw new Error(`${ALCANCE_KEY} "diff" necesita ramaBase en la configuración del repo.`)
+  const ref = [base, `origin/${base}`].find(candidate => gitOut(root, ['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`]) !== undefined)
+  if (ref === undefined) throw new Error(`${ALCANCE_KEY} "diff": no se encontró la rama base ${base} ni origin/${base}; traéla con git fetch origin ${base}.`)
+  const found = gitOut(root, ['merge-base', 'HEAD', ref])
+  if (found === undefined) throw new Error(`${ALCANCE_KEY} "diff": HEAD no tiene merge-base con ${ref} (en un clon shallow, corré git fetch --unshallow).`)
+  return found.trim()
+}
+
+const C_ESCAPES = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92 }
+
+// #419: git ends a path with a space with a TAB and C-quotes unusual names (octal escapes are UTF-8 bytes).
+const diffPath = raw => {
+  const text = raw.replace(/\r$/, '').replace(/\t$/, '')
+  if (!text.startsWith('"')) return text.startsWith('b/') ? text.slice(2) : undefined
+  const bytes = []
+  for (let i = 1; i < text.length - 1; i++) {
+    const char = text[i]
+    if (char !== '\\') {
+      bytes.push(...Buffer.from(char, 'utf8'))
+      continue
+    }
+    const octal = /^[0-7]{3}/.exec(text.slice(i + 1))
+    if (octal) {
+      bytes.push(parseInt(octal[0], 8))
+      i += 3
+    } else {
+      bytes.push(C_ESCAPES[text[i + 1]] ?? text.charCodeAt(i + 1))
+      i++
+    }
+  }
+  const unquoted = Buffer.from(bytes).toString('utf8')
+  return unquoted.startsWith('b/') ? unquoted.slice(2) : undefined
+}
+
+const addedLines = (root, base) => {
+  const commit = mergeBase(root, base)
+  const out = gitOut(root, ['-c', 'core.quotePath=false', 'diff', '--no-color', '--no-ext-diff', '-M', '-U0', '--src-prefix=a/', '--dst-prefix=b/', commit, '--'])
+  if (out === undefined) throw new Error(`git diff ${commit} falló: el lint no puede saber qué líneas agrega el cambio.`)
+  const added = new Map()
+  let lines
+  let pending = 0
+  for (const line of out.split('\n')) {
+    if (pending > 0) {
+      if (line.startsWith('+') || line.startsWith('-')) pending--
+      continue
+    }
+    if (line.startsWith('+++ ')) {
+      const file = diffPath(line.slice(4))
+      lines = file === undefined ? undefined : new Set()
+      if (lines) added.set(file, lines)
+      continue
+    }
+    const hunk = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line)
+    if (!hunk) continue
+    const start = Number(hunk[2])
+    const count = Number(hunk[3] ?? 1)
+    pending = Number(hunk[1] ?? 1) + count
+    for (let n = start; n < start + count; n++) lines?.add(n)
+  }
+  return added
+}
+
+const onAddedLine = added => violation => {
+  const lines = added.get(violation.file)
+  if (!lines) return false
+  for (let n = violation.line; n <= violation.endLine; n++) if (lines.has(n)) return true
+  return false
+}
+
 const byKey = (a, b) => a.rule.localeCompare(b.rule) || a.file.localeCompare(b.file) || a.location.localeCompare(b.location) || a.fingerprint.localeCompare(b.fingerprint)
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
-export const lintCommand = async (flags, { cwd = process.cwd() } = {}) => {
+export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir() } = {}) => {
   if (flags.dryRun) throw new Error('lint no acepta --dry-run: sin --sembrar no escribe nada, y --sembrar existe para escribir la Baseline.')
   const root = repoRoot(cwd)
   let entries = readBaseline(root)
+  const config = loadConfig(home, root)
+  const diff = alcanceOf(config) === 'diff'
+  const added = diff ? addedLines(root, config.ramaBase) : undefined
   const files = checkedFiles(root)
-  const violations = [...longFiles(root, files), ...wideDirectories(files), ...commentViolations(root, files)]
+  const comments = commentViolations(root, files)
+  const violations = [...longFiles(root, files), ...wideDirectories(files), ...comments]
+  // #419: diff mode matches every violation, so old ones keep their entries, and then reports only comments on added lines.
+  const inScope = diff ? (violation => !isCommentRule(violation.rule) || onAddedLine(added)(violation)) : () => true
+  // #419: out-of-scope violations match first, so a new identical comment never takes an old one's entry; the report keeps violation order.
+  const ordered = [...violations.filter(violation => !inScope(violation)), ...violations.filter(inScope)]
+  const matchInScope = () => {
+    const { unmatched, stale } = match(ordered, entries)
+    const left = new Set(unmatched)
+    return { unmatched: violations.filter(violation => left.has(violation) && inScope(violation)), stale }
+  }
 
   if (flags.sembrar) {
-    const { unmatched } = match(violations, entries)
+    const { unmatched } = matchInScope()
     if (unmatched.length === 0 && existsSync(path.join(root, BASELINE_FILE))) {
       console.log(`Baseline: sin cambios (${BASELINE_FILE})`)
     } else {
@@ -165,7 +258,8 @@ export const lintCommand = async (flags, { cwd = process.cwd() } = {}) => {
     }
   }
 
-  const { unmatched, stale } = match(violations, entries)
+  const { unmatched, stale: expired } = matchInScope()
+  const stale = diff ? expired.filter(entry => !isCommentRule(entry.rule)) : expired
   if (unmatched.length === 0 && stale.length === 0) {
     console.log(`lint OK: ninguna violación nueva ni entrada vencida (${entries.length} en la Baseline)`)
     return 0
