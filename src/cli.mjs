@@ -348,7 +348,8 @@ Dentro del clon, hace una sola llamada a gh (gh api graphql: el issue y el PR ac
 y el estado de CI de cada PR abierto) y la compara con la de su última corrida, guardada en
 <git-common-dir>/orca-stack/novedades.json. Sale con 1 si no cambió nada (Orca registra la corrida como skipped_precheck,
 sin correr el agente) y con 0 si hay novedades o es la primera corrida. Si no puede saberlo (gh sin red o sin login, fuera
-de un repo git), sale con 0 y lo dice en stderr: el agente corre y lo informa, en vez de saltearse para siempre.
+de un repo git, gh colgado más de 20 s, un argumento o una opción de más), sale con 0 y lo dice en stderr: el agente corre
+y lo informa, en vez de saltearse para siempre.
 <nombre> separa la última corrida de cada automatización que sondea el mismo clon (por defecto, "default").
 `,
   remove: `orca-stack remove [--dry-run] [--with-pi]
@@ -455,7 +456,8 @@ export const main = async (argv, io) => {
   } catch (error) {
     console.error(`${error.message}\n\nUsá --help para ver las opciones.`)
 
-    return 2
+    // A precheck that exits non-zero makes Orca skip the run: a typo in novedades must let the agent run and report it.
+    return argv[0] === 'novedades' ? 0 : 2
   }
   const { command, flags, rest } = parsed
   if (flags.version) {

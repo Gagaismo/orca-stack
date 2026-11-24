@@ -90,6 +90,7 @@ describe('orca-stack novedades: the polling precheck (#433)', () => {
       { gh: ok('not json') },
       { gh: ok(JSON.stringify({ errors: [{ message: 'Could not resolve to a Repository' }] })) },
       { gh: { status: undefined, stdout: '', stderr: '', error: new Error('spawn gh ENOENT') } },
+      { gh: { status: null, stdout: '', stderr: '', error: Object.assign(new Error('spawnSync gh ETIMEDOUT'), { code: 'ETIMEDOUT' }) } },
       { noRepo: true, gh: ok(snapshot()) },
     ]
     for (const failure of failures) {
@@ -132,7 +133,27 @@ describe('orca-stack novedades: the polling precheck (#433)', () => {
     assert.equal((await run({ files, gh: ok(snapshot()) }, ['tarde'])).code, 1)
     assert.equal((await run({ files, gh: ok(snapshot()) }, ['madrugada'])).code, 1)
     assert.deepEqual(Object.keys(JSON.parse(files[STATE]).ultimas).sort(), ['madrugada', 'tarde'])
-    await assert.rejects(novedadesCommand({}, ['a', 'b'], fakeIo({ gh: ok(snapshot()) }).io), /^Error: Uso: orca-stack novedades \[<nombre>\]/)
+  })
+
+  test('R4: a usage mistake in the precheck command exits zero with a warning and never calls gh', async () => {
+    for (const [flags, rest, said] of [[{}, ['a', 'b'], /un solo <nombre>/], [{ dryRun: true }, [], /no acepta --dryRun/]]) {
+      const files = {}
+      const env = fakeIo({ files, gh: ok(snapshot()) })
+      assert.equal(await novedadesCommand(flags, rest, env.io), 0)
+      assert.equal(env.err.length, 1)
+      assert.match(env.err[0], said)
+      assert.match(env.err[0], /Uso: orca-stack novedades \[<nombre>\]/)
+      assert.deepEqual(env.calls.filter(([cmd]) => cmd !== 'git'), [])
+      assert.deepEqual(files, {})
+    }
+    const home = tempDir('novedades-typo')
+    try {
+      const typo = cli(home, ['novedades', '--nombre', 'tarde'], { cwd: home })
+      assert.equal(typo.status, 0, typo.out)
+      assert.match(typo.out, /Opción desconocida: --nombre/)
+    } finally {
+      cleanup(home)
+    }
   })
 
   test('R4 and R6: novedades --help and the manual document the precheck and how to add it to an existing automation', () => {

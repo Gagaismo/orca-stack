@@ -13,7 +13,7 @@ const items = () => checklist().split('\n- [ ] ').slice(1)
 const field = (item, name) => item.split('\n').find(line => line.trim().startsWith(`- ${name}:`))
 
 describe('#435 personal Orca settings checklist', () => {
-  test('R1: the checklist has the three items, each with where it lives in Orca and its recommended value', () => {
+  test('R1: the checklist has its four items, each with where it lives in Orca and its recommended value', () => {
     const [awake, confirm, cleanup] = items()
     assert.equal(items().length, 4)
     assert.match(awake, /^\*\*Mantener la compu despierta mientras trabajan los agentes\.\*\*/)
