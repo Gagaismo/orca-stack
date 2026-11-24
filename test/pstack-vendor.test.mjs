@@ -645,7 +645,7 @@ describe('#412 re-vendor the three pstack principles from 0.15.43 (2f87c85)', ()
     'principle-make-operations-idempotent': '76ad0a99b6ff2a05a159accfeee48412d62f62774eb8d05bbff26a1f3aa3eab5',
   }
   // #427 pinned sharpen and reframe to their own later commit.
-  const LATER = { sharpen: { version: '0.15.48', commit: '005d8f6e8ec057b738adcd08a08b30db0478402d' }, reframe: { version: '0.15.48', commit: '005d8f6e8ec057b738adcd08a08b30db0478402d' } }
+  const LATER = { sharpen: { version: '0.15.48', commit: '005d8f6e8ec057b738adcd08a08b30db0478402d' }, reframe: { version: '0.15.48', commit: '005d8f6e8ec057b738adcd08a08b30db0478402d' }, 'no-comments': NEW }
   const assertPinsTruthful = manifest => {
     for (const name of Object.keys(manifest.skills)) {
       assert.deepEqual(pinOf(manifest, name), name in UPSTREAM ? NEW : (LATER[name] ?? OLD), `${name} provenance names the wrong upstream commit`)
@@ -815,5 +815,84 @@ describe('#427 vendored and adapted sharpen and reframe (upstream v0.15.48)', ()
     assert.match(row, /Las dispara solo el humano \(`\/sharpen`, `\/reframe`\); `main` puede proponerlas en el paso 1 para una idea vaga y espera/)
     const credit = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
     assert.match(credit, /`sharpen` y `reframe`, versión `0\.15\.48`, commit `005d8f6`/)
+  })
+})
+
+describe('#426 vendored and adapted no-comments (upstream v0.15.43)', () => {
+  const PIN = { version: '0.15.43', commit: '2f87c854fe3e2fcda44ca86b46ede35aad3c46b7' }
+  const PERSONA = {
+    upstream: 'pstack/agents/comment-sicko.md',
+    version: '0.15.42',
+    commit: 'bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7',
+    upstreamSha256: '0fb37221ab2a9159714d38f1528898e82b9758b5750f244bbe2e575bb593a1de',
+    shipped: 'references/reviewer.md',
+  }
+  const note = () => skill('no-comments').split('\n## Adaptation Note\n')[1] ?? ''
+  const body = () => skill('no-comments').split('\n## Adaptation Note\n')[0]
+  const persona = () => readSkill(SKILLS, 'no-comments', ...PERSONA.shipped.split('/'))
+  const ruleTable = () => read(path.join(ROOT, 'CODING_STANDARDS.md')).split('\n').filter(line => /^\| (Tautology|Excuse|Stale|Decision Record) \|/.test(line))
+
+  test('R1: no-comments is pinned to 0.15.43 (2f87c85) as adapted with its persona pinned to 0.15.42 (bf0c7cd), keeps the MIT license, and its adaptation note lists every change from upstream', () => {
+    const entry = provenance.skills['no-comments']
+    assert.deepEqual(pinOf(provenance, 'no-comments'), PIN)
+    assert.equal(entry.adapted, true)
+    assert.equal(entry.upstreamSha256, '054a46f2662c725add02d9e0440d8dcb4351f3bd0afcf797acc22a501b527b54')
+    assert.equal(sha256(skill('no-comments')), entry.shippedSha256, 'no-comments differs from its shippedSha256')
+    assert.throws(() => assert.equal(sha256(skill('no-comments') + ' '), entry.shippedSha256, 'no-comments differs from its shippedSha256'), /no-comments/)
+    const { shippedSha256, ...pin } = entry.persona
+    assert.deepEqual(pin, PERSONA)
+    assert.equal(sha256(persona()), shippedSha256, 'no-comments/references/reviewer.md differs from its shippedSha256')
+    assert.equal(readSkill(SKILLS, 'no-comments', 'LICENSE'), readSkill(SKILLS, 'principle-attack-the-premise', 'LICENSE'))
+    assert.match(note(), /Adapted from pstack \(`cursor\/plugins`, version 0\.15\.43, commit `2f87c85`\)\. Changes from upstream:/)
+    const upstreamOnly = { 'comment-sicko': /comment-sicko|Comment Sicko/, '`Task`': /`Task`|subagent_type/, 'MUST KILL': /MUST KILL/, 'poteto-mode': /poteto/i, '`/why`': /\/why\b/, '`/architect`': /\/architect/, 'principle-fix-root-causes': /principle-fix-root-causes/, 'principle-redesign-from-first-principles': /principle-redesign/, 'interactive approval': /interactive approval/ }
+    for (const [name, pattern] of Object.entries(upstreamOnly)) {
+      assert.doesNotMatch(body(), pattern, `the shipped skill still says ${name}`)
+      assert.ok(note().includes(name), `the adaptation note does not list the change to ${name}`)
+    }
+    assert.match(note(), /`orca-stack lint`/)
+    assert.match(note(), /author self-check/)
+  })
+
+  test('R2: the skill classifies comments with the four types of CODING_STANDARDS.md and their actions and runs orca-stack lint for the mechanical part, negative: no upstream keep-list taxonomy', () => {
+    const rows = ruleTable()
+    assert.equal(rows.length, 4)
+    for (const text of [body(), persona()]) {
+      for (const row of rows) assert.ok(text.split('\n').includes(row), `missing row ${row}`)
+      assert.match(text, /Decision Record that cites an ADR or an issue `#n`/)
+      assert.doesNotMatch(text, /keep-list|keep list|prettier-ignore|meat|RFC/i)
+    }
+    assert.match(body(), /^1\. Run `orca-stack lint`/m)
+    assert.match(body(), /author self-check[^\n]*does not count as a review/)
+  })
+
+  test('R3: the reviewer persona states the type, the location and the action without insults, jokes or exaggerated tone, and the note says it was rewritten', () => {
+    const text = persona()
+    assert.doesNotMatch(text, /ha ha|deranged|sicko|hate|savor|meat|stink|corpse|sermon|confession|alibi|guilty|crawl|leash|!/i)
+    assert.ok(text.includes('`file:line` — <type> — <action>.'), 'the report line names the location, the type and the action')
+    assert.match(note(), /`pstack\/agents\/comment-sicko\.md`, version 0\.15\.42, commit `bf0c7cd`\) is rewritten in a sober tone/)
+  })
+
+  test('R4: global installs SKILL.md, LICENSE and the persona under both skill roots byte-identical to the vendored copies', () => {
+    const home = tempDir('pstack-426')
+    try {
+      assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
+      for (const root of ['.claude', '.agents']) {
+        for (const rel of ['SKILL.md', 'LICENSE', PERSONA.shipped]) {
+          const installed = readFileSync(path.join(home, root, 'skills', 'no-comments', ...rel.split('/')))
+          assert.ok(installed.equals(readFileSync(path.join(SKILLS, 'no-comments', ...rel.split('/')))), `${root}/skills/no-comments/${rel} differs`)
+        }
+      }
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test('R5: the shipped no-comments files, the manual row and the README credit row name the skill without project-specific names', () => {
+    const forbidden = new RegExp(['Sam' + 'uel', 'Jo' + 'aco', 'agentes-' + 'samu', 'Gluco' + 'Meal', ['laut', 'aro'].join('')].join('|'), 'i')
+    const row = read(path.join(ROOT, 'docs', 'manual.md')).split('\n').find(line => line.startsWith('| `no-comments`'))
+    assert.ok(row, 'docs/manual.md has no row for no-comments')
+    const credit = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
+    assert.match(credit, /`no-comments`, versión `0\.15\.43`, commit `2f87c85`, con su revisor `comment-sicko` de la versión `0\.15\.42`, commit `bf0c7cd`/)
+    for (const text of [skill('no-comments'), persona(), row, credit]) assert.doesNotMatch(text, forbidden)
   })
 })

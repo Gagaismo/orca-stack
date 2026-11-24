@@ -399,3 +399,22 @@ describe('brief-revision', () => {
     assert.deepEqual(offenders, [])
   })
 })
+
+describe('issue #426: comment axis in the review brief', () => {
+  test('Rule 4: revisar and brief-revision render the comment axis, citing CODING_STANDARDS.md:<line> only when the repo has it and a failing orca-stack lint run always, negative: a cited Decision Record is never a finding', async () => {
+    const env = setup()
+    await briefRevisionCommand({ n: '7', modelo: 'gpt-6' }, env.io)
+    const review = HAS_CODING_STANDARDS => renderBrief('review', { REPO: 'repo', PR: '7', IMPLEMENTER: 'codex', SHA: 'abc123', BASE: 'main', VERIFICATION: 'npm test', AGENT: 'agy', HAS_CODING_STANDARDS })
+    const lintOnly = 'A comment finding blocks only as `comando`, with a failing `orca-stack lint` run and its output.'
+    for (const [brief, standards] of [[readFileSync(env.briefPath, 'utf8'), true], [review(true), true], [review(false), false]]) {
+      const axes = brief.split('## What to review')[1].split('Act as a requirements verifier')[0]
+      assert.ok(axes.includes('Review on four axes:'), axes)
+      assert.ok(axes.includes('4. Comments: every code comment the diff adds or changes, sorted into the four types of the comment rule (Tautology, Excuse, Stale, Decision Record).'), axes)
+      assert.ok(axes.includes(standards
+        ? 'A comment finding blocks only as `regla escrita`, citing `CODING_STANDARDS.md:<line>` of the rule it breaks, or as `comando`, with a failing `orca-stack lint` run and its output.'
+        : lintOnly), axes)
+      assert.ok(axes.includes('A comment you merely dislike goes to `## SUGERENCIAS`. A Decision Record that cites an issue `#n` or an ADR is never a finding.'), axes)
+      assert.equal(axes.includes('CODING_STANDARDS'), standards, 'the regla escrita clause appears only when the PR head has CODING_STANDARDS.md')
+    }
+  })
+})

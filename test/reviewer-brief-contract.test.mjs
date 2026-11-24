@@ -61,6 +61,14 @@ const invariants = [
       && /no lists? of what is fine/i.test(text),
   },
   {
+    files: ['assets/stack/ROLE-BRIEFS.md'],
+    name: 'block a comment finding only as regla escrita citing CODING_STANDARDS.md:<line> or a failing orca-stack lint run, send a disliked comment to SUGERENCIAS, and never flag a Decision Record that cites #n or an ADR',
+    matches: text => /comment finding blocks only as `regla escrita`, citing `CODING_STANDARDS\.md:<line>`/.test(text)
+      && /or as `comando`, with a failing `orca-stack lint` run/.test(text)
+      && /comment you merely dislike goes to `## SUGERENCIAS`/.test(text)
+      && /Decision Record that cites an issue `#n` or an ADR is never a finding/.test(text),
+  },
+  {
     name: 'state the touched public entry definition word for word',
     matches: text => text.includes('A public entry is touched when its own code changed in the diff, or when it calls a shared function whose code changed in the diff. A public entry is a command, endpoint, exported function, screen or scheduled job.'),
   },
@@ -68,7 +76,7 @@ const invariants = [
 
 describe('reviewer brief contract', () => {
   for (const invariant of invariants) {
-    for (const file of files) {
+    for (const file of invariant.files ?? files) {
       test(`${file} states: ${invariant.name}`, () => {
         const text = readFileSync(path.join(process.cwd(), file), 'utf8').replace(/\s+/g, ' ').trim()
         assert.ok(invariant.matches(text), `${file}: missing invariant "${invariant.name}"`)
@@ -88,5 +96,13 @@ describe('reviewer brief contract', () => {
     const reviewerOnlyRule = 'On a re-review, read only the delta since the last reviewed commit'
 
     assert.equal(invariants.some(({ matches }) => matches(reviewerOnlyRule)), false)
+  })
+
+  test('Rule 4 negative: dropping the Decision Record exception or letting a disliked comment block breaks the comment axis invariant', () => {
+    const axis = invariants.find(({ name }) => name.startsWith('block a comment finding'))
+    const text = readFileSync(path.join(process.cwd(), 'assets/stack/ROLE-BRIEFS.md'), 'utf8').replace(/\s+/g, ' ')
+    assert.equal(axis.matches(text), true)
+    assert.equal(axis.matches(text.replace('A Decision Record that cites an issue `#n` or an ADR is never a finding.', '')), false)
+    assert.equal(axis.matches(text.replace('goes to `## SUGERENCIAS`', 'goes to `## BLOQUEA`')), false)
   })
 })
