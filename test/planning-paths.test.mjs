@@ -49,7 +49,7 @@ describe('planning paths (#267)', () => {
     assert.ok(section(file('assets/stack/MARCHAS.md'), 'Marchas').includes('A Proactive cuando empieza la planificación (`grill-with-docs`, `to-spec`, `to-tickets` o charting de un map)'))
     for (const text of [contract, agents]) {
       assert.ok(section(text, 'Agentes').includes('Planificación con las skills de Matt (`grill-with-docs`, `to-spec`, `to-tickets`, disparadas por el humano)'))
-      assert.ok(section(text, 'Skills de Matt').includes('`grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano'))
+      assert.ok(section(text, 'Skills de Matt').includes('`grill-with-docs`, `sharpen`, `reframe`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano'))
     }
     for (const text of [contract, agents, main]) assert.doesNotMatch(text, /`grilling`|\(grilling,/)
   })

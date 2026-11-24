@@ -644,9 +644,11 @@ describe('#412 re-vendor the three pstack principles from 0.15.43 (2f87c85)', ()
     'principle-explain-the-number': 'e6a3f00991f4949cf18a0b5c77dd3126ca4402b8553f88c9c7905e577512676e',
     'principle-make-operations-idempotent': '76ad0a99b6ff2a05a159accfeee48412d62f62774eb8d05bbff26a1f3aa3eab5',
   }
+  // #427 pinned sharpen and reframe to their own later commit.
+  const LATER = { sharpen: { version: '0.15.48', commit: '005d8f6e8ec057b738adcd08a08b30db0478402d' }, reframe: { version: '0.15.48', commit: '005d8f6e8ec057b738adcd08a08b30db0478402d' } }
   const assertPinsTruthful = manifest => {
     for (const name of Object.keys(manifest.skills)) {
-      assert.deepEqual(pinOf(manifest, name), name in UPSTREAM ? NEW : OLD, `${name} provenance names the wrong upstream commit`)
+      assert.deepEqual(pinOf(manifest, name), name in UPSTREAM ? NEW : (LATER[name] ?? OLD), `${name} provenance names the wrong upstream commit`)
     }
   }
 
@@ -727,5 +729,91 @@ describe('#412 re-vendor the three pstack principles from 0.15.43 (2f87c85)', ()
     }
     assert.match(row, /`principle-make-operations-idempotent`, `principle-attack-the-premise` y `principle-explain-the-number`, versión `0\.15\.43`, commit `2f87c85`/)
     assert.match(row, /versión `0\.15\.36`, commit `c742dd6`/)
+  })
+})
+
+describe('#427 vendored and adapted sharpen and reframe (upstream v0.15.48)', () => {
+  const PIN = { version: '0.15.48', commit: '005d8f6e8ec057b738adcd08a08b30db0478402d' }
+  const NAMES = ['sharpen', 'reframe']
+  const note = text => text.split('\n## Adaptation Note\n')[1] ?? ''
+  // Undo every change the adaptation note lists: the result must be upstream's bytes.
+  const UNDO = {
+    sharpen: text => text.split('\n## Adaptation Note\n')[0],
+    reframe: text => text.split('\n## Adaptation Note\n')[0].replaceAll('the human', 'the operator'),
+  }
+  const HUMAN_ONLY = '`grill-with-docs`, `sharpen`, `reframe`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano'
+
+  test('R1: both are pinned to 0.15.48 (005d8f6) as adapted, keep the MIT license, and undoing the listed changes gives upstream byte for byte', () => {
+    for (const name of NAMES) {
+      const entry = provenance.skills[name]
+      assert.deepEqual(pinOf(provenance, name), PIN, `${name} pin`)
+      assert.equal(entry.adapted, true, `${name} must be adapted: true`)
+      assert.equal(sha256(skill(name)), entry.shippedSha256, `${name} differs from its shippedSha256`)
+      assert.throws(() => assert.equal(sha256(skill(name) + ' '), entry.shippedSha256, `${name} differs from its shippedSha256`), new RegExp(name))
+      assert.equal(sha256(UNDO[name](skill(name))), entry.upstreamSha256, `${name}: undoing the adaptation note does not give upstream`)
+      assert.match(note(skill(name)), /Adapted from pstack \(`cursor\/plugins`, version 0\.15\.48, commit `005d8f6`\)\. Changes from upstream:/)
+      assert.equal(readSkill(SKILLS, name, 'LICENSE'), readSkill(SKILLS, 'principle-attack-the-premise', 'LICENSE'), `${name} LICENSE`)
+    }
+    assert.match(note(skill('reframe')), /"the operator" is "the human"/)
+  })
+
+  test('R2: both carry disable-model-invocation: true and sit with grill-with-docs in the human-only list, negative: no brief tells a worker to run them', () => {
+    for (const name of NAMES) {
+      assert.match(skill(name), /^disable-model-invocation:\s*true$/m, `${name} missing disable-model-invocation: true`)
+      assert.match(note(skill(name)), /only the human triggers this skill, like `grill-with-docs`/)
+    }
+    for (const rel of ['assets/stack/CONTRATO.md', 'AGENTS.md', 'docs/manual.md']) {
+      assert.ok(read(path.join(ROOT, rel)).includes(HUMAN_ONLY), `${rel} does not list sharpen and reframe as human-only`)
+    }
+    for (const file of ['brief-ticket.md', 'brief-rebote.md', 'brief-revision.md', 'ROLE-BRIEFS.md', 'ORCA-STACK.md']) {
+      assert.doesNotMatch(read(path.join(ROOT, 'assets', 'stack', file)), /\/sharpen|\/reframe|`sharpen`|`reframe`/, `${file} must not name sharpen or reframe`)
+    }
+    const brief = renderBrief('ticket', { AGENT: 'pi', ISSUE: '427', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+    assert.doesNotMatch(brief, /\/sharpen|\/reframe|`sharpen`|`reframe`/)
+  })
+
+  test('R3: MAIN.md step 1 lets main propose /sharpen or /reframe for a vague idea and wait, negative: main never runs them on its own', () => {
+    const main = read(path.join(ROOT, 'assets', 'stack', 'MAIN.md'))
+    const step1 = main.split('### Ciclo de `main`')[1].split('\n').find(line => line.startsWith('1. '))
+    assert.ok(step1, 'step 1 not found')
+    assert.ok(step1.includes('Para una idea vaga puede proponer antes `/sharpen` o `/reframe`. Proponé la skill que corresponde y esperá al humano.'))
+    assert.equal(main.split('\n').filter(line => /sharpen|reframe/.test(line)).length, 1, 'only step 1 names them')
+  })
+
+  test('R4: negative: the shipped text names no Cursor tool or model outside the provenance line', () => {
+    for (const name of NAMES) {
+      const body = skill(name).split('\n## Adaptation Note\n')[0]
+      assert.doesNotMatch(body, /cursor|composer|\.mdc|pstack|operator/i, `${name} keeps an upstream-specific word`)
+      assert.match(note(skill(name)), /names no Cursor-specific tool or model/)
+    }
+  })
+
+  test('R5: global installs both under both skill roots, and doctor reports them missing when absent', () => {
+    const home = tempDir('pstack-427')
+    try {
+      assert.equal(cli(home, ['global', '--skip-pi']).status, 0)
+      for (const root of ['.claude', '.agents']) {
+        for (const name of NAMES) {
+          for (const file of ['SKILL.md', 'LICENSE']) {
+            const installed = readFileSync(path.join(home, root, 'skills', name, file))
+            assert.ok(installed.equals(readFileSync(path.join(SKILLS, name, file))), `${root}/skills/${name}/${file} differs from the vendored copy`)
+          }
+        }
+      }
+      const doctor = () => cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: home }).out
+      assert.doesNotMatch(doctor(), /faltan: .*(sharpen|reframe)/)
+      for (const name of NAMES) cleanup(path.join(home, '.claude', 'skills', name))
+      assert.match(doctor(), /✖ ~[\\/]\.claude[\\/]skills - faltan: reframe, sharpen/)
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test('R6: the manual skills table and the README pstack credit row name both skills and their pin', () => {
+    const row = read(path.join(ROOT, 'docs', 'manual.md')).split('\n').find(l => l.startsWith('| `sharpen`, `reframe`'))
+    assert.ok(row, 'docs/manual.md has no row for sharpen and reframe')
+    assert.match(row, /Las dispara solo el humano \(`\/sharpen`, `\/reframe`\); `main` puede proponerlas en el paso 1 para una idea vaga y espera/)
+    const credit = read(path.join(ROOT, 'README.md')).split('\n').find(line => line.startsWith('| Skills `principle-'))
+    assert.match(credit, /`sharpen` y `reframe`, versión `0\.15\.48`, commit `005d8f6`/)
   })
 })
