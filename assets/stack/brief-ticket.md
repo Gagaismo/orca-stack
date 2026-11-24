@@ -31,6 +31,8 @@ When a verifier or a review subagent needs the commit in its own directory, copy
 
 Before opening the PR, re-read the issue comments and handle any `Respuesta de main:` / `Respuesta del humano:`.
 
+Before the code-review rounds below, run the `no-comments` self-check on your diff: read `~/.claude/skills/no-comments/SKILL.md` and follow it. It is an author self-check and does not count as a review.{{SHORTCUT_EXCUSE}}
+
 Every check runs and finishes before the PR opens: the configured verification, any verifier ODD launches, and the code-review rounds below. Wait until each one reports; never open the PR while one is still running. Before the PR, in this order:
 
 1. Write the PR body file (shape below) with its Evidencia table: one row per rule of `## Reglas` and per touched public entry, each naming its test.

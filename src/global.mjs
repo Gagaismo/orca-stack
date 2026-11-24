@@ -3,7 +3,8 @@ import path from 'node:path'
 
 import { GRILL_SKILLS, INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
-import { PERKS, perksOf } from './perks.mjs'
+import { PERKS, perksOf, ponytailDeprecation } from './perks.mjs'
+import { loadConfig } from './despacho.mjs'
 import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestratorMode, rddMode, readPersonalConfig, refreshLazyPointer, restoreBlock, sddBlock, trimReviewSections } from './gentle.mjs'
 import { cleanupKnownSdd } from './sdd-cleanup.mjs'
 import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, codexAgentsMd } from './codex-windows.mjs'
@@ -553,6 +554,8 @@ Estado guardado en ${ctx.show(ctx.L.state)}`)
   }
   detectTools(ctx)
   printManualSteps(ctx, { skipPi: flags.skipPi })
+  const deprecation = ponytailDeprecation(loadConfig(ctx.home, process.cwd()))
+  if (deprecation) ctx.say(`\n⚠ ${deprecation}`)
   if (ctx.skipped.length > 0) {
     ctx.say(`
 ⚠ ${ctx.skipped.length} archivos existentes que no son de orca-stack quedaron como estaban. Para reemplazarlos (con respaldo): orca-stack global --force`)
