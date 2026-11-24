@@ -60,8 +60,9 @@ const relative = (root, file) => path.relative(root, path.resolve(root, file)).s
 const resolve = (from, specifier, known) => {
   if (!/^\.\.?(?:\/|$)/.test(specifier)) return undefined
   const base = path.posix.normalize(path.posix.join(path.posix.dirname(from), specifier)).replace(/\/$/, '')
-  if (base === '.' || base === '..' || base.startsWith('../')) return undefined
-  const candidates = [base, ...RESOLVE_EXTENSIONS.map(ext => `${base}${ext}`), ...RESOLVE_EXTENSIONS.map(ext => `${base}/index${ext}`)]
+  if (base === '..' || base.startsWith('../')) return undefined
+  const index = RESOLVE_EXTENSIONS.map(ext => (base === '.' ? `index${ext}` : `${base}/index${ext}`))
+  const candidates = base === '.' ? index : [base, ...RESOLVE_EXTENSIONS.map(ext => `${base}${ext}`), ...index]
   return candidates.find(candidate => known.has(candidate))
 }
 
@@ -175,24 +176,22 @@ export const validCycleEntry = entry => Array.isArray(entry.members) && entry.me
 
 export const moduleCycles = (root, files) => {
   const sources = files.filter(file => COMMENT_EXTENSIONS.has(path.extname(file).toLowerCase()))
-  if (sources.length === 0) return { cycles: [], hasCycle: () => false }
+  if (sources.length === 0) return { cycles: [], selfImports: new Set() }
   const graph = importGraph(root, sources)
   const cycles = components(graph)
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(members => ({ rule: CYCLE_RULE, file: members[0], location: LOCATION, fingerprint: memberPrint(members), members, walk: closedWalk(graph, members) }))
-  const hasCycle = members => {
-    const inside = new Set(members.filter(file => graph.has(file)))
-    const sub = new Map([...inside].map(file => [file, graph.get(file).filter(target => inside.has(target))]))
-    return components(sub).length > 0
-  }
-  return { cycles, hasCycle }
+  const selfImports = new Set([...graph].filter(([file, targets]) => targets.includes(file)).map(([file]) => file))
+  return { cycles, selfImports }
 }
 
-// #420: a cycle matches every entry holding all its members, so a shrunken cycle keeps its entry; an entry is stale
-// only when no cycle is left among its own members.
-export const matchCycles = ({ cycles, hasCycle }, entries) => {
+// #420: a cycle matches every entry holding all its members, so a shrunken cycle keeps its entry. Per A7 an entry is
+// stale only when no current cycle holds two of its members or one that imports itself, even through other modules.
+export const matchCycles = ({ cycles, selfImports }, entries) => {
   const covered = cycle => entries.some(entry => cycle.members.every(member => entry.members.includes(member)))
-  return { unmatched: cycles.filter(cycle => !covered(cycle)), stale: entries.filter(entry => !hasCycle(entry.members)) }
+  const alive = entry => entry.members.some(member => selfImports.has(member))
+    || cycles.some(cycle => cycle.members.filter(member => entry.members.includes(member)).length >= 2)
+  return { unmatched: cycles.filter(cycle => !covered(cycle)), stale: entries.filter(entry => !alive(entry)) }
 }
 
 export const cycleEntry = ({ rule, file, location, fingerprint, members }) => ({ rule, file, location, fingerprint, members })

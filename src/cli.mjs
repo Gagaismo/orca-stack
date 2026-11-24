@@ -365,8 +365,9 @@ comentario guarda el símbolo como location y el fingerprint del texto del comen
 fingerprint, y si la función se movió a otro archivo o se renombró, por fingerprint. La entrada de module-cycle es el
 conjunto de sus módulos: {"rule":"module-cycle","file":<el primero>,"location":"cycle","fingerprint",
 "members":[rutas ordenadas]}. Un ciclo coincide con toda entrada que tenga a todos sus módulos, así que un ciclo que se
-achica sigue pasando y uno con un módulo que no está en ninguna entrada es nuevo. La entrada vence solo cuando ya no
-queda ningún ciclo entre sus módulos: cortar un import mientras otro cierra el ciclo la mantiene. En el alcance "diff",
+achica sigue pasando y uno con un módulo que no está en ninguna entrada es nuevo. La entrada vence solo cuando ningún
+ciclo actual contiene dos o más de sus módulos (o uno que se importa a sí mismo), aunque pase por módulos de afuera:
+cortar un import mientras otro camino los sigue uniendo en un ciclo la mantiene. En el alcance "diff",
 module-cycle se revisa igual que long-file y wide-directory.
 lint no acepta --dry-run.
 Una entrada cuya violación ya no está en ningún archivo del repo está vencida: el lint falla y pide sacarla a mano.

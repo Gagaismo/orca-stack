@@ -90,6 +90,8 @@ describe('orca-stack lint module-cycle (#420)', () => {
       add('dyn/b.mjs', "export const load = () => import('./a.mjs')\n")
       add('types/a.ts', "import type { B } from './b'\nexport type A = { b: B }\n")
       add('types/b.ts', "import type { A } from './a'\nexport type { A } from './a'\nexport type B = { a: A }\n")
+      add('reexported/a.ts', "import { b } from './b'\nexport const a = b\n")
+      add('reexported/b.ts', "export type { A } from './a'\nexport const b = 1\n")
       const negatives = lint()
       assert.equal(negatives.status, 0, negatives.out)
       assert.equal(negatives.stdout, OK(0))
@@ -118,6 +120,14 @@ describe('orca-stack lint module-cycle (#420)', () => {
       const missing = lint()
       assert.equal(missing.status, 0, missing.out)
       assert.equal(missing.stdout, OK(0))
+    })
+    withRepo(({ add, lint }) => {
+      add('a.mjs', imports('./'))
+      add('b.mjs', imports('.'))
+      add('index.mjs', imports('./a.mjs', './b.mjs'))
+      const root = lint()
+      assert.equal(root.status, 1, root.out)
+      assert.equal(root.stdout, `${CYCLE('a.mjs', 'index.mjs', 'b.mjs', 'index.mjs', 'a.mjs')}\n${SUMMARY(1, 0)}`)
     })
   })
 
@@ -188,6 +198,32 @@ describe('orca-stack lint module-cycle (#420)', () => {
       assert.equal(none.status, 1, none.out)
       assert.equal(none.stdout, `${STALE(['src/a.mjs', 'src/b.mjs', 'src/c.mjs'])}\n${SUMMARY(0, 1)}`)
       assert.equal(baseline(), seeded)
+    })
+  })
+
+  test('R5: an entry stays while a current cycle still holds two of its members, even through a module outside it', () => {
+    withRepo(({ repo, add, lint, baseline }) => {
+      add('src/a.mjs', imports('./b.mjs'))
+      add('src/b.mjs', imports('./a.mjs'))
+      assert.equal(lint('--sembrar').status, 0)
+      const seeded = baseline()
+      add('src/a.mjs', imports('./c.mjs'))
+      add('src/c.mjs', imports('./b.mjs'))
+      const through = lint()
+      assert.equal(through.status, 1, through.out)
+      assert.equal(through.stdout, `${CYCLE('src/a.mjs', 'src/c.mjs', 'src/b.mjs', 'src/a.mjs')}\n${SUMMARY(1, 0)}`)
+      assert.equal(baseline(), seeded)
+
+      const entry = members => ({ rule: 'module-cycle', file: members[0], location: 'cycle', fingerprint: print(members), members })
+      const two = `${JSON.stringify({ version: 1, entries: [entry(['src/a.mjs', 'src/b.mjs']), entry(['src/b.mjs', 'src/c.mjs'])] }, null, 2)}\n`
+      writeFileSync(path.join(repo, BASELINE), two)
+      add('src/a.mjs', imports('./b.mjs'))
+      add('src/b.mjs', imports('./c.mjs'))
+      add('src/c.mjs', imports('./a.mjs'))
+      const split = lint()
+      assert.equal(split.status, 1, split.out)
+      assert.equal(split.stdout, `${CYCLE('src/a.mjs', 'src/b.mjs', 'src/c.mjs', 'src/a.mjs')}\n${SUMMARY(1, 0)}`)
+      assert.equal(baseline(), two)
     })
   })
 
