@@ -441,6 +441,7 @@ Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `
 | `arena` | N candidatas en paralelo a la misma tarea, elegir una base e injertar lo mejor de las otras |
 | `swarm` | Fan-out de N workers de solo lectura, que se resuelve en un informe |
 | `sharpen`, `reframe` | Las dispara solo el humano (`/sharpen`, `/reframe`); `main` puede proponerlas en el paso 1 para una idea vaga y espera. `sharpen` hace una tarea más profunda, no más grande, y reescribe el pedido; `reframe` enseña las palabras de experto para lo que se construye y reescribe la descripción con ellas |
+| `no-comments` | Autochequeo del autor antes del PR (el brief del ticket lo pide; no cuenta como review): corre `orca-stack lint` y un revisor de contexto limpio que clasifica cada comentario con los cuatro tipos de `CODING_STANDARDS.md` (Tautology, Excuse, Stale, Decision Record) y aplica la acción de cada tipo |
 | `principle-attack-the-premise` | Cuando dos arreglos con la misma premisa fallaron en el mismo gate: cuestionar la premisa antes de escribir otro arreglo |
 | `principle-explain-the-number` | Antes de confiar o actuar sobre un número medido: encontrar qué lo limita y descartar que mida otra cosa |
 | `principle-make-operations-idempotent` | Al diseñar comandos o loops que corren entre caídas y reintentos: converger al mismo estado final |

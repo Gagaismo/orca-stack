@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { mergedPerks, perkProblems, perksOf } from './perks.mjs'
+import { mergedPerks, perkProblems, perksOf, ponytailDeprecation } from './perks.mjs'
 import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { CODEX_DOC_DEFAULT, readCodexDocBytes } from './codex-doc-bytes.mjs'
@@ -607,6 +607,8 @@ export const doctorCommand = async flags => {
   for (const { label, detail } of perkProblems({ perks: mergedPerks(personal, committed, local) })) {
     add('warn', label, detail)
   }
+  const deprecation = ponytailDeprecation({ perks: mergedPerks(personal, committed, local) })
+  if (deprecation) add('warn', 'perks.ponytail', deprecation)
 
   // codex on Windows reads files through PowerShell 5.1 (#58). Off Windows or without codex, not even the title prints.
   const codexChecks = codexWindowsChecks({

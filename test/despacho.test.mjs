@@ -4275,3 +4275,43 @@ describe('main-autonomo-2 S2: despachar reserves the migration number', () => {
     assert.ok(!env.calls.some(c => c[0] === 'gh' && c[2] === 'edit'))
   })
 })
+
+describe('issue #426: no-comments self-check in the ticket brief', () => {
+  const SELF_CHECK = 'run the `no-comments` self-check on your diff: read `~/.claude/skills/no-comments/SKILL.md` and follow it. It is an author self-check and does not count as a review.'
+  const EXCUSE = 'are Excuses under orca-stack\'s ADR 0002'
+  const ticketBrief = async config => {
+    const env = fakeIo({}, { config })
+    await run('ticket', { n: '7', agent: 'agy' }, env)
+    return env.written.find(([file]) => file.endsWith('proj-7.md'))?.[1]
+  }
+
+  test('Rule 3: every ticket brief asks for the no-comments self-check before the code-review rounds and gh pr create, as an author self-check that is not a review, negative: the review brief does not', () => {
+    for (const agent of AGENTS) {
+      const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '426', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
+      const at = brief.indexOf(SELF_CHECK)
+      assert.ok(at > brief.indexOf('## Pull request'), `${agent} brief has no self-check in ## Pull request`)
+      assert.ok(at < brief.indexOf('run the `code-review` skill') && at < brief.indexOf('gh pr create --base'), `${agent}: the self-check comes after the code-review rounds or gh pr create`)
+      assert.ok(!missingPaths(brief, () => false).some(p => p.includes('no-comments')), `${agent}: despachar would refuse the skill path`)
+    }
+    const review = renderBrief('review', { REPO: 'repo', PR: '7', IMPLEMENTER: 'codex', SHA: 'abc123', BASE: 'main', VERIFICATION: 'npm test', AGENT: 'agy' })
+    assert.ok(!review.includes('no-comments'), 'the review brief does not ask for the author self-check')
+  })
+
+  test('Rule 6: with the Ponytail perk on in the config, despachar notes that shortcut: is an Excuse under ADR 0002 and never asks for one; with it off or absent the brief has no Ponytail text', async () => {
+    const on = await ticketBrief({ ...PROJECT, perks: { ponytail: true } })
+    assert.ok(on.includes(`${SELF_CHECK} The Ponytail perk is on, and its \`shortcut: <limit>, <when to upgrade>\` comments ${EXCUSE}: do not write them, and the self-check deletes them like any other Excuse.`), on)
+    for (const config of [{ ...PROJECT, perks: { ponytail: false } }, PROJECT, { ...PROJECT, perks: { ponytail: 'yes' } }]) {
+      const off = await ticketBrief(config)
+      assert.ok(off.includes(SELF_CHECK), 'the self-check stays with the perk off')
+      assert.doesNotMatch(off, /ponytail|shortcut:|perk:/i, `perks ${JSON.stringify(config.perks)}`)
+    }
+  })
+
+  test('PRESERVE: despachar still renders the ticket brief sections and leaves no placeholder', async () => {
+    const brief = await ticketBrief(PROJECT)
+    for (const heading of ['## Setup', '## Verification', '## Pull request', '## Rules', '## Remote authorization', '## Method: gentle-ai ODD']) {
+      assert.ok(brief.includes(heading), heading)
+    }
+    assert.doesNotMatch(brief, /\{\{[A-Z_]+\}\}/)
+  })
+})

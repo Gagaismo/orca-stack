@@ -88,6 +88,21 @@
       "commit": "005d8f6e8ec057b738adcd08a08b30db0478402d",
       "upstreamSha256": "1e2e8a11da838c9169dae6fb71257041cf4e91d58862d1629354648b9bd458f3",
       "shippedSha256": "0f6fa9655c88aea577cfbd27bb67bd20ef461ef261bacbc94d5dc043d068da21"
+    },
+    "no-comments": {
+      "adapted": true,
+      "version": "0.15.43",
+      "commit": "2f87c854fe3e2fcda44ca86b46ede35aad3c46b7",
+      "upstreamSha256": "054a46f2662c725add02d9e0440d8dcb4351f3bd0afcf797acc22a501b527b54",
+      "shippedSha256": "de1bced505ed039bd9c0fc18c1868193dd3b4ca373db494163a96909ed0413ae",
+      "persona": {
+        "upstream": "pstack/agents/comment-sicko.md",
+        "version": "0.15.42",
+        "commit": "bf0c7cd80abdbf7fe47b634978a7d1b4071f71a7",
+        "upstreamSha256": "0fb37221ab2a9159714d38f1528898e82b9758b5750f244bbe2e575bb593a1de",
+        "shipped": "references/reviewer.md",
+        "shippedSha256": "41f0efb94345cab0b1f3527dd0dd6cdda897dea03ed660db3bb5eb946af72401"
+      }
     }
   }
 }

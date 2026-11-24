@@ -8,7 +8,7 @@ import { LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, MARKER_END, PROJECT_CONFIG, PRO
 import { loadConfig } from './despacho.mjs'
 import { BASELINE_FILE, seedBaseline } from './lint.mjs'
 import { removeBlock, upsertBlock } from './marker.mjs'
-import { perksOf } from './perks.mjs'
+import { perksOf, ponytailDeprecation } from './perks.mjs'
 import { policyBlock, readAsset, render } from './templates.mjs'
 import { homeDir, layout, packageVersion, readTextIfExists, run, timestamp, tilde, which } from './util.mjs'
 
@@ -90,13 +90,20 @@ const withLintKey = text => {
   return `${head}${head.endsWith('{') ? '' : ','}${eol}${indent}"lint": ${value}${eol}${text.slice(close)}`
 }
 
-const workflowWithJob = root => {
+// #424: a job named orca-stack-lint, or any step that runs the lint (names excluded), is the repo's own lint job.
+const RUNS_LINT = /(?:^|[\s'"/])(?:orca-stack|orca-stack\.mjs|orca-stack#[\w.-]+)\s+lint\b/m
+const ownLintJob = root => {
   const dir = path.join(root, '.github', 'workflows')
   if (!existsSync(dir)) return null
   const job = new RegExp(`^\\s+["']?${LINT_JOB}["']?\\s*:`, 'm')
-  const found = readdirSync(dir).sort().find(name => /\.ya?ml$/i.test(name) && job.test(readFileSync(path.join(dir, name), 'utf8')))
+  for (const name of readdirSync(dir).sort().filter(one => /\.ya?ml$/i.test(one))) {
+    const text = readFileSync(path.join(dir, name), 'utf8')
+    const file = `.github/workflows/${name}`
+    if (job.test(text)) return `${file} ya tiene un job ${LINT_JOB}`
+    if (RUNS_LINT.test(text.split(/\r?\n/).filter(line => !/^\s*(?:-\s*)?name\s*:/.test(line)).join('\n'))) return `${file} ya corre orca-stack lint`
+  }
 
-  return found ? `.github/workflows/${found}` : null
+  return null
 }
 
 const ttyAsk = () =>
@@ -151,8 +158,8 @@ const installLint = async ({ root, home, stamp, dryRun, prefix, activarHook, ask
   })
   attempt(LINT_WORKFLOW, () => {
     if (existsSync(full(LINT_WORKFLOW))) return present(LINT_WORKFLOW)
-    const own = workflowWithJob(root)
-    if (own) return { skip: `${LINT_WORKFLOW}: no se crea, ${own} ya tiene un job ${LINT_JOB}` }
+    const own = ownLintJob(root)
+    if (own) return { skip: `${LINT_WORKFLOW}: no se crea, ${own}` }
 
     return { line: `creo ${LINT_WORKFLOW}`, write: create(LINT_WORKFLOW, render(readAsset('lint', 'orca-stack-lint.yml'), { LINT_COMMAND: lintRun() })) }
   })
@@ -322,6 +329,8 @@ export const initCommand = async (flags, cwd = process.cwd(), io = {}) => {
   if (negation || (!dryRun && !ignored)) {
     console.log(`⚠ git no ignora ${CANDIDATE_WORKTREES_EXCLUDE} (un .gitignore con \`${negation ?? '!.claude/worktrees/'}\` gana sobre info/exclude)`)
   }
+  const deprecation = ponytailDeprecation(loadConfig(home, root))
+  if (deprecation) console.log(`⚠ ${deprecation}`)
   if (!hasMainDoc) {
     console.log(`⚠ falta ${MAIN_DOC}, con las reglas de main a las que apunta el bloque: corré \`orca-stack global\``)
   }
