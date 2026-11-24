@@ -8,6 +8,7 @@ import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
 import { limpiarCommand } from './limpiar.mjs'
 import { lintCommand } from './lint.mjs'
+import { novedadesCommand } from './novedades.mjs'
 import { removeCommand } from './remove.mjs'
 import { reanudarCommand } from './reanudar.mjs'
 import { sesionesCommand } from './sesiones.mjs'
@@ -38,6 +39,7 @@ Comandos:
   planificar Abre la sesión de planificación de un issue paraguas: worktree de Orca en docs/<slug> y pi con el brief de planificación.
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
   limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
+  novedades Precheck de una automatización de Orca que sondea GitHub: sale con 1 (Orca saltea la corrida) si no hay nada nuevo.
   lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
@@ -338,6 +340,17 @@ al prender el lint. Una segunda corrida no cambia nada y nunca saca entradas.
 La CI corre el lint y es el chequeo que cuenta. El hook .githooks/pre-push lo corre antes de cada push como aviso
 temprano: se activa por clon con \`git config core.hooksPath .githooks\` y \`git push --no-verify\` lo saltea sin cambiar la CI.
 `,
+  novedades: `orca-stack novedades [<nombre>]
+
+El precheck de una automatización de Orca que sondea GitHub cada pocos minutos:
+  orca automations create ... --precheck "orca-stack novedades"
+Dentro del clon, hace una sola llamada a gh (gh api graphql: el issue y el PR actualizados más recientes, y el head
+y el estado de CI de cada PR abierto) y la compara con la de su última corrida, guardada en
+<git-common-dir>/orca-stack/novedades.json. Sale con 1 si no cambió nada (Orca registra la corrida como skipped_precheck,
+sin correr el agente) y con 0 si hay novedades o es la primera corrida. Si no puede saberlo (gh sin red o sin login, fuera
+de un repo git), sale con 0 y lo dice en stderr: el agente corre y lo informa, en vez de saltearse para siempre.
+<nombre> separa la última corrida de cada automatización que sondea el mismo clon (por defecto, "default").
+`,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
 Borra los archivos que instaló \`global\`, restaura los que había reemplazado, quita sus entradas de
@@ -496,6 +509,8 @@ export const main = async (argv, io) => {
         return await limpiarCommand(flags, io)
       case 'lint':
         return await lintCommand(flags)
+      case 'novedades':
+        return await novedadesCommand(flags, rest.slice(1))
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 

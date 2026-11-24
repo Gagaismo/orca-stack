@@ -15,7 +15,7 @@ const field = (item, name) => item.split('\n').find(line => line.trim().startsWi
 describe('#435 personal Orca settings checklist', () => {
   test('R1: the checklist has the three items, each with where it lives in Orca and its recommended value', () => {
     const [awake, confirm, cleanup] = items()
-    assert.equal(items().length, 3)
+    assert.equal(items().length, 4)
     assert.match(awake, /^\*\*Mantener la compu despierta mientras trabajan los agentes\.\*\*/)
     assert.match(field(awake, 'Dónde'), /Settings → Agents → Keep computer awake/)
     assert.match(field(awake, 'Valor'), /`Agent`/)
@@ -52,6 +52,21 @@ describe('#435 personal Orca settings checklist', () => {
     assert.match(doc(), /`doctor` no los lee ni los exige/)
     for (const file of readdirSync(path.join(ROOT, 'src'))) {
       assert.doesNotMatch(read(path.join(ROOT, 'src', file)), /Keep computer awake|Caffeinate|Always force delete|Workspace Cleanup/i, `src/${file} reads a personal Orca setting`)
+    }
+  })
+
+  test('#433 R1 and R2: the stack Quick Commands are a checklist item, not a file init writes, with exactly the four non-destructive commands', () => {
+    const quick = items().find(item => item.startsWith('**Quick Commands del stack en cada proyecto.**'))
+    assert.ok(quick, 'the checklist has no Quick Commands item')
+    assert.match(field(quick, 'Dónde'), /Settings → Quick Commands, con scope Project/)
+    assert.match(field(quick, 'Dónde'), /no en un archivo del repo, así que `init` no los escribe/)
+    const commands = [...field(quick, 'Valor').matchAll(/`(orca-stack [^`]+)`/g)].map(match => match[1])
+    assert.deepEqual(commands, ['orca-stack estado', 'orca-stack vigilar', 'orca-stack limpiar', 'orca-stack doctor'])
+    assert.match(field(quick, 'Valor'), /^ *- Valor: exactamente cuatro:/)
+    for (const command of commands) assert.doesNotMatch(command, /merge|--force|remove|rm\b|reset|delete/)
+    assert.ok(field(quick, 'Por qué'))
+    for (const file of readdirSync(path.join(ROOT, 'src'))) {
+      assert.doesNotMatch(read(path.join(ROOT, 'src', file)), /quickCommands|Quick Commands/i, `src/${file} writes Quick Commands`)
     }
   })
 
