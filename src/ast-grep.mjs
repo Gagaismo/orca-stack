@@ -13,8 +13,7 @@ export const AST_GREP_PLATFORMS = {
 export const AST_GREP_ENV = 'ORCA_STACK_AST_GREP'
 
 const INSTALL = 'Instalalo con npm ci en la instalación de orca-stack (sin --omit=optional).'
-const require = createRequire(import.meta.url)
-const verified = new Map()
+const ownRequire = createRequire(import.meta.url)
 
 const fail = (code, message) => Object.assign(new Error(message), { code })
 
@@ -28,10 +27,11 @@ const pinnedEntry = key => {
   return entry
 }
 
-const installedBinary = entry => {
+const installedBinary = (entry, root) => {
+  const resolver = root ? createRequire(path.join(path.resolve(root), 'package.json')) : ownRequire
   let manifest
   try {
-    manifest = require.resolve(`${entry.package}/package.json`)
+    manifest = resolver.resolve(`${entry.package}/package.json`)
   } catch {
     throw fail('AST_GREP_MISSING', `ast-grep ${AST_GREP_VERSION} no está instalado: falta el paquete ${entry.package}. ${INSTALL}`)
   }
@@ -42,27 +42,23 @@ const installedBinary = entry => {
   return path.join(path.dirname(manifest), entry.binary)
 }
 
-export const resolveAstGrep = ({ env = process.env, platform, arch } = {}) => {
+export const resolveAstGrep = ({ env = process.env, platform, arch, root } = {}) => {
   const entry = pinnedEntry(platformKey(platform, arch))
-  const file = env[AST_GREP_ENV] ? path.resolve(env[AST_GREP_ENV]) : installedBinary(entry)
+  const file = env[AST_GREP_ENV] ? path.resolve(env[AST_GREP_ENV]) : installedBinary(entry, root)
   return { file, entry }
 }
 
 export const verifyAstGrep = options => {
   const { file, entry } = resolveAstGrep(options)
-  let stat
   try {
-    stat = statSync(file)
+    statSync(file)
   } catch {
     throw fail('AST_GREP_MISSING', `ast-grep ${AST_GREP_VERSION} no está instalado: no existe ${file}. ${INSTALL}`)
   }
-  const stamp = `${entry.sha256}:${stat.size}:${stat.mtimeMs}`
-  if (verified.get(file) === stamp) return file
   const actual = createHash('sha256').update(readFileSync(file)).digest('hex')
   if (actual !== entry.sha256) {
     throw fail('AST_GREP_CHECKSUM', `ast-grep ${AST_GREP_VERSION}: el checksum de ${file} no coincide con el fijado (sha256 esperado ${entry.sha256}, obtenido ${actual}); no se ejecutó el binario. ${INSTALL}`)
   }
-  verified.set(file, stamp)
   return file
 }
 

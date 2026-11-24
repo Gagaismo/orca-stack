@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { copyFileSync, existsSync, linkSync } from 'node:fs'
+import { copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
@@ -26,7 +26,7 @@ describe('pinned ast-grep wrapper (#419)', () => {
     for (const entry of Object.values(AST_GREP_PLATFORMS)) assert.match(entry.sha256, /^[0-9a-f]{64}$/)
   })
 
-  test('S9: a checksum mismatch fails naming 0.51.3 and never runs the binary', () => {
+  test('S9: a checksum mismatch fails naming 0.51.3 and never runs the binary', { skip: !pinned && `no pinned ast-grep for ${platformKey()}` }, () => {
     withDir(dir => {
       const fake = path.join(dir, path.basename(pinned?.binary ?? 'ast-grep'))
       try {
@@ -53,6 +53,58 @@ describe('pinned ast-grep wrapper (#419)', () => {
       assert.throws(() => verifyAstGrep({ env }), error => {
         assert.match(error.message, /ast-grep 0\.51\.3/)
         assert.match(error.message, /npm ci/)
+        return true
+      })
+    })
+  })
+
+  test('S9: a missing platform package (offline or --omit=optional) fails naming 0.51.3, the package and how to install it', () => {
+    withDir(dir => {
+      const env = { ...process.env }
+      delete env.ORCA_STACK_AST_GREP
+      assert.throws(() => verifyAstGrep({ env, platform: 'linux', arch: 'x64', root: dir }), error => {
+        assert.equal(error.code, 'AST_GREP_MISSING')
+        assert.match(error.message, /ast-grep 0\.51\.3 no está instalado: falta el paquete @ast-grep\/cli-linux-x64-gnu/)
+        assert.match(error.message, /npm ci/)
+        return true
+      })
+    })
+  })
+
+  test('S9: an installed platform package at another version fails naming both versions and never runs the binary', () => {
+    withDir(dir => {
+      const pkg = path.join(dir, 'node_modules', '@ast-grep', 'cli-linux-x64-gnu')
+      mkdirSync(pkg, { recursive: true })
+      writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: '@ast-grep/cli-linux-x64-gnu', version: '0.40.0' }))
+      const env = { ...process.env }
+      delete env.ORCA_STACK_AST_GREP
+      assert.throws(() => verifyAstGrep({ env, platform: 'linux', arch: 'x64', root: dir }), error => {
+        assert.equal(error.code, 'AST_GREP_VERSION')
+        assert.match(error.message, /ast-grep 0\.51\.3 es la versión fijada, pero @ast-grep\/cli-linux-x64-gnu está en 0\.40\.0; no se ejecutó el binario/)
+        return true
+      })
+    })
+  })
+
+  test('S9: a binary replaced after a successful verify, keeping size and mtime, is rejected on the next run', { skip: !pinned && `no pinned ast-grep for ${platformKey()}` }, () => {
+    withDir(dir => {
+      const env = { ...process.env }
+      delete env.ORCA_STACK_AST_GREP
+      const copy = path.join(dir, pinned.binary)
+      copyFileSync(verifyAstGrep({ env }), copy)
+      const overrideEnv = { ...env, ORCA_STACK_AST_GREP: copy }
+      assert.equal(verifyAstGrep({ env: overrideEnv }), copy)
+      const before = statSync(copy)
+      const bytes = readFileSync(copy)
+      bytes[bytes.length - 1] ^= 0xff
+      writeFileSync(copy, bytes)
+      utimesSync(copy, before.atimeMs / 1000, before.mtimeMs / 1000)
+      const after = statSync(copy)
+      assert.equal(after.size, before.size)
+      assert.equal(after.mtimeMs, before.mtimeMs)
+      assert.throws(() => verifyAstGrep({ env: overrideEnv }), error => {
+        assert.equal(error.code, 'AST_GREP_CHECKSUM')
+        assert.match(error.message, /ast-grep 0\.51\.3: el checksum/)
         return true
       })
     })
