@@ -101,7 +101,7 @@ Reglas que sostienen todo lo demás:
 | `vigilar` | Monitor de una tanda de PRs | Checkout principal |
 | `estado` | Qué le falta a cada PR para el paso 7, de solo lectura (con `--json`, la atestación) | Checkout principal |
 | `limpiar` | Cierra terminales y saca worktrees de PRs mergeados o cerrados | Checkout principal |
-| `lint` | Revisa el repo contra su Baseline (`long-file`) **`[solo en main]`** | Dentro de un repo git (también la CI y el hook `pre-push`) |
+| `lint` | Revisa el repo contra su Baseline (`long-file`, `wide-directory`) **`[solo en main]`** | Dentro de un repo git (también la CI y el hook `pre-push`) |
 | `planificar` | Abre una sesión de planificación interactiva en su propio worktree `docs/<slug>` | Checkout principal |
 | `sesiones` | Lista sesiones recientes de Claude, Pi y agy (entrada de `/retro`) | Cualquier carpeta |
 
@@ -313,9 +313,14 @@ orca-stack lint             # revisa el repo contra la Baseline
 orca-stack lint --sembrar   # una vez, al prender el lint: anota las violaciones que ya existen
 ```
 
-Revisa cada archivo trackeado del repo; nunca los sin trackear ni los que ignora `.gitignore` (por ejemplo `node_modules/`). Por ahora tiene una sola regla, `long-file`: un archivo de más de 2000 líneas es una violación (cuentan las líneas en blanco, los comentarios y los tests; exactamente 2000 pasa). Cada violación nueva sale en una línea que nombra la regla, el archivo, la ubicación y qué hacer, por ejemplo `long-file test/foo.mjs: 2345 líneas (máximo 2000) — dividí el archivo`.
+Revisa cada archivo trackeado del repo; nunca los sin trackear ni los que ignora `.gitignore` (por ejemplo `node_modules/`). Tiene dos reglas, para cualquier lenguaje:
 
-La **Baseline** es `.orca-stack-baseline.json`, en la raíz del repo y commiteada: la lista de las violaciones que ya existían, con un mismo formato para todas las reglas (`{"version":1,"entries":[{"rule","file","location","fingerprint"}]}`) y sin números de línea. Una violación coincide con una entrada de su regla por archivo o, si el archivo se movió sin cambios, por su fingerprint (el de `long-file` sale del contenido entero del archivo, así que dos archivos que solo comparten el encabezado no se confunden; un archivo que se movió y cambió cuenta como violación nueva y entrada vencida). Cada entrada cubre una sola violación: una copia en otro archivo es una violación nueva. Una entrada cuya violación ya no está en ningún archivo del repo está **vencida**: el lint falla, la nombra y pide sacarla a mano, porque una corrida normal nunca reescribe la Baseline. Sin Baseline, toda violación es nueva; una Baseline mal formada falla nombrando el archivo y no se toca.
+- `long-file`: un archivo de más de 2000 líneas es una violación (cuentan las líneas en blanco, los comentarios y los tests; exactamente 2000 pasa).
+- `wide-directory`: un directorio con más de 15 entradas es una violación (exactamente 15 pasa). Cuentan sus archivos trackeados y sus subdirectorios con algún archivo trackeado; no cuentan los ignorados, los sin trackear ni un directorio vacío, y `node_modules/` nunca cuenta. La raíz del repo es `./`.
+
+Cada violación nueva sale en una línea que nombra la regla, el archivo o directorio, la cantidad y qué hacer, por ejemplo `long-file test/foo.mjs: 2345 líneas (máximo 2000) — dividí el archivo` o `wide-directory src/: 37 entradas (máximo 15) — agrupá los archivos relacionados en subdirectorios`.
+
+La **Baseline** es `.orca-stack-baseline.json`, en la raíz del repo y commiteada: la lista de las violaciones que ya existían, con un mismo formato para todas las reglas (`{"version":1,"entries":[{"rule","file","location","fingerprint"}]}`) y sin números de línea. Una violación coincide con una entrada de su regla por archivo o, si el archivo se movió sin cambios, por su fingerprint (el de `long-file` sale del contenido entero del archivo, así que dos archivos que solo comparten el encabezado no se confunden; un archivo que se movió y cambió cuenta como violación nueva y entrada vencida). La entrada de `wide-directory` es la regla y la ruta del directorio (`"location":"directory"`, y su fingerprint sale de la ruta): sale de la Baseline solo cuando el directorio baja a 15 entradas o menos, y renombrar un directorio ancho da una violación nueva con la ruta nueva y una entrada vencida con la vieja. Cada entrada cubre una sola violación: una copia en otro archivo es una violación nueva. Una entrada cuya violación ya no está en ningún archivo del repo está **vencida**: el lint falla, la nombra y pide sacarla a mano, porque una corrida normal nunca reescribe la Baseline. Sin Baseline, toda violación es nueva; una Baseline mal formada falla nombrando el archivo y no se toca.
 
 Sale con 0 y una línea `lint OK` cuando toda violación tiene su entrada y ninguna entrada está vencida; si no, con 1 y el reporte. `--sembrar` agrega a la Baseline cada violación actual sin entrada y después revisa como siempre: es idempotente (una segunda corrida no cambia nada) y nunca saca entradas.
 
@@ -669,5 +674,6 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.21.0`, todavía no publicado en un release.
 
 - `orca-stack lint` con la regla `long-file`, la Baseline `.orca-stack-baseline.json`, `--sembrar`, el job `lint` de la CI y el hook `.githooks/pre-push` (#417).
+- La regla `wide-directory` de `orca-stack lint` (#418).
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.

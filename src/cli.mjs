@@ -38,7 +38,7 @@ Comandos:
   planificar Abre la sesión de planificación de un issue paraguas: worktree de Orca en docs/<slug> y pi con el brief de planificación.
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
   limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
-  lint      Revisa el repo (long-file: archivos de más de 2000 líneas) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
+  lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
   --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
@@ -312,15 +312,20 @@ Con --dry-run muestra el plan y el brief y no crea nada.
 `,
   lint: `orca-stack lint [--sembrar]
 
-Dentro de un repo git, revisa cada archivo trackeado (nunca los sin trackear ni los ignorados por .gitignore) con la regla
+Dentro de un repo git, revisa cada archivo trackeado (nunca los sin trackear ni los ignorados por .gitignore) con dos reglas:
 long-file: un archivo de más de 2000 líneas es una violación (cuentan las líneas en blanco, los comentarios y los tests;
-exactamente 2000 pasa). Cada violación nueva sale en una línea con la regla, el archivo, la ubicación y qué hacer:
+exactamente 2000 pasa).
+wide-directory: un directorio con más de 15 entradas es una violación (exactamente 15 pasa). Cuentan sus archivos trackeados
+y sus subdirectorios con algún archivo trackeado; node_modules/ nunca cuenta. La raíz del repo es ./.
+Cada violación nueva sale en una línea con la regla, el archivo o directorio, la cantidad y qué hacer:
   long-file test/foo.mjs: 2345 líneas (máximo 2000) — dividí el archivo
+  wide-directory src/: 37 entradas (máximo 15) — agrupá los archivos relacionados en subdirectorios
 
 La Baseline es .orca-stack-baseline.json, en la raíz del repo y commiteada: la lista de violaciones que ya existían,
 {"version":1,"entries":[{"rule","file","location","fingerprint"}]}, sin números de línea. Una violación coincide con
 una entrada de su regla por archivo o, si el archivo se movió sin cambios, por fingerprint (el de long-file sale del
-contenido entero); cada entrada cubre una sola violación, así que una copia en otro archivo es nueva.
+contenido entero); cada entrada cubre una sola violación, así que una copia en otro archivo es nueva. La de wide-directory es
+la ruta del directorio: renombrarlo da una violación nueva y una entrada vencida.
 lint no acepta --dry-run.
 Una entrada cuya violación ya no está en ningún archivo del repo está vencida: el lint falla y pide sacarla a mano.
 Sin Baseline, todas las violaciones son nuevas; una Baseline mal formada falla nombrando el archivo y nunca se reescribe.

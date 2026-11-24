@@ -6,6 +6,30 @@
       "file": "test/despacho.test.mjs",
       "location": "file",
       "fingerprint": "sha256:c7074430480cd04b"
+    },
+    {
+      "rule": "wide-directory",
+      "file": "./",
+      "location": "directory",
+      "fingerprint": "sha256:c14cecec97312ad1"
+    },
+    {
+      "rule": "wide-directory",
+      "file": "assets/skills/",
+      "location": "directory",
+      "fingerprint": "sha256:d028726a1d40240e"
+    },
+    {
+      "rule": "wide-directory",
+      "file": "src/",
+      "location": "directory",
+      "fingerprint": "sha256:e88f707fcae6f352"
+    },
+    {
+      "rule": "wide-directory",
+      "file": "test/",
+      "location": "directory",
+      "fingerprint": "sha256:a963eca407ca3267"
     }
   ]
 }
