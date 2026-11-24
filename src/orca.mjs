@@ -43,3 +43,23 @@ export const readOrcaOverrides = home => {
 
   return found
 }
+
+// #430: main keeps each worker's worktree card in Orca's sidebar in sync. The card is only a view: a failed or timed-out
+// `orca worktree set` prints one warning line and the command goes on with its exit code and output unchanged.
+export const setCard = (io, selector, fields) => {
+  let res
+  try {
+    res = io.sh('orca', ['worktree', 'set', '--worktree', selector, ...fields, '--json'])
+  } catch (error) {
+    res = { status: null, stdout: '', stderr: '', error }
+  }
+  let body
+  try {
+    body = JSON.parse(res.stdout)
+  } catch {}
+  if (res.status === 0 && !res.error && body?.ok !== false) return true
+  const why = String(body?.error?.message ?? (res.stderr || (body ? '' : res.stdout) || res.error || `salió con ${res.status}`)).trim().split(/\r?\n/)[0]
+  ;(io.err ?? (message => console.error(message)))(`⚠ No pude actualizar la tarjeta de ${selector} en Orca (orca worktree set): ${why}. Sigo.`)
+
+  return false
+}

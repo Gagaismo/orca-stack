@@ -1,14 +1,16 @@
+import { repoWorktrees } from './avisar.mjs'
 import { isPending, isStatus, latestChecks } from './checks.mjs'
 import { getCommonDir } from './consultas.mjs'
 import { FAMILIES, blockOf, defaultIo, familyOf, loadConfig } from './despacho.mjs'
 import { commitOf, markerLines, markerValue, namesCommit, normalizeBody } from './marcas.mjs'
 import { baseMigrations, migrationSpec, openReservations, orderBlockers, rawNumberOf } from './migraciones.mjs'
+import { setCard } from './orca.mjs'
 import { closedIssues } from './vigilar.mjs'
 
 // `orca-stack estado`: MAIN.md step 7 on the current head of each PR, read once (S1, #366). Its `--json` output is the
 // attestation Gentle Shell's merge guard reads: keep its shape stable.
 const USAGE = 'Uso: orca-stack estado [<pr>...] [--json]'
-export const PR_VIEW_FIELDS = 'number,headRefOid,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state,url'
+export const PR_VIEW_FIELDS = 'number,headRefOid,headRefName,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state,url'
 const CHECK_GREEN = ['SUCCESS', 'SKIPPED', 'NEUTRAL']
 const EMPTY_LIST = new Set(['', '-', 'nada', 'ninguno', 'ninguna'])
 
@@ -447,6 +449,25 @@ const evaluate = (pr, config, root, io, now, ctx) => {
   }
 }
 
+// #430: the worktree on an open PR's head branch gets the PR linked on its Orca card and the status in-review, once: a
+// card already linked to that PR gets no call. Warnings go to stderr so the --json attestation keeps its shape.
+const linkCards = (prs, root, io, warn) => {
+  const open = prs.filter(pr => pr.state === 'OPEN' && typeof pr.headRefName === 'string' && pr.headRefName !== '')
+  if (open.length === 0) return
+  let ours
+  try {
+    ours = repoWorktrees(root, io)
+  } catch (error) {
+    warn(`⚠ No pude leer los worktrees para actualizar las tarjetas en Orca: ${error.message}. Sigo.`)
+    return
+  }
+  for (const pr of open) {
+    const hit = ours.find(({ branch }) => branch === pr.headRefName)
+    if (!hit || Number(hit.row.linkedPR?.number ?? hit.row.linkedPR) === pr.number) continue
+    setCard(io, `path:${hit.row.path}`, ['--pr', String(pr.number), '--workspace-status', 'in-review'])
+  }
+}
+
 export const estadoCommand = async (flags = {}, items = [], io = defaultIo()) => {
   const warn = io.err ?? (message => console.error(message))
   const raw = (items ?? []).map(item => String(item).trim().replace(/^#/, ''))
@@ -469,13 +490,16 @@ export const estadoCommand = async (flags = {}, items = [], io = defaultIo()) =>
     }
   }
   const now = (io.now ?? Date.now)()
+  const read = []
   const states = numbers.map(n => {
     const res = io.sh('gh', ['pr', 'view', String(n), '--json', PR_VIEW_FIELDS], { cwd: root })
     const pr = res.status === 0 ? parse(res) : undefined
     if (!isPlain(pr) || typeof pr.headRefOid !== 'string') throw new Error(`No pude leer el PR #${n} con gh pr view: ${detail(res)}`)
+    read.push(pr)
 
     return evaluate(pr, config, root, io, now, ctx)
   })
+  linkCards(read, root, io, warn)
   if (flags.json) {
     // One PR named: one object (the guard's attestation); several, or every open one: an array.
     io.out(JSON.stringify(raw.length > 0 && numbers.length === 1 ? states[0].result : states.map(state => state.result)))

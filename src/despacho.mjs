@@ -5,6 +5,7 @@ import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { ensureCandidateWorktreesExclude } from './candidate-worktrees.mjs'
 import { analyzeChecks, isHigherRunId, isPending, latestChecks } from './checks.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
+import { setCard } from './orca.mjs'
 import { resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
 import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
@@ -1101,6 +1102,12 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
         branch = (deepFind(json.result ?? json, ['branch']) ?? name).replace(/^refs\/heads\//, '')
         if (!worktree) throw new Error('orca worktree create no devolvió la ruta del worktree.')
         left.worktree = worktree
+      }
+      // #430: main owns the worker's card; the issue link stays on `worktree create`.
+      if (!review) {
+        const card = ['--comment', `#${n} dispatched to ${agent}`, '--workspace-status', 'in-progress']
+        if (dryRun) say(`[simulación] orca worktree set --worktree path:${worktree} ${card.map(a => (/\s|"/.test(a) ? JSON.stringify(a) : a)).join(' ')} --json`)
+        else setCard(io, `path:${worktree}`, card)
       }
     }
 

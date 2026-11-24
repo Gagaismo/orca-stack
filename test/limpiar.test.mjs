@@ -42,6 +42,7 @@ const harness = (world) => {
         if (world.closeDown) return fail(world.closeDown)
         return json({ ok: true, result: { closed: 1 } })
       }
+      if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'set') return world.cardDown ?? json({ ok: true })
       if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'rm') {
         const target = args[args.indexOf('--worktree') + 1].replace(/^path:/, '')
         world.worktrees = world.worktrees.filter(one => one.path !== target)
@@ -53,6 +54,7 @@ const harness = (world) => {
 
   return { io, out, err, calls, world }
 }
+const cards = h => h.calls.filter(call => /^orca (terminal close|worktree (set|rm))/.test(call))
 const mutations = h => h.calls.filter(call => /^orca (terminal close|worktree rm)|push|branch -d|branch -D|rm -rf/.test(call))
 
 const WORLD = () => ({
@@ -172,4 +174,44 @@ describe('orca-stack limpiar (S13)', () => {
     assert.deepEqual(mutations(h), ['orca terminal close --worktree path:/wt/orca-stack-22 --all --json', 'orca worktree rm --worktree path:/wt/orca-stack-22 --json'])
     assert.deepEqual(world.worktrees.map(one => one.path), ['/repo', '/wt/orca-stack-21'])
   })
+
+  test('#430 S3: limpiar sets the card to completed on each worktree it removes, after closing its terminals and before removing it; skipped ones and --dry-run send no set', async () => {
+    const h = harness(WORLD())
+    assert.equal(await limpiarCommand({}, h.io), 0)
+    assert.deepEqual(cards(h), [
+      'orca terminal close --worktree path:/wt/orca-stack-7 --all --json',
+      'orca worktree set --worktree path:/wt/orca-stack-7 --workspace-status completed --json',
+      'orca worktree rm --worktree path:/wt/orca-stack-7 --json',
+      'orca terminal close --worktree path:/wt/revision-70-agy --all --json',
+      'orca worktree set --worktree path:/wt/revision-70-agy --workspace-status completed --json',
+      'orca worktree rm --worktree path:/wt/revision-70-agy --json',
+      'orca terminal close --worktree path:/wt/revision-120-pi --all --json',
+      'orca worktree set --worktree path:/wt/revision-120-pi --workspace-status completed --json',
+      'orca worktree rm --worktree path:/wt/revision-120-pi --json',
+    ])
+    assert.deepEqual(h.err, [])
+
+    const dry = harness(WORLD())
+    assert.equal(await limpiarCommand({ dryRun: true }, dry.io), 0)
+    assert.deepEqual(cards(dry), [])
+  })
+
+  test('#430 S4: when orca worktree set times out in limpiar, one warning line goes to stderr, the worktree is still removed and the exit code stays 0', async () => {
+    const world = {
+      worktrees: [wt('/repo', 'main'), wt('/wt/orca-stack-7', 'Gagaismo/orca-stack-7')],
+      prs: [pr(70, 'MERGED', 'Gagaismo/orca-stack-7')],
+      cardDown: { status: null, stdout: '', stderr: '', error: new Error('spawnSync orca ETIMEDOUT') },
+    }
+    const h = harness(world)
+    assert.equal(await limpiarCommand({}, h.io), 0)
+    assert.deepEqual(h.out, ['Cerré las terminales y saqué /wt/orca-stack-7 (PR #70 mergeado).'])
+    assert.deepEqual(h.err, ['⚠ No pude actualizar la tarjeta de path:/wt/orca-stack-7 en Orca (orca worktree set): Error: spawnSync orca ETIMEDOUT. Sigo.'])
+    assert.deepEqual(cards(h), [
+      'orca terminal close --worktree path:/wt/orca-stack-7 --all --json',
+      'orca worktree set --worktree path:/wt/orca-stack-7 --workspace-status completed --json',
+      'orca worktree rm --worktree path:/wt/orca-stack-7 --json',
+    ])
+    assert.deepEqual(world.worktrees.map(one => one.path), ['/repo'])
+  })
 })
+

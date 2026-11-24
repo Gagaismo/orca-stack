@@ -1,6 +1,7 @@
 import { repoWorktrees, stackAgent } from './avisar.mjs'
 import { getCommonDir } from './consultas.mjs'
 import { defaultIo } from './despacho.mjs'
+import { setCard } from './orca.mjs'
 import { samePath } from './util.mjs'
 
 // `orca-stack limpiar` (S13, MAIN.md step 9): closes the terminals of and removes every worktree of this repo whose PR
@@ -86,6 +87,8 @@ export const limpiarCommand = async (flags = {}, io = defaultIo()) => {
       failed = true
       continue
     }
+    // #430: no card stays in progress forever; a skipped worktree keeps its card.
+    setCard(io, `path:${where}`, ['--workspace-status', 'completed'])
     const removed = io.sh('orca', ['worktree', 'rm', '--worktree', `path:${where}`, '--json'])
     if (removed.status !== 0) {
       warn(`✖ Cerré las terminales de ${where}, pero no pude sacar el worktree (${detail(removed)}).`)
