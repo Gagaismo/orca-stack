@@ -130,6 +130,11 @@ orca-stack init
 
 Agrega el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` a `AGENTS.md` (con el contrato completo) y uno corto con `@AGENTS.md` a `CLAUDE.md`; crea `.orca-stack.json` y `.orca-stack.local.json` si faltan y agrega este último a `.gitignore`. No pisa configuración existente.
 
+También crea `orca.yaml` y `.worktreeinclude` si faltan; si ya existen, no los toca y dice `ya existe, no se toca`. orca-stack commitea los suyos.
+
+- `orca.yaml`: Orca corre `scripts.setup` en cada worktree nuevo apenas lo crea. Con `package-lock.json` el setup es `npm install`; si `init` no detecta un paso de instalación, no escribe script de setup. No prende `worktree.sharedDirectories` (un `node_modules` compartido por symlink): un worker que cambia dependencias se las cambiaría a los demás. Orca lee `orca.yaml` de la rama de la que parte el worktree, así que rige recién después de mergearlo. Si en Settings → Repository ya tenías el setup como comando local, poné Command source & orca.yaml en `orca.yaml only`: con `Run both`, el `npm install` corre dos veces.
+- `.worktreeinclude`: los archivos locales ignorados por git que Orca copia a cada worktree nuevo, en rutas literales (Orca saltea los globs y las negaciones con un aviso). Lista `.orca-stack.local.json`; nunca pongas secretos ahí. Una ruta que no existe en una máquina simplemente no se copia.
+
 #### `doctor`
 
 ```bash

@@ -1,0 +1,5 @@
+# Orca runs scripts.setup in each new worktree right after creating it.
+# No worktree.sharedDirectories: a worker that changes dependencies would change them for every worktree.
+scripts:
+  setup: |
+    npm install
