@@ -64,7 +64,7 @@ const relative = (root, file) => path.relative(root, path.resolve(root, file)).s
 const scan = (root, files) => {
   const byFile = new Map(files.map(file => [file, { comments: [], symbols: [] }]))
   for (const batch of batches(files)) {
-    for (const match of runAstGrepJson(['scan', '--inline-rules', RULES, '--json=compact', ...batch], { cwd: root })) {
+    for (const match of runAstGrepJson(['scan', '--inline-rules', RULES, '--json=compact', '--', ...batch], { cwd: root })) {
       const found = byFile.get(relative(root, match.file))
       if (!found) continue
       const { start, end } = match.range.byteOffset
@@ -112,7 +112,8 @@ const DIRECTIVE = /^(?:eslint\b|eslint-|global\s|globals\s|jshint\b|jscs:|@ts-|t
 const JSDOC_TYPE = /@(?:type|typedef|param|arg|argument|returns?|template|callback|property|prop|enum|this|satisfies|implements|extends|augments|overload|import|throws|yields)\b/
 const LICENSE = /\b(?:license[ds]?|copyright|spdx-license-identifier)\b|©/i
 const DECISION_RECORD = /(?<![\w&])#\d+\b|\badr[ -]?\d{4}\b|docs\/adr\/\d{4}-/i
-const EXCUSE = /\b(?:TODO|FIXME|XXX)\b|\b(?:hack|workarounds?|for now|upgrade when)\b|\btemporary\b(?!\s+(?:files?|dir(?:ector(?:y|ies))?|folders?|paths?|homes?|repos?|cop(?:y|ies)|names?|worktrees?)\b)|\bshortcut:/i
+const EXCUSE_MARKER = /(?<![\p{L}\p{N}_])(?:TODO|FIXME|XXX)(?![\p{L}\p{N}_])/u
+const EXCUSE = /\b(?:hack|workarounds?|for now|upgrade when)\b|\btemporary\b(?!\s+(?:files?|dir(?:ector(?:y|ies))?|folders?|paths?|homes?|repos?|cop(?:y|ies)|names?|worktrees?)\b)|\bshortcut:/i
 
 const isLicenseHeader = (comment, text, blanked) => LICENSE.test(text) && blanked.subarray(0, comment.start).toString('utf8').trim() === ''
 
@@ -155,22 +156,14 @@ const isTautology = (comment, text, context) => {
   return said.every(word => code.has(stem(word)))
 }
 
-const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
 const codeLike = name => /[a-z0-9][A-Z]/.test(name) || /[A-Za-z0-9]_[A-Za-z0-9]/.test(name)
 
-const namedIdentifiers = text => {
-  const names = new Set()
-  for (const [, inner] of text.matchAll(/`([^`\s]+)`/g)) {
-    const name = inner.replace(/\(\)$/, '')
-    if (IDENTIFIER.test(name) && codeLike(name)) names.add(name)
-  }
-  for (const [, name] of text.matchAll(/(?<![\w$.`/#-])([A-Za-z_$][\w$]*)\(\)/g)) {
-    if (codeLike(name)) names.add(name)
-  }
-  return [...names]
-}
+// #419: per Lautaro's reading of R5, Stale checks only a bare name() call, never a backticked identifier.
+const calledNames = text => [...new Set([...text.matchAll(/(?<![\w$.`/#-])([A-Za-z_$][\w$]*)\(\)/g)]
+  .map(([, name]) => name)
+  .filter(codeLike))]
 
-const isStale = (text, context) => namedIdentifiers(text).some(name => {
+const isStale = (text, context) => calledNames(text).some(name => {
   const escaped = name.replace(/\$/g, '\\$')
   return !new RegExp(`(?<![\\w$])${escaped}(?![\\w$])`).test(context.code)
 })
@@ -179,13 +172,13 @@ const classify = (comment, context) => {
   const text = normalize(comment.text)
   if (text === '' || notAComment(comment, text, context.blanked)) return undefined
   if (DECISION_RECORD.test(text)) return undefined
-  if (EXCUSE.test(text)) return { rule: 'comment-excuse', text }
+  if (EXCUSE_MARKER.test(text) || EXCUSE.test(text)) return { rule: 'comment-excuse', text }
   if (isTautology(comment, text, context)) return { rule: 'comment-tautology', text }
   if (isStale(text, context)) return { rule: 'comment-stale', text }
   return undefined
 }
 
-const DECLARATION_GAP = /^(?:\s+|export\b|default\b|declare\b|const\b|let\b|var\b)*$/
+const DECLARATION_GAP = /^(?:\s|export\b|default\b|declare\b|const\b|let\b|var\b)*$/
 
 const labelOf = (symbol, symbols) => {
   if (symbol.isClass) return symbol.name

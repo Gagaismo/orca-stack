@@ -22,9 +22,9 @@ El único comentario permitido es un Decision Record que cita un ADR o un issue 
 `orca-stack lint` revisa los comentarios de JavaScript y TypeScript. Go, Python y Shell todavía no dan hallazgos de comentarios.
 
 - **Decision Record:** un comentario que cita `#123`, `ADR 0002` o un link a `docs/adr/0002-…` pasa. Un "ver el ADR" que no nombra ninguno no es un Decision Record.
-- **Excuse:** `TODO`, `FIXME`, `HACK`, `XXX`, "hack", "workaround", "temporary", "for now", "shortcut:" o "upgrade when" sin una cita. Un `// TODO(#123): …` cita un issue y pasa.
+- **Excuse:** `TODO`, `FIXME` y `XXX` en mayúsculas, "hack", "workaround", "temporary", "for now", "shortcut:" o "upgrade when" sin una cita. Un `// TODO(#123): …` cita un issue y pasa.
 - **Tautology**, solo en los casos claros: un comentario que repite la sentencia que sigue, como `// increment i` arriba de `i++` o `// return the result` arriba de `return result`.
-- **Stale**, solo donde se puede comprobar: un comentario que nombra un identificador que ya no existe en el archivo.
+- **Stale**, solo donde se puede comprobar: un comentario que nombra una llamada `nombre()` a una función que no está definida ni importada en el archivo. Un identificador entre backticks nunca se marca.
 - **Nunca se marcan:** shebangs, encabezados de licencia, directivas `eslint-disable` y `@ts-…`, anotaciones de tipos JSDoc que pide una herramienta y strings que contienen `//`.
 
 ## Reglas de juicio

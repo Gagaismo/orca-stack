@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
-import { cleanup, cli, tempDir } from './helpers.mjs'
+import { BIN, cleanup, cli, tempDir } from './helpers.mjs'
 
 const BASELINE = '.orca-stack-baseline.json'
 const EXCUSE = '(Excuse) — borralo y abrí un issue para arreglar la implementación'
@@ -38,8 +38,14 @@ const withRepo = run => {
   }
   const lint = (args = [], env = {}) => cli(home, ['lint', ...args], { cwd: repo, env: { ORCA_STACK_AST_GREP: '', ...env } })
   const baseline = () => readFileSync(path.join(repo, BASELINE), 'utf8')
+  const lintWithin = timeout => spawnSync(process.execPath, [BIN, 'lint'], {
+    cwd: repo,
+    encoding: 'utf8',
+    timeout,
+    env: { ...process.env, HOME: home, USERPROFILE: home, ORCA_STACK_HOME: home, GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig-none'), ORCA_STACK_AST_GREP: '' },
+  })
   try {
-    run({ dir, repo, put, add, remove, lint, baseline })
+    run({ dir, repo, put, add, remove, lint, lintWithin, baseline })
   } finally {
     cleanup(dir)
   }
@@ -169,6 +175,67 @@ describe('orca-stack lint comment rules (#419)', () => {
       const result = lint()
       assert.equal(result.status, 1, result.out)
       assert.equal(result.stdout, `comment-stale src/stale.mjs:run() (Stale) — borralo\n${SUMMARY(1, 0)}`)
+    })
+  })
+
+  test('S5: Stale flags only a name() call neither defined nor imported in the file, never a backticked identifier', () => {
+    withRepo(({ add, lint }) => {
+      add('src/calls.mjs', [
+        "import { importedFn } from './other.mjs'",
+        'const definedFn = () => importedFn()',
+        'export function run() {',
+        '  // The event name the router emits is `jobs_update`; see `PI_OFFLINE` too.',
+        '  // wraps `removedFn()` and `goneValue` from the old router',
+        '  // calls definedFn() and importedFn() once',
+        '  // calls missingFn() before returning',
+        '  return definedFn()',
+        '}',
+        '',
+      ].join('\n'))
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, `comment-stale src/calls.mjs:run() (Stale) — borralo\n${SUMMARY(1, 0)}`)
+    })
+  })
+
+  test('S3: Excuse ignores «Método», «todo el listado» and «the todo list», and still flags an uppercase TODO', () => {
+    withRepo(({ add, lint }) => {
+      add('src/words.mjs', [
+        'export function later() {',
+        '  // TODO: drop the cache',
+        '  return 2',
+        '}',
+        'export function register() {',
+        '  // Método que registra el complemento en el Gateway.',
+        '  // Recorre todo el listado una sola vez.',
+        '  // Walks the todo list once.',
+        '  return 1',
+        '}',
+        '',
+      ].join('\n'))
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, `comment-excuse src/words.mjs:later() ${EXCUSE}\n${SUMMARY(1, 0)}`)
+    })
+  })
+
+  test('S8: two comment lines before a later declaration do not hang the lint (#419 review)', () => {
+    withRepo(({ add, lintWithin }) => {
+      add('src/slow.mjs', [
+        'export function run() {',
+        '  // TODO: handle the error when the API returns a 500',
+        '  // the upstream service is flaky in the mornings, so we retry',
+        '  return call()',
+        '}',
+        'export function next() {',
+        '  return 1',
+        '}',
+        '',
+      ].join('\n'))
+      const result = lintWithin(15000)
+      assert.equal(result.error, undefined, `lint did not finish in 15 s: ${result.error}`)
+      assert.equal(result.status, 1, result.stdout + result.stderr)
+      assert.equal(result.stdout, `comment-excuse src/slow.mjs:run() ${EXCUSE}\n${SUMMARY(1, 0)}`)
     })
   })
 
