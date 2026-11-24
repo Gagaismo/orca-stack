@@ -73,7 +73,11 @@ secondary, but retain the inexpensive check that one author test fails without
 the change. Delete verifier test files after running them so the worktree stays
 clean. Report only what blocks (file:line, the problem, how to reproduce it or
 which criterion it breaks, the fix) and at most three suggestions; no lists of
-what is fine. Tag blockers `implementación` (code breaks a clear rule) or
+what is fine. A comment finding blocks only as `regla escrita`, citing
+`CODING_STANDARDS.md:<line>` of the rule it breaks, or as `comando`, with a
+failing `orca-stack lint` run and its output. A comment you merely dislike goes
+to `## SUGERENCIAS`. A Decision Record that cites an issue `#n` or an ADR is
+never a finding. Tag blockers `implementación` (code breaks a clear rule) or
 `interpretación` (author and reviewer read a rule differently); send
 `interpretación` blockers to the human, never settle them with `Decidido por
 main`. On a re-review, read only the delta since the last reviewed commit and
