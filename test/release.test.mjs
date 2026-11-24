@@ -60,6 +60,9 @@ const setupFixture = (opts = {}) => {
     'package-lock.json',
     'CLAUDE.md',
     '.gitignore',
+    // The release runs init, which would create these if the fixture lacked them (#432).
+    'orca.yaml',
+    '.worktreeinclude',
   ]) {
     cpSync(path.join(ROOT, item), path.join(local, item), { recursive: true })
   }

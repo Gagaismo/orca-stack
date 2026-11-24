@@ -1,0 +1,3 @@
+# Gitignored local files Orca copies into each new worktree.
+# Literal paths only (Orca skips globs and negations); never list secrets such as .env files.
+.orca-stack.local.json
