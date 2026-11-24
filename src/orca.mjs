@@ -75,12 +75,17 @@ const EPISODE_MS = 5 * 60 * 60 * 1000
 
 const episodeOf = (io, commonDir, agent) => {
   const file = path.join(commonDir, ...ACCOUNTS_REL)
+  const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
   let all = {}
   try {
-    all = JSON.parse(io.readFile(file)) ?? {}
+    all = JSON.parse(io.readFile(file))
   } catch {}
+  if (!isRecord(all)) all = {}
   const now = (io.now ?? Date.now)()
-  const episode = all[agent] && now - all[agent].at <= EPISODE_MS ? all[agent] : { at: now, exhausted: [], resumed: {} }
+  // A record of another shape (hand-edited, or written by another version) counts as no episode, never as a crash.
+  const old = all[agent]
+  const valid = isRecord(old) && Number.isFinite(old.at) && Array.isArray(old.exhausted) && isRecord(old.resumed)
+  const episode = valid && now - old.at <= EPISODE_MS ? old : { at: now, exhausted: [], resumed: {} }
   const save = () => {
     io.mkdirp(path.dirname(file))
     io.writeFile(`${file}.${process.pid}.tmp`, JSON.stringify({ ...all, [agent]: episode }, null, 2) + '\n')
@@ -110,7 +115,8 @@ const account = (io, args) => {
 // { error } (one line) when Orca could not list or select, and {} when no account is left; the last two leave the agent
 // blocked as today. Only a worker relaunched after the episode's switch ran on the selected account; any other (a
 // worker of the old account, or the same stop told twice before `reanudar`) resumes on it with no new select. A new
-// select keeps the workers still pending, so `reanudar` relaunches them on the newly selected account. `launchedNow` (despachar) says the worker just ran on the active account and the
+// select keeps the workers still pending, so `reanudar` relaunches them on the newly selected account. No line ever points
+// to an account the episode lists as exhausted. `launchedNow` (despachar) says the worker just ran on the active account and the
 // caller relaunches it; otherwise the issue stays pending until `reanudar` relaunches it.
 export const switchAccount = (io, commonDir, agent, issue, { launchedNow = false } = {}) => {
   const provider = PROVIDERS[agent]
@@ -129,6 +135,12 @@ export const switchAccount = (io, commonDir, agent, issue, { launchedNow = false
       }
       account(io, ['select', '--agent', provider, '--account', to])
       Object.assign(ep, { from: active ?? 'system', to, resumed: Object.fromEntries(Object.entries(ep.resumed).filter(([, pending]) => pending)) })
+    } else if (ep.exhausted.includes(active)) {
+      // A stop on the selected account after it was exhausted (a worker launched on it, or a pending stop told again):
+      // no account is left, so the worker is blocked and is no longer pending a relaunch.
+      delete ep.resumed[key]
+      save()
+      return {}
     }
     ep.resumed[key] = !launchedNow
     save()
@@ -140,9 +152,10 @@ export const switchAccount = (io, commonDir, agent, issue, { launchedNow = false
 }
 
 // Whether `reanudar` must relaunch `issue` after an account switch (a paused session keeps its account); `done` clears it.
+// Never toward an account the episode already lists as exhausted: the agent is blocked as today.
 export const pendingAfterSwitch = (io, commonDir, agent, issue, done = false) => {
   const { episode, save } = episodeOf(io, commonDir, agent)
-  if (episode.resumed[String(issue)] !== true) return false
+  if (episode.resumed[String(issue)] !== true || episode.exhausted.includes(episode.to)) return false
   if (done) {
     episode.resumed[String(issue)] = false
     save()
