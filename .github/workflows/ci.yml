@@ -32,6 +32,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      - name: Dependencias (ast-grep fijado por versión y checksum, #419)
+        run: npm ci
       # The statechart corpus test (#305) needs TLC. The runner has Java; TLA2TOOLS skips mise. Same jar and checksum
       # as upstream's TLC_TOOL in assets/skills/statechart/scripts/run.ts.
       - name: TLC para el test de corpus de statechart
@@ -123,6 +125,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install dependencies (pinned ast-grep, #419)
+        run: npm ci
       - name: Lint against the Baseline
         run: node bin/orca-stack.mjs lint
 

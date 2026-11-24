@@ -30,5 +30,14 @@
     "type": "git",
     "url": "git+https://github.com/Gagaismo/orca-stack.git"
   },
-  "keywords": ["orca", "claude-code", "pi", "agents"]
+  "keywords": [
+    "orca",
+    "claude-code",
+    "pi",
+    "agents"
+  ],
+  "optionalDependencies": {
+    "@ast-grep/cli-linux-x64-gnu": "0.51.3",
+    "@ast-grep/cli-win32-x64-msvc": "0.51.3"
+  }
 }

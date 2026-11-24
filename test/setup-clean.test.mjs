@@ -18,11 +18,12 @@ test('npm install leaves a fresh checkout clean using the committed lockfile', (
   try {
     copyFileSync(path.join(ROOT, 'package.json'), path.join(checkout, 'package.json'))
     copyFileSync(path.join(ROOT, 'package-lock.json'), path.join(checkout, 'package-lock.json'))
+    copyFileSync(path.join(ROOT, '.gitignore'), path.join(checkout, '.gitignore'))
     assert.equal(JSON.parse(readFileSync(path.join(checkout, 'package.json'), 'utf8')).dependencies, undefined)
 
     const git = (...args) => spawnSync('git', args, { cwd: checkout, encoding: 'utf8' })
     assert.equal(git('init', '-q').status, 0)
-    assert.equal(git('add', 'package.json', 'package-lock.json').status, 0)
+    assert.equal(git('add', 'package.json', 'package-lock.json', '.gitignore').status, 0)
     assert.equal(git('-c', 'user.name=orca-stack test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'fixture').status, 0)
 
     const npm = process.platform === 'win32'
