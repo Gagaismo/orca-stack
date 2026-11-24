@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { commentViolations, isCommentRule, reportComment } from './lint-comments.mjs'
+
 export const BASELINE_FILE = '.orca-stack-baseline.json'
 const MAX_LINES = 2000
 const MAX_ENTRIES = 15
@@ -119,24 +121,28 @@ const readBaseline = root => {
 
 // Each entry matches at most one violation: same rule and file first, then same rule and fingerprint (moved code).
 // A second copy of a baselined violation finds its entry taken and counts as new.
+// #419: a comment entry also needs its fingerprint in the same-file pass, since one symbol can hold several comments.
+const sameFile = (entry, violation) => entry.rule === violation.rule && entry.file === violation.file && entry.location === violation.location
+  && (!isCommentRule(violation.rule) || entry.fingerprint === violation.fingerprint)
+const sameLocation = (entry, violation) => entry.rule === violation.rule && entry.fingerprint === violation.fingerprint && entry.location === violation.location
+const sameText = (entry, violation) => entry.rule === violation.rule && entry.fingerprint === violation.fingerprint
+
 const match = (violations, entries) => {
   const free = new Set(entries.map((_, index) => index))
-  const unmatched = []
-  const pending = []
-  for (const violation of violations) {
-    const index = [...free].find(i => entries[i].rule === violation.rule && entries[i].file === violation.file && entries[i].location === violation.location)
-    if (index === undefined) pending.push(violation)
-    else free.delete(index)
+  let pending = violations
+  for (const same of [sameFile, sameLocation, sameText]) {
+    const left = []
+    for (const violation of pending) {
+      const index = [...free].find(i => same(entries[i], violation))
+      if (index === undefined) left.push(violation)
+      else free.delete(index)
+    }
+    pending = left
   }
-  for (const violation of pending) {
-    const index = [...free].find(i => entries[i].rule === violation.rule && entries[i].fingerprint === violation.fingerprint)
-    if (index === undefined) unmatched.push(violation)
-    else free.delete(index)
-  }
-  return { unmatched, stale: [...free].sort((a, b) => a - b).map(i => entries[i]) }
+  return { unmatched: pending, stale: [...free].sort((a, b) => a - b).map(i => entries[i]) }
 }
 
-const byKey = (a, b) => a.rule.localeCompare(b.rule) || a.file.localeCompare(b.file) || a.fingerprint.localeCompare(b.fingerprint)
+const byKey = (a, b) => a.rule.localeCompare(b.rule) || a.file.localeCompare(b.file) || a.location.localeCompare(b.location) || a.fingerprint.localeCompare(b.fingerprint)
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
@@ -145,7 +151,7 @@ export const lintCommand = async (flags, { cwd = process.cwd() } = {}) => {
   const root = repoRoot(cwd)
   let entries = readBaseline(root)
   const files = checkedFiles(root)
-  const violations = [...longFiles(root, files), ...wideDirectories(files)]
+  const violations = [...longFiles(root, files), ...wideDirectories(files), ...commentViolations(root, files)]
 
   if (flags.sembrar) {
     const { unmatched } = match(violations, entries)
@@ -165,7 +171,7 @@ export const lintCommand = async (flags, { cwd = process.cwd() } = {}) => {
     return 0
   }
   for (const violation of unmatched) {
-    console.log(REPORT[violation.rule](violation))
+    console.log(isCommentRule(violation.rule) ? reportComment(violation) : REPORT[violation.rule](violation))
   }
   for (const entry of stale) {
     console.log(`entrada vencida en ${BASELINE_FILE}: ${entry.rule} ${entry.file} (${entry.location}, ${entry.fingerprint}) — la violación ya no está en el repo: sacá esta entrada`)
