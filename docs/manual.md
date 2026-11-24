@@ -101,6 +101,7 @@ Reglas que sostienen todo lo demás:
 | `vigilar` | Monitor de una tanda de PRs | Checkout principal |
 | `estado` | Qué le falta a cada PR para el paso 7, de solo lectura (con `--json`, la atestación) | Checkout principal |
 | `limpiar` | Cierra terminales y saca worktrees de PRs mergeados o cerrados | Checkout principal |
+| `lint` | Revisa el repo contra su Baseline (`long-file`) **`[solo en main]`** | Dentro de un repo git (también la CI y el hook `pre-push`) |
 | `planificar` | Abre una sesión de planificación interactiva en su propio worktree `docs/<slug>` | Checkout principal |
 | `sesiones` | Lista sesiones recientes de Claude, Pi y agy (entrada de `/retro`) | Cualquier carpeta |
 
@@ -129,6 +130,11 @@ orca-stack init
 ```
 
 Agrega el bloque `<!-- orca-stack:begin -->` … `<!-- orca-stack:end -->` a `AGENTS.md` (con el contrato completo) y uno corto con `@AGENTS.md` a `CLAUDE.md`; crea `.orca-stack.json` y `.orca-stack.local.json` si faltan y agrega este último a `.gitignore`. No pisa configuración existente.
+
+También crea `orca.yaml` y `.worktreeinclude` si faltan; si ya existen, no los toca y dice `ya existe, no se toca`. orca-stack commitea los suyos.
+
+- `orca.yaml`: Orca corre `scripts.setup` en cada worktree nuevo apenas lo crea. Con `package-lock.json` el setup es `npm install`; si `init` no detecta un paso de instalación, no escribe script de setup. No prende `worktree.sharedDirectories` (un `node_modules` compartido por symlink): un worker que cambia dependencias se las cambiaría a los demás. Orca lee `orca.yaml` de la rama de la que parte el worktree, así que rige recién después de mergearlo. Si en Settings → Repository ya tenías el setup como comando local, poné Command source & orca.yaml en `orca.yaml only`: con `Run both`, el `npm install` corre dos veces.
+- `.worktreeinclude`: los archivos locales ignorados por git que Orca copia a cada worktree nuevo, en rutas literales (Orca saltea los globs y las negaciones con un aviso). Lista `.orca-stack.local.json`; nunca pongas secretos ahí. Una ruta que no existe en una máquina simplemente no se copia.
 
 #### `doctor`
 
@@ -298,6 +304,23 @@ orca-stack limpiar
 
 Para cada worktree de este repo (salvo el checkout principal) cuyo PR se mergeó o se cerró, buscado por su rama o por su nombre `revision-<pr>-<agente>`, cierra sus terminales (`orca terminal close --worktree path:<ruta> --all`), marca su tarjeta de Orca como `completed` (`orca worktree set --worktree path:<ruta> --workspace-status completed --json`; si falla, avisa en una línea y sigue) y lo saca (`orca worktree rm --worktree path:<ruta>`, sin `--force`). Un worktree que omite conserva su tarjeta. Los workers nunca tocan la tarjeta: la lleva `main`. Nunca toca ramas remotas. Omite e informa los worktrees con cambios sin commitear o con un agente trabajando. Es idempotente: una segunda corrida no saca nada. `main` lo corre después de cada merge (paso 9).
 
+#### `lint`
+
+**`[solo en main]`**
+
+```bash
+orca-stack lint             # revisa el repo contra la Baseline
+orca-stack lint --sembrar   # una vez, al prender el lint: anota las violaciones que ya existen
+```
+
+Revisa cada archivo trackeado del repo; nunca los sin trackear ni los que ignora `.gitignore` (por ejemplo `node_modules/`). Por ahora tiene una sola regla, `long-file`: un archivo de más de 2000 líneas es una violación (cuentan las líneas en blanco, los comentarios y los tests; exactamente 2000 pasa). Cada violación nueva sale en una línea que nombra la regla, el archivo, la ubicación y qué hacer, por ejemplo `long-file test/foo.mjs: 2345 líneas (máximo 2000) — dividí el archivo`.
+
+La **Baseline** es `.orca-stack-baseline.json`, en la raíz del repo y commiteada: la lista de las violaciones que ya existían, con un mismo formato para todas las reglas (`{"version":1,"entries":[{"rule","file","location","fingerprint"}]}`) y sin números de línea. Una violación coincide con una entrada de su regla por archivo o, si el archivo se movió sin cambios, por su fingerprint (el de `long-file` sale del contenido entero del archivo, así que dos archivos que solo comparten el encabezado no se confunden; un archivo que se movió y cambió cuenta como violación nueva y entrada vencida). Cada entrada cubre una sola violación: una copia en otro archivo es una violación nueva. Una entrada cuya violación ya no está en ningún archivo del repo está **vencida**: el lint falla, la nombra y pide sacarla a mano, porque una corrida normal nunca reescribe la Baseline. Sin Baseline, toda violación es nueva; una Baseline mal formada falla nombrando el archivo y no se toca.
+
+Sale con 0 y una línea `lint OK` cuando toda violación tiene su entrada y ninguna entrada está vencida; si no, con 1 y el reporte. `--sembrar` agrega a la Baseline cada violación actual sin entrada y después revisa como siempre: es idempotente (una segunda corrida no cambia nada) y nunca saca entradas.
+
+En orca-stack, el job `lint` de la CI forma parte de `ci-ok` y es el chequeo que cuenta. El hook `.githooks/pre-push` corre el lint antes de cada push como aviso temprano; se activa por clon con `git config core.hooksPath .githooks` (si ya tenés hooks propios en `.git/hooks`, llamá a `.githooks/pre-push` desde el tuyo en vez de cambiar `core.hooksPath`). `git push --no-verify` lo saltea y la CI sigue igual.
+
 #### `sesiones`
 
 ```bash
@@ -354,13 +377,14 @@ Son plugins de Claude Code que `global` deja en `~/.claude/mods/` y activa con `
 | `ponytail`, `ponytail-review`, `ponytail-audit`, `ponytail-debt`, `ponytail-help` | Modo "dev perezoso": el cambio más chico que resuelve la tarea; review y auditoría de calidad; ledger de atajos (`shortcut:`); ayuda rápida. Nunca van contra un requisito explícito. Se instalan siempre, para usarlas a mano; sus reglas en el contrato y en `PONYTAIL.md` valen solo con el perk `ponytail` (ver [4.6](#46-perks-y-marchas)) |
 | `arena` | N candidatas en paralelo a la misma tarea, elegir una base e injertar lo mejor de las otras |
 | `swarm` | Fan-out de N workers de solo lectura, que se resuelve en un informe |
+| `sharpen`, `reframe` | Las dispara solo el humano (`/sharpen`, `/reframe`); `main` puede proponerlas en el paso 1 para una idea vaga y espera. `sharpen` hace una tarea más profunda, no más grande, y reescribe el pedido; `reframe` enseña las palabras de experto para lo que se construye y reescribe la descripción con ellas |
 | `principle-attack-the-premise` | Cuando dos arreglos con la misma premisa fallaron en el mismo gate: cuestionar la premisa antes de escribir otro arreglo |
 | `principle-explain-the-number` | Antes de confiar o actuar sobre un número medido: encontrar qué lo limita y descartar que mida otra cosa |
 | `principle-make-operations-idempotent` | Al diseñar comandos o loops que corren entre caídas y reintentos: converger al mismo estado final |
 | `create-formal-verification-skill`, `maintain-formal-verification-skill` | Opcionales, se invocan a mano: generan en el proyecto una skill local de verificación formal (máquinas de estado, carreras e invariantes) y la vuelven a alinear con el código después de cambios; para leer los resultados de TLA+ usan `/statechart` (ver la fila siguiente) |
 | `statechart` | Opcional, se invoca a mano (`/statechart`): verifica un modelo TLA+ con TLC y lo dibuja como statechart de Mermaid, con el camino más corto a cada estado que rompe una regla. Necesita Node 22.18 a 22.x, Node 23.6 o posterior, Bun 1.1.5 o posterior, o Deno 2.0 o posterior (lo exige `scripts/statechart`), `mise` y red en la primera corrida; en Windows, WSL o un contenedor |
 
-No instala las skills de Matt Pocock ni Caveman: ver el [README](../README.md#qué-no-instala-y-por-qué). `grill-with-docs`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano; en Claude se escriben `/mattpocock-skills:<skill>`, salvo `grill-with-docs` y `grill-me`, que son de orca-stack (las instala `global`) y se escriben `/grill-with-docs` y `/grill-me`.
+No instala las skills de Matt Pocock ni Caveman: ver el [README](../README.md#qué-no-instala-y-por-qué). `grill-with-docs`, `sharpen`, `reframe`, `to-spec`, `to-tickets`, `wayfinder`, `triage`, `retro` y `ask-matt` solo las puede disparar el humano; en Claude se escriben `/mattpocock-skills:<skill>`, salvo `grill-with-docs` y `grill-me`, que son de orca-stack (las instala `global`) y se escriben `/grill-with-docs` y `/grill-me`.
 
 ### 4.5 Configuración en tres capas
 
@@ -644,6 +668,6 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 
 Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.21.0`, todavía no publicado en un release.
 
-(nada por ahora)
+- `orca-stack lint` con la regla `long-file`, la Baseline `.orca-stack-baseline.json`, `--sembrar`, el job `lint` de la CI y el hook `.githooks/pre-push` (#417).
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.

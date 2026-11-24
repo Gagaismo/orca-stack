@@ -74,6 +74,20 @@
         "scripts/tsconfig.json": "6bb2af53f7b251328e6117cd4fb761468dc4d4b96085d31a19304ccb73c32cc1",
         "scripts/worker.ts": "1f18ed5ef806982e05e8a40fc217e88257700b28b63cb4acbd647872f85f782b"
       }
+    },
+    "sharpen": {
+      "adapted": true,
+      "version": "0.15.48",
+      "commit": "005d8f6e8ec057b738adcd08a08b30db0478402d",
+      "upstreamSha256": "aac4f8e6a1ffd70e3763314db37d3c2eb0cfea08bc63e98907aca6dae0343031",
+      "shippedSha256": "a16b406ab09c1af007a6fd8a8c5d5ff497badd21ecfec403f589205c6a165714"
+    },
+    "reframe": {
+      "adapted": true,
+      "version": "0.15.48",
+      "commit": "005d8f6e8ec057b738adcd08a08b30db0478402d",
+      "upstreamSha256": "1e2e8a11da838c9169dae6fb71257041cf4e91d58862d1629354648b9bd458f3",
+      "shippedSha256": "0f6fa9655c88aea577cfbd27bb67bd20ef461ef261bacbc94d5dc043d068da21"
     }
   }
 }

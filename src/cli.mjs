@@ -7,6 +7,7 @@ import { estadoCommand } from './estado.mjs'
 import { globalCommand } from './global.mjs'
 import { initCommand } from './init.mjs'
 import { limpiarCommand } from './limpiar.mjs'
+import { lintCommand } from './lint.mjs'
 import { removeCommand } from './remove.mjs'
 import { reanudarCommand } from './reanudar.mjs'
 import { sesionesCommand } from './sesiones.mjs'
@@ -37,6 +38,7 @@ Comandos:
   planificar Abre la sesión de planificación de un issue paraguas: worktree de Orca en docs/<slug> y pi con el brief de planificación.
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
   limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
+  lint      Revisa el repo (long-file: archivos de más de 2000 líneas) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
   --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
@@ -62,6 +64,7 @@ Opciones:
   --json           (estado) Imprime un objeto JSON por PR (un arreglo si son varios) y sale con 0 solo si están listos.
   --terminal <handle> (reanudar) Reanuda el agente de esa terminal de Orca cuando el worktree tiene varios en done.
   --rutas <a,b>    (revisar) El review lee solo esas rutas y lo declara en ## Cobertura.
+  --sembrar        (lint) Agrega a la Baseline cada violación actual que no tenga entrada (se usa una vez, al prender el lint).
   -v, --version    Muestra la versión.
   -h, --help       Muestra esta ayuda (también \`orca-stack <comando> --help\`).
 
@@ -307,6 +310,29 @@ Marca como ya avisados los sub-issues que el paraguas tenía, para \`orca-stack 
 El perfil de Pi se elige como en despachar (--perfil-pi o agentes.pi.perfil). Se niega si ya hay un worktree en esa rama.
 Con --dry-run muestra el plan y el brief y no crea nada.
 `,
+  lint: `orca-stack lint [--sembrar]
+
+Dentro de un repo git, revisa cada archivo trackeado (nunca los sin trackear ni los ignorados por .gitignore) con la regla
+long-file: un archivo de más de 2000 líneas es una violación (cuentan las líneas en blanco, los comentarios y los tests;
+exactamente 2000 pasa). Cada violación nueva sale en una línea con la regla, el archivo, la ubicación y qué hacer:
+  long-file test/foo.mjs: 2345 líneas (máximo 2000) — dividí el archivo
+
+La Baseline es .orca-stack-baseline.json, en la raíz del repo y commiteada: la lista de violaciones que ya existían,
+{"version":1,"entries":[{"rule","file","location","fingerprint"}]}, sin números de línea. Una violación coincide con
+una entrada de su regla por archivo o, si el archivo se movió sin cambios, por fingerprint (el de long-file sale del
+contenido entero); cada entrada cubre una sola violación, así que una copia en otro archivo es nueva.
+lint no acepta --dry-run.
+Una entrada cuya violación ya no está en ningún archivo del repo está vencida: el lint falla y pide sacarla a mano.
+Sin Baseline, todas las violaciones son nuevas; una Baseline mal formada falla nombrando el archivo y nunca se reescribe.
+Sale con 0 y una línea "lint OK" si toda violación tiene su entrada y ninguna está vencida; si no, con 1 y el reporte.
+Una corrida sin --sembrar nunca escribe la Baseline.
+
+--sembrar agrega a la Baseline cada violación actual que no tenga entrada y después revisa como siempre. Se usa una vez,
+al prender el lint. Una segunda corrida no cambia nada y nunca saca entradas.
+
+La CI corre el lint y es el chequeo que cuenta. El hook .githooks/pre-push lo corre antes de cada push como aviso
+temprano: se activa por clon con \`git config core.hooksPath .githooks\` y \`git push --no-verify\` lo saltea sin cambiar la CI.
+`,
   remove: `orca-stack remove [--dry-run] [--with-pi]
 
 Borra los archivos que instaló \`global\`, restaura los que había reemplazado, quita sus entradas de
@@ -345,6 +371,7 @@ export const parseArgs = argv => {
     else if (arg === '--una-vez') flags.unaVez = true
     else if (arg === '--consultas') flags.consultas = true
     else if (arg === '--json') flags.json = true
+    else if (arg === '--sembrar') flags.sembrar = true
     else if (arg === '--terminal' || arg === '--rutas') {
       flags[arg.slice(2)] = argv[i + 1] ?? ''
       i += 1
@@ -386,7 +413,7 @@ export const parseArgs = argv => {
     throw new Error('--humano necesita un nombre.')
   }
   // Options that belong to one command only: any other command keeps refusing them, as before they existed.
-  for (const [flag, owner] of [['json', 'estado'], ['terminal', 'reanudar'], ['rutas', 'revisar'], ['paraguas', 'vigilar']]) {
+  for (const [flag, owner] of [['json', 'estado'], ['terminal', 'reanudar'], ['rutas', 'revisar'], ['paraguas', 'vigilar'], ['sembrar', 'lint']]) {
     if (flags[flag] !== undefined && rest[0] !== undefined && rest[0] !== owner) throw new Error(`Opción desconocida: --${flag}`)
   }
   if (flags.terminal !== undefined && (flags.terminal.trim() === '' || flags.terminal.startsWith('--'))) {
@@ -462,6 +489,8 @@ export const main = async (argv, io) => {
         return await estadoCommand(flags, rest.slice(1), io)
       case 'limpiar':
         return await limpiarCommand(flags, io)
+      case 'lint':
+        return await lintCommand(flags)
       default:
         console.error(`Comando desconocido: ${command}\n\n${USAGE}`)
 
