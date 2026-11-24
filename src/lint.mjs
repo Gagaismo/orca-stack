@@ -4,7 +4,8 @@ import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { loadConfig } from './despacho.mjs'
-import { commentViolations, isCommentRule, reportComment } from './lint-comments.mjs'
+import { COMMENT_EXTENSIONS, commentViolations, isCommentRule, reportComment } from './lint-comments.mjs'
+import { cycleEntry, isCycleEntry, matchCycles, moduleCycles, reportCycle, validCycleEntry } from './lint-cycles.mjs'
 import { homeDir } from './util.mjs'
 
 export const BASELINE_FILE = '.orca-stack-baseline.json'
@@ -117,6 +118,7 @@ const readBaseline = root => {
     const ok = entry && typeof entry === 'object' && !Array.isArray(entry)
       && ENTRY_KEYS.every(key => typeof entry[key] === 'string' && entry[key] !== '')
     if (!ok) throw invalid(`la entrada ${index + 1} necesita ${ENTRY_KEYS.join(', ')} como textos`)
+    if (isCycleEntry(entry) && !validCycleEntry(entry)) throw invalid(`la entrada ${index + 1} de module-cycle necesita members como una lista de rutas`)
   })
   return parsed.entries
 }
@@ -236,40 +238,45 @@ export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir()
   const files = checkedFiles(root)
   const comments = commentViolations(root, files)
   const violations = [...longFiles(root, files), ...wideDirectories(files), ...comments]
+  const scripts = files.filter(file => COMMENT_EXTENSIONS.has(path.extname(file).toLowerCase()) && readText(path.join(root, file)) !== undefined)
+  const cycles = moduleCycles(root, scripts)
   // #419: diff mode matches every violation, so old ones keep their entries, and then reports only comments on added lines.
   const inScope = diff ? (violation => !isCommentRule(violation.rule) || onAddedLine(added)(violation)) : () => true
   // #419: out-of-scope violations match first, so a new identical comment never takes an old one's entry; the report keeps violation order.
   const ordered = [...violations.filter(violation => !inScope(violation)), ...violations.filter(inScope)]
+  // #420: module-cycle entries match by member set, apart from the one-to-one match of the other rules.
   const matchInScope = () => {
-    const { unmatched, stale } = match(ordered, entries)
+    const { unmatched, stale } = match(ordered, entries.filter(entry => !isCycleEntry(entry)))
     const left = new Set(unmatched)
-    return { unmatched: violations.filter(violation => left.has(violation) && inScope(violation)), stale }
+    const cycleMatch = matchCycles(cycles, entries.filter(isCycleEntry))
+    return { unmatched: violations.filter(violation => left.has(violation) && inScope(violation)), stale, cycles: cycleMatch.unmatched, staleCycles: cycleMatch.stale }
   }
 
   if (flags.sembrar) {
-    const { unmatched } = matchInScope()
-    if (unmatched.length === 0 && existsSync(path.join(root, BASELINE_FILE))) {
+    const { unmatched, cycles: newCycles } = matchInScope()
+    if (unmatched.length === 0 && newCycles.length === 0 && existsSync(path.join(root, BASELINE_FILE))) {
       console.log(`Baseline: sin cambios (${BASELINE_FILE})`)
     } else {
-      const added = unmatched.map(({ rule, file, location, fingerprint: print }) => ({ rule, file, location, fingerprint: print }))
+      const added = [...unmatched.map(({ rule, file, location, fingerprint: print }) => ({ rule, file, location, fingerprint: print })), ...newCycles.map(cycleEntry)]
       entries = [...entries, ...added].sort(byKey)
       writeFileSync(path.join(root, BASELINE_FILE), `${JSON.stringify({ version: 1, entries }, null, 2)}\n`)
       console.log(`Baseline: ${plural(added.length, 'entrada nueva', 'entradas nuevas')} en ${BASELINE_FILE}`)
     }
   }
 
-  const { unmatched, stale: expired } = matchInScope()
-  const stale = diff ? expired.filter(entry => !isCommentRule(entry.rule)) : expired
-  if (unmatched.length === 0 && stale.length === 0) {
+  const { unmatched, stale: expired, cycles: newCycles, staleCycles } = matchInScope()
+  const stale = [...(diff ? expired.filter(entry => !isCommentRule(entry.rule)) : expired), ...staleCycles]
+  if (unmatched.length === 0 && newCycles.length === 0 && stale.length === 0) {
     console.log(`lint OK: ninguna violación nueva ni entrada vencida (${entries.length} en la Baseline)`)
     return 0
   }
   for (const violation of unmatched) {
     console.log(isCommentRule(violation.rule) ? reportComment(violation) : REPORT[violation.rule](violation))
   }
+  for (const cycle of newCycles) console.log(reportCycle(cycle))
   for (const entry of stale) {
     console.log(`entrada vencida en ${BASELINE_FILE}: ${entry.rule} ${entry.file} (${entry.location}, ${entry.fingerprint}) — la violación ya no está en el repo: sacá esta entrada`)
   }
-  console.log(`✖ lint: ${plural(unmatched.length, 'violación nueva', 'violaciones nuevas')}, ${plural(stale.length, 'entrada vencida', 'entradas vencidas')}`)
+  console.log(`✖ lint: ${plural(unmatched.length + newCycles.length, 'violación nueva', 'violaciones nuevas')}, ${plural(stale.length, 'entrada vencida', 'entradas vencidas')}`)
   return 1
 }
