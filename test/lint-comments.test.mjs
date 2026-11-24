@@ -318,7 +318,8 @@ describe('orca-stack lint comment rules (#419)', () => {
       const extensions = ['js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'mts', 'cts']
       for (const ext of extensions) add(`src/f.${ext}`, 'export function f() {\n  // FIXME\n  return 1\n}\n')
       const deep = `${'deep-directory-name-'.repeat(3)}x`
-      for (let i = 0; i < 260; i++) add(`${deep}/${deep}/file-${String(i).padStart(3, '0')}.mjs`, 'export const v = 1\n')
+      // Two grouping levels keep every directory at 15 entries or fewer, so wide-directory never fires.
+      for (let i = 0; i < 260; i++) add(`${deep}/${deep}/g${Math.floor(i / 225)}/h${Math.floor(i / 15) % 15}/file-${String(i).padStart(3, '0')}.mjs`, 'export const v = 1\n')
       add(`${deep}/${deep}/last.mjs`, '// TODO: hack for now\nexport const w = 1\n')
       const result = lint()
       assert.equal(result.status, 1, result.out)

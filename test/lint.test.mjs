@@ -300,3 +300,127 @@ describe('orca-stack lint (#417)', () => {
   })
 
 })
+
+// n tracked files directly inside dir, named so they never collide with anything else a test adds there.
+const fill = (add, dir, n, ext = 'txt') => {
+  for (let i = 1; i <= n; i += 1) add(`${dir}/f${String(i).padStart(2, '0')}.${ext}`, `${dir} ${i}\n`)
+}
+
+const WIDE = (dir, n) => `wide-directory ${dir}: ${n} entradas (máximo 15) — agrupá los archivos relacionados en subdirectorios`
+
+describe('orca-stack lint wide-directory (#418)', () => {
+  test('R1: a directory with 16 entries is a wide-directory violation and exactly 15 passes', () => {
+    withRepo(({ add, lint }) => {
+      fill(add, 'edge', 15)
+      const edge = lint()
+      assert.equal(edge.status, 0, edge.out)
+      assert.equal(edge.stdout, OK(0))
+
+      fill(add, 'over', 16)
+      const over = lint()
+      assert.equal(over.status, 1, over.out)
+      assert.equal(over.stdout, `${WIDE('over/', 16)}\n✖ lint: 1 violación nueva, 0 entradas vencidas\n`)
+    })
+  })
+
+  test('R2: tracked files and subdirectories holding tracked files count; ignored, untracked, empty directories and node_modules do not', () => {
+    withRepo(({ repo, put, add, lint }) => {
+      add('.gitignore', '*.log\n')
+      fill(add, 'pkg', 13)
+      add('pkg/sub/deep/inner.txt', 'counts once as pkg/sub\n')
+      add('pkg/other/a.txt', 'a\n')
+      add('pkg/other/b.txt', 'b\n')
+      put('pkg/ignored.log', 'ignored\n')
+      put('pkg/untracked.txt', 'untracked\n')
+      put('pkg/untracked-dir/x.txt', 'only untracked inside\n')
+      mkdirSync(path.join(repo, 'pkg', 'empty'))
+      add('pkg/node_modules/dep/index.js', 'tracked on purpose\n')
+      fill(add, 'pkg/node_modules/dep/lib', 20, 'js')
+      const fifteen = lint()
+      assert.equal(fifteen.status, 0, fifteen.out)
+      assert.equal(fifteen.stdout, OK(0))
+
+      add('pkg/f14.txt', 'the sixteenth entry\n')
+      const sixteen = lint()
+      assert.equal(sixteen.status, 1, sixteen.out)
+      assert.equal(sixteen.stdout, `${WIDE('pkg/', 16)}\n✖ lint: 1 violación nueva, 0 entradas vencidas\n`)
+    })
+  })
+
+  test('R3: the check is language-agnostic, including the repository root', () => {
+    withRepo(({ add, lint }) => {
+      const names = ['main.go', 'app.py', 'lib.rs', 'run.sh', 'index.ts', 'Main.java', 'notes.md', 'Makefile', 'data.json', 'style.css', 'page.html', 'query.sql', 'conf.yaml', 'mod.rb', 'prog.c', 'head.h']
+      for (const name of names) add(`mixed/${name}`, `${name}\n`)
+      for (const name of names) add(name, `${name}\n`)
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, `${WIDE('./', 17)}\n${WIDE('mixed/', 16)}\n✖ lint: 2 violaciones nuevas, 0 entradas vencidas\n`)
+    })
+  })
+
+  test('R4: the Baseline entry is the rule and the directory path; it leaves only at 15 entries or fewer, and a rename is a new violation plus a stale entry', () => {
+    withRepo(({ repo, add, lint, baseline }) => {
+      fill(add, 'docs', 16)
+      assert.equal(lint('--sembrar').status, 0)
+      const seeded = baseline()
+      const [entry] = JSON.parse(seeded).entries
+      assert.deepEqual(Object.keys(entry).sort(), ['file', 'fingerprint', 'location', 'rule'])
+      assert.equal(entry.rule, 'wide-directory')
+      assert.equal(entry.file, 'docs/')
+      assert.equal(entry.location, 'directory')
+      assert.match(entry.fingerprint, /^sha256:[0-9a-f]{16}$/)
+      assert.doesNotMatch(seeded, /"16"|: 16|"line"/)
+
+      add('docs/f17.txt', 'grows\n')
+      const grown = lint()
+      assert.equal(grown.status, 0, grown.out)
+      assert.equal(grown.stdout, OK(1))
+
+      git(repo, 'mv', 'docs', 'guide')
+      const renamed = lint()
+      assert.equal(renamed.status, 1, renamed.out)
+      assert.equal(renamed.stdout, `${WIDE('guide/', 17)}\nentrada vencida en .orca-stack-baseline.json: wide-directory docs/ (directory, ${entry.fingerprint}) — la violación ya no está en el repo: sacá esta entrada\n✖ lint: 1 violación nueva, 1 entrada vencida\n`)
+      assert.equal(baseline(), seeded)
+      const reseeded = lint('--sembrar')
+      assert.equal(reseeded.status, 1, reseeded.out)
+      assert.deepEqual(JSON.parse(baseline()).entries.map(one => one.file), ['docs/', 'guide/'])
+
+      git(repo, 'mv', 'guide', 'docs')
+      git(repo, 'rm', '-q', '--cached', 'docs/f16.txt', 'docs/f17.txt')
+      const shrunk = lint()
+      assert.equal(shrunk.status, 1, shrunk.out)
+      assert.match(shrunk.stdout, /^entrada vencida en \.orca-stack-baseline\.json: wide-directory docs\/ \(directory, sha256:[0-9a-f]{16}\)/m)
+      assert.match(shrunk.stdout, /^entrada vencida en \.orca-stack-baseline\.json: wide-directory guide\/ /m)
+    })
+  })
+
+  test('R7: orca-stack itself passes the lint with its seeded Baseline', () => {
+    const home = tempDir('lint-self')
+    try {
+      const result = cli(home, ['lint'], { cwd: ROOT })
+      assert.equal(result.status, 0, result.out)
+      const entries = JSON.parse(readFileSync(path.join(ROOT, BASELINE), 'utf8')).entries
+      for (const dir of ['src/', 'test/']) {
+        assert.ok(entries.some(one => one.rule === 'wide-directory' && one.file === dir), `${dir} is not in the Baseline`)
+      }
+    } finally {
+      cleanup(home)
+    }
+  })
+
+  test('R8: lint --help and the manual list wide-directory', () => {
+    const home = tempDir('lint-help-wide')
+    try {
+      const help = cli(home, ['lint', '--help'])
+      assert.equal(help.status, 0)
+      assert.match(help.stdout, /wide-directory: un directorio con más de 15 entradas es una violación/)
+      assert.match(help.stdout, /wide-directory src\/: 37 entradas \(máximo 15\) — agrupá los archivos relacionados en subdirectorios/)
+      assert.match(cli(home, ['--help']).stdout, /^ {2}lint {6}.*wide-directory/m)
+    } finally {
+      cleanup(home)
+    }
+    const manual = readFileSync(path.join(ROOT, 'docs', 'manual.md'), 'utf8')
+    assert.match(manual, /\| `lint` \| Revisa el repo contra su Baseline \(`long-file`, `wide-directory`\)/)
+    assert.match(manual, /`wide-directory`: un directorio con más de 15 entradas es una violación/)
+  })
+})

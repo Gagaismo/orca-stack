@@ -7,6 +7,7 @@ import { commentViolations, isCommentRule, reportComment } from './lint-comments
 
 export const BASELINE_FILE = '.orca-stack-baseline.json'
 const MAX_LINES = 2000
+const MAX_ENTRIES = 15
 const ENTRY_KEYS = ['rule', 'file', 'location', 'fingerprint']
 
 const gitOut = (cwd, args) => {
@@ -72,6 +73,30 @@ const longFiles = (root, files) => {
   return found
 }
 
+// Entries are the tracked files and the subdirectories holding one, so an empty or untracked-only directory never counts.
+// The fingerprint is the path itself: a renamed directory is a new violation, never a match for its old entry.
+const wideDirectories = files => {
+  const children = new Map()
+  for (const file of files) {
+    const parts = file.split('/')
+    if (parts.includes('node_modules')) continue
+    for (let depth = 0; depth < parts.length; depth += 1) {
+      const dir = depth === 0 ? './' : `${parts.slice(0, depth).join('/')}/`
+      if (!children.has(dir)) children.set(dir, new Set())
+      children.get(dir).add(parts[depth])
+    }
+  }
+  return [...children]
+    .filter(([, names]) => names.size > MAX_ENTRIES)
+    .map(([dir, names]) => ({ rule: 'wide-directory', file: dir, location: 'directory', fingerprint: fingerprint(dir), count: names.size }))
+    .sort((a, b) => (a.file < b.file ? -1 : 1))
+}
+
+const REPORT = {
+  'long-file': ({ file, count }) => `long-file ${file}: ${count} líneas (máximo ${MAX_LINES}) — dividí el archivo`,
+  'wide-directory': ({ file, count }) => `wide-directory ${file}: ${count} entradas (máximo ${MAX_ENTRIES}) — agrupá los archivos relacionados en subdirectorios`,
+}
+
 const invalid = reason => new Error(`${BASELINE_FILE} no es una Baseline válida: ${reason}. Arreglalo a mano: el lint no lo reescribe.`)
 
 const readBaseline = root => {
@@ -126,7 +151,7 @@ export const lintCommand = async (flags, { cwd = process.cwd() } = {}) => {
   const root = repoRoot(cwd)
   let entries = readBaseline(root)
   const files = checkedFiles(root)
-  const violations = [...longFiles(root, files), ...commentViolations(root, files)]
+  const violations = [...longFiles(root, files), ...wideDirectories(files), ...commentViolations(root, files)]
 
   if (flags.sembrar) {
     const { unmatched } = match(violations, entries)
@@ -146,7 +171,7 @@ export const lintCommand = async (flags, { cwd = process.cwd() } = {}) => {
     return 0
   }
   for (const violation of unmatched) {
-    console.log(isCommentRule(violation.rule) ? reportComment(violation) : `${violation.rule} ${violation.file}: ${violation.count} líneas (máximo ${MAX_LINES}) — dividí el archivo`)
+    console.log(isCommentRule(violation.rule) ? reportComment(violation) : REPORT[violation.rule](violation))
   }
   for (const entry of stale) {
     console.log(`entrada vencida en ${BASELINE_FILE}: ${entry.rule} ${entry.file} (${entry.location}, ${entry.fingerprint}) — la violación ya no está en el repo: sacá esta entrada`)
