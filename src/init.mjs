@@ -6,7 +6,7 @@ import { CANDIDATE_WORKTREES_EXCLUDE, CANDIDATE_WORKTREES_PROBE, findGitignoreNe
 import { LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, MARKER_END, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { loadConfig } from './despacho.mjs'
 import { removeBlock, upsertBlock } from './marker.mjs'
-import { perksOf } from './perks.mjs'
+import { perksOf, ponytailDeprecation } from './perks.mjs'
 import { policyBlock } from './templates.mjs'
 import { homeDir, layout, readTextIfExists, run, timestamp, tilde, which } from './util.mjs'
 
@@ -159,6 +159,8 @@ export const initCommand = async (flags, cwd = process.cwd()) => {
   if (negation || (!dryRun && !ignored)) {
     console.log(`⚠ git no ignora ${CANDIDATE_WORKTREES_EXCLUDE} (un .gitignore con \`${negation ?? '!.claude/worktrees/'}\` gana sobre info/exclude)`)
   }
+  const deprecation = ponytailDeprecation(loadConfig(home, root))
+  if (deprecation) console.log(`⚠ ${deprecation}`)
   if (!hasMainDoc) {
     console.log(`⚠ falta ${MAIN_DOC}, con las reglas de main a las que apunta el bloque: corré \`orca-stack global\``)
   }

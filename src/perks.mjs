@@ -36,3 +36,9 @@ export const perkProblems = config => {
 // when the perk is on, dropped when it is off. A marker alone on its line takes its line break with it.
 export const applyPerks = (text, perks) =>
   text.replace(/<!-- perk:(\w+) -->\n?([\s\S]*?)<!-- \/perk:\1 -->\n?/g, (whole, perk, inner) => (perks[perk] === true ? inner : ''))
+
+// ADR 0002: the Ponytail perk keeps working for one release and `global`, `init` and `doctor` say it is going away.
+export const PONYTAIL_DEPRECATION =
+  'el perk ponytail está deprecado y se quita en la próxima versión: lo reemplaza la regla de los comentarios de CODING_STANDARDS.md (ADR 0002)'
+
+export const ponytailDeprecation = config => (perksOf(config).ponytail ? PONYTAIL_DEPRECATION : null)
