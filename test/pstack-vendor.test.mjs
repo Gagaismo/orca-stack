@@ -776,7 +776,7 @@ describe('#427 vendored and adapted sharpen and reframe (upstream v0.15.48)', ()
     const main = read(path.join(ROOT, 'assets', 'stack', 'MAIN.md'))
     const step1 = main.split('### Ciclo de `main`')[1].split('\n').find(line => line.startsWith('1. '))
     assert.ok(step1, 'step 1 not found')
-    assert.ok(step1.includes('Para una idea vaga puede proponer antes `/sharpen` o `/reframe`. Proponé la skill que corresponde y esperá al humano.'))
+    assert.ok(step1.includes('Para una idea vaga, `main` puede proponer `/sharpen` o `/reframe`. Proponé la skill que corresponde y esperá al humano.'))
     assert.equal(main.split('\n').filter(line => /sharpen|reframe/.test(line)).length, 1, 'only step 1 names them')
   })
 

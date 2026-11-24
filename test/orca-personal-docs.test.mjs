@@ -42,7 +42,7 @@ describe('#435 personal Orca settings checklist', () => {
     assert.doesNotMatch(checklist(), /orca\.yaml|worktreeinclude|metadata|tarjeta/i)
     const stack = doc().split('## Lo que configura el stack')[1]
     assert.ok(stack, 'the doc has no section for the stack-owned settings')
-    assert.match(stack, /No cambies estos a mano: son del stack/)
+    assert.match(stack, /No son ajustes personales: son del stack, viven en el repo o en la tarjeta del worktree, y se cambian con un commit, no en Settings de Orca\./)
     for (const name of ['`orca.yaml`', '`.worktreeinclude`', 'La metadata de la tarjeta de cada worktree']) {
       assert.ok(stack.includes(name), `stack section does not name ${name}`)
     }

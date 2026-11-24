@@ -21,7 +21,7 @@ Los nombres de los menús salen de la referencia de Settings de Orca (<https://w
 
 ## Lo que configura el stack
 
-No cambies estos a mano: son del stack y viven en el repo o en la tarjeta del worktree.
+No son ajustes personales: son del stack, viven en el repo o en la tarjeta del worktree, y se cambian con un commit, no en Settings de Orca.
 
 - `orca.yaml` (el script de setup de cada worktree nuevo) y `.worktreeinclude` (los archivos locales que se copian a cada worktree): los commitea el repo y los genera `orca-stack init`.
 - La metadata de la tarjeta de cada worktree (el issue vinculado): la pone el stack al crear el worktree de un ticket.
