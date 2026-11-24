@@ -108,8 +108,9 @@ const account = (io, args) => {
 
 // After a quota stop of `agent` on `issue`: { line } when the worker can resume on another account of the same agent,
 // { error } (one line) when Orca could not list or select, and {} when no account is left; the last two leave the agent
-// blocked as today. A worker not yet resumed after the episode's switch ran on the old account, so it resumes on the
-// selected one with no new select. `launchedNow` (despachar) says the worker just ran on the active account and the
+// blocked as today. Only a worker relaunched after the episode's switch ran on the selected account; any other (a
+// worker of the old account, or the same stop told twice before `reanudar`) resumes on it with no new select. A new
+// select keeps the workers still pending, so `reanudar` relaunches them on the newly selected account. `launchedNow` (despachar) says the worker just ran on the active account and the
 // caller relaunches it; otherwise the issue stays pending until `reanudar` relaunches it.
 export const switchAccount = (io, commonDir, agent, issue, { launchedNow = false } = {}) => {
   const provider = PROVIDERS[agent]
@@ -119,7 +120,7 @@ export const switchAccount = (io, commonDir, agent, issue, { launchedNow = false
   try {
     const listed = account(io, ['list', '--agent', provider])[provider] ?? {}
     const active = listed.activeAccountId == null ? null : String(listed.activeAccountId)
-    if (launchedNow || ep.to === undefined || ep.to !== active || key in ep.resumed) {
+    if (launchedNow || ep.to === undefined || ep.to !== active || ep.resumed[key] === false) {
       if (active !== null) ep.exhausted = [...new Set([...ep.exhausted, active])]
       const to = (listed.accounts ?? []).map(entry => String(entry?.id ?? '')).find(id => id !== '' && !ep.exhausted.includes(id))
       if (to === undefined) {
@@ -127,7 +128,7 @@ export const switchAccount = (io, commonDir, agent, issue, { launchedNow = false
         return {}
       }
       account(io, ['select', '--agent', provider, '--account', to])
-      Object.assign(ep, { from: active ?? 'system', to, resumed: {} })
+      Object.assign(ep, { from: active ?? 'system', to, resumed: Object.fromEntries(Object.entries(ep.resumed).filter(([, pending]) => pending)) })
     }
     ep.resumed[key] = !launchedNow
     save()

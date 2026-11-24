@@ -8,6 +8,7 @@ import { main } from '../src/cli.mjs'
 import { upsertBlock } from '../src/marker.mjs'
 import { policyBlock } from '../src/templates.mjs'
 import { PACKAGE_ROOT } from '../src/util.mjs'
+import { pendingAfterSwitch } from '../src/orca.mjs'
 import { vigilarCommand } from '../src/vigilar.mjs'
 
 const COMMON = '/repo/.git'
@@ -1921,8 +1922,9 @@ describe('#431 vigilar: a quota stop switches the Orca account of the same agent
     const h = harness({ worktrees: [stop(7, 'claude')], accounts: { claude: accounts('c1', 'c2') } })
     await once(h, ['7'])
     assert.deepEqual(drain(h), [quotaStop(7, 'claude'), 'cuenta cambiada: claude c1 → c2'])
-    // The worker relaunched on c2 (a new terminal) hits quota too, and so does the next one.
+    // The worker reanudar relaunched on c2 (a new terminal) hits quota too, and so does the next one.
     for (const handle of ['term_7b', 'term_7c']) {
+      pendingAfterSwitch(h.io, COMMON, 'claude', 7, true)
       h.world.worktrees = [stop(7, 'claude', handle)]
       await once(h, ['7'])
       assert.deepEqual(drain(h), [quotaStop(7, 'claude')])
