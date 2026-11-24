@@ -24,7 +24,7 @@ El único comentario permitido es un Decision Record que cita un ADR o un issue 
 - **Decision Record:** un comentario que cita `#123`, `ADR 0002` o un link a `docs/adr/0002-…` pasa. Un "ver el ADR" que no nombra ninguno no es un Decision Record.
 - **Excuse:** `TODO`, `FIXME`, `HACK` o `XXX` en mayúsculas, o "hack", "workaround", "temporary", "for now", "shortcut:" o "upgrade when" en cualquier caja, sin una cita. Un `// TODO(#123): …` cita un issue y pasa. Un "todo" en castellano no es una marca, y "temporary" seguido de file, directory, folder, path, home, repo, copy, name o worktree describe un archivo temporal, no una excusa.
 - **Tautology**, solo en los casos claros: un comentario que ocupa sola su línea, de dos a seis palabras, cuyas palabras están todas en la sentencia que sigue, como `// increment i` arriba de `i++` o `// return the result` arriba de `return result`. Las palabras de los strings no cuentan, y una sentencia con más de dos palabras de código de las que tiene el comentario no se marca.
-- **Stale**, solo donde se puede comprobar: un comentario que nombra un identificador que ya no existe en el archivo.
+- **Stale**, solo donde se puede comprobar: un comentario que nombra una llamada `nombre()` a una función que no está definida ni importada en el archivo. Un identificador entre backticks nunca se marca.
 - **Nunca se marcan:** shebangs, encabezados de licencia, directivas `eslint-disable` y `@ts-…`, anotaciones de tipos JSDoc que pide una herramienta y strings que contienen `//`.
 
 ## Reglas de juicio

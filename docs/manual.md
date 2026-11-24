@@ -325,7 +325,7 @@ En los archivos `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx`, `.mts` y `.cts` ap
 
 - `comment-excuse`: `TODO`, `FIXME`, `HACK` o `XXX` en mayúsculas (un "todo" en castellano no cuenta), o "hack", "workaround", "temporary" (salvo "temporary file", "temporary directory" y parecidos), "for now", "shortcut:" o "upgrade when". Acción: borralo y abrí un issue para arreglar la implementación.
 - `comment-tautology`: solo los casos claros, un comentario corto de una línea que repite la sentencia que sigue, como `// increment i` arriba de `i++`. Acción: borralo.
-- `comment-stale`: un comentario que nombra un identificador en forma de código (`fooBar()` o un `` `foo_bar` `` entre backticks) que ya no está en el código del archivo. Acción: borralo.
+- `comment-stale`: un comentario que nombra una llamada `fooBar()` que no está definida ni importada en el archivo; un identificador entre backticks nunca se marca. Acción: borralo.
 
 Un comentario que cita un issue (`#123`), un ADR (`ADR 0002`) o un link a `docs/adr/0002-…` es un Decision Record y pasa; un "ver el ADR" sin número no. Nunca se marcan los shebangs, los encabezados de licencia, las directivas (`eslint-…`, `@ts-…`, `prettier-ignore`, `c8 ignore`…), el JSDoc con tags de tipo (`@type`, `@param`…) ni un `//` dentro de un string. La ubicación es la función, el método o la clase que contiene el comentario (o la declaración que le sigue), o `<módulo>`, sin números de línea: `comment-excuse src/x.mjs:foo() (Excuse) — borralo y abrí un issue para arreglar la implementación`. Go, Python, Shell, Markdown y los demás lenguajes no dan hallazgos de comentarios.
 
