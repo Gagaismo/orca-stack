@@ -260,7 +260,7 @@ Las claves del contrato de trabajo, que escribe `orca-setup` y que el bloque de 
 
 Al terminar, `global` imprime la lista con tus rutas exactas. Resumen:
 
-1. **Orca > Settings > Agents > command overrides**: apuntá Claude Code, Codex y Antigravity a `claude-orca-stack`, `codex-orca-stack` y `agy-orca-stack` (en `~/orca/stack/scripts/`). Se configura desde la interfaz de Orca; `orca-stack` no escribe en los datos de Orca.
+1. **Orca > Settings > Agents > command overrides**: apuntá Claude Code, Codex y Antigravity a `claude-orca-stack`, `codex-orca-stack` y `agy-orca-stack` (en `~/orca/stack/scripts/`). Se configura desde la interfaz de Orca; `orca-stack` no escribe en los datos de Orca. Los demás ajustes de Orca que son tuyos y no del stack (mantener la compu despierta, confirmar antes de borrar un worktree, Workspace Cleanup solo para bots) están en la [checklist de ajustes personales de Orca](docs/orca-personal.md).
 2. `pi` → `/login` (sin una cuenta conectada, Gentle Shell no responde).
 3. `gh auth login`.
 4. `gentle-ai sync`.
