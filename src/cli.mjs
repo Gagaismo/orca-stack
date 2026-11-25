@@ -102,7 +102,9 @@ agrega .orca-stack.local.json a .gitignore. No pisa archivos de config que ya ex
 
 Instala el lint (\`orca-stack lint\`) con cinco piezas, cada una solo si falta:
   1. la clave lint en .orca-stack.json: {"enabled": true, "comentarios": {"alcance": "repo"}}; si ya hay una clave lint,
-     aunque sea {"enabled": false}, no se toca. Agregarla no cambia el resto del archivo (con respaldo).
+     aunque sea {"enabled": false}, no se toca. Agregarla no cambia el resto del archivo (con respaldo). Para esto
+     solo cuenta la de .orca-stack.json, no la de .orca-stack.local.json (al correr el lint, la capa local sigue ganando).
+     Si .orca-stack.json no es JSON válido, no lo toca: nombra el archivo y el error, y sale con 1.
   2. .github/workflows/orca-stack-lint.yml, con un job orca-stack-lint que corre el lint con npx; no se crea si el
      archivo existe o si otro workflow de .github/workflows ya tiene un job orca-stack-lint o un paso que corre
      orca-stack lint (o bin/orca-stack.mjs lint). Nunca edita tus workflows.
