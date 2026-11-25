@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 
-import { COMMENT_EXTENSIONS } from './lint-comments.mjs'
-import { components } from './lint-graph.mjs'
+import { goDesignChecks } from './lint-go.mjs'
+import { components, languageOf } from './lint-graph.mjs'
 import { classShape, fieldUses, isInside, symbolGraph } from './lint-symbols.mjs'
 
 export const TANGLE_RULE = 'tangle'
@@ -76,15 +76,30 @@ const shallowModules = ({ byFile, nodes, users }) => {
 }
 
 export const designChecks = (root, files) => {
-  const sources = files.filter(file => COMMENT_EXTENSIONS.has(path.extname(file).toLowerCase()))
-  if (sources.length === 0) return { tangles: [], violations: [] }
-  const graph = symbolGraph(root, sources)
-  return { tangles: tangles(graph), violations: [...leaks(graph), ...shallowModules(graph)] }
+  const jsFiles = files.filter(file => languageOf(file) === 'js')
+  const goFiles = files.filter(file => languageOf(file) === 'go')
+  const tanglesList = []
+  const violations = []
+  if (jsFiles.length > 0) {
+    const graph = symbolGraph(root, jsFiles)
+    tanglesList.push(...tangles(graph).map(item => ({ ...item, lang: 'js' })))
+    violations.push(...leaks(graph).map(item => ({ ...item, lang: 'js' })), ...shallowModules(graph).map(item => ({ ...item, lang: 'js' })))
+  }
+  if (goFiles.length > 0) {
+    const go = goDesignChecks(root, goFiles)
+    tanglesList.push(...go.tangles)
+    violations.push(...go.violations)
+  }
+  tanglesList.sort((a, b) => a.members[0].localeCompare(b.members[0]))
+  return { tangles: tanglesList, violations }
 }
 
 export const reportTangle = ({ members, modules }) => `${TANGLE_RULE} ${members.join(', ')}: ${plural(members.length, 'cosa', 'cosas')} en ${plural(modules, 'módulo', 'módulos')} (máximo ${HELD_IN_MIND} cosas en un solo módulo) — ¿cuál es la capa de abstracción buscada? ¿Qué módulo va en qué capa?`
 
 export const DESIGN_REPORT = {
-  [LEAK_RULE]: ({ file, location, owner, places, modules, kept }) => `${LEAK_RULE} ${file}:${location}: se trabaja fuera de ${owner} en ${plural(places, 'lugar', 'lugares')} de ${plural(modules.length, 'módulo', 'módulos')} (${modules.join(', ')}; máximo 0), y ${owner} se guarda ${kept.join(', ')} — ¿por qué existe este campo? ¿Cuáles son sus patrones de uso? ¿Se puede esconder detrás de una interfaz angosta?`,
+  [LEAK_RULE]: ({ file, location, owner, places, modules, kept }) => {
+    const guard = kept.length > 0 ? `se guarda ${kept.join(', ')}` : `usa ${location.split('.')[1]} en sus métodos`
+    return `${LEAK_RULE} ${file}:${location}: se trabaja fuera de ${owner} en ${plural(places, 'lugar', 'lugares')} de ${plural(modules.length, 'módulo', 'módulos')} (${modules.join(', ')}; máximo 0), y ${owner} ${guard} — ¿por qué existe este campo? ¿Cuáles son sus patrones de uso? ¿Se puede esconder detrás de una interfaz angosta?`
+  },
   [SHALLOW_RULE]: ({ file, shown, hidden }) => `${SHALLOW_RULE} ${file}: muestra ${shown.length} de ${shown.length + hidden} funciones (${shown.join(', ')}) y esconde ${hidden} (máximo ${HELD_IN_MIND} mostradas, o más escondidas que mostradas) — ¿por qué existen estas funciones? ¿Cuáles son sus patrones de uso? ¿Se pueden esconder detrás de una interfaz angosta?`,
 }

@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto'
-import path from 'node:path'
 
 import { runAstGrepJson } from './ast-grep.mjs'
-import { COMMENT_EXTENSIONS } from './lint-comments.mjs'
-import { batches, components, relative, resolve } from './lint-graph.mjs'
+import { goImportGraph } from './lint-go.mjs'
+import { batches, components, languageOf, relative, resolve } from './lint-graph.mjs'
 
 export const CYCLE_RULE = 'module-cycle'
 const LOCATION = 'cycle'
@@ -91,14 +90,27 @@ export const isCycleEntry = entry => entry.rule === CYCLE_RULE
 export const validCycleEntry = entry => Array.isArray(entry.members) && entry.members.length > 0
   && entry.members.every(member => typeof member === 'string' && member !== '')
 
-export const moduleCycles = (root, files) => {
-  const sources = files.filter(file => COMMENT_EXTENSIONS.has(path.extname(file).toLowerCase()))
-  if (sources.length === 0) return { cycles: [], selfImports: new Set() }
-  const graph = importGraph(root, sources)
+const cyclesOf = (graph, lang) => {
   const cycles = components(graph)
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(members => ({ rule: CYCLE_RULE, file: members[0], location: LOCATION, fingerprint: memberPrint(members), members, walk: closedWalk(graph, members) }))
-  const selfImports = new Set([...graph].filter(([file, targets]) => targets.includes(file)).map(([file]) => file))
+    .map(members => ({ rule: CYCLE_RULE, file: members[0], location: LOCATION, fingerprint: memberPrint(members), members, walk: closedWalk(graph, members), lang }))
+  const selfImports = [...graph].filter(([file, targets]) => targets.includes(file)).map(([file]) => file)
+  return { cycles, selfImports }
+}
+
+export const moduleCycles = (root, files) => {
+  const jsFiles = files.filter(file => languageOf(file) === 'js')
+  const goFiles = files.filter(file => languageOf(file) === 'go')
+  const cycles = []
+  const selfImports = new Set()
+  const addGraph = (graph, lang) => {
+    const found = cyclesOf(graph, lang)
+    cycles.push(...found.cycles)
+    for (const item of found.selfImports) selfImports.add(item)
+  }
+  if (jsFiles.length > 0) addGraph(importGraph(root, jsFiles), 'js')
+  if (goFiles.length > 0) addGraph(goImportGraph(root, goFiles), 'go')
+  cycles.sort((a, b) => a.file.localeCompare(b.file))
   return { cycles, selfImports }
 }
 

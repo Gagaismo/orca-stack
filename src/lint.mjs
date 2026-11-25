@@ -5,9 +5,10 @@ import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { loadConfig } from './despacho.mjs'
-import { COMMENT_EXTENSIONS, commentViolations, isCommentRule, reportComment } from './lint-comments.mjs'
+import { commentViolations, isCommentRule, reportComment } from './lint-comments.mjs'
 import { cycleEntry, isCycleEntry, matchCycles, moduleCycles, reportCycle, validCycleEntry } from './lint-cycles.mjs'
 import { DESIGN_REPORT, TANGLE_RULE, designChecks, reportTangle } from './lint-design.mjs'
+import { languageOf } from './lint-graph.mjs'
 import { homeDir, layout } from './util.mjs'
 
 export const BASELINE_FILE = '.orca-stack-baseline.json'
@@ -263,10 +264,10 @@ const inspect = (root, config, files) => {
   const diff = alcanceOf(config) === 'diff'
   const added = diff ? addedLines(root, config.ramaBase) : undefined
   const comments = commentViolations(root, files)
-  const scripts = files.filter(file => COMMENT_EXTENSIONS.has(path.extname(file).toLowerCase()) && readText(path.join(root, file)) !== undefined)
-  const design = designChecks(root, scripts)
+  const sources = files.filter(file => languageOf(file) !== undefined && readText(path.join(root, file)) !== undefined)
+  const design = designChecks(root, sources)
   const violations = [...longFiles(root, files), ...wideDirectories(files), ...comments, ...design.violations]
-  const cycles = moduleCycles(root, scripts)
+  const cycles = moduleCycles(root, sources)
   // #419: diff mode matches every violation, so old ones keep their entries, and then reports only comments on added lines.
   const inScope = diff ? (violation => !isCommentRule(violation.rule) || onAddedLine(added)(violation)) : () => true
   // #419: out-of-scope violations match first, so a new identical comment never takes an old one's entry; the report keeps violation order.

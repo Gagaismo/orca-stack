@@ -3,8 +3,9 @@ import { lstatSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { runAstGrepJson } from './ast-grep.mjs'
+import { LANGUAGE_EXTENSIONS, languageOf } from './lint-graph.mjs'
 
-export const COMMENT_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.mts', '.cts'])
+export const COMMENT_EXTENSIONS = LANGUAGE_EXTENSIONS.js
 export const MODULE_LOCATION = '<módulo>'
 
 const ACTIONS = {
@@ -13,7 +14,7 @@ const ACTIONS = {
   'comment-stale': { type: 'Stale', action: 'borralo' },
 }
 
-const LANGUAGES = ['javascript', 'typescript', 'tsx']
+const JS_LANGUAGES = ['javascript', 'typescript', 'tsx']
 const SYMBOL_KINDS = ['function_declaration', 'generator_function_declaration', 'class_declaration', 'method_definition']
 const TS_SYMBOL_KINDS = ['abstract_class_declaration']
 const FUNCTION_VALUES = ['arrow_function', 'function_expression', 'generator_function', 'class']
@@ -34,10 +35,28 @@ const symbolRule = language => [
   ...FUNCTION_VALUES.map(kind => `          - kind: ${kind}`),
 ].join('\n')
 
-const RULES = LANGUAGES.flatMap(language => [
+const JS_RULES = JS_LANGUAGES.flatMap(language => [
   `id: comment-${language}\nlanguage: ${language}\nrule:\n  kind: comment`,
   symbolRule(language),
 ]).join('\n---\n')
+
+const GO_RULES = [
+  'id: comment-go\nlanguage: go\nrule:\n  kind: comment',
+  [
+    'id: symbol-go',
+    'language: go',
+    'rule:',
+    '  has:',
+    '    field: name',
+    '    pattern: $NAME',
+    '  any:',
+    '    - kind: function_declaration',
+    '    - kind: method_declaration',
+    '    - kind: type_spec',
+  ].join('\n'),
+].join('\n---\n')
+
+const RULES_BY_LANG = { js: JS_RULES, go: GO_RULES }
 
 // #419: Windows caps a command line at 32,767 characters, so file paths go to ast-grep in batches.
 const ARG_BUDGET = 24000
@@ -60,16 +79,23 @@ const batches = files => {
 }
 
 const relative = (root, file) => path.relative(root, path.resolve(root, file)).split(path.sep).join('/')
+const GO_RECV = /^func\s*\(\s*(?:[A-Za-z_]\w*\s+)?\*?([A-Za-z_]\w*)(?:\[[^\]]*\])?\s*\)/
 
-const scan = (root, files) => {
+const scan = (root, files, lang) => {
+  const rules = RULES_BY_LANG[lang]
   const byFile = new Map(files.map(file => [file, { comments: [], symbols: [] }]))
   for (const batch of batches(files)) {
-    for (const match of runAstGrepJson(['scan', '--inline-rules', RULES, '--json=compact', '--', ...batch], { cwd: root })) {
+    for (const match of runAstGrepJson(['scan', '--inline-rules', rules, '--json=compact', '--', ...batch], { cwd: root })) {
       const found = byFile.get(relative(root, match.file))
       if (!found) continue
       const { start, end } = match.range.byteOffset
       if (match.ruleId.startsWith('comment-')) {
         found.comments.push({ text: match.text, start, end, line: match.range.start.line, endLine: match.range.end.line })
+      } else if (lang === 'go') {
+        const name = match.metaVariables.single.NAME.text
+        const recv = GO_RECV.exec(match.text)?.[1]
+        const isClass = !match.text.startsWith('func')
+        found.symbols.push({ name: recv ? `${recv}.${name}` : name, start, end, isClass })
       } else {
         const isClass = /^(?:abstract\s+)?class\b|^[\w$]+\s*(?::[^=]*)?=\s*class\b/.test(match.text)
         found.symbols.push({ name: match.metaVariables.single.NAME.text, start, end, isClass })
@@ -109,6 +135,7 @@ const blank = (bytes, comments) => {
 }
 
 const DIRECTIVE = /^(?:eslint\b|eslint-|global\s|globals\s|jshint\b|jscs:|@ts-|ts-|prettier-ignore|c8\s+ignore|v8\s+ignore|istanbul\s+ignore|node:coverage|biome-ignore|deno-lint-ignore|deno-fmt-ignore|tslint:|oxlint-|stylelint-|@jsx|@flow|@refresh|@vite-ignore|@license|@preserve|[#@]__PURE__|[#@]\s*sourceMappingURL|webpack[A-Z]|type-coverage:|<reference\b|<amd-)/
+const GO_DIRECTIVE = /^(?:go:[a-z]|\+build\b|nolint\b|line\s|#cgo\b|export\s|code generated\b.*do not edit)/i
 const JSDOC_TYPE = /@(?:type|typedef|param|arg|argument|returns?|template|callback|property|prop|enum|this|satisfies|implements|extends|augments|overload|import|throws|yields)\b/
 const LICENSE = /\b(?:license[ds]?|copyright|spdx-license-identifier)\b|©/i
 const DECISION_RECORD = /(?<![\w&])#\d+\b|\badr[ -]?\d{4}\b|docs\/adr\/\d{4}-/i
@@ -117,11 +144,27 @@ const EXCUSE = /\b(?:hack|workarounds?|for now|upgrade when)\b|\btemporary\b(?!\
 
 const isLicenseHeader = (comment, text, blanked) => LICENSE.test(text) && blanked.subarray(0, comment.start).toString('utf8').trim() === ''
 
-const notAComment = (comment, text, blanked) => DIRECTIVE.test(text)
+// #422: a golint-style package doc comment is the contiguous comment group right above `package <name>` starting with `Package `.
+const isGoPackageDoc = (comment, context) => {
+  if (context.lang !== 'go') return false
+  const afterBlanked = context.blanked.subarray(comment.end).toString('utf8')
+  const pkg = /^\s*package\s+([A-Za-z_]\w*)\b/.exec(afterBlanked)
+  if (!pkg) return false
+  const rawGap = context.bytes.subarray(comment.end, comment.end + pkg[0].length).toString('utf8')
+  if (/\r?\n[ \t]*\r?\n/.test(rawGap)) return false
+  let firstLine = comment.line
+  while (firstLine > 0 && commentOnly(context.lines, context.blankedLines, firstLine - 1)) firstLine -= 1
+  return new RegExp(`^Package\\s+${pkg[1]}\\b`).test(normalize(lineOf(context.lines, firstLine).trim()))
+}
+
+const notAComment = (comment, text, context) => DIRECTIVE.test(text)
+  || (context.lang === 'go' && (GO_DIRECTIVE.test(text) || isGoPackageDoc(comment, context)))
   || (comment.text.startsWith('/**') && JSDOC_TYPE.test(text))
-  || isLicenseHeader(comment, text, blanked)
+  || isLicenseHeader(comment, text, context.blanked)
 
 const STOP_WORDS = new Set(['the', 'a', 'an', 'this', 'that', 'it', 'its', 'to', 'of', 'value', 'variable', 'by', 'one'])
+const GO_DOC_FILLER = new Set(['does', 'do', 'is', 'are', 'function', 'method', 'struct', 'type', 'returns', 'gets', 'sets', 'creates', 'runs', 'handles', 'performs'])
+const GO_DECL_NAME = /^(?:func\s+(?:\([^)]*\)\s+)?|type\s+)([A-Za-z_]\w*)\b/
 const VERBS = [
   [/\+\+|\+=\s*1\b/, ['increment', 'increase']],
   [/--|-=\s*1\b/, ['decrement', 'decrease']],
@@ -141,6 +184,17 @@ const stem = word => (word.length > 3 && word.endsWith('s') ? word.slice(0, -1) 
 const lineOf = (lines, index) => lines[index] ?? ''
 const commentOnly = (lines, blankedLines, index) => lineOf(lines, index).trim() !== '' && lineOf(blankedLines, index).trim() === ''
 
+const isGoDocTautology = (text, statement) => {
+  const decl = GO_DECL_NAME.exec(statement)
+  if (!decl) return false
+  const nameWords = words(decl[1])
+  const all = words(text)
+  if (all.length <= nameWords.length || !nameWords.every((w, i) => all[i] === w)) return false
+  const nameStems = new Set(nameWords.map(stem))
+  const meaningful = all.filter(word => !STOP_WORDS.has(word) && !GO_DOC_FILLER.has(word))
+  return meaningful.length >= 1 && meaningful.every(word => nameStems.has(stem(word)))
+}
+
 const isTautology = (comment, text, context) => {
   const { lines, blankedLines } = context
   if (!comment.text.startsWith('//') || comment.line !== comment.endLine) return false
@@ -148,6 +202,7 @@ const isTautology = (comment, text, context) => {
   if (commentOnly(lines, blankedLines, comment.line - 1) || commentOnly(lines, blankedLines, comment.line + 1)) return false
   const statement = lineOf(blankedLines, comment.line + 1).replace(/(['"`])(?:\\.|(?!\1).)*\1/g, '""').trim()
   if (statement === '') return false
+  if (context.lang === 'go' && isGoDocTautology(text, statement)) return true
   const said = words(text).filter(word => !STOP_WORDS.has(word))
   if (said.length < 2 || said.length > 6) return false
   const code = new Set(words(statement).map(stem))
@@ -170,7 +225,7 @@ const isStale = (text, context) => calledNames(text).some(name => {
 
 const classify = (comment, context) => {
   const text = normalize(comment.text)
-  if (text === '' || notAComment(comment, text, context.blanked)) return undefined
+  if (text === '' || notAComment(comment, text, context)) return undefined
   if (DECISION_RECORD.test(text)) return undefined
   if (EXCUSE_MARKER.test(text) || EXCUSE.test(text)) return { rule: 'comment-excuse', text }
   if (isTautology(comment, text, context)) return { rule: 'comment-tautology', text }
@@ -178,7 +233,7 @@ const classify = (comment, context) => {
   return undefined
 }
 
-const DECLARATION_GAP = /^(?:\s|export\b|default\b|declare\b|const\b|let\b|var\b)*$/
+const DECLARATION_GAP = /^(?:\s|export\b|default\b|declare\b|const\b|let\b|var\b|type\b)*$/
 
 const labelOf = (symbol, symbols) => {
   if (symbol.isClass) return symbol.name
@@ -206,25 +261,29 @@ export const reportComment = violation => {
 export const isCommentRule = rule => Object.hasOwn(ACTIONS, rule)
 
 export const commentViolations = (root, files) => {
-  const sources = new Map()
+  const byLang = new Map()
   for (const file of files) {
-    if (!COMMENT_EXTENSIONS.has(path.extname(file).toLowerCase())) continue
+    const lang = languageOf(file)
+    if (!lang || !RULES_BY_LANG[lang]) continue
     const bytes = readSource(path.join(root, file))
-    if (bytes !== undefined && !bytes.subarray(0, 8000).includes(0)) sources.set(file, bytes)
+    if (bytes === undefined || bytes.subarray(0, 8000).includes(0)) continue
+    if (!byLang.has(lang)) byLang.set(lang, new Map())
+    byLang.get(lang).set(file, bytes)
   }
-  if (sources.size === 0) return []
   const found = []
-  for (const [file, { comments, symbols }] of scan(root, [...sources.keys()])) {
-    symbols.sort((a, b) => a.start - b.start)
-    const bytes = sources.get(file)
-    const blanked = blank(bytes, comments)
-    const code = blanked.toString('utf8')
-    const context = { blanked, code, lines: bytes.toString('utf8').split('\n'), blankedLines: code.split('\n') }
-    for (const comment of comments.sort((a, b) => a.start - b.start)) {
-      const verdict = classify(comment, context)
-      if (!verdict) continue
-      found.push({ rule: verdict.rule, file, location: locate(comment, symbols, blanked), fingerprint: fingerprint(verdict.text), line: comment.line + 1, endLine: comment.endLine + 1 })
+  for (const [lang, sources] of byLang) {
+    for (const [file, { comments, symbols }] of scan(root, [...sources.keys()], lang)) {
+      symbols.sort((a, b) => a.start - b.start)
+      const bytes = sources.get(file)
+      const blanked = blank(bytes, comments)
+      const code = blanked.toString('utf8')
+      const context = { lang, bytes, blanked, code, lines: bytes.toString('utf8').split('\n'), blankedLines: code.split('\n') }
+      for (const comment of comments.sort((a, b) => a.start - b.start)) {
+        const verdict = classify(comment, context)
+        if (!verdict) continue
+        found.push({ rule: verdict.rule, file, location: locate(comment, symbols, blanked), fingerprint: fingerprint(verdict.text), line: comment.line + 1, endLine: comment.endLine + 1, lang })
+      }
     }
   }
-  return found
+  return found.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
 }
