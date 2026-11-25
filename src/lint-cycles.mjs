@@ -134,22 +134,23 @@ const cyclesOf = (graph, lang) => {
   return { cycles, selfImports }
 }
 
+const CYCLE_LOADERS = {
+  js: importGraph,
+  go: goImportGraph,
+  python: pythonImportGraph,
+  shell: shellImportGraph,
+}
+
 export const moduleCycles = (root, files) => {
-  const jsFiles = files.filter(file => languageOf(file) === 'js')
-  const goFiles = files.filter(file => languageOf(file) === 'go')
-  const pyFiles = files.filter(file => languageOf(file) === 'python')
-  const shFiles = files.filter(file => languageOf(file) === 'shell')
   const cycles = []
   const selfImports = new Set()
-  const addGraph = (graph, lang) => {
-    const found = cyclesOf(graph, lang)
+  for (const [lang, load] of Object.entries(CYCLE_LOADERS)) {
+    const matching = files.filter(file => languageOf(file) === lang)
+    if (matching.length === 0) continue
+    const found = cyclesOf(load(root, matching), lang)
     cycles.push(...found.cycles)
     for (const item of found.selfImports) selfImports.add(item)
   }
-  if (jsFiles.length > 0) addGraph(importGraph(root, jsFiles), 'js')
-  if (goFiles.length > 0) addGraph(goImportGraph(root, goFiles), 'go')
-  if (pyFiles.length > 0) addGraph(pythonImportGraph(root, pyFiles), 'python')
-  if (shFiles.length > 0) addGraph(shellImportGraph(root, shFiles), 'shell')
   cycles.sort((a, b) => a.file.localeCompare(b.file))
   return { cycles, selfImports }
 }

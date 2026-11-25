@@ -3,13 +3,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { runAstGrepJson } from './ast-grep.mjs'
-import { batches, components, relative } from './lint-graph.mjs'
+import { batches, relative } from './lint-graph.mjs'
 
-const TANGLE_RULE = 'tangle'
 const LEAK_RULE = 'field-leak'
-const SHALLOW_RULE = 'shallow-module'
-const HELD_IN_MIND = 7
-const BREAK_EVEN = 1
 const COMMAND_LINE = 30000
 
 const print = text => `sha256:${createHash('sha256').update(text).digest('hex').slice(0, 16)}`
@@ -249,16 +245,6 @@ const buildGoGraph = (root, files) => {
   return { root, byFile, nodes, edges, users, structFields, usedByMethods }
 }
 
-const goTangles = ({ nodes, edges }) => {
-  const graph = new Map([...edges].map(([id, targets]) => [id, [...targets].sort()]))
-  return components(graph).flatMap(members => {
-    const things = members.filter(id => nodes.get(id).thing).sort()
-    const modules = new Set(things.map(id => nodes.get(id).pkg))
-    if (modules.size < 2 && things.length <= HELD_IN_MIND) return []
-    return [{ rule: TANGLE_RULE, file: nodes.get(things[0]).pkg, location: 'tangle', fingerprint: print(things.join('\n')), members: things, modules: modules.size, lang: 'go' }]
-  }).sort((a, b) => a.members[0].localeCompare(b.members[0]))
-}
-
 const goLeaks = ({ root, byFile, nodes, structFields, usedByMethods }) => {
   const scopesByFile = new Map()
   for (const facts of byFile.values()) {
@@ -299,7 +285,7 @@ const goLeaks = ({ root, byFile, nodes, structFields, usedByMethods }) => {
     const touched = new Set(outside.map(item => item.field))
     const kept = [...used].filter(field => fields.has(field) && !touched.has(field)).sort()
     const worked = new Map()
-    for (const use of outside.filter(item => item.mutates && isExported(item.field) && (used.has(item.field) || kept.length > 0))) {
+    for (const use of outside.filter(item => item.mutates && isExported(item.field) && used.has(item.field))) {
       if (!worked.has(use.field)) worked.set(use.field, [])
       worked.get(use.field).push(use)
     }
@@ -312,23 +298,7 @@ const goLeaks = ({ root, byFile, nodes, structFields, usedByMethods }) => {
   return found.sort((a, b) => a.file.localeCompare(b.file) || a.location.localeCompare(b.location))
 }
 
-const goShallowModules = ({ nodes, users }) => {
-  const modules = new Map()
-  for (const node of nodes.values()) {
-    if (node.kind !== 'function') continue
-    if (!modules.has(node.pkg)) modules.set(node.pkg, [])
-    modules.get(node.pkg).push(node)
-  }
-  return [...modules].flatMap(([pkg, functions]) => {
-    const shown = functions.filter(node => [...users.get(node.id)].some(callerPkg => callerPkg !== pkg)).map(node => node.name).sort()
-    const hidden = functions.length - shown.length
-    if (shown.length <= HELD_IN_MIND || hidden > shown.length * BREAK_EVEN) return []
-    return [{ rule: SHALLOW_RULE, file: pkg, location: 'module', fingerprint: print(pkg), shown, hidden, lang: 'go' }]
-  }).sort((a, b) => a.file.localeCompare(b.file))
-}
-
-export const goDesignChecks = (root, files) => {
-  if (files.length === 0) return { tangles: [], violations: [] }
+export const goDesignGraph = (root, files) => {
   const graph = buildGoGraph(root, files)
-  return { tangles: goTangles(graph), violations: [...goLeaks(graph), ...goShallowModules(graph)] }
+  return { ...graph, moduleOf: pkg => pkg, leaks: goLeaks(graph) }
 }

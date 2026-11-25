@@ -225,7 +225,10 @@ const entryLanguage = (entry, files) => {
     if (fromMember) return fromMember
   }
   const prefix = entry.file === '.' || entry.file === './' ? '' : `${entry.file.replace(/\/$/, '')}/`
-  const sample = files.find(file => (prefix === '' ? !file.includes('/') : file.startsWith(prefix)) && languageOf(file) !== undefined)
+  const under = files.filter(file => (prefix === '' ? !file.includes('/') : file.startsWith(prefix)))
+  if (under.some(file => file === `${prefix}__init__.py`)) return 'python'
+  if (under.some(file => /^index\.(?:[cm]?[jt]s|[jt]sx)$/.test(file.slice(prefix.length)))) return 'js'
+  const sample = under.find(file => languageOf(file) !== undefined)
   return sample ? languageOf(sample) : undefined
 }
 

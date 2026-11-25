@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 
-import { goDesignChecks } from './lint-go.mjs'
+import { goDesignGraph } from './lint-go.mjs'
 import { components, languageOf } from './lint-graph.mjs'
-import { pythonDesignChecks } from './lint-python.mjs'
+import { pythonDesignGraph } from './lint-python.mjs'
 import { classShape, fieldUses, isInside, symbolGraph } from './lint-symbols.mjs'
 
 export const TANGLE_RULE = 'tangle'
@@ -17,13 +17,13 @@ const INDEX = /^index\.(?:[cm]?[jt]s|[jt]sx)$/
 const print = text => `sha256:${createHash('sha256').update(text).digest('hex').slice(0, 16)}`
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
-const tangles = ({ nodes, edges }) => {
+const tangles = ({ nodes, edges }, lang) => {
   const graph = new Map([...edges].map(([id, targets]) => [id, [...targets].sort()]))
   return components(graph).flatMap(members => {
     const things = members.filter(id => nodes.get(id).thing).sort()
     const modules = new Set(things.map(id => nodes.get(id).file))
     if (modules.size < 2 && things.length <= HELD_IN_MIND) return []
-    return [{ rule: TANGLE_RULE, file: nodes.get(things[0]).file, location: 'tangle', fingerprint: print(things.join('\n')), members: things, modules: modules.size }]
+    return [{ rule: TANGLE_RULE, file: nodes.get(things[0]).file, location: 'tangle', fingerprint: print(things.join('\n')), members: things, modules: modules.size, lang }]
   }).sort((a, b) => a.members[0].localeCompare(b.members[0]))
 }
 
@@ -46,7 +46,7 @@ const leaks = graph => {
     for (const [field, places] of [...worked].sort(([a], [b]) => a.localeCompare(b))) {
       const location = `${node.name}.${field}`
       const modules = [...new Set(places.map(place => place.file))].sort()
-      found.push({ rule: LEAK_RULE, file: node.file, location, fingerprint: print(location), owner: node.name, places: places.length, modules, kept })
+      found.push({ rule: LEAK_RULE, file: node.file, location, fingerprint: print(location), owner: node.name, places: places.length, modules, kept, lang: 'js' })
     }
   }
   return found
@@ -59,8 +59,7 @@ const moduleOf = indexDirs => file => {
   }
 }
 
-const shallowModules = ({ byFile, nodes, users }) => {
-  const of = moduleOf(new Set([...byFile.keys()].filter(file => INDEX.test(path.posix.basename(file))).map(file => path.posix.dirname(file))))
+const shallowModules = ({ nodes, users }, of, lang) => {
   const modules = new Map()
   for (const node of nodes.values()) {
     if (node.kind !== 'function') continue
@@ -72,30 +71,29 @@ const shallowModules = ({ byFile, nodes, users }) => {
     const shown = functions.filter(node => [...users.get(node.id)].some(file => of(file) !== module)).map(node => node.name).sort()
     const hidden = functions.length - shown.length
     if (shown.length <= HELD_IN_MIND || hidden > shown.length * BREAK_EVEN) return []
-    return [{ rule: SHALLOW_RULE, file: module, location: 'module', fingerprint: print(module), shown, hidden }]
+    return [{ rule: SHALLOW_RULE, file: module, location: 'module', fingerprint: print(module), shown, hidden, lang }]
   }).sort((a, b) => a.file.localeCompare(b.file))
 }
 
+const DESIGN_LOADERS = {
+  js: (root, files) => {
+    const graph = symbolGraph(root, files)
+    const indexDirs = new Set([...graph.byFile.keys()].filter(file => INDEX.test(path.posix.basename(file))).map(file => path.posix.dirname(file)))
+    return { ...graph, moduleOf: moduleOf(indexDirs), leaks: leaks(graph) }
+  },
+  go: goDesignGraph,
+  python: pythonDesignGraph,
+}
+
 export const designChecks = (root, files) => {
-  const jsFiles = files.filter(file => languageOf(file) === 'js')
-  const goFiles = files.filter(file => languageOf(file) === 'go')
-  const pyFiles = files.filter(file => languageOf(file) === 'python')
   const tanglesList = []
   const violations = []
-  if (jsFiles.length > 0) {
-    const graph = symbolGraph(root, jsFiles)
-    tanglesList.push(...tangles(graph).map(item => ({ ...item, lang: 'js' })))
-    violations.push(...leaks(graph).map(item => ({ ...item, lang: 'js' })), ...shallowModules(graph).map(item => ({ ...item, lang: 'js' })))
-  }
-  if (goFiles.length > 0) {
-    const go = goDesignChecks(root, goFiles)
-    tanglesList.push(...go.tangles)
-    violations.push(...go.violations)
-  }
-  if (pyFiles.length > 0) {
-    const py = pythonDesignChecks(root, pyFiles)
-    tanglesList.push(...py.tangles)
-    violations.push(...py.violations)
+  for (const [lang, load] of Object.entries(DESIGN_LOADERS)) {
+    const matching = files.filter(file => languageOf(file) === lang)
+    if (matching.length === 0) continue
+    const graph = load(root, matching)
+    tanglesList.push(...tangles(graph, lang))
+    violations.push(...graph.leaks, ...shallowModules(graph, graph.moduleOf, lang))
   }
   tanglesList.sort((a, b) => a.members[0].localeCompare(b.members[0]))
   return { tangles: tanglesList, violations }

@@ -147,7 +147,7 @@ describe('orca-stack lint Python and Shell support (#423)', () => {
   test('R2/R6: Python structural checks catch module-cycle, tangle, field-leak and shallow-module', () => {
     withRepo(({ add, lint }) => {
       add('.orca-stack.json', BLOCK_PYTHON)
-      add('app/kernel.py', 'from app.timers import Timers\n\nclass Tasks:\n    def run(self):\n        return Timers().tick()\n')
+      add('app/kernel.py', 'from app.timers import (\n    # keep timer reference\n    Timers,\n)\n\nclass Tasks:\n    def run(self):\n        return Timers().tick()\n')
       add('app/timers.py', 'from app.kernel import Tasks\n\nclass Timers:\n    def tick(self):\n        return Tasks\n')
       const cycleAndTangle = lint()
       assert.equal(cycleAndTangle.status, 1, cycleAndTangle.out)

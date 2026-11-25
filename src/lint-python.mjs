@@ -2,13 +2,9 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import { runAstGrepJson } from './ast-grep.mjs'
-import { batches, components, relative } from './lint-graph.mjs'
+import { batches, relative } from './lint-graph.mjs'
 
-const TANGLE_RULE = 'tangle'
 const LEAK_RULE = 'field-leak'
-const SHALLOW_RULE = 'shallow-module'
-const HELD_IN_MIND = 7
-const BREAK_EVEN = 1
 const COMMAND_LINE = 30000
 
 const print = text => `sha256:${createHash('sha256').update(text).digest('hex').slice(0, 16)}`
@@ -96,7 +92,7 @@ const resolveRelative = (from, dots, dotted, known) => {
   return base === '' ? (known.has('__init__.py') ? '__init__.py' : undefined) : findPyFile(base, known)
 }
 
-const cleanClause = text => text.replace(/\\\r?\n/g, ' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim()
+const cleanClause = text => text.replace(/#[^\r\n]*/g, '').replace(/\\\r?\n/g, ' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim()
 
 const parseItems = clause => clause.split(',').map(part => part.trim()).filter(Boolean).map(part => {
   const [name, alias] = part.split(/\s+as\s+/)
@@ -266,16 +262,6 @@ const buildPythonGraph = (root, files) => {
   return { root, byFile, nodes, edges, users, resolveClass }
 }
 
-const pyTangles = ({ nodes, edges }) => {
-  const graph = new Map([...edges].map(([id, targets]) => [id, [...targets].sort()]))
-  return components(graph).flatMap(members => {
-    const things = members.filter(id => nodes.get(id).thing).sort()
-    const modules = new Set(things.map(id => nodes.get(id).file))
-    if (modules.size < 2 && things.length <= HELD_IN_MIND) return []
-    return [{ rule: TANGLE_RULE, file: nodes.get(things[0]).file, location: 'tangle', fingerprint: print(things.join('\n')), members: things, modules: modules.size, lang: 'python' }]
-  }).sort((a, b) => a.members[0].localeCompare(b.members[0]))
-}
-
 const pyClassShape = ({ byFile, nodes }, id) => {
   const node = nodes.get(id)
   const facts = byFile.get(node.file)
@@ -337,25 +323,8 @@ const pyModuleOf = initDirs => file => {
   }
 }
 
-const pyShallowModules = ({ byFile, nodes, users }) => {
-  const of = pyModuleOf(new Set([...byFile.keys()].filter(file => path.posix.basename(file) === '__init__.py').map(file => path.posix.dirname(file))))
-  const modules = new Map()
-  for (const node of nodes.values()) {
-    if (node.kind !== 'function') continue
-    const mod = of(node.file)
-    if (!modules.has(mod)) modules.set(mod, [])
-    modules.get(mod).push(node)
-  }
-  return [...modules].flatMap(([mod, functions]) => {
-    const shown = functions.filter(node => [...users.get(node.id)].some(file => of(file) !== mod)).map(node => node.name).sort()
-    const hidden = functions.length - shown.length
-    if (shown.length <= HELD_IN_MIND || hidden > shown.length * BREAK_EVEN) return []
-    return [{ rule: SHALLOW_RULE, file: mod, location: 'module', fingerprint: print(mod), shown, hidden, lang: 'python' }]
-  }).sort((a, b) => a.file.localeCompare(b.file))
-}
-
-export const pythonDesignChecks = (root, files) => {
-  if (files.length === 0) return { tangles: [], violations: [] }
+export const pythonDesignGraph = (root, files) => {
   const graph = buildPythonGraph(root, files)
-  return { tangles: pyTangles(graph), violations: [...pyLeaks(graph), ...pyShallowModules(graph)] }
+  const initDirs = new Set([...graph.byFile.keys()].filter(file => path.posix.basename(file) === '__init__.py').map(file => path.posix.dirname(file)))
+  return { ...graph, moduleOf: pyModuleOf(initDirs), leaks: pyLeaks(graph) }
 }
