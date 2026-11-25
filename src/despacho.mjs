@@ -550,6 +550,21 @@ const piSessionTools = (io, home, worktree, after = 0) => {
   return undefined
 }
 
+// #444: pi's editor shows a long paste as `[paste #1 +120 lines]`; a typed brief shows its own lines. Nothing was
+// submitted yet (no session), so brief text on screen can only be in the input, unless pi is gone (a shell prompt).
+const PI_PASTE_MARKER = /\[paste #\d+(?: \+\d+ lines| \d+ chars)?\]/
+const PI_BRIEF_LINE_MIN = 20
+const briefInPiInput = (io, handle, brief) => {
+  const lines = screenLines(io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json']))
+  const last = [...lines].reverse().find(line => line.trim() !== '')
+  if (last === undefined || shellPrompt(last)) return false
+
+  return lines.some(line => {
+    const text = line.replace(/^[\s│┃|>]+|[\s│┃|]+$/g, '')
+    return PI_PASTE_MARKER.test(text) || (text.length >= PI_BRIEF_LINE_MIN && String(brief ?? '').includes(text))
+  })
+}
+
 // Up to 30 s: the TUI draws its screen before it takes the first message, so it can start slower than `pi -p` did.
 const waitForPiSession = async (io, home, worktree, after = 0) => {
   for (let i = 0; i < 150; i += 1) {
@@ -749,12 +764,22 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     if (!started) throw fail(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
     await checkPostLaunchScreen(io, handle, agent)
   } else {
+    const handleOf = () => deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
     if (supervised) {
-      const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
+      const handle = handleOf()
       if (!handle) throw new Error('orca terminal create no devolvió el handle de la terminal.')
       await startWorker(io, say, { agent, handle, briefPath, supervised })
     }
-    const { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
+    let { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
+    // #444: the brief can stay typed in pi's input without its Enter: one Enter, never a second, then one more wait.
+    let handle
+    if (piSessionAfter > 0 && tools === undefined) try { handle = handleOf() } catch {}
+    if (handle && briefInPiInput(io, handle, brief)) {
+      say(`El brief quedó escrito en la entrada de pi sin enviar: mando un Enter a ${handle}.`)
+      io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
+      ;({ tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter))
+      if (tools === undefined) throw new Error(`No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: ${handle}.`)
+    }
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
     if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
     if (file) await checkPiAuth(io, file, config.piClaudeConfigDir, piSessionAfter)

@@ -85,7 +85,8 @@ afterEach(() => {
 })
 
 // A scripted environment: every external call is recorded; `over` answers specific ones ("cmd arg0 [arg1]").
-// piTools 'missing': the pi launch leaves no session, as when pi never started. piReply: session lines after the system one.
+// piTools 'missing': the pi launch leaves no session, as when pi never started; 'enter': it starts on the first bare
+// Enter sent to term_1 (#444). piReply: session lines after the system one.
 const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = [] } = {}) => {
   write(path.join(root, '.orca-stack.json'), JSON.stringify(config))
   const calls = []
@@ -97,6 +98,15 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = 
   const sessionFile = path.join(sessionDir, '2026-10-09T00-00-00-000Z_session.jsonl')
   const files = new Map()
   const modified = new Map()
+  const startPiSession = () => {
+    const text = piTools === 'none' ? '<tools>\n(none)' : '<tools>\n- read: Read file contents\n- bash: Execute commands'
+    files.set(sessionFile, [
+      JSON.stringify({ type: 'session', cwd: worktree }),
+      '{}', '{}', '{}', JSON.stringify({ type: 'message', message: { role: 'system', content: '', sections: { tools: text } } }),
+      ...piReply.map(entry => JSON.stringify(entry)),
+    ].join('\n'))
+    modified.set(sessionFile, Date.now() + 1)
+  }
   const io = {
     home,
     cwd: root,
@@ -128,17 +138,10 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = 
       if (args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })
       if (args.join(' ').startsWith('worktree create')) return json({ result: { worktree: { path: worktree, branch: 'refs/heads/proj-7' } } })
       if (args[0] === 'terminal' && args[1] === 'create') {
-        if (/(^|; )pi /.test(String(args[args.indexOf('--command') + 1] ?? '')) && piTools !== 'missing') {
-          const text = piTools === 'none' ? '<tools>\n(none)' : '<tools>\n- read: Read file contents\n- bash: Execute commands'
-          files.set(sessionFile, [
-            JSON.stringify({ type: 'session', cwd: worktree }),
-            '{}', '{}', '{}', JSON.stringify({ type: 'message', message: { role: 'system', content: '', sections: { tools: text } } }),
-            ...piReply.map(entry => JSON.stringify(entry)),
-          ].join('\n'))
-          modified.set(sessionFile, Date.now() + 1)
-        }
+        if (/(^|; )pi /.test(String(args[args.indexOf('--command') + 1] ?? '')) && piTools !== 'missing' && piTools !== 'enter') startPiSession()
         return json({ result: { terminal: { handle: 'term_1' } } })
       }
+      if (piTools === 'enter' && args.join(' ') === 'terminal send --terminal term_1 --enter') startPiSession()
       if (args[0] === 'terminal' && args[1] === 'send' && args.includes('--wait-submit')) return json({ result: { submission: 'submitted', turnStarted: true } })
       if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'], latestCursor: calls.length } } })
       // A worktree Orca lists with no open terminals (main-autonomo S8 lists them before reusing a worktree).
@@ -1359,6 +1362,51 @@ describe('issue #277: pi workers run as an interactive TUI', () => {
     assert.ok(!env.out.some(line => line.includes('pi despachado')))
   })
 
+  // #444: pi's screen with the brief typed into its input and not sent, or with an empty input.
+  const piScreen = input => json({ ok: true, result: { terminal: { tail: ['pi v1.5.2', '', '─'.repeat(40), input, '─'.repeat(40), '~/wt/proj-7 (proj-7)'] } } })
+  const STUCK = piScreen('[paste #1 +180 lines]')
+  const EMPTY = piScreen('')
+  const enters = env => env.calls.filter(call => call.join(' ') === 'orca terminal send --terminal term_1 --enter')
+  const noSession = () => `No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`
+
+  test('#444 Rule 1: a brief stuck in pi\'s input gets one Enter, the session appears and pi is dispatched', async () => {
+    const briefFile = path.join(home, 'orca', 'briefs', 'proj-7.md')
+    const typed = () => piScreen(readFileSync(briefFile, 'utf8').split('\n')[0])
+    for (const screen of [() => STUCK, typed]) {
+      const env = fakeIo({ 'orca terminal read': screen }, { piTools: 'enter' })
+      assert.equal(await run('ticket', { n: '7', agent: 'pi' }, env), 0)
+      assert.equal(enters(env).length, 1)
+      assert.ok(env.calls.findIndex(c => c[2] === 'worker-start') < env.calls.indexOf(enters(env)[0]))
+      assert.ok(env.out.some(line => line.startsWith('✔ pi despachado')), env.out.join('\n'))
+    }
+  })
+
+  test('#444 Rule 2: still no session after that Enter fails as today, naming the terminal, and never sends a second Enter', async () => {
+    const env = fakeIo({ 'orca terminal read': STUCK }, { piTools: 'missing' })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), error => error.message === `${noSession()} Terminal: term_1.`)
+    assert.equal(enters(env).length, 1)
+    assert.ok(!env.out.some(line => line.includes('pi despachado')))
+  })
+
+  test('#444 Rule 3: when the new session appears on the first read, no Enter is sent', async () => {
+    const env = fakeIo({ 'orca terminal read': STUCK })
+    assert.equal(await run('ticket', { n: '7', agent: 'pi' }, env), 0)
+    assert.equal(enters(env).length, 0)
+    assert.ok(env.out.some(line => line.startsWith('✔ pi despachado')))
+  })
+
+  test('#444 Rule 4: with pi\'s input empty no Enter is sent and the error is the same as today', async () => {
+    const env = fakeIo({ 'orca terminal read': EMPTY }, { piTools: 'missing' })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), error => error.message === noSession())
+    assert.equal(enters(env).length, 0)
+    // #444: pi gone back to the shell: a brief line left on screen is no input of pi's.
+    const briefFile = path.join(home, 'orca', 'briefs', 'proj-7.md')
+    const shell = () => json({ ok: true, result: { terminal: { tail: [readFileSync(briefFile, 'utf8').split('\n')[0], 'PS C:\\wt\\proj-7>'] } } })
+    const gone = fakeIo({ 'orca terminal read': shell }, { piTools: 'missing' })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, gone), error => error.message === noSession())
+    assert.equal(enters(gone).length, 0)
+  })
+
   test('Rule 5: README and the manual describe how pi is launched, as an interactive TUI', () => {
     for (const file of ['README.md', path.join('docs', 'manual.md')]) {
       const text = readFileSync(path.join(PACKAGE_ROOT, file), 'utf8').replace(/\s+/g, ' ')
@@ -1702,8 +1750,8 @@ describe('rebote', () => {
     reviews: [{ body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, concreta, implementaci\u00F3n): fix it.\n\n## SUGERENCIAS\n(none)', url: 'https://example.test/review/1' }],
     comments: [], ...overrides,
   })
-  const bounceEnv = (pull = pr(), extra = {}, config = PROJECT, piReply = []) => {
-    const env = fakeIo({ 'gh pr': json(pull), 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`), 'git status': okRes(''), ...extra }, { config, piReply })
+  const bounceEnv = (pull = pr(), extra = {}, config = PROJECT, piReply = [], piTools = 'available') => {
+    const env = fakeIo({ 'gh pr': json(pull), 'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`), 'git status': okRes(''), ...extra }, { config, piReply, piTools })
     const original = env.io.sh
     env.io.sh = (cmd, args, opts) => {
       if (cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD') return okRes(`${pull.headRefOid}\n`)
@@ -2367,6 +2415,25 @@ describe('rebote', () => {
     stale.io.modifiedAt = () => 99
     await assert.rejects(reboteCommand({}, '12', stale.io), /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
     assert.ok(!stale.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment'))
+  })
+
+  test('#444 Rule 5: rebote launches pi through the same path: one Enter for a brief stuck in its input, none for an empty input', async () => {
+    const screen = input => ({ 'orca terminal read': json({ ok: true, result: { terminal: { tail: ['pi v1.5.2', '\u2500'.repeat(40), input, '\u2500'.repeat(40)] } } }) })
+    const enters = env => env.calls.filter(call => call.join(' ') === 'orca terminal send --terminal term_1 --enter')
+    const piEnv = (input, piTools) => {
+      const env = bounceEnv(pr({ body: 'Implementador: pi' }), screen(input), PROJECT, [], piTools)
+      env.io.gentleSkills = () => 'C:\\pi\\skills'
+      env.io.now = () => 100
+      env.io.modifiedAt = () => 101
+      return env
+    }
+    const stuck = piEnv('[paste #1 +40 lines]', 'enter')
+    assert.equal(await reboteCommand({}, '12', stuck.io), 0)
+    assert.equal(enters(stuck).length, 1)
+    assert.ok(stuck.out.some(line => line.startsWith('\u2714 pi despachado')))
+    const empty = piEnv('', 'missing')
+    await assert.rejects(reboteCommand({}, '12', empty.io), error => error.message === `No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
+    assert.equal(enters(empty).length, 0)
   })
 
   test('issue 276 Rules 1 and 7: a pi bounce honors the pin, traces it, and refuses with no pin and no profile', async () => {

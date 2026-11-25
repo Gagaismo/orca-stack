@@ -367,6 +367,35 @@ describe('orca-stack reanudar (#214)', () => {
     assert.ok(h.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create' && call.args.some(arg => /; pi --no-skills /.test(arg))))
   })
 
+  test('#444 Rule 5: relaunching an exited pi worker sends one Enter when the brief is stuck in its input, and none when the input is empty', async () => {
+    const sessionDir = path.join('/home', '.pi', 'agent', 'sessions', 'wt')
+    const session = path.join(sessionDir, '2026-11-24T00-00-00-000Z_s.jsonl')
+    const relaunch = input => {
+      const h = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
+      h.io.gentleSkills = () => '/pi/skills'
+      h.io.listFiles = () => []
+      h.io.modifiedAt = () => Number.MAX_SAFE_INTEGER
+      const sh = h.io.sh
+      h.io.sh = (cmd, args, opts) => {
+        if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read' && args.includes('term-new')) return json({ result: { terminal: { tail: ['pi v1.5.2', '\u2500'.repeat(40), input, '\u2500'.repeat(40)] } } })
+        if (cmd === 'orca' && args.join(' ') === 'terminal send --terminal term-new --enter') {
+          h.files[session] = [JSON.stringify({ type: 'session', cwd: WT }), '{}', '{}', '{}', JSON.stringify({ type: 'message', message: { role: 'system', content: '<tools>\n- read' } })].join('\n')
+          h.io.listFiles = dir => (dir === path.dirname(sessionDir) ? [sessionDir] : dir === sessionDir ? [session] : [])
+        }
+        return sh(cmd, args, opts)
+      }
+      return h
+    }
+    const enters = h => h.sends().filter(send => send.args.join(' ') === 'terminal send --terminal term-new --enter')
+    const stuck = relaunch('[paste #1 +40 lines]')
+    assert.equal(await reanudarCommand({}, ISSUE, URL, stuck.io), 0)
+    assert.equal(enters(stuck).length, 1)
+    assert.ok(stuck.outputs.some(line => line.startsWith('\u2714 pi despachado')), stuck.outputs.join('\n'))
+    const empty = relaunch('')
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, empty.io), error => error.message === `No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${WT}; no doy el lanzamiento por iniciado.`)
+    assert.equal(enters(empty).length, 0)
+  })
+
   test('issue #295 Preserve: relaunching an exited pi worker that authenticates still succeeds, and one that cannot is refused', async () => {
     const AUTH = 'Failed to authenticate: OAuth session expired and could not be refreshed'
     for (const [reply, okLaunch] of [[{ role: 'assistant', content: [{ type: 'toolCall' }], stopReason: 'toolUse' }, true], [{ role: 'assistant', content: [{ type: 'text', text: AUTH }], stopReason: 'error', errorMessage: AUTH }, false]]) {

@@ -158,6 +158,8 @@ Con agentes.<agente>.rddConsentimiento "politica" (por defecto) escribe en el gi
 con {"version":1,"granted":[]}: el consentimiento de RDD sobre el candidato propio es declined. Con "humano" no lo escribe.
 Con pi leen la sesión nueva de Pi con las mismas pausas y fallan si su primera respuesta es "Failed to authenticate",
 con esa línea y el CLAUDE_CONFIG_DIR usado.
+Si la sesión nueva de Pi no aparece y el brief quedó escrito en la entrada de pi sin enviar, mandan un solo Enter a la
+terminal y la esperan de nuevo; si sigue sin aparecer, fallan con el mismo mensaje y el term_<id>, sin un segundo Enter.
 
 Con pi, --perfil-pi <nombre> (o agentes.pi.perfil en la config; el flag gana) fija para ese worktree uno de los perfiles de
 ~/.pi/gentle-ai/profiles.json: escribe .pi/gentle-ai/profile.json en el worktree (fuera de git, vía info/exclude) y lanza pi con el
@@ -253,7 +255,9 @@ y dice qué le falta para el paso 7 de MAIN.md sobre su head actual:
   (c) que cada check termine en SUCCESS, SKIPPED o NEUTRAL y ninguno siga pendiente;
   (d) en una ruta de riesgo, el segundo review que exige puente-gentle.
 Un review con ## Cobertura cuenta solo si ninguna ruta de Sin leer: es de riesgo; uno que se declara parcial sin
-## Cobertura no cuenta. Con migraciones {"glob","numero"} en la config, cada migración que agrega el PR tiene que tener un
+## Cobertura no cuenta. Una consulta que main publicó (Revisor: pi (consulta <tema>, publicada por main)) con Commit:
+igual al head y ## BLOQUEA distinto de nada queda en falta hasta un Verificado por main: o Decidido por main: posterior
+sobre ese head. Con migraciones {"glob","numero"} en la config, cada migración que agrega el PR tiene que tener un
 número mayor que la más alta de origin/<base> (hace git fetch origin <base>); si no, imprime el comentario de review que
 main publica para rebotarlo.
 Sin --json imprime una línea por PR:
@@ -298,6 +302,8 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
   worker-terminado #<n> <agente> ok|partial
                                      un worker del Run de main mandó worker_done (ok si succeeded, partial si failed)
                                      o escaló (partial)
+  worker-sin-reporte #<n> <agente>   Orca avisó que el worker paró sin reportar (stopReason finished), no hubo
+                                     worker_done y la tarea ya no está dispatched; mientras sigue dispatched, nada
   consulta #<n> <agente> <message_id>
                                      un worker del Run de main preguntó con \`orca orchestration ask\`; main responde con
                                      \`orca orchestration reply --id <message_id>\` (o un gate para el humano)
