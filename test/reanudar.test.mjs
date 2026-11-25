@@ -1066,5 +1066,18 @@ describe('#454 reanudar: the relaunch rebinds the Run task', () => {
     assert.deepEqual(unconfirmed.sends().map(send => send.args[send.args.indexOf('--text') + 1]), [LINE])
     await assert.rejects(() => reanudarCommand({}, ISSUE, URL, unconfirmed.io), /Ya intent\u00E9 reanudar con el comentario 6205678817/)
     assert.equal(creates(unconfirmed).length, 1)
+
+    const unknown = { status: 1, stdout: JSON.stringify({ ok: false, error: { code: 'outcome_unknown', message: 'worker-start timed out' } }), stderr: '' }
+    const lost = withRun(exitedCodex(), { tasks: [{ id: 'task_212', status: 'ready', title: '#212 codex' }], start: unknown })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, lost.io), error =>
+      error.message === `orca orchestration worker-start falló: worker-start timed out\nEl resultado de worker-start es desconocido (outcome_unknown): el dispatch de la terminal nueva term-new puede haber arrancado; no relanzo. Comprobalo con \`orca orchestration task-list --run ${RUN} --json\`.`)
+    assert.equal(lost.sends().length, 0)
+
+    const noSession = withRun(exitedPi())
+    noSession.io.listFiles = () => []
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, noSession.io), error =>
+      error.message.startsWith('No observé una sesión nueva de Pi después del lanzamiento') && error.message.endsWith('; no doy el lanzamiento por iniciado. Terminal: term-new.'))
+    assert.equal(orchestration(noSession).filter(args => args[1] === 'worker-start').length, 1)
+    assert.equal(noSession.sends().length, 0)
   })
 })

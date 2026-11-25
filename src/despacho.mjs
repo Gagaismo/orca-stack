@@ -557,7 +557,6 @@ const PI_BRIEF_LINE_MIN = 20
 // #454: Gentle Shell's frame line reads `─ ✿ waiting for input ─── INSERT ─` when pi waits with nothing submitted.
 const PI_FRAME_LINE = /^\s*╭?─ [✿❀❁✾] /u
 const PI_WAITING = /^\s*─ ✿ waiting for input ─/u
-// What pi's input holds: 'brief' (typed, unsent), 'empty' (waiting for input with no brief), or undefined.
 const piInputOf = (io, handle, brief) => {
   const lines = screenLines(io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json']))
   const last = [...lines].reverse().find(line => line.trim() !== '')
@@ -673,13 +672,15 @@ const startWorker = async (io, say, { agent, handle, briefPath, supervised, rebi
   }
   const failure = orchestrationFailure(res, 'orca orchestration worker-start')
   if (!failure) return
-  if (rebind) throw orchestrationError(`${failure}\nLa terminal nueva ${handle} quedó abierta sin dispatch en el Run ${runId}; no relanzo.`)
   // Orca exits 1 for outcome_unknown too: the worker may have started, so the issue keeps its assignee.
   let body
   try { body = JSON.parse(res.stdout) } catch {}
-  if (!hasValue(body, 'outcome_unknown')) throw orchestrationError(failure)
-  const request = requestIdOf(res)
+  const unknown = hasValue(body, 'outcome_unknown')
   const dispatchId = deepFind(body, ['dispatchId'])
+  if (rebind && !unknown) throw orchestrationError(`${failure}\nLa terminal nueva ${handle} quedó abierta sin dispatch en el Run ${runId}; no relanzo.`)
+  if (rebind) throw orchestrationError(`${failure}\nEl resultado de worker-start es desconocido (outcome_unknown): el dispatch de la terminal nueva ${handle} puede haber arrancado; no relanzo. Comprobalo con \`${dispatchId ? `orca orchestration worker-show --dispatch ${dispatchId} --json` : `orca orchestration task-list --run ${runId} --json`}\`.`)
+  if (!unknown) throw orchestrationError(failure)
+  const request = requestIdOf(res)
   const check = request ? `orca orchestration request-show --request ${request} --json` : dispatchId ? `orca orchestration worker-show --dispatch ${dispatchId} --json` : `orca orchestration task-list --run ${runId} --json`
   throw new Error(`${failure}\nEl resultado de worker-start es desconocido (outcome_unknown): el worker de ${supervised.title} puede estar corriendo, así que el issue sigue asignado. Comprobalo con \`${check}\`.`)
 }
@@ -808,7 +809,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
       if (tools === undefined) throw new Error(`No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: ${handle}.`)
     }
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
-    if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
+    if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.${rebind ? ` Terminal: ${handleOf()}.` : ''}`)
     if (file) await checkPiAuth(io, file, config.piClaudeConfigDir, piSessionAfter)
     if (rebind) await rebind.deliver(handleOf())
   }

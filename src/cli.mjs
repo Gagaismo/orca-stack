@@ -162,7 +162,7 @@ Con pi leen la sesión nueva de Pi con las mismas pausas y fallan si su primera 
 con esa línea y el CLAUDE_CONFIG_DIR usado.
 Si la sesión nueva de Pi no aparece y el brief quedó escrito en la entrada de pi sin enviar, mandan un solo Enter a la
 terminal y la esperan de nuevo; si sigue sin aparecer, fallan con el mismo mensaje y el term_<id>, sin un segundo Enter.
-En revisar y rebote, si pi queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, cierran esa terminal y lo
+En revisar, rebote y planificar, si pi queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, cierran esa terminal y lo
 lanzan una vez más; si la segunda también queda vacía, fallan con el mismo mensaje y el term_<id> de la segunda, que queda abierta.
 
 Con pi, --perfil-pi <nombre> (o agentes.pi.perfil en la config; el flag gana) fija para ese worktree uno de los perfiles de
