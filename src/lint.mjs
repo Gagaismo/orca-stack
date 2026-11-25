@@ -7,6 +7,7 @@ import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { loadConfig } from './despacho.mjs'
 import { COMMENT_EXTENSIONS, commentViolations, isCommentRule, reportComment } from './lint-comments.mjs'
 import { cycleEntry, isCycleEntry, matchCycles, moduleCycles, reportCycle, validCycleEntry } from './lint-cycles.mjs'
+import { DESIGN_REPORT, TANGLE_RULE, designChecks, reportTangle } from './lint-design.mjs'
 import { homeDir, layout } from './util.mjs'
 
 export const BASELINE_FILE = '.orca-stack-baseline.json'
@@ -99,7 +100,11 @@ const wideDirectories = files => {
 const REPORT = {
   'long-file': ({ file, count }) => `long-file ${file}: ${count} líneas (máximo ${MAX_LINES}) — dividí el archivo`,
   'wide-directory': ({ file, count }) => `wide-directory ${file}: ${count} entradas (máximo ${MAX_ENTRIES}) — agrupá los archivos relacionados en subdirectorios`,
+  ...DESIGN_REPORT,
 }
+
+const isTangleEntry = entry => entry.rule === TANGLE_RULE
+const isMemberEntry = entry => isCycleEntry(entry) || isTangleEntry(entry)
 
 const invalid = reason => new Error(`${BASELINE_FILE} no es una Baseline válida: ${reason}. Arreglalo a mano: el lint no lo reescribe.`)
 
@@ -119,7 +124,7 @@ const readBaseline = root => {
     const ok = entry && typeof entry === 'object' && !Array.isArray(entry)
       && ENTRY_KEYS.every(key => typeof entry[key] === 'string' && entry[key] !== '')
     if (!ok) throw invalid(`la entrada ${index + 1} necesita ${ENTRY_KEYS.join(', ')} como textos`)
-    if (isCycleEntry(entry) && !validCycleEntry(entry)) throw invalid(`la entrada ${index + 1} de module-cycle necesita members como una lista de rutas`)
+    if (isMemberEntry(entry) && !validCycleEntry(entry)) throw invalid(`la entrada ${index + 1} de ${entry.rule} necesita members como una lista de ${isTangleEntry(entry) ? 'cosas' : 'rutas'}`)
   })
   return parsed.entries
 }
@@ -258,19 +263,26 @@ const inspect = (root, config, files) => {
   const diff = alcanceOf(config) === 'diff'
   const added = diff ? addedLines(root, config.ramaBase) : undefined
   const comments = commentViolations(root, files)
-  const violations = [...longFiles(root, files), ...wideDirectories(files), ...comments]
   const scripts = files.filter(file => COMMENT_EXTENSIONS.has(path.extname(file).toLowerCase()) && readText(path.join(root, file)) !== undefined)
+  const design = designChecks(root, scripts)
+  const violations = [...longFiles(root, files), ...wideDirectories(files), ...comments, ...design.violations]
   const cycles = moduleCycles(root, scripts)
   // #419: diff mode matches every violation, so old ones keep their entries, and then reports only comments on added lines.
   const inScope = diff ? (violation => !isCommentRule(violation.rule) || onAddedLine(added)(violation)) : () => true
   // #419: out-of-scope violations match first, so a new identical comment never takes an old one's entry; the report keeps violation order.
   const ordered = [...violations.filter(violation => !inScope(violation)), ...violations.filter(inScope)]
-  // #420: module-cycle entries match by member set, apart from the one-to-one match of the other rules.
+  // #420, #421: module-cycle and tangle entries match by member set, apart from the one-to-one match of the other rules.
   const matchInScope = entries => {
-    const { unmatched, stale } = match(ordered, entries.filter(entry => !isCycleEntry(entry)))
+    const { unmatched, stale } = match(ordered, entries.filter(entry => !isMemberEntry(entry)))
     const left = new Set(unmatched)
     const cycleMatch = matchCycles(cycles, entries.filter(isCycleEntry))
-    return { unmatched: violations.filter(violation => left.has(violation) && inScope(violation)), stale, cycles: cycleMatch.unmatched, staleCycles: cycleMatch.stale }
+    const tangleMatch = matchCycles({ cycles: design.tangles, selfImports: new Set() }, entries.filter(isTangleEntry))
+    return {
+      unmatched: violations.filter(violation => left.has(violation) && inScope(violation)),
+      stale,
+      cycles: [...cycleMatch.unmatched, ...tangleMatch.unmatched],
+      staleCycles: [...cycleMatch.stale, ...tangleMatch.stale],
+    }
   }
   return { diff, matchInScope }
 }
@@ -323,7 +335,7 @@ export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir()
   for (const violation of unmatched) {
     console.log(isCommentRule(violation.rule) ? reportComment(violation) : REPORT[violation.rule](violation))
   }
-  for (const cycle of newCycles) console.log(reportCycle(cycle))
+  for (const cycle of newCycles) console.log(cycle.rule === TANGLE_RULE ? reportTangle(cycle) : reportCycle(cycle))
   for (const entry of stale) {
     console.log(`entrada vencida en ${BASELINE_FILE}: ${entry.rule} ${entry.file} (${entry.location}, ${entry.fingerprint}) — la violación ya no está en el repo: sacá esta entrada`)
   }

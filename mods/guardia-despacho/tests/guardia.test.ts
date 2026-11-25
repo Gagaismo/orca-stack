@@ -49,6 +49,17 @@ test('hasta is a local-midnight date and bad dates are ignored', () => {
   expect(only?.blocks).toEqual([])
 })
 
+test('#388: hasta with a local time lifts the block at that minute, and a space or a bare time is a bad date', () => {
+  const r = buildRules({
+    despacho: { script: 'scripts/despachar.sh' },
+    guardia: { bloquear: [{ agente: 'codex', hasta: '2026-11-19T19:12', motivo: CODEX_REASON }, { agente: 'agy', hasta: '19:12' }] },
+  })
+  expect(inspect('./scripts/despachar.sh 5 codex', new Date(2026, 10, 19, 19, 11).getTime(), r!)).toEqual({ kind: 'deny', reason: CODEX_REASON })
+  expect(inspect('./scripts/despachar.sh 5 codex', new Date(2026, 10, 19, 19, 12).getTime(), r!)).toEqual({ kind: 'pass' })
+  expect(parseUntil('2026-11-19 19:12')).toBeUndefined()
+  expect(r?.notes).toEqual(['Regla de agy ignorada: la fecha "hasta" no es una fecha AAAA-MM-DD ni AAAA-MM-DDTHH:MM válida.'])
+})
+
 test('a block without motivo gets a default message', () => {
   const r = buildRules({
     despacho: { script: 'x/go.sh' },

@@ -58,7 +58,7 @@ export const buildRules = (config: StackConfig): Rules | undefined => {
       continue
     }
     if (untilMs === undefined) {
-      notes.push(`Regla de ${rule.agente} ignorada: la fecha "hasta" no es una fecha AAAA-MM-DD válida.`)
+      notes.push(`Regla de ${rule.agente} ignorada: la fecha "hasta" no es una fecha AAAA-MM-DD ni AAAA-MM-DDTHH:MM válida.`)
       continue
     }
     blocks.push({

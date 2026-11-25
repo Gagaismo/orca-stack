@@ -107,11 +107,11 @@ export const familyOf = (config, agent, mode) => {
 }
 
 export const parseUntil = date => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim())
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(date.trim())
   if (match === null) return undefined
-  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
-  const at = new Date(year, month - 1, day)
-  if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== day) return undefined
+  const [year, month, day, hour, minute] = match.slice(1).map(part => Number(part ?? 0))
+  const at = new Date(year, month - 1, day, hour, minute)
+  if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== day || at.getHours() !== hour || at.getMinutes() !== minute) return undefined
 
   return at.getTime()
 }
@@ -120,7 +120,7 @@ export const blockOf = (config, agent, now) => {
   for (const rule of config.guardia?.bloquear ?? []) {
     if (typeof rule?.agente !== 'string' || rule.agente.toLowerCase() !== agent.toLowerCase()) continue
     const until = typeof rule.hasta === 'string' ? parseUntil(rule.hasta) : undefined
-    if (until === undefined) return `La regla guardia.bloquear de ${agent} tiene una fecha "hasta" que no es AAAA-MM-DD (${String(rule.hasta)}): corregila antes de despacharlo.`
+    if (until === undefined) return `La regla guardia.bloquear de ${agent} tiene una fecha "hasta" que no es AAAA-MM-DD ni AAAA-MM-DDTHH:MM (${String(rule.hasta)}): corregila antes de despacharlo.`
     if (now < until) return typeof rule.motivo === 'string' && rule.motivo.trim() !== '' ? rule.motivo : `${agent} está bloqueado hasta el ${rule.hasta}.`
   }
 
@@ -1118,7 +1118,9 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     PERKS: config.perks,
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n), MIGRACION: migration?.texto }),
     ...(review ? {
-      DELTA_INSTRUCTIONS: previousHead ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : 'This is the first review round; review the full PR.',
+      DELTA_INSTRUCTIONS: !previousHead ? 'This is the first review round; review the full PR.'
+        : previousHead === sha ? `You already reviewed commit \`${sha}\`; this round reviews only the paths under \`## Partial review by design\`.`
+          : `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.`,
       PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
       PUBLISH_COMMAND: `gh pr review ${n} --comment --body-file ${reviewPath}`,
     } : {}),
@@ -1138,7 +1140,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: existingPath })
     if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${existingPath}: ${(status.stderr || status.stdout).trim()}`)
     if (status.stdout.trim() !== '') throw new Error(`El worktree ${existingPath} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de revisar de nuevo.`)
-    if (previousHead === sha) throw new Error(`Ya revisaste ${sha} con ${agent}.`)
+    if (previousHead === sha && !paths) throw new Error(`Ya revisaste ${sha} con ${agent}.`)
     if (agent === 'pi') {
       const pinned = readPin(io, existingPath)
       // "global" writes no pin, so it matches a worktree without one.
@@ -1207,8 +1209,10 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     }
     const brief = withProfileLines(briefFor(branch), profile)
     if (existing && io.exists(reviewPath)) {
-      const archivedReviewPath = path.join(io.home, 'orca', 'briefs', `${session}.review.${previousHead}.md`)
-      if (io.exists(archivedReviewPath)) throw new Error(`Ya existe el review archivado ${archivedReviewPath}; no voy a sobrescribirlo.`)
+      const archiveFor = round => path.join(io.home, 'orca', 'briefs', `${session}.review.${previousHead}${round > 1 ? `.${round}` : ''}.md`)
+      let round = 1
+      while (io.exists(archiveFor(round))) round += 1
+      const archivedReviewPath = archiveFor(round)
       say(`${dryRun ? '[simulación] ' : ''}review anterior -> ${archivedReviewPath}`)
       if (!dryRun) io.rename(reviewPath, archivedReviewPath)
     }

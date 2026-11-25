@@ -91,9 +91,9 @@ describe('main-autonomo: policy and briefs', () => {
     assert.ok(rendered.includes('first line is `Consulta: pi` and which has exactly this line, with the stop reason RDD returned: `RDD fuera de presupuesto: abc1234 (<stop reason>)`'), rendered)
   })
 
-  test('S12: the review brief requires ## Cobertura, partial reviews list unread riesgo paths, layers over 1500 lines, UTF-8 without BOM', () => {
+  test('S12: the review brief requires ## Cobertura, partial reviews list unread riesgo paths, layers over 700 lines, UTF-8 without BOM', () => {
     const brief = flat(renderBrief('review', { AGENT: 'codex', PR: '7', REPO: 'orca-stack', BASE: 'main', SHA: 'abc123', IMPLEMENTER: 'pi' }))
-    for (const text of ['## Cobertura', 'Leído:', 'Sin leer:', 'over 1500 changed lines', 'UTF-8 without a BOM']) assert.ok(brief.includes(text), text)
+    for (const text of ['## Cobertura', 'Leído:', 'Sin leer:', 'over 700 changed lines', 'UTF-8 without a BOM']) assert.ok(brief.includes(text), text)
     assert.ok(brief.includes('A review that leaves a path matching `riesgo` unread is partial'), brief)
   })
 

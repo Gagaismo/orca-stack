@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, PROFILE_LINE, codexPowerShell, codexWindowsChecks, probeGetContent } from '../src/codex-windows.mjs'
+import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, PROFILE_LINE, codexBlock, codexPowerShell, codexWindowsChecks, probeGetContent } from '../src/codex-windows.mjs'
+import { renderBrief } from '../src/despacho.mjs'
 import { buildBlock, removeBlock, upsertBlock } from '../src/marker.mjs'
 import { codexHome } from '../src/util.mjs'
 import { cleanup, cli, read, snapshot, tempDir, write } from './helpers.mjs'
@@ -355,5 +356,41 @@ describe('global and remove: codex ASCII block', () => {
     write(override, '  \n')
     run(['global', '--skip-pi'])
     assert.ok(read(agentsMd()).includes(CODEX_ASCII_MARKERS.begin))
+  })
+})
+
+describe('issue 390: codex on Windows writes the body file as UTF-8 without BOM', () => {
+  const WRITE = '[IO.File]::WriteAllText(<ruta>, <texto>, [Text.UTF8Encoding]::new($false))'
+
+  test('Rule 2: global writes the literal WriteAllText command into the codex Windows block, next to the #58 read rule', () => {
+    const bin = path.join(home, 'path-bin')
+    write(path.join(bin, '.probe'), '')
+    write(agentsMd(), '## Rules\n')
+    const result = cli(home, ['global', '--skip-pi'], { env: { ORCA_STACK_PLATFORM: 'win32', PATH: [bin, path.dirname(process.execPath)].join(path.delimiter) } })
+    assert.equal(result.status, 0, result.out)
+    const block = codexBlock(read(agentsMd()))
+    assert.equal(block.status, 'ok')
+    assert.ok(block.inner.includes(`\`${WRITE}\``), block.inner)
+    assert.ok(block.inner.includes('Gagaismo/orca-stack#58'), block.inner)
+    assert.ok(block.inner.includes('so `Leído` reaches GitHub as `Le?do`'), block.inner)
+  })
+
+  test('Rule 3: the agy and pi briefs do not carry the WriteAllText line', () => {
+    const bin = path.join(home, 'path-bin')
+    write(path.join(bin, '.probe'), '')
+    write(agentsMd(), '## Rules\n')
+    const result = cli(home, ['global', '--skip-pi'], { env: { ORCA_STACK_PLATFORM: 'win32', PATH: [bin, path.dirname(process.execPath)].join(path.delimiter) } })
+    assert.equal(result.status, 0, result.out)
+    const carriers = readdirSync(home, { recursive: true, withFileTypes: true })
+      .filter(entry => entry.isFile() && readFileSync(path.join(entry.parentPath, entry.name), 'utf8').includes('WriteAllText'))
+      .map(entry => path.relative(home, path.join(entry.parentPath, entry.name)))
+      .filter(file => !file.startsWith(path.join('.orca-stack', 'cli') + path.sep))
+    assert.deepEqual(carriers, [path.join('.codex', 'AGENTS.md')])
+    for (const AGENT of ['agy', 'pi']) {
+      for (const kind of ['review', 'ticket']) {
+        const brief = renderBrief(kind, { REPO: 'repo', PR: '7', ISSUE: '7', IMPLEMENTER: 'codex', SHA: 'abc123', BASE: 'main', BRANCH: 'feat', VERIFICATION: 'npm test', AGENT })
+        assert.ok(!brief.includes('WriteAllText'), `${AGENT} ${kind}`)
+      }
+    }
   })
 })

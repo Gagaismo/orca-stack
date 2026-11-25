@@ -273,7 +273,7 @@ Si no hay tiempo para todo, respondé A1, B1, C1, C3, C4 y F1. Con eso alcanza p
 
 **D3. ¿Hay algún proveedor sin cuota o vetado por un tiempo?** [Ambos; solo si D2 = Sí]
 - Por qué importa: la guardia solo revisa las llamadas a tus scripts de despacho. Sin `despacho`, esta clave no hace nada, y nunca frena un despacho hecho con `orca orchestration`.
-- Acción: `guardia.bloquear` con `{ "agente", "hasta", "motivo" }`. `hasta` es excluyente: el bloqueo se levanta a las 00:00 de ese día. Si es una cuota de tu cuenta, ponelo en tu config personal (`~/.orca-stack/config.json`), que vale en todos los repos; si es una regla del proyecto, en `.orca-stack.json`.
+- Acción: `guardia.bloquear` con `{ "agente", "hasta", "motivo" }`. `hasta` es excluyente y local: `AAAA-MM-DD` levanta el bloqueo a las 00:00 de ese día, y `AAAA-MM-DDTHH:MM` (por ejemplo `"2026-11-19T19:12"`, sin zona) a esa hora, para un corte de cuota de unas horas. Si es una cuota de tu cuenta, ponelo en tu config personal (`~/.orca-stack/config.json`), que vale en todos los repos; si es una regla del proyecto, en `.orca-stack.json`.
 - Las reglas de `guardia.bloquear` de las tres capas se suman: una capa no puede borrar el bloqueo de otra. Las demás listas sí se reemplazan.
 
 **D4. ¿Los Claude que implementan tienen que ir con un modelo fijo?** [Ambos; solo si D2 = Sí]

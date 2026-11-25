@@ -18,7 +18,11 @@
     { "rules": [{ "agente": "codex", "hasta": "2026-10-29", "motivo": "sin cuota" }], "agent": "codex", "now": "2026-10-28T23:59", "result": "sin cuota" },
     { "rules": [{ "agente": "codex", "hasta": "2026-10-29", "motivo": "sin cuota" }], "agent": "codex", "now": "2026-10-29T00:00", "result": null },
     { "rules": [{ "agente": "Codex", "hasta": "2026-10-29" }], "agent": "codex", "now": "2026-10-01T10:00", "result": "codex está bloqueado hasta el 2026-10-29." },
-    { "rules": [{ "agente": "codex", "hasta": "2026-02-30" }], "agent": "codex", "now": "2026-10-01T10:00", "result": "La regla guardia.bloquear de codex tiene una fecha \"hasta\" que no es AAAA-MM-DD (2026-02-30): corregila antes de despacharlo." },
-    { "rules": [{ "agente": "codex", "hasta": "29/10/2026" }], "agent": "codex", "now": "2030-01-01T10:00", "result": "La regla guardia.bloquear de codex tiene una fecha \"hasta\" que no es AAAA-MM-DD (29/10/2026): corregila antes de despacharlo." }
+    { "rules": [{ "agente": "codex", "hasta": "2026-02-30" }], "agent": "codex", "now": "2026-10-01T10:00", "result": "La regla guardia.bloquear de codex tiene una fecha \"hasta\" que no es AAAA-MM-DD ni AAAA-MM-DDTHH:MM (2026-02-30): corregila antes de despacharlo." },
+    { "rules": [{ "agente": "codex", "hasta": "29/10/2026" }], "agent": "codex", "now": "2030-01-01T10:00", "result": "La regla guardia.bloquear de codex tiene una fecha \"hasta\" que no es AAAA-MM-DD ni AAAA-MM-DDTHH:MM (29/10/2026): corregila antes de despacharlo." },
+    { "rules": [{ "agente": "codex", "hasta": "2026-11-19T19:12", "motivo": "sin cuota" }], "agent": "codex", "now": "2026-11-19T19:11", "result": "sin cuota" },
+    { "rules": [{ "agente": "codex", "hasta": "2026-11-19T19:12", "motivo": "sin cuota" }], "agent": "codex", "now": "2026-11-19T19:12", "result": null },
+    { "rules": [{ "agente": "codex", "hasta": "2026-11-19 19:12" }], "agent": "codex", "now": "2030-01-01T10:00", "result": "La regla guardia.bloquear de codex tiene una fecha \"hasta\" que no es AAAA-MM-DD ni AAAA-MM-DDTHH:MM (2026-11-19 19:12): corregila antes de despacharlo." },
+    { "rules": [{ "agente": "codex", "hasta": "19:12" }], "agent": "codex", "now": "2030-01-01T10:00", "result": "La regla guardia.bloquear de codex tiene una fecha \"hasta\" que no es AAAA-MM-DD ni AAAA-MM-DDTHH:MM (19:12): corregila antes de despacharlo." }
   ]
 }
