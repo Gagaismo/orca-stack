@@ -242,7 +242,9 @@ Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una l
 lo relanza en su worktree existente. Si el Run de main tiene una tarea \`#<issue> <agente>\` en ready, el relanzamiento arranca un dispatch
 nuevo con \`orca orchestration worker-start --run <run> --task <task_id> --terminal <handle>\`: Orca le entrega el brief una vez y la URL
 va sola en una línea aparte; si worker-start falla, imprime el error de Orca y la terminal nueva, y sale con código distinto de cero.
-Sin esa tarea, lo relanza con el brief original y la URL al principio; con pi, una entrada vacía se relanza una vez como en rebote. Exige que la respuesta sea un comentario real
+Sin esa tarea, lo relanza con el brief original y la URL al principio; con pi, una entrada vacía se relanza una vez como en rebote.
+Si la tarea sigue en dispatched, lo relanza igual que sin tarea (sin worker-start) e imprime una línea \`⚠ La tarea #<issue> <agente> sigue
+dispatched en el Run de main (dispatch <id>)…\`: Orca va a rechazar su worker_done, así que seguí el PR con vigilar. Exige que la respuesta sea un comentario real
 de la cuenta del stack o del humano (del issue o de su PR abierto), y se niega si el worker sigue trabajando, si ya hay un PR abierto
 y la respuesta es del issue, o si el worktree está sucio. Un worker que quedó pendiente tras un \`cuenta cambiada:\` se relanza
 (nunca una línea a la sesión pausada, que conserva su cuenta) aunque el worktree esté sucio.

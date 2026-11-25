@@ -1080,4 +1080,66 @@ describe('#454 reanudar: the relaunch rebinds the Run task', () => {
     assert.equal(orchestration(noSession).filter(args => args[1] === 'worker-start').length, 1)
     assert.equal(noSession.sends().length, 0)
   })
+
+  test('#457 Rule 3: with no task "#212 pi" in the Run, a pi that comes up waiting with an empty input is closed and launched once more, and the relaunch succeeds on the second launch\'s session', async () => {
+    const h = withRun(exitedPi(), { tasks: [{ id: 'task_2', status: 'ready', title: '#213 pi' }] })
+    let clock = 1760616000000
+    let created = 0
+    let sessionAt = 0
+    h.io.now = () => clock
+    h.io.modifiedAt = () => sessionAt
+    const listFiles = h.io.listFiles
+    h.io.listFiles = dir => (created >= 2 ? listFiles(dir) : [])
+    const waiting = ['pi v1.5.2', '', '─ ✿ waiting for input ─── INSERT ─', '', '─'.repeat(40), '~/wt/orca-stack-212 (orca-stack-212)']
+    const sh = h.io.sh
+    h.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && args[0] === 'terminal' && ['create', 'close'].includes(args[1])) {
+        h.calls.push({ cmd, args, cwd: opts?.cwd })
+        if (args[1] === 'close') {
+          clock += 60000
+          return json({ ok: true, result: { closed: true } })
+        }
+        created += 1
+        // The second launch's session is newer than the close, so it counts with either threshold of #457 Rule 2.
+        if (created === 2) sessionAt = clock + 1000
+        return json({ result: { handle: `term-p${created}` } })
+      }
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read' && args[args.indexOf('--terminal') + 1].startsWith('term-p')) {
+        h.calls.push({ cmd, args, cwd: opts?.cwd })
+        return json({ result: { terminal: { tail: waiting } } })
+      }
+      return sh(cmd, args, opts)
+    }
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.equal(creates(h).length, 2)
+    assert.deepEqual(h.calls.filter(({ cmd, args }) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'close').map(({ args }) => args), [['terminal', 'close', '--terminal', 'term-p1', '--json']])
+    assert.deepEqual(orchestration(h), [['orchestration', 'run-current', '--json'], ['orchestration', 'task-list', '--run', RUN, '--json']])
+    assert.ok(h.outputs.some(line => line.startsWith('✔ pi despachado')), h.outputs.join('\n'))
+  })
+
+  const STILL_DISPATCHED = '⚠ La tarea #212 codex sigue dispatched en el Run de main (dispatch ctx_old212): relancé sin ligarla y Orca va a rechazar su worker_done; seguí el PR con vigilar, o esperá a que Orca cierre el dispatch y volvé a correr orca-stack reanudar.'
+  const warned = h => h.outputs.filter(line => line.startsWith('⚠ La tarea'))
+
+  test('#457 Rule 4: with task "#212 codex" still dispatched it relaunches as without a task, starts no dispatch and prints one warning naming the task and its dispatch', async () => {
+    const today = exitedCodex()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, today.io), 0)
+    const h = withRun(exitedCodex(), { tasks: [{ id: 'task_212', status: 'dispatched', title: '#212 codex', dispatchId: 'ctx_old212', assignee: 'term-old' }] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.deepEqual(orchestration(h), [['orchestration', 'run-current', '--json'], ['orchestration', 'task-list', '--run', RUN, '--json']])
+    assert.deepEqual(h.outputs, [...today.outputs, STILL_DISPATCHED])
+    assert.deepEqual(h.sends().map(send => send.args), today.sends().map(send => send.args))
+    assert.equal(creates(h).length, 1)
+    assert.deepEqual(h.files[path.join('/home', 'orca', 'briefs', 'orca-stack-212-reanudar.md')], today.files[path.join('/home', 'orca', 'briefs', 'orca-stack-212-reanudar.md')])
+  })
+
+  test('#457 Rule 4: a ready task "#212 codex" is rebound and no matching task relaunches, both with no still-dispatched warning', async () => {
+    const ready = withRun(exitedCodex(), { tasks: [{ id: 'task_212', status: 'ready', title: '#212 codex' }] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, ready.io), 0)
+    assert.equal(orchestration(ready).filter(args => args[1] === 'worker-start').length, 1)
+    assert.deepEqual(warned(ready), [])
+    const none = withRun(exitedCodex(), { tasks: [{ id: 'task_213', status: 'dispatched', title: '#213 codex', dispatchId: 'ctx_213' }] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, none.io), 0)
+    assert.equal(creates(none).length, 1)
+    assert.deepEqual(warned(none), [])
+  })
 })
