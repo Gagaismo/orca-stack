@@ -131,6 +131,7 @@ const ttyAsk = () =>
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 
 // #424: each piece is written only when missing and fails on its own, so a re-run completes the rest without duplicating.
+// A write may return { skip } when the piece cannot be produced here (#424: ast-grep unavailable): a skip, not a failure.
 const installLint = async ({ root, home, stamp, dryRun, prefix, activarHook, ask, env, written }) => {
   const failed = []
   const attempt = (name, step) => {
@@ -138,9 +139,10 @@ const installLint = async ({ root, home, stamp, dryRun, prefix, activarHook, ask
       const outcome = step()
       if (outcome.skip) return console.log(outcome.skip)
       if (dryRun) return console.log(`${prefix}${outcome.line}`)
-      const line = outcome.write() ?? outcome.line
+      const done = outcome.write()
+      if (done?.skip) return console.log(done.skip)
       written.push(name)
-      console.log(line)
+      console.log(done ?? outcome.line)
     } catch (error) {
       failed.push(name)
       console.log(`✖ ${name}: no se pudo escribir (${error.message})`)
@@ -166,13 +168,19 @@ const installLint = async ({ root, home, stamp, dryRun, prefix, activarHook, ask
       },
     }
   })
-  attempt(LINT_WORKFLOW, () => {
+  const workflowStep = () => {
     if (existsSync(full(LINT_WORKFLOW))) return present(LINT_WORKFLOW)
     const own = ownLintJob(root)
     if (own) return { skip: `${LINT_WORKFLOW}: no se crea, ${own}` }
 
     return { line: `creo ${LINT_WORKFLOW}`, write: create(LINT_WORKFLOW, render(readAsset('lint', 'orca-stack-lint.yml'), { LINT_COMMAND: lintRun() })) }
-  })
+  }
+  let workflowPlanned = false
+  try {
+    workflowPlanned = !workflowStep().skip
+  } catch {
+    workflowPlanned = false
+  }
   attempt(LINT_HOOK, () => existsSync(full(LINT_HOOK)) ? present(LINT_HOOK) : { line: `creo ${LINT_HOOK}`, write: create(LINT_HOOK, render(readAsset('lint', 'pre-push'), { LINT_COMMAND: lintRun() }), 0o755) })
   attempt(STANDARDS, () => {
     const text = readTextIfExists(full(STANDARDS))
@@ -189,11 +197,27 @@ const installLint = async ({ root, home, stamp, dryRun, prefix, activarHook, ask
     return {
       line: `creo ${BASELINE_FILE}`,
       write: () => {
-        const seeded = seedBaseline(root, { home, extraFiles: [...written, BASELINE_FILE] })
+        let seeded
+        try {
+          // #424: the workflow is written after the Baseline, so the seed counts it among the files init adds.
+          seeded = seedBaseline(root, { home, extraFiles: [...written, ...(workflowPlanned ? [LINT_WORKFLOW] : []), BASELINE_FILE] })
+        } catch (error) {
+          if (!String(error.code ?? '').startsWith('AST_GREP_')) throw error
+
+          return { skip: `⚠ ${BASELINE_FILE}: no se crea, ast-grep no está disponible (${error.message}); sembrala con \`orca-stack lint --sembrar\` donde haya ast-grep y volvé a correr orca-stack init, o apagá el lint con "lint": {"enabled": false} en ${PROJECT_CONFIG}` }
+        }
 
         return `creo ${BASELINE_FILE} (${plural(seeded.entries.length, 'entrada', 'entradas')})`
       },
     }
+  })
+  // #424: without a Baseline the job would fail on every violation the repo already has, so the workflow waits for it.
+  attempt(LINT_WORKFLOW, () => {
+    const outcome = workflowStep()
+    const needsBaseline = !dryRun && !existsSync(full(BASELINE_FILE)) && loadConfig(home, root).lint?.enabled !== false
+    if (outcome.skip || !needsBaseline) return outcome
+
+    return { skip: `${LINT_WORKFLOW}: no se crea, falta ${BASELINE_FILE} y sin ella el job fallaría con las violaciones que ya hay; otra corrida de orca-stack init lo crea cuando esté la Baseline` }
   })
 
   const git = which('git')

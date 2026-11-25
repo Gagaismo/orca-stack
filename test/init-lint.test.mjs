@@ -284,6 +284,92 @@ describe('init installs the lint (#424)', () => {
     assert.equal((read(file('.orca-stack.json')).match(/"lint"/g) ?? []).length, 1)
   })
 
+  describe('S24: ast-grep unavailable skips the Baseline and the workflow that needs it', () => {
+    const missingDir = () => path.join(home, 'no-ast-grep')
+    const missingBinary = () => path.join(missingDir(), 'ast-grep')
+    const withoutAstGrep = (...args) => cli(home, ['init', ...args], { cwd: repo, env: { ORCA_STACK_AST_GREP: missingBinary() } })
+    const skipBaseline = reason => `⚠ ${BASELINE}: no se crea, ast-grep no está disponible (${reason}); sembrala con \`orca-stack lint --sembrar\` donde haya ast-grep y volvé a correr orca-stack init, o apagá el lint con "lint": {"enabled": false} en .orca-stack.json`
+    const skipWorkflow = `${WORKFLOW}: no se crea, falta ${BASELINE} y sin ella el job fallaría con las violaciones que ya hay; otra corrida de orca-stack init lo crea cuando esté la Baseline`
+    const lines = out => out.split(/\r?\n/)
+    const withTodo = () => {
+      write(file('a.js'), '// TODO fix later\nexport const a = 1\n')
+      commitAll()
+    }
+
+    test('missing ast-grep: run 1 exits 0, skips the Baseline and the workflow with the reason and the manual fix, and writes the other pieces', () => {
+      withTodo()
+      const result = withoutAstGrep()
+      assert.equal(result.status, 0, result.out)
+      const reason = `ast-grep 0.51.3 no está instalado: no existe ${path.resolve(missingBinary())}. Instalalo con npm ci en la instalación de orca-stack (sin --omit=optional).`
+      for (const line of [skipBaseline(reason), skipWorkflow, 'agrego la clave lint a .orca-stack.json', `creo ${HOOK}`, 'creo CODING_STANDARDS.md']) {
+        assert.ok(lines(result.out).includes(line), `missing "${line}" in:\n${result.out}`)
+      }
+      assert.doesNotMatch(result.out, /✖/)
+      assert.equal(existsSync(file(BASELINE)), false)
+      assert.equal(existsSync(file(WORKFLOW)), false)
+      for (const rel of [HOOK, 'CODING_STANDARDS.md']) assert.ok(existsSync(file(rel)), rel)
+      assert.deepEqual(JSON.parse(read(file('.orca-stack.json'))).lint, LINT_DEFAULTS)
+    })
+
+    test('missing ast-grep: run 2 exits 0 and changes nothing byte for byte', () => {
+      withTodo()
+      assert.equal(withoutAstGrep().status, 0)
+      const before = snapshot(repo)
+      const backupsBefore = backups(home)
+      const second = withoutAstGrep()
+      assert.equal(second.status, 0, second.out)
+      assert.deepEqual(snapshot(repo), before)
+      assert.deepEqual(backups(home), backupsBefore)
+      assert.ok(lines(second.out).includes(skipWorkflow), second.out)
+      assert.match(second.out, /^⚠ \.orca-stack-baseline\.json: no se crea, ast-grep no está disponible \(/m)
+      assert.doesNotMatch(second.out, /✖/)
+    })
+
+    test('once ast-grep is available, a re-run seeds the Baseline with the existing TODO and writes the workflow', () => {
+      withTodo()
+      assert.equal(withoutAstGrep().status, 0)
+      const third = cli(home, ['init'], { cwd: repo, env: { ORCA_STACK_AST_GREP: '' } })
+      assert.equal(third.status, 0, third.out)
+      assert.ok(lines(third.out).includes(`creo ${BASELINE} (1 entrada)`), third.out)
+      assert.ok(lines(third.out).includes(`creo ${WORKFLOW}`), third.out)
+      assert.deepEqual(JSON.parse(read(file(BASELINE))).entries.map(entry => entry.file), ['a.js'])
+      assert.ok(existsSync(file(WORKFLOW)))
+    })
+
+    test('unsupported platform (AST_GREP_UNSUPPORTED): init exits 0 and skips the Baseline and the workflow', async t => {
+      withTodo()
+      const arch = Object.getOwnPropertyDescriptor(process, 'arch')
+      const astGrep = process.env.ORCA_STACK_AST_GREP
+      delete process.env.ORCA_STACK_AST_GREP
+      Object.defineProperty(process, 'arch', { ...arch, value: 'arm64' })
+      let result
+      try {
+        result = await initWith(t, 'n')
+      } finally {
+        Object.defineProperty(process, 'arch', arch)
+        if (astGrep !== undefined) process.env.ORCA_STACK_AST_GREP = astGrep
+      }
+      assert.equal(result.status, 0, result.out)
+      const reason = `ast-grep 0.51.3 no tiene un binario fijado para la plataforma ${process.platform}-arm64 (fijadas: win32-x64, linux-x64); no se ejecutó ningún binario.`
+      for (const line of [skipBaseline(reason), skipWorkflow]) assert.ok(lines(result.out).includes(line), `missing "${line}" in:\n${result.out}`)
+      assert.doesNotMatch(result.out, /✖/)
+      assert.equal(existsSync(file(BASELINE)), false)
+      assert.equal(existsSync(file(WORKFLOW)), false)
+    })
+
+    test('init --help and the manual say what happens when ast-grep is unavailable', () => {
+      const help = cli(home, ['init', '--help']).stdout
+      const manual = read(path.join(ROOT, 'docs', 'manual.md')).split('#### `init`')[1].split('\n#### ')[0]
+      for (const text of [help, manual]) {
+        assert.match(text, /ast-grep/)
+        assert.match(text, /lint --sembrar/)
+        assert.match(text, /lint\.enabled/)
+      }
+      assert.match(help, /sin Baseline no crea el workflow/)
+      assert.match(manual, /sin Baseline no crea el workflow/)
+    })
+  })
+
   test('R9: init --help and the manual describe the five pieces, the skip rules, --activar-hook and the core.hooksPath question', () => {
     const help = cli(home, ['init', '--help'])
     assert.equal(help.status, 0)

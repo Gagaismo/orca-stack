@@ -110,6 +110,9 @@ Instala el lint (\`orca-stack lint\`) con cinco piezas, cada una solo si falta:
   4. CODING_STANDARDS.md con la tabla de la regla de los comentarios; si ya existe no se toca, y si no tiene la tabla, avisa.
   5. .orca-stack-baseline.json, sembrada con las violaciones actuales de los archivos trackeados más los que escribió
      init, así que el job queda en verde después de commitear lo que escribió init. Con lint.enabled false no se crea.
+     Si ast-grep no está disponible (falta o la plataforma no tiene binario fijado), la saltea con el motivo y el arreglo:
+     orca-stack lint --sembrar donde haya ast-grep y otra corrida de init, o lint.enabled false. Sale con 0, y
+     sin Baseline no crea el workflow (el job fallaría): lo crea la corrida que encuentre la Baseline.
 Dice, por pieza, si la escribió o la salteó y por qué. Si una escritura falla, sigue con las demás, nombra la que
 no escribió y sale con 1; otra corrida completa lo que falta sin duplicar nada. Una segunda corrida no cambia nada.
 
