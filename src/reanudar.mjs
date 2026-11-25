@@ -23,6 +23,18 @@ const isWorkerRecord = record => {
   const brief = BRIEF_IN_PROMPT.exec(String(record?.prompt ?? ''))?.[1]
   return !record?.parentPaneKey && brief !== undefined && !/(?:^|-)revision-/.test(brief)
 }
+// #454: a relaunched worker's worker_done is accepted only from the terminal that owns the dispatch, so the Task "#<n>
+// <agente>" of main's Run, when its dispatch closed, gets a new one on the new terminal. No Run, no such Task: unsupervised.
+const closedRunTask = (io, root, n, agent) => {
+  const current = io.sh('orca', ['orchestration', 'run-current', '--json'], { cwd: root })
+  const run = current.status === 0 ? parse(current)?.result?.runId : undefined
+  if (typeof run !== 'string' || run === '') return undefined
+  const listed = io.sh('orca', ['orchestration', 'task-list', '--run', run, '--json'], { cwd: root })
+  const tasks = listed.status === 0 ? parse(listed)?.result?.tasks : undefined
+  if (!Array.isArray(tasks)) throw new Error(`No pude leer las tareas del Run ${run}: ${detail(listed)}. No relanzo.`)
+  const task = tasks.find(candidate => String(candidate?.title ?? '') === `#${n} ${agent}`)
+  return task?.id && task.status === 'ready' ? { run, task: task.id } : undefined
+}
 const recordTime = record => Number(record?.updatedAt ?? record?.stateStartedAt ?? 0) || 0
 const prMatchesIssue = (pr, issue, branches) =>
   (pr.closingIssuesReferences ?? []).some(ref => String(ref.number) === issue) ||
@@ -43,8 +55,8 @@ const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, b
   const state = String(current?.state ?? current?.status ?? '').toLowerCase()
   if (state !== 'done') throw new Error(`El agente de ${handle} cambi\u{f3} a ${state || 'sin estado'} mientras lo revisaba: no reanudo.`)
 
-  const line = `Message from main: ${url} . Continue the ticket per your brief: ${briefPath}.`
-  const argv = ['terminal', 'send', '--terminal', handle, '--text', line, '--enter', '--wait-submit', '10', '--json']
+  const line = answerLine(url, briefPath)
+  const argv = lineArgv(handle, line)
   if (flags.dryRun) {
     if (target.identity === 'agy' && /esc to dismiss/i.test(screen.join('\n'))) io.out(`[simulaci\u{f3}n] cerrar el aviso de agy con Esc en ${handle} antes de enviar la l\u{ed}nea`)
     io.out(`[simulaci\u{f3}n] orca ${argv.map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
@@ -57,20 +69,27 @@ const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, b
   if (target.identity === 'agy') await dismissAgySplash(io, handle, screen, briefPath)
   beforeSend()
   markAttempt()
-  const sent = io.sh('orca', argv)
+  sendLine(io, n, handle, target.identity, line, briefPath)
+  return true
+}
+
+const answerLine = (url, briefPath) => `Message from main: ${url} . Continue the ticket per your brief: ${briefPath}.`
+const lineArgv = (handle, line) => ['terminal', 'send', '--terminal', handle, '--text', line, '--enter', '--wait-submit', '10', '--json']
+const sendLine = (io, n, handle, identity, line, briefPath) => {
+  const sent = io.sh('orca', lineArgv(handle, line))
   const receipt = parse(sent)?.result?.send
   const prompt = receipt?.prompt
   const stages = Array.isArray(prompt?.stages) ? prompt.stages : []
   if (sent.status === 0 && receipt?.accepted === true && prompt?.requestId && stages.includes('input_accepted') && prompt.observation === 'supported') {
     io.out(`Reanudaci\u{f3}n enviada a ${handle} (#${n}): ${line}`)
-    return true
+    return
   }
   if (receipt?.accepted === false || /No input was sent/i.test(`${sent.stdout}${sent.stderr}`)) {
-    if (target.identity === 'agy') throw new Error(agyNotDelivered(handle, briefPath))
+    if (identity === 'agy') throw new Error(agyNotDelivered(handle, briefPath))
     throw new Error(`orca terminal send no envi\u{f3} nada a ${handle}: ${receipt?.refusedReason ?? detail(sent)}. No reintento.`)
   }
   // The no-resend guard stays; agy, whose empty prompt kept the line out before (#357), names the line to paste instead.
-  if (target.identity === 'agy') throw new Error(agyNotDelivered(handle, briefPath))
+  if (identity === 'agy') throw new Error(agyNotDelivered(handle, briefPath))
   throw new Error(`No hay recibo de entrega de orca terminal send en ${handle}: la l\u{ed}nea pudo haber llegado. No la reenv\u{ed}o; revis\u{e1} la terminal antes de volver a reanudar.`)
 }
 
@@ -249,6 +268,9 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${row.path}: ${detail(status)}`)
   if (status.stdout.trim() !== '' && !afterSwitch) throw new Error(`El worktree ${row.path} est\u{e1} sucio; guard\u{e1} o descart\u{e1} sus cambios antes de relanzar.`)
 
+  const task = closedRunTask(io, root, n, agent)
+  // #454: with a ready Task, Orca's worker-start delivers the brief once (#397), and the answer goes as its own line.
+  const rebind = task && { ...task, deliver: handle => sendLine(io, n, handle, agent, answerLine(url, originalPath), originalPath) }
   originalBrief ??= io.readFile(originalPath)
   if (profile) for (const line of piProfileLines(profile)) io.out(`${flags.dryRun ? '[simulaci\u{f3}n] ' : ''}${line}`)
   if (needsPin(profile) && !flags.dryRun) writePin(io, row.path, commonDir, profile.name)
@@ -261,7 +283,8 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     writeConsent()
   }
   const session = `${repo}-${n}-reanudar-${(io.now ?? Date.now)()}`
-  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: n })
+  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: n, rebind })
+  if (rebind && flags.dryRun) io.out(`[simulaci\u{f3}n] orca ${lineArgv('<terminal>', answerLine(url, originalPath)).map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
   if (afterSwitch && !flags.dryRun) pendingAfterSwitch(io, commonDir, agent, n, true)
 
   return 0

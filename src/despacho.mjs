@@ -643,9 +643,13 @@ const boundRun = (io, say, objective) => {
   if (typeof id !== 'string' || id === '') throw orchestrationError('orca orchestration run-create no devolvió el id del Run.')
   return id
 }
-const startWorker = async (io, say, { agent, handle, briefPath, supervised }) => {
-  const runId = boundRun(io, say, supervised.objective)
-  const argv = ['worker-start', '--run', runId, '--terminal', handle, '--spec-file', briefPath, '--task-title', supervised.title, '--json']
+// #454: `rebind` ({ run, task, deliver }, reanudar only) starts a new dispatch for an existing Task whose dispatch closed;
+// like a supervised start, Orca delivers the Task's stored spec, and `deliver(handle)` sends the answer line afterwards.
+const startWorker = async (io, say, { agent, handle, briefPath, supervised, rebind }) => {
+  const runId = rebind ? rebind.run : boundRun(io, say, supervised.objective)
+  const argv = rebind
+    ? ['worker-start', '--run', runId, '--task', rebind.task, '--terminal', handle, '--json']
+    : ['worker-start', '--run', runId, '--terminal', handle, '--spec-file', briefPath, '--task-title', supervised.title, '--json']
   const start = () => {
     say(`orca orchestration ${shownArgs(argv)}`)
     return io.sh('orca', ['orchestration', ...argv])
@@ -664,6 +668,7 @@ const startWorker = async (io, say, { agent, handle, briefPath, supervised }) =>
   }
   const failure = orchestrationFailure(res, 'orca orchestration worker-start')
   if (!failure) return
+  if (rebind) throw orchestrationError(`${failure}\nLa terminal nueva ${handle} quedó abierta sin dispatch en el Run ${runId}; no relanzo.`)
   // Orca exits 1 for outcome_unknown too: the worker may have started, so the issue keeps its assignee.
   let body
   try { body = JSON.parse(res.stdout) } catch {}
@@ -683,9 +688,9 @@ const requestIdOf = res => {
 
 // `supervised` ({ title, objective }, despachar only): the worker starts with `orca orchestration worker-start` in the
 // Run bound to main instead of getting the brief line typed into its terminal (#397).
-export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue, interactive = false, supervised }) => {
+export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue, interactive = false, supervised, rebind }) => {
   const say = io.out
-  const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive, supervised: Boolean(supervised) })
+  const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive, supervised: Boolean(supervised || rebind) })
   const act = (cmd, argv, opts = {}) => {
     say(`${dryRun ? '[simulaci\u00f3n] ' : ''}${cmd} ${argv.map(a => (/\s|"/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
 
@@ -699,6 +704,9 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
       if (agent !== 'pi') say(`[simulación] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''}`)
       say(`[simulación] orca orchestration run-current --json (sin Run de main: orca orchestration run-create --objective ${JSON.stringify(supervised.objective)} --json)`)
       say(`[simulación] orca orchestration worker-start --run <run> --terminal <terminal> --spec-file ${briefPath} --task-title ${JSON.stringify(supervised.title)} --json`)
+    } else if (rebind) {
+      if (agent !== 'pi') say(`[simulación] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''}`)
+      say(`[simulación] orca orchestration worker-start --run ${rebind.run} --task ${rebind.task} --terminal <terminal> --json`)
     } else if (agent !== 'pi') say(`[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
     say(`\n--- brief ---\n${brief}`)
 
@@ -711,9 +719,10 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     let before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
     if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
     if (agent === 'agy') before = (await dismissAgySplash(io, handle, before.split('\n'), briefPath)).join('\n')
-    if (supervised) {
-      await startWorker(io, say, { agent, handle, briefPath, supervised })
+    if (supervised || rebind) {
+      await startWorker(io, say, { agent, handle, briefPath, supervised, rebind })
       await checkPostLaunchScreen(io, handle, agent)
+      if (rebind) await rebind.deliver(handle)
       say(`✔ ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
 
       return 0
@@ -765,10 +774,10 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     await checkPostLaunchScreen(io, handle, agent)
   } else {
     const handleOf = () => deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
-    if (supervised) {
+    if (supervised || rebind) {
       const handle = handleOf()
       if (!handle) throw new Error('orca terminal create no devolvió el handle de la terminal.')
-      await startWorker(io, say, { agent, handle, briefPath, supervised })
+      await startWorker(io, say, { agent, handle, briefPath, supervised, rebind })
     }
     let { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
     // #444: the brief can stay typed in pi's input without its Enter: one Enter, never a second, then one more wait.
@@ -783,6 +792,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
     if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
     if (file) await checkPiAuth(io, file, config.piClaudeConfigDir, piSessionAfter)
+    if (rebind) await rebind.deliver(handleOf())
   }
   say(`\u2714 ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
 
