@@ -105,10 +105,10 @@ describe('planning paths (#267)', () => {
       assert.ok(s2.includes('`## Reglas` reemplaza a `## Modos de falla` como sección requerida; los tickets con ese formato siguen siendo válidos.'))
       // C10:
       assert.ok(s2.includes('si hace falta una decisión de producto, preguntásela al humano.'))
-      // C11:
-      assert.ok(s5.includes('en busca de comentarios `Consulta:` (vía `orca-stack consultas`).'))
+      // C11 (#466 removed --consultas and Consulta: from step 5):
+      assert.ok(!s5.includes('--consultas'))
       // C12:
-      assert.ok(s5.includes('Ante `consulta #<n> <agente> <message_id>`, o `worker-detenido #<n> <agente>: terminó sin abrir un PR` con `Consulta:` pendiente (sesión no supervisada), seguí el Despacho; si no, actuá como con `diagnostico`.'))
+      assert.ok(s5.includes('Ante `consulta #<n> <agente> <message_id>`, seguí el Despacho; ante `worker-detenido #<n> <agente>: terminó sin abrir un PR`, actuá como con `diagnostico`.'))
       assert.ok(s5.includes('Ante `pr-en-conflicto #<n> PR #<pr> <sha>`, el PR quedó en conflicto con la base y GitHub no le corre la CI: corré `orca-stack rebote <pr>` una vez que su worker se detuvo'))
     }
   })

@@ -534,7 +534,7 @@ describe('orca-stack reanudar (#214)', () => {
   test('Rule 9: ticket brief continues after Consulta or a missing tool or skill prerequisite', () => {
     const brief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
     assert.match(brief, /missing tool or skill prerequisite.*not a blocker/s)
-    assert.match(brief, /After posting a Consulta:, the next action is a tool call on work that is not blocked/)
+    assert.ok(!brief.includes('After posting a Consulta:'))
   })
 
   test('Rule 10: contract names pause recovery and init renders the managed block into AGENTS', () => {

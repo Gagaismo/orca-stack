@@ -15,9 +15,9 @@ describe('issue #398: worker questions through Orca', () => {
       assert.ok(text.includes('- Asking: put your recommended option first; main may also reply with a typed answer instead of an option. The call returns at once: continue with the tasks that do not depend on the answer, then end your turn. Orca wakes you with the answer.'), agent)
       assert.ok(text.includes('A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait. The answer to an `ask` is different: it arrives as Orca mail, not as a comment.'), agent)
       assert.ok(text.includes('If you are blocked, ask main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked.'), agent)
-      assert.ok(text.includes(`Anything you post for main on GitHub that is not a question (a cap you passed) starts with \`Consulta: ${agent}\`; a question, including a deviation that needs a decision, goes through \`orca orchestration ask\`.`), agent)
+      assert.ok(text.includes('A question, including a deviation that needs a decision, always goes through `orca orchestration ask`.'), agent)
       assert.ok(text.includes('Step 3 (Resolve uncertainty): product questions go to main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked; never stop and wait.'), agent)
-      assert.ok(text.includes(`- If Orca's preamble gave you no task id (you were relaunched outside main's Run), ask with a \`Consulta: ${agent}\` comment on the issue instead.`), agent)
+      assert.ok(!text.includes('Consulta:'), agent)
       // The GitHub question path is gone for the supervised worker; the diagnosis stays on GitHub.
       assert.ok(!text.includes('If you are blocked, ask by commenting on the issue'), agent)
       assert.ok(!text.includes('product questions go to the issue as a comment'), agent)

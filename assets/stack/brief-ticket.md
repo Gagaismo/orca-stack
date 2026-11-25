@@ -1,6 +1,6 @@
 # Ticket brief: issue #{{ISSUE}} ({{REPO}})
 
-You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked. Anything you post for main on GitHub that is not a question (a cap you passed) starts with `Consulta: {{AGENT}}`; a question, including a deviation that needs a decision, goes through `orca orchestration ask`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait. The answer to an `ask` is different: it arrives as Orca mail, not as a comment.
+You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked. A question, including a deviation that needs a decision, always goes through `orca orchestration ask`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait. The answer to an `ask` is different: it arrives as Orca mail, not as a comment.
 
 ## Setup
 
@@ -100,18 +100,14 @@ orca orchestration ask --question "<question>" --options "<recommended>,<other o
 - Asking: put your recommended option first; main may also reply with a typed answer instead of an option. The call returns at once: continue with the tasks that do not depend on the answer, then end your turn. Orca wakes you with the answer.
 - Closed decisions stay closed: an RDD consent or an exact-token decision (an answer that must be one exact value) never accepts a typed answer. List only the closed options, and if the reply is not exactly one of them, ask again; never act on it.
 - Edit surfaces: a file outside what the ticket covers is never self-authorized. Propose it with `ask` (the path and why), continue with independent tasks, and edit it only after a `reply` that approves it; record what was approved under `## Desvíos del ticket`. Editing an unrelated module without a `reply` approving it breaks this rule.
-- If Orca's preamble gave you no task id (you were relaunched outside main's Run), ask with a `Consulta: {{AGENT}}` comment on the issue instead.
 
 ## Unattended progress
 
 A missing tool or skill prerequisite is not a blocker: do that step inline, note it under ## Desvíos del ticket, and open the PR.
 
-After posting a Consulta:, the next action is a tool call on work that is not blocked. Do not end the turn there; continue independently until blocked work is the only work left.
-
 ## Rules
 
 - Smallest correct change: no unrelated cleanup, no new dependencies, no speculative abstractions.
-- If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket.
 - Do not review PRs, do not merge, do not spawn other workers.
 - If RDD asks for consent on your own candidate (an RDD you would start before the PR), the orca-stack policy answer is `declined`: pi's Gentle Shell answers it by itself (orca-stack launched it with `GENTLE_PI_ORCA_RDD_POLICY=1` and wrote the policy file in this worktree's git dir), and any other agent answers `declined` itself; never ask the human. This holds while `agentes.{{AGENT}}.rddConsentimiento` in .orca-stack.json is absent or `"politica"` (the default); with `"humano"`, ask main with `orca orchestration ask` instead, with only the consent's choices as closed options (see `## Questions to main`).
 - Fan-out: {{FANOUT_INSTRUCTIONS}}

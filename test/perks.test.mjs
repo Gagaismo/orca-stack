@@ -86,12 +86,12 @@ describe('#393 perk switch, gears first', () => {
       const without = initRepo(home)
       repos.push(without.repo)
       assert.doesNotMatch(without.block, /Marchas|Marcha:|Esperando marcha:|MARCHAS\.md|perk:/)
-      assert.match(without.block, /`Rebote conflicto: <sha>`, `Consulta: <agente>`/)
+      assert.match(without.block, /`Rebote conflicto: <sha>`, `Diagnóstico: <agente>`/)
 
       const withGears = initRepo(home, { project: { perks: { marchas: true } } })
       repos.push(withGears.repo)
       assert.ok(hasGears(withGears.block))
-      assert.match(withGears.block, /`Rebote conflicto: <sha>`, `Marcha: <lazy\|medium\|proactive>`, `Esperando marcha: <items>`, `Consulta: <agente>`/)
+      assert.match(withGears.block, /`Rebote conflicto: <sha>`, `Marcha: <lazy\|medium\|proactive>`, `Esperando marcha: <items>`, `Diagnóstico: <agente>`/)
       assert.match(withGears.block, /### Marchas\n\nEsta sección es solo de `main` y está en `~\/orca\/stack\/MARCHAS\.md`/)
       assert.doesNotMatch(withGears.block, /perk:/)
 
@@ -135,7 +135,7 @@ describe('#393 perk switch, gears first', () => {
   test('R8: without gears main always arms vigilar with --consultas and collaborates, and the CLI help agrees', () => {
     const main = asset('MAIN.md')
     const step5 = main.split('\n').find(line => line.startsWith('5. '))
-    assert.match(step5, /Armalo siempre con `--consultas`/)
+    assert.doesNotMatch(step5, /--consultas/)
     const despacho = main.split('### Despacho')[1]
     const supervised = despacho.split('\n').find(line => line.startsWith('El despacho es supervisado:'))
     assert.match(supervised, /`despachar` arranca cada worker con `orca orchestration worker-start` como worker supervisado del Run de Orca ligado a la sesión de `main`/)

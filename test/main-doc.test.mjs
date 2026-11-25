@@ -45,7 +45,8 @@ describe('issue 325: main-only rules move to MAIN.md', () => {
     assert.ok(permisos.includes('Se pregunta: lo irreversible (reescribir historia, force push, borrar ramas o issues, tocar algo ya publicado)'))
     assert.ok(permisos.includes('Excepción de `Arena y swarm`: el owner puede borrar, sin preguntar, las ramas y los worktrees candidatos'))
     assert.ok(permisos.includes('Después de una llamada rechazada o interrumpida, revisá sus efectos'))
-    assert.ok(contract.includes('`Consulta: <agente>`'))
+    assert.ok(!contract.includes('`Consulta: <agente>`'))
+    assert.ok(contract.includes('`Diagnóstico: <agente>`'))
     const arena = section(contract, '### Arena y swarm')
     for (const lead of ['**Ruta y ownership.**', '**Arena.**', '**Swarm.**', '**Antes de la fan-out.**']) assert.ok(arena.includes(lead), lead)
     assert.ok(contract.includes('Si `.orca-stack.json` no existe o no tiene `"setup": "completo"`'))
@@ -54,7 +55,7 @@ describe('issue 325: main-only rules move to MAIN.md', () => {
     // The worker side of the moved Despacho and step 5 text reaches every agent through its brief.
     for (const agent of ['claude', 'codex', 'agy', 'pi']) {
       const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '42', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
-      assert.ok(brief.includes(`starts with \`Consulta: ${agent}\``), agent)
+      assert.ok(brief.includes('always goes through `orca orchestration ask`'), agent)
       assert.ok(brief.includes('A message from main may arrive while you work.'), agent)
       assert.ok(brief.includes('handle any `Respuesta de main:` / `Respuesta del humano:`'), agent)
       // Step 2 of main's cycle: the worker checks off the ticket's `## Tareas`, and may edit the issue body to do it.
