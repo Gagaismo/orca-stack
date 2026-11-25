@@ -96,7 +96,7 @@ Reglas que sostienen todo lo demás:
 | `revisar` | Despacha el review de un PR a otro agente | Checkout principal |
 | `rebote` | Relanza al autor de un PR bloqueado, con CI roja o en conflicto con la base | Checkout principal |
 | `brief-revision` | Worktree y brief de review para un subagente (modo `un-agente`) | Checkout principal |
-| `consultas` | Avisa comentarios `Consulta:` nuevos de sesiones no supervisadas | Checkout principal |
+| `consultas` | *(Deprecado, ADR 0004)* Avisa comentarios `Consulta:` nuevos de sesiones no supervisadas; se saca en la próxima release | Checkout principal |
 | `avisar` | Le toca el timbre a un worker con el turno en curso | Checkout principal |
 | `vigilar` | Monitor de una tanda de PRs | Checkout principal |
 | `estado` | Qué le falta a cada PR para el paso 7, de solo lectura (con `--json`, la atestación) | Checkout principal |
@@ -235,6 +235,8 @@ Solo para el modo `un-agente`: crea un worktree detached en el head del PR y un 
 
 #### `consultas`
 
+> **Deprecado ([ADR 0004](adr/0004-workers-ask-through-the-run-mailbox.md)):** los workers le preguntan a `main` por el buzón del Run. Este comando se saca en la próxima release.
+
 ```bash
 orca-stack consultas 42 57
 ```
@@ -263,7 +265,7 @@ Si Orca todavía muestra el turno en `done`, reanuda el TUI con una sola línea 
 orca-stack vigilar 41 42 43                 # el Monitor de la tanda
 orca-stack vigilar 41 42 43 --una-vez       # una consulta y sale
 orca-stack vigilar 41 42 --cada 30          # cada 30 segundos (por defecto 60)
-orca-stack vigilar 41 42 --consultas        # además corre el chequeo de consultas
+orca-stack vigilar 41 42 --consultas        # deprecado (ADR 0004): corre el chequeo de consultas
 orca-stack vigilar --merge-de-main 57       # registra que main está por mergear #57
 ```
 
@@ -297,6 +299,8 @@ Un PR es del issue por su referencia de cierre, por la rama del worktree de este
 Cuando el Monitor vence o lo parás, `vigilar` sale solo en menos de 5 segundos, con el `gh` o el `orca` que estuviera corriendo, y lo dice en stderr: vigila el proceso que lo lanzó (en Git Bash, el `bash` del Monitor, no el stub de `sh` que sobrevive). Un poll lento nunca lo hace salir.
 
 `--merge-de-main <pr>` existe porque todas las sesiones comparten la cuenta de `gh`: un merge de `main` se ve igual que uno del humano. `main` lo corre justo antes de cada `gh pr merge <pr>` (y otra vez tras `gh pr update-branch`); registra el head en `<git-common-dir>/orca-stack/vigilar-merges.json` y un merge de ese head visto dentro de los 30 minutos no emite `pr-mergeado`. Sale sin imprimir nada.
+
+`--consultas` está deprecado ([ADR 0004](adr/0004-workers-ask-through-the-run-mailbox.md)): los workers le preguntan a `main` por el buzón del Run, y la opción se saca en la próxima release.
 
 #### Cuentas de Orca ante la cuota
 
