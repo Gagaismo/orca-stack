@@ -671,7 +671,11 @@ const startWorker = async (io, say, { agent, handle, briefPath, supervised, rebi
     res = start()
   }
   const failure = orchestrationFailure(res, 'orca orchestration worker-start')
-  if (!failure) return
+  if (!failure) {
+    let receipt
+    try { receipt = JSON.parse(res.stdout) } catch {}
+    return { runId, taskId: rebind?.task ?? deepFind(receipt, ['taskId']), dispatchId: deepFind(receipt, ['dispatchId']) }
+  }
   // Orca exits 1 for outcome_unknown too: the worker may have started, so the issue keeps its assignee.
   let body
   try { body = JSON.parse(res.stdout) } catch {}
@@ -692,8 +696,11 @@ const requestIdOf = res => {
   return deepFind(body, ['requestId', 'request_id']) ?? /--retry-request\s+([^\s.,;]+)/.exec(`${res.stdout ?? ''}${res.stderr ?? ''}`)?.[1]
 }
 
-// `supervised` ({ title, objective }, despachar only): the worker starts with `orca orchestration worker-start` in the
+// `supervised` ({ title, objective }: despachar, rebote and reanudar): the worker starts with `orca orchestration worker-start` in the
 // Run bound to main instead of getting the brief line typed into its terminal (#397).
+// The Run objective is the one despachar uses, so rebote and reanudar join or create the same Run (#462, #463).
+export const supervisedTask = (repo, title) => ({ title, objective: `orca-stack ${repo}: tickets despachados por main` })
+
 export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue, interactive = false, supervised, rebind }) => {
   const say = io.out
   const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive, supervised: Boolean(supervised || rebind) })
@@ -781,10 +788,11 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     await checkPostLaunchScreen(io, handle, agent)
   } else {
     const handleOf = () => deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
+    let started
     if (supervised || rebind) {
       const handle = handleOf()
       if (!handle) throw new Error('orca terminal create no devolvió el handle de la terminal.')
-      await startWorker(io, say, { agent, handle, briefPath, supervised, rebind })
+      started = await startWorker(io, say, { agent, handle, briefPath, supervised, rebind })
     }
     let after = piSessionAfter
     let { tools, file } = await waitForPiSession(io, home, worktree, after)
@@ -792,19 +800,33 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     let handle
     if (piSessionAfter > 0 && tools === undefined) try { handle = handleOf() } catch {}
     let input = handle ? piInputOf(io, handle, brief) : undefined
-    // #454: pi launched with its prompt on the command line can come up waiting with an empty input: close that
-    // terminal and launch once more; a second empty input fails, naming the second terminal, which stays open.
-    if (input === 'empty' && !supervised && !rebind) {
+    // #454: pi can come up waiting with an empty input: close that terminal and launch once more; a second empty input
+    // fails, naming the second terminal, which stays open. #463: a supervised launch fences its dispatch with
+    // worker-stop, which closes the terminal, and retries the same task on the new terminal with --retry-of.
+    if (input === 'empty') {
       say(`Pi quedó esperando con la entrada vacía en ${handle}: cierro esa terminal y lo lanzo una vez más.`)
+      const closing = started ? `detener el dispatch ${started.dispatchId ?? '(sin id)'} de la terminal ${handle}` : `cerrar la terminal ${handle}`
       try {
-        act('orca', ['terminal', 'close', '--terminal', handle, '--json'])
+        if (started) {
+          if (!started.dispatchId || !started.taskId) throw new Error('worker-start no devolvió el dispatch o la tarea')
+          say(`orca orchestration worker-stop --dispatch ${started.dispatchId} --json`)
+          const stopped = io.sh('orca', ['orchestration', 'worker-stop', '--dispatch', started.dispatchId, '--json'])
+          const failure = orchestrationFailure(stopped, 'orca orchestration worker-stop')
+          if (failure) throw new Error(failure)
+        } else act('orca', ['terminal', 'close', '--terminal', handle, '--json'])
       } catch (error) {
-        throw new Error(`No pude cerrar la terminal ${handle} de Pi con la entrada vacía, así que no lo lanzo de nuevo: ${error.message}`)
+        throw new Error(`No pude ${closing} de Pi con la entrada vacía, así que no lo lanzo de nuevo: ${error.message}`)
       }
       // #457: a session of the closed terminal that shows up late never counts as the second launch's.
       after = (io.now ?? Date.now)()
       term = create()
       handle = handleOf()
+      if (started) {
+        const argv = ['worker-start', '--run', started.runId, '--task', started.taskId, '--retry-of', started.dispatchId, '--terminal', handle, '--json']
+        say(`orca orchestration ${shownArgs(argv)}`)
+        const failure = orchestrationFailure(io.sh('orca', ['orchestration', ...argv]), 'orca orchestration worker-start')
+        if (failure) throw new Error(`${failure}\nLa terminal nueva ${handle} de Pi quedó abierta sin dispatch; no la lanzo otra vez.`)
+      }
       ;({ tools, file } = await waitForPiSession(io, home, worktree, after))
       input = tools === undefined && handle ? piInputOf(io, handle, brief) : undefined
       if (tools === undefined && input !== 'brief') throw new Error(`No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: ${handle}.`)
@@ -1206,7 +1228,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       agent, mode, worktree, briefPath, brief, session, config, win, home: io.home, skills,
       piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun,
       piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: review ? undefined : n,
-      supervised: review ? undefined : { title: `#${n} ${agent}`, objective: `orca-stack ${repo}: tickets despachados por main` },
+      supervised: review ? undefined : supervisedTask(repo, `#${n} ${agent}`),
     })
     try {
       await launch()
@@ -1421,6 +1443,10 @@ const partialReviewSection = paths => paths
 
 export const CONTINUE_LINE = 'You were stopped before finishing this bounce (for example by a usage limit). The worktree keeps your work in progress (a merge in progress stays in progress): continue it, do not abort or reset it.'
 
+// #462: a branch suffix after the issue number (`orca-stack-419-alcance`) still names issue #419.
+const bounceIssue = (pr, n) => /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /^.*-(\d+)(?:-[^\d/][^/]*)?$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
+const bounceTask = (repo, issue, agent, n) => supervisedTask(repo, `#${issue} ${agent} rebote #${n}`)
+
 // `rebote <pr> --continuar` (#292): relaunch the author of the bounce on the current head, in its worktree as it is,
 // with the bounce brief and the session id the bounce used. It posts no marker, so it counts toward no bounce limit.
 // Only pi is launched with a session id (`--session-id`); claude, codex and agy start a fresh session with the same brief.
@@ -1457,9 +1483,9 @@ const continueBounce = async ({ n, pr, agent, root, repo, config, commonDir, per
   if (!dryRun) io.writeFile(briefPath, brief)
   say(`${sim}brief -> ${briefPath}`)
   if (consent === 'politica' && !dryRun) writeRddConsent(io, worktree, [])
-  const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
+  const issue = bounceIssue(pr, n)
   try {
-    await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })
+    await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue, supervised: bounceTask(repo, issue, agent, n) })
   } catch (error) {
     if (error.quota === undefined) throw error
     // One launch per run: still out of quota means wait for the reset, never loop.
@@ -1697,7 +1723,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     io.mkdirp(path.dirname(briefPath))
     io.writeFile(path.join(io.home, 'orca', 'briefs', `${stem}.session`), `${session}\n`)
   }
-  const issue = /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
+  const issue = bounceIssue(pr, n)
   const brief = rdd ? withProfileLines(render(readAsset('stack', 'brief-rdd.md'), {
     PR: String(n), SHA: sha,
     AGENT: agent,
@@ -1735,7 +1761,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
     if (consent === 'politica') writeRddConsent(io, worktree, rdd ? [sha] : [])
   }
   say(`${dryRun ? '[simulaci\u00F3n] ' : ''}brief -> ${briefPath}`)
-  await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue })
+  await launchInWorktree({ agent, mode: 'ticket', worktree, briefPath, brief, session, config, win: io.win, home: io.home, skills, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue, supervised: bounceTask(repo, issue, agent, n) })
   if (rdd) say(`${dryRun ? '[simulación] ' : ''}RDD: ${sha} (${lenses.join(', ')})`)
   if (!dryRun) {
     const markerPath = path.join(io.home, 'orca', 'briefs', `${stem}-comment.md`)

@@ -1,10 +1,10 @@
 import { repoWorktrees } from './avisar.mjs'
 import { isPending, isStatus, latestChecks } from './checks.mjs'
-import { getCommonDir } from './consultas.mjs'
 import { FAMILIES, blockOf, defaultIo, familyOf, loadConfig } from './despacho.mjs'
 import { commitOf, markerLines, markerValue, namesCommit, normalizeBody } from './marcas.mjs'
 import { baseMigrations, migrationSpec, openReservations, orderBlockers, rawNumberOf } from './migraciones.mjs'
 import { setCard } from './orca.mjs'
+import { getCommonDir } from './repo.mjs'
 import { closedIssues } from './vigilar.mjs'
 
 // `orca-stack estado`: MAIN.md step 7 on the current head of each PR, read once (S1, #366). Its `--json` output is the
