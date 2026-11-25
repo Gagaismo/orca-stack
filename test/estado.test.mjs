@@ -228,6 +228,19 @@ describe('orca-stack estado (S1, #366)', () => {
     assert.deepEqual(one(noEvidence).falta, ['(a) el Sin review: necesita ## Evidencia en el body del PR'])
   })
 
+  test('#388 Preserve: a pi PR on riesgo waits for codex while a hasta with a time blocks it, and suggests it once the time passed', async () => {
+    const files = ['src/auth/login.mjs']
+    const piBody = 'Implementador: pi\n\nCloses #7'
+    const config = hasta => ({ riesgo: ['src/auth/'], agentes: { usa: ['claude', 'codex', 'agy', 'pi'] }, guardia: { bloquear: [{ agente: 'codex', hasta }] } })
+    const blocked = harness({ prs: [prData(70, { body: piBody, files })] }, config('2026-11-17T09:30'))
+    assert.equal(await estado(blocked, ['70'], { json: true }), 1)
+    const risk = h => one(h).falta.find(line => line.startsWith('(d)'))
+    assert.ok(risk(blocked).endsWith('Hay 0. Esperá a que codex vuelva.'), risk(blocked))
+    const lifted = harness({ prs: [prData(70, { body: piBody, files })] }, config('2026-11-14T09:30'))
+    assert.equal(await estado(lifted, ['70'], { json: true }), 1)
+    assert.ok(risk(lifted).endsWith('Hay 0. Corré `orca-stack revisar 70 agy` y `orca-stack revisar 70 codex`.'), risk(lifted))
+  })
+
   test('S1 (d): a riesgo path needs the second review riskDeny asks for; riesgo=yes', async () => {
     const config = { riesgo: ['src/auth/'] }
     const files = ['src/auth/login.mjs', 'README.md']
