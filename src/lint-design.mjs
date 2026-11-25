@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import path from 'node:path'
 
 import { COMMENT_EXTENSIONS } from './lint-comments.mjs'
-import { components } from './lint-cycles.mjs'
+import { components } from './lint-graph.mjs'
 import { classShape, fieldUses, isInside, symbolGraph } from './lint-symbols.mjs'
 
 export const TANGLE_RULE = 'tangle'

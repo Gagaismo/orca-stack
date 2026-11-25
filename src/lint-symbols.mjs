@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { runAstGrepJson } from './ast-grep.mjs'
-import { batches, relative, resolve } from './lint-cycles.mjs'
+import { batches, relative, resolve } from './lint-graph.mjs'
 
 const GRAMMARS = {
   javascript: { classes: ['class_declaration'], field: ['field_definition', 'property'] },
@@ -57,15 +57,13 @@ const mutation = { all: [access, { any: [
   { inside: { kind: 'member_expression', field: 'object', inside: { kind: 'call_expression', field: 'function' } } },
 ] }] }
 
-const inline = (rules, constraints) => Object.keys(GRAMMARS).flatMap(language => Object.entries(rules(GRAMMARS[language]))
-  .map(([id, rule]) => JSON.stringify({ id: `${id}:${language}`, language, rule, ...(constraints && { constraints }) }))).join('\n---\n')
+const inline = rules => Object.keys(GRAMMARS).flatMap(language => Object.entries(rules(GRAMMARS[language]))
+  .map(([id, rule]) => JSON.stringify({ id: `${id}:${language}`, language, rule }))).join('\n---\n')
 
 // #421: Windows caps a command line at 32,767 characters and escapes every quote of the inline rules, so they eat into the file batch.
 const COMMAND_LINE = 30000
 
 const scan = (root, files, rules) => batches(files, COMMAND_LINE - 2 * rules.length).flatMap(batch => runAstGrepJson(['scan', '--inline-rules', rules, '--json=compact', '--', ...batch], { cwd: root }))
-
-const escapeRegex = text => text.replace(/[$]/g, '\\$')
 
 const span = match => ({ start: match.range.byteOffset.start, end: match.range.byteOffset.end })
 const within = (inner, outer) => outer.start <= inner.start && inner.end <= outer.end
@@ -225,9 +223,7 @@ export const fieldUses = ({ root, byFile, resolveClass }) => {
     }
   }
   if (instances.size === 0) return []
-  const names = [...new Set([...instances.values()].flatMap(map => [...map.keys()]))].sort()
-  const constraints = { V: { regex: `^(?:${names.map(escapeRegex).join('|')})$` } }
-  const rules = inline(() => ({ access, mutation }), constraints)
+  const rules = inline(() => ({ access, mutation }))
   const uses = []
   for (const match of scan(root, [...instances.keys()].sort(), rules)) {
     const file = relative(root, match.file)

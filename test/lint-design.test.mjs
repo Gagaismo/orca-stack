@@ -181,6 +181,17 @@ describe('orca-stack lint tangle, field-leak and shallow-module (#421)', () => {
     })
   })
 
+  test('R5: hundreds of class instances never push the ast-grep command line past its limit', () => {
+    withRepo(({ add, lint }) => {
+      add('src/queue.mjs', QUEUE)
+      const many = Array.from({ length: 300 }, (_, i) => `const instance_with_a_long_name_${i} = new Queue()\ninstance_with_a_long_name_${i}.push(${i})\n`).join('')
+      add('src/app.mjs', `import { Queue } from './queue.mjs'\n${many}`)
+      const result = lint()
+      assert.equal(result.status, 0, result.out)
+      assert.equal(result.out, OK(0))
+    })
+  })
+
   test('R6: the Baseline keeps tangle by member set, field-leak by class and field and shallow-module by module, without line numbers', () => {
     withRepo(({ add, lint, baseline }) => {
       add('src/kernel.mjs', KERNEL)
