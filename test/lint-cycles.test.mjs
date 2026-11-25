@@ -264,14 +264,12 @@ describe('orca-stack lint module-cycle (#420)', () => {
     })
   })
 
-  test('R7: files of other languages never give a module-cycle finding', () => {
+  test('R7: files of unsupported languages never give a module-cycle finding', () => {
     withRepo(({ add, lint }) => {
-      add('py/a.py', 'from . import b\nimport b\n')
-      add('py/b.py', 'from . import a\nimport a\n')
-      add('go/a.go', 'package a\nimport "./b"\n')
-      add('go/b.go', 'package b\nimport "./a"\n')
-      add('sh/a.sh', '. ./b.sh\n')
-      add('sh/b.sh', '. ./a.sh\n')
+      add('rs/a.rs', 'mod b;\n')
+      add('rs/b.rs', 'mod a;\n')
+      add('rb/a.rb', "require_relative 'b'\n")
+      add('rb/b.rb', "require_relative 'a'\n")
       add('md/a.md', "import './b.md'\n")
       add('md/b.md', "import './a.md'\n")
       const result = lint()

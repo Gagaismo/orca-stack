@@ -1902,15 +1902,50 @@ describe('rebote', () => {
     assert.ok(brief)
     for (const text of ['Revisor: pi (RDD: risk, reliability)', 'Commit: ', '## BLOQUEA', '## SUGERENCIAS', 'gh pr review 12 --comment --body-file']) assert.ok(brief.includes(text), text)
     assert.ok(!brief.includes('{{'))
-    // START consent needs a human: pi leaves a Consulta: pi on the PR and stops; main resumes it with reanudar.
-    for (const text of [
-      "post a `Consulta: pi` comment on PR #12 with the envelope's headline, choices and `consentBinding`, and stop: end your turn.",
-      'main passes it to the human, who answers it in this pi terminal, and main resumes you with `orca-stack reanudar <issue> <comment-url>`',
-      "main's request is the `RDD: abc123 (risk, reliability)` comment `orca-stack rebote --rdd` posted on PR #12",
-    ]) assert.ok(brief.includes(text), text)
+    assert.ok(brief.includes("main's request is the `RDD: abc123 (risk, reliability)` comment `orca-stack rebote --rdd` posted on PR #12"))
     assert.ok(env.calls.some(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create'))
     assert.ok(env.out.some(line => line.includes('RDD: abc123 (risk, reliability)')))
     assert.ok(!env.out.some(line => /^(\[simulación\] )?Rebote/.test(line)))
+  })
+
+  const POLICY_CONSENT = 'While `agentes.pi.rddConsentimiento` in .orca-stack.json is absent or `"politica"` (the default), the orca-stack policy answer for main\'s `RDD: abc123` request is `granted`, for head abc123 only: your Gentle Shell answers it by itself from the policy file `orca-stack rebote --rdd` wrote in this worktree\'s git dir; never ask the human.'
+
+  test('#465 R1: rebote --rdd with rddConsentimiento "humano" tells pi to ask main through the Run mailbox with the consent envelope, never a Consulta:, and keeps the "politica" text', async () => {
+    const config = { ...RDD_PROJECT, agentes: { ...RDD_PROJECT.agentes, pi: { ...RDD_PROJECT.agentes.pi, rddConsentimiento: 'humano' } } }
+    const env = rddEnv(undefined, config)
+    await reboteCommand({ rdd: 'risk' }, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote-rdd.md'))?.[1]
+    assert.ok(brief)
+    const consent = brief.split('\n').find(line => line.startsWith('- Consent:'))
+    for (const text of [
+      'With `"humano"`, if START returns a consent envelope, or a forecast that needs a human answer, do not answer it yourself and do not skip it:',
+      'ask main with `orca orchestration ask --question "<the envelope\'s headline> (consentBinding: <the envelope\'s consentBinding>)" --options "<the envelope\'s choices, in its order>"`',
+      'only the envelope\'s choices as closed options',
+      'Orca wakes you with main\'s reply, as Orca mail.',
+      'Submit exactly the choice main replied with, under that `consentBinding`, and continue the lifecycle from it.',
+      POLICY_CONSENT,
+    ]) assert.ok(consent.includes(text), text)
+    assert.ok(!brief.includes('Consulta:'), brief)
+    assert.ok(!brief.includes('reanudar'), brief)
+    assert.ok(!brief.includes('pi terminal'), brief)
+    const policy = rddEnv()
+    await reboteCommand({ rdd: 'risk' }, '12', policy.io)
+    assert.ok(policy.written.find(([file]) => file.endsWith('proj-pr-12-rebote-rdd.md'))[1].includes(POLICY_CONSENT))
+  })
+
+  test('#465 R2: the rebote --rdd brief ends an out-of-budget RDD with a comment whose first line is RDD fuera de presupuesto: and a worker_done partial, no Consulta:', async () => {
+    const env = rddEnv()
+    await reboteCommand({ rdd: 'risk' }, '12', env.io)
+    const brief = env.written.find(([file]) => file.endsWith('proj-pr-12-rebote-rdd.md'))?.[1]
+    const budget = brief.split('\n').find(line => line.startsWith('- If RDD stops with'))
+    for (const text of [
+      '`lens_context_budget_exceeded` or `correction_context_budget_exceeded`',
+      'post a comment on PR #12 (gh pr comment 12 --body-file <file>, UTF-8 without a BOM) whose first line is exactly `RDD fuera de presupuesto: abc123 (<stop reason>)`, with the stop reason RDD returned, and nothing before it.',
+      'Then end with `worker_done` partial: `orca orchestration send --type worker_done --outcome failed --subject "#7 partial" --body "RDD fuera de presupuesto: abc123 (<stop reason>)" --task-id <task-id> --dispatch-id <dispatch-id> --from <handle>`',
+      'and `estado` counts that line only for the commit main\'s request names and only after that request.',
+    ]) assert.ok(budget.includes(text), text)
+    assert.ok(!budget.includes('puente-gentle'), budget)
+    assert.ok(!brief.includes('Consulta:'), brief)
   })
 
   test('issue #338 Rule 6: rebote --rdd posts main\'s request RDD: <sha> (<lentes>) on the PR after the launch, and no Rebote* marker', async () => {

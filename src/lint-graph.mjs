@@ -3,6 +3,21 @@ import path from 'node:path'
 const RESOLVE_EXTENSIONS = ['.mjs', '.js', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.jsx']
 const TS_SIBLINGS = { '.js': ['.ts', '.tsx'], '.mjs': ['.mts'], '.cjs': ['.cts'] }
 
+export const LANGUAGE_EXTENSIONS = {
+  js: new Set(['.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.mts', '.cts']),
+  go: new Set(['.go']),
+  python: new Set(['.py']),
+  shell: new Set(['.sh', '.bash']),
+}
+
+export const languageOf = file => {
+  const ext = path.extname(file).toLowerCase()
+  for (const [lang, extensions] of Object.entries(LANGUAGE_EXTENSIONS)) {
+    if (extensions.has(ext)) return lang
+  }
+  return undefined
+}
+
 // #419: Windows caps a command line at 32,767 characters, so file paths go to ast-grep in batches.
 const ARG_BUDGET = 24000
 
