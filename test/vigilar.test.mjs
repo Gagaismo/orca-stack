@@ -1957,3 +1957,23 @@ describe('#431 vigilar: a quota stop switches the Orca account of the same agent
     assert.ok(![...h.out, ...h.err, ...Object.values(h.files)].some(text => text.includes('@example.com')))
   })
 })
+
+describe('deprecation of vigilar --consultas (#464)', () => {
+  const WARN = '⚠ vigilar --consultas está deprecado (ADR 0004): los workers le preguntan a main por el buzón del Run. Se saca en la próxima release.'
+
+  test('#464 R2: vigilar --consultas prints the deprecation warning once on stderr across polls and keeps stdout unchanged', async () => {
+    const h = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] } })
+    h.world.script = [() => {}, world => { world.prs = [pr(70, { state: 'MERGED' })] }]
+    assert.equal(await vigilarCommand({ consultas: true }, ['7'], h.io), 0)
+    assert.deepEqual(h.err.filter(line => line === WARN), [WARN])
+    assert.ok(!h.err.some(line => line.includes('orca-stack consultas está deprecado')))
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'consulta nueva en #7', 'pr-mergeado #7 PR #70 abc1234', 'tanda-cerrada #7'])
+  })
+
+  test('#464 R3: vigilar without --consultas prints no deprecation warning', async () => {
+    const h = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] } })
+    assert.equal(await once(h, ['7']), 0)
+    assert.ok(!h.err.some(line => /deprecado/i.test(line)))
+    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
+  })
+})

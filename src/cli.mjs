@@ -32,7 +32,7 @@ Comandos:
   revisar   Despacha el review de un PR a un agente que no sea su autor.
   brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
-  consultas Filtra y avisa comentarios Consulta: nuevos en issues y PRs en curso.
+  consultas Filtra y avisa comentarios Consulta: nuevos en issues y PRs en curso (deprecado, ADR 0004: se saca en la próxima release).
   avisar    Le toca el timbre a un worker con el turno en curso: una línea con la URL de la respuesta de main.
   reanudar  Reanuda un worker detenido con una respuesta de main o relanza su trabajo en el mismo worktree.
   vigilar   Vigila los PRs de una tanda para el Monitor: solo emite eventos, retoma donde quedó e ignora los merges de main.
@@ -60,7 +60,7 @@ Opciones:
   --limpiar-sdd    (global) Respaldar y mover solo los restos SDD conocidos a ~/.orca-stack/backups.
   --cada <segundos> (vigilar) Cada cuánto consulta GitHub (por defecto: 60).
   --una-vez        (vigilar) Consulta una sola vez y sale.
-  --consultas      (vigilar) En cada vuelta corre también el chequeo de \`consultas\` para los mismos items.
+  --consultas      (vigilar) [deprecado, ADR 0004] En cada vuelta corre también el chequeo de \`consultas\` para los mismos items (se saca en la próxima release).
   --merge-de-main <pr> (vigilar) Registra que main está por mergear <pr> y sale, sin imprimir nada.
   --paraguas <n>   (vigilar) Vigila los sub-issues del issue paraguas <n>: un evento por cada tanda nueva de tickets publicada.
   --json           (estado) Imprime un objeto JSON por PR (un arreglo si son varios) y sale con 0 solo si están listos.
@@ -228,6 +228,8 @@ Con --dry-run muestra las acciones y las rutas, sin crear worktree ni brief.
 `,
   consultas: `orca-stack consultas <n...> [--dry-run]
 
+DEPRECADO (ADR 0004): los workers le preguntan a main por el buzón del Run. Se saca en la próxima release.
+
 Para los issues y PRs en curso indicados, busca comentarios nuevos que comiencen con "Consulta:" hechos por la cuenta de GitHub del stack (leída con \`gh api user\`).
 Emite una sola línea "consulta nueva en #<n>" por cada comentario nuevo y recuerda lo reportado en .git/orca-stack/consultas-reportadas.json para ser idempotente.
 `,
@@ -339,7 +341,8 @@ Un PR es del issue por su referencia de cierre, por la rama del worktree de este
 Guarda lo emitido en <git-common-dir>/orca-stack/vigilar.json: rearmado con los mismos argumentos, retoma sin repetir.
 Si el proceso que lo lanzó desaparece (el Monitor venció o se paró), sale en menos de 5 segundos con su gh u orca.
 --una-vez consulta una vez y sale; --dry-run consulta una vez y no escribe nada; --consultas corre en cada vuelta el
-chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor).
+chequeo de \`orca-stack consultas\` para los mismos items (deprecado, ADR 0004: los workers le preguntan a main por el
+buzón del Run; se saca en la próxima release).
 
 --merge-de-main <pr> registra el head del PR en <git-common-dir>/orca-stack/vigilar-merges.json y sale sin imprimir
 nada en stdout. main lo corre justo antes de cada intento de \`gh pr merge <pr>\`, también después de
