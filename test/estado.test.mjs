@@ -266,41 +266,44 @@ describe('orca-stack estado (S1, #366)', () => {
     assert.match(one(decided).falta.join('\n'), /\(d\) PR #70 toca una ruta de riesgo \(src\/auth\/login\.mjs\) y el review de pi sobre el commit abc1234 tiene bloqueos/)
   })
 
-  test('S2 on riesgo: after main\'s RDD: request, a Consulta: pi with RDD fuera de presupuesto: on the head lets two clean reviews of two other families clear (d)', async () => {
+  describe('#465: the RDD out-of-budget marker on riesgo', () => {
     const config = { riesgo: ['src/auth/'], agentes: { usa: ['claude', 'codex', 'agy', 'pi'], preguntarAntes: [], pi: { review: 'rdd' } } }
     const files = ['src/auth/login.mjs']
     const body = 'Implementador: pi\n\nCloses #7\n\n## Evidencia\n| Regla | Test |'
     const request = comment(`RDD: ${HEAD.slice(0, 7)} (risk)`, T(4))
-    const stop = (sha = HEAD.slice(0, 7), at = T(6), extra = '') => comment(`${BOM}Consulta: pi\n\nEl RDD se detuvo.\nRDD fuera de presupuesto: ${sha} (lens_context_budget_exceeded)${extra}`, at)
+    const stop = (sha = HEAD.slice(0, 7), at = T(6), extra = '') => comment(`${BOM}RDD fuera de presupuesto: ${sha} (lens_context_budget_exceeded)\n\nEl RDD se detuvo.${extra}`, at)
     const crossed = [review('codex', HEAD, { at: T(8) }), review('agy', HEAD, { at: T(9) })]
     const rddDeny =
       '(d) PR #70 toca una ruta de riesgo (src/auth/login.mjs) y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit abc1234 ' +
-      'o, si el RDD no entró en el presupuesto, dos reviews limpios de dos familias distintas de la de pi; eso último cuenta solo con un comentario "Consulta: pi" ' +
-      'con la línea "RDD fuera de presupuesto: abc1234 (<motivo>)" publicado después de tu pedido RDD: sobre ese commit, y sin él los reviews de otras familias no lo reemplazan. ' +
+      'o, si el RDD no entró en el presupuesto, dos reviews limpios de dos familias distintas de la de pi; eso último cuenta solo con un comentario cuya primera línea es ' +
+      '"RDD fuera de presupuesto: abc1234 (<motivo>)", publicado después de tu pedido RDD: sobre ese commit, y sin él los reviews de otras familias no lo reemplazan. ' +
       'Corré `orca-stack rebote 70 --rdd risk` (podés sumar lentes).'
 
-    const fallback = harness({ prs: [prData(70, { body, files, comments: [request, stop()], reviews: crossed })] }, config)
-    assert.equal(await estado(fallback, ['70'], { json: true }), 0)
-    assert.deepEqual(fallback.out, [JSON.stringify({ pr: 70, head: HEAD, ok: true, falta: [], merge: MERGE })])
+    test('R3: after main\'s RDD: request, a comment whose first line is RDD fuera de presupuesto: on the head lets two clean reviews of two other families clear (d)', async () => {
+      const fallback = harness({ prs: [prData(70, { body, files, comments: [request, stop()], reviews: crossed })] }, config)
+      assert.equal(await estado(fallback, ['70'], { json: true }), 0)
+      assert.deepEqual(fallback.out, [JSON.stringify({ pr: 70, head: HEAD, ok: true, falta: [], merge: MERGE })])
 
-    const oneFamily = harness({ prs: [prData(70, { body, files, comments: [request, stop()], reviews: [crossed[0]] })] }, config)
-    assert.equal(await estado(oneFamily, ['70'], { json: true }), 1)
-    assert.deepEqual(one(oneFamily).falta, ['(d) PR #70 toca una ruta de riesgo (src/auth/login.mjs) y lo escribió pi: faltan reviews limpios sobre el commit abc1234 de dos familias de modelo distintas que no sean la de pi (claude). Hay 1 (gpt). Corré `orca-stack revisar 70 agy`.'])
+      const oneFamily = harness({ prs: [prData(70, { body, files, comments: [request, stop()], reviews: [crossed[0]] })] }, config)
+      assert.equal(await estado(oneFamily, ['70'], { json: true }), 1)
+      assert.deepEqual(one(oneFamily).falta, ['(d) PR #70 toca una ruta de riesgo (src/auth/login.mjs) y lo escribió pi: faltan reviews limpios sobre el commit abc1234 de dos familias de modelo distintas que no sean la de pi (claude). Hay 1 (gpt). Corré `orca-stack revisar 70 agy`.'])
+    })
 
-    const negatives = {
-      'older head': [request, stop(OLD.slice(0, 7))],
-      'before the request': [stop(HEAD.slice(0, 7), T(3)), request],
-      'no request': [stop()],
-      'inside a review': [request, stop(HEAD.slice(0, 7), T(6), '\n\n## BLOQUEA\nnada')],
-    }
-    for (const [name, comments] of Object.entries(negatives)) {
-      const h = harness({ prs: [prData(70, { body, files, comments, reviews: crossed })] }, config)
-      assert.equal(await estado(h, ['70'], { json: true }), 1, name)
-      assert.deepEqual(one(h).falta, [rddDeny], name)
-    }
-    const reviewer = harness({ prs: [prData(70, { body, files, comments: [request, comment(`Consulta: pi\nRevisor: codex\nRDD fuera de presupuesto: ${HEAD} (lens_context_budget_exceeded)`, T(6))], reviews: crossed })] }, config)
-    assert.equal(await estado(reviewer, ['70'], { json: true }), 1)
-    assert.deepEqual(one(reviewer).falta, [rddDeny])
+    test('R4: a Consulta: pi with the marker line, the marker on another head, before the request, with no request, or inside a review does not count', async () => {
+      const negatives = {
+        'Consulta: pi with the marker line': [request, comment(`Consulta: pi\n\nEl RDD se detuvo.\nRDD fuera de presupuesto: ${HEAD.slice(0, 7)} (lens_context_budget_exceeded)`, T(6))],
+        'older head': [request, stop(OLD.slice(0, 7))],
+        'before the request': [stop(HEAD.slice(0, 7), T(3)), request],
+        'no request': [stop()],
+        'inside a review': [request, stop(HEAD.slice(0, 7), T(6), '\n\n## BLOQUEA\nnada')],
+        'inside a Revisor: body': [request, comment(`RDD fuera de presupuesto: ${HEAD} (lens_context_budget_exceeded)\nRevisor: codex`, T(6))],
+      }
+      for (const [name, comments] of Object.entries(negatives)) {
+        const h = harness({ prs: [prData(70, { body, files, comments, reviews: crossed })] }, config)
+        assert.equal(await estado(h, ['70'], { json: true }), 1, name)
+        assert.deepEqual(one(h).falta, [rddDeny], name)
+      }
+    })
   })
 
   test('S12: a partial review counts only when no Sin leer: path is riesgo; a partial review without ## Cobertura does not count', async () => {

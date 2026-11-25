@@ -108,20 +108,20 @@ const rddRequestsOf = (bodies, head) => bodies.flatMap(body => {
   const lenses = rddRequestOf(body, head)
   return lenses === undefined ? [] : [lenses]
 })
-// main-autonomo S2: pi's `Consulta: pi` comment with a line `RDD fuera de presupuesto: <sha> (<stop reason>)` naming this
-// head, posted after main's `RDD: <sha> (…)` request for it. A body that is a review is never this comment.
+// #465 S3: pi's comment whose first line is `RDD fuera de presupuesto: <sha> (<stop reason>)` naming this head, posted
+// after main's `RDD: <sha> (…)` request for it. A body that is a review is never this comment. Only estado reads this
+// marker; puente-gentle is out of #465's scope.
 const budgetStopOf = (body, head) => {
   const lines = markerLines(body)
   if (lines.some(line => /^Revisor:/i.test(line) || /^##\s*BLOQUEA\b/i.test(line))) return false
-  if (!/^Consulta:\s*pi\b/i.test(lines.find(line => line !== '') ?? '')) return false
 
-  return lines.some(line => namesCommit(/^RDD fuera de presupuesto:\s*`?([0-9a-f]{7,40})`?\s*\([^()]+\)$/i.exec(line.trim())?.[1], head))
+  return namesCommit(/^RDD fuera de presupuesto:\s*`?([0-9a-f]{7,40})`?\s*\([^()]+\)$/i.exec((lines.find(line => line !== '') ?? '').trim())?.[1], head)
 }
 const rddBudgetStopped = (bodies, head) => bodies.some((body, at) => budgetStopOf(body, head) && rddRequestsOf(bodies.slice(0, at), head).length > 0)
 const rddMissing = (n, sha) =>
   `falta un review RDD limpio de pi con la lente risk sobre el commit ${sha} ` +
-  'o, si el RDD no entró en el presupuesto, dos reviews limpios de dos familias distintas de la de pi; eso último cuenta solo con un comentario "Consulta: pi" ' +
-  `con la línea "RDD fuera de presupuesto: ${sha} (<motivo>)" publicado después de tu pedido RDD: sobre ese commit, y sin él los reviews de otras familias no lo reemplazan. ` +
+  'o, si el RDD no entró en el presupuesto, dos reviews limpios de dos familias distintas de la de pi; eso último cuenta solo con un comentario cuya primera línea es ' +
+  `"RDD fuera de presupuesto: ${sha} (<motivo>)", publicado después de tu pedido RDD: sobre ese commit, y sin él los reviews de otras familias no lo reemplazan. ` +
   `Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).`
 const sameLenses = (a, b) => [...(a ?? [])].sort().join(',') === [...(b ?? [])].sort().join(',')
 

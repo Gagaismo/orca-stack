@@ -30,11 +30,23 @@ describe('#338 RDD review mode for pi PRs', () => {
     assert.ok(seven.includes('Salvo un `Sin review:` o un review RDD, que siempre tienen que nombrar el `headRefOid` actual (se repiten en cada head nuevo), los comentarios de (a) siguen contando con el `Commit:` anterior solo si el head nuevo es un merge hecho por GitHub'), seven)
   })
 
-  test('Rules 5 and 6: MAIN.md step 6 says rebote --rdd posts the request puente-gentle needs, and how a START consent reaches the human and comes back', () => {
+  test('Rules 5 and 6: MAIN.md step 6 says rebote --rdd posts the request puente-gentle needs', () => {
     const six = step(6)
     assert.ok(six.includes('`rebote --rdd` publica en el PR tu pedido, `RDD: <sha> (<lentes>)`, y `puente-gentle` solo cuenta un review RDD de pi con ese marcador sobre el mismo head y con las mismas lentes.'), six)
-    assert.ok(six.includes('Si START de RDD pide consentimiento, pi lo deja en un comentario `Consulta: pi` en el PR y se detiene; se lo pasás al humano, que lo responde en la terminal de pi, y retomás a pi con `orca-stack reanudar <issue> <url-del-comentario>`.'))
     assert.ok(six.includes('Si la corrección acotada de RDD cambió el head, tu pedido no lo nombra'))
+  })
+
+  test('#465 R6: MAIN.md step 6 routes a "humano" RDD consent through the Run mailbox and a gate, and names the RDD fuera de presupuesto: first line', () => {
+    const six = step(6)
+    for (const text of [
+      'Si START de RDD pide consentimiento, pi te pregunta con `orca orchestration ask`, con las opciones del sobre como opciones cerradas y su `consentBinding`',
+      '`orca orchestration gate-create --task <task_id>` sobre la tarea del rebote (`#<issue> <agente> rebote #<pr>`, su id sale de `orca orchestration task-list --run <run_id> --json`)',
+      'lo cerrás con `orca orchestration gate-resolve`',
+      'le respondés a pi por id con `orca orchestration reply --id <message_id>`; Orca lo despierta con la respuesta.',
+      'pi publica en el PR un comentario cuya primera línea es `RDD fuera de presupuesto: <sha> (<motivo>)` y termina con `worker_done` partial',
+      '`estado` cuenta esos dos reviews sobre el head',
+    ]) assert.ok(six.includes(text), text)
+    for (const gone of ['terminal de pi', 'retomás a pi con `orca-stack reanudar', '<url-del-comentario>', 'Consulta: pi', '`puente-gentle` cuentan esos dos reviews']) assert.ok(!six.includes(gone), gone)
   })
 
   test('Rule 5: MAIN.md step 6 asks for the RDD review with rebote --rdd and the Revisor: pi (RDD: <lentes>) format', () => {
