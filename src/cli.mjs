@@ -162,8 +162,11 @@ Con pi leen la sesión nueva de Pi con las mismas pausas y fallan si su primera 
 con esa línea y el CLAUDE_CONFIG_DIR usado.
 Si la sesión nueva de Pi no aparece y el brief quedó escrito en la entrada de pi sin enviar, mandan un solo Enter a la
 terminal y la esperan de nuevo; si sigue sin aparecer, fallan con el mismo mensaje y el term_<id>, sin un segundo Enter.
-En revisar, rebote y planificar, si pi queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, cierran esa terminal y lo
-lanzan una vez más; si la segunda también queda vacía, fallan con el mismo mensaje y el term_<id> de la segunda, que queda abierta.
+Si pi queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, lo lanzan una vez más: revisar y planificar cierran esa
+terminal; despachar, rebote y reanudar, que lo arrancaron supervisado, detienen su dispatch con \`orca orchestration worker-stop\` y lo
+relanzan en una terminal nueva sobre la misma tarea (\`worker-start --task <id> --retry-of <dispatch>\`). Si el cierre, el worker-stop o
+ese worker-start fallan, fallan nombrando la terminal y el error, sin otro lanzamiento. Si la segunda también queda vacía, fallan con el
+mismo mensaje y el term_<id> de la segunda, que queda abierta.
 
 Con pi, --perfil-pi <nombre> (o agentes.pi.perfil en la config; el flag gana) fija para ese worktree uno de los perfiles de
 ~/.pi/gentle-ai/profiles.json: escribe .pi/gentle-ai/profile.json en el worktree (fuera de git, vía info/exclude) y lanza pi con el
@@ -184,7 +187,11 @@ ese review cuenta para el paso 7 solo si ninguna ruta de Sin leer: es de riesgo.
 `,
   rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--continuar] [--rdd <lentes>] [--dry-run]
 
-Relanza al autor indicado por \`Implementador:\` en el worktree existente de la rama del PR. Exige un review bloqueante
+Relanza al autor indicado por \`Implementador:\` en el worktree existente de la rama del PR, como worker supervisado del Run ligado a
+main (como despachar: reusa el Run o lo crea): abre la terminal del agente sin el brief y se lo entrega
+\`orca orchestration worker-start --spec-file <brief> --task-title "#<issue> <agente> rebote #<pr>"\`, así el autor le pregunta a main
+con \`orca orchestration ask\`. El issue sale del primer \`Closes #<n>\` del PR, si no del sufijo numérico de la rama, si no del número
+del PR. Si worker-start falla, sale con el error de Orca y no publica marcador. Lo mismo vale para --rdd y --continuar. Exige un review bloqueante
 vigente o checks fallidos sobre el head, worktree limpio y detenido en ese commit; los hallazgos de interpretaci\u00F3n (los que llevan \`interpretaci\u00F3n\` al final de su etiqueta, no en su texto) solo bloquean el rebote por review,
 salvo que despu\u00E9s del review haya un comentario \`Respuesta del humano:\` en el PR o en un issue que cierra (\`Closes #<n>\`): entonces van al autor con el enlace a esa respuesta.
 El rebote por review se cuenta por el \`Commit:\` de cada review: un \`Rebote: <sha>\` de un head anterior no frena ning\u00FAn rebote, y un head que avanz\u00F3 rebota si tiene un review bloqueante propio.
@@ -197,8 +204,8 @@ Desde la ronda 2 imprime, sin publicarla ni frenar el rebote, una l\u00EDnea que
 El brief de un rebote por review le pide al autor nombrar la clase de defecto de cada hallazgo, corregir todas sus instancias en el diff y decir en su comentario cu\u00E1les otras revis\u00F3.
 Un PR en conflicto con la base (mergeable CONFLICTING) rebota aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente:
 el brief suma \`## Merge conflict\` (git merge origin/<base>, nunca rebase) y publica \`Rebote conflicto: <sha>\`, con contador propio; repetirlo en el mismo head se niega.
-Con pi, si el autor queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, cierra esa terminal y lo lanza una vez más;
-si la segunda también queda vacía, falla con "No observé una sesión nueva de Pi después del lanzamiento" y la terminal, sin publicar marcador.
+Con pi, si el autor queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, detiene ese dispatch con worker-stop y lo
+lanza una vez más en la misma tarea (--retry-of); si la segunda también queda vacía, falla con "No observé una sesión nueva de Pi después del lanzamiento" y la terminal, sin publicar marcador.
 Publica el marcador después de lanzar al autor; si \`gh pr comment\` falla, lo reintenta hasta 3 intentos con unos segundos entre uno y otro.
 Si los 3 intentos fallan, sale con código 1 e imprime que el autor ya está relanzado, las líneas del marcador, su archivo y el comando
 \`gh pr comment <pr> --body-file <archivo>\`, que main tiene que correr antes de cualquier otro rebote o merge de ese PR.

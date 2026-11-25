@@ -1,6 +1,6 @@
 # PR bounce brief
 
-You are relaunching the author of PR #{{PR}} in its existing worktree at commit {{SHA}}. Read only the findings, failed checks and merge conflict below, fix their causes, and do not broaden the change. If you are blocked, ask with a `Consulta:` comment on PR #{{PR}} (gh pr comment {{PR}} --body-file <file>), then continue with whatever is not blocked. Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait.
+You are relaunching the author of PR #{{PR}} in its existing worktree at commit {{SHA}}. Read only the findings, failed checks and merge conflict below, fix their causes, and do not broaden the change. If you are blocked, ask main with `orca orchestration ask` (the command is in Orca's preamble above), then continue with whatever is not blocked, and end your turn once only blocked work is left: Orca wakes you with the answer, as Orca mail, not as a comment. A question, including a deviation that needs a decision, always goes through `orca orchestration ask`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait.
 
 ## Review findings
 
@@ -20,7 +20,7 @@ You are relaunching the author of PR #{{PR}} in its existing worktree at commit 
 - Do not delete, skip or weaken a test to make CI pass.
 - Do not edit `.github/workflows/` unless the ticket asks for it.
 - If a failure depends on the environment, make the test hermetic.
-- If you are blocked, ask with a `Consulta:` comment on PR #{{PR}}.
+- If you are blocked, ask main with `orca orchestration ask`.
 - If RDD asks for consent on your own candidate (an RDD you would start before you push), the orca-stack policy answer is `declined`: pi's Gentle Shell answers it by itself (orca-stack launched it with `GENTLE_PI_ORCA_RDD_POLICY=1` and wrote the policy file in this worktree's git dir), and any other agent answers `declined` itself; never ask the human. This holds while `agentes.{{AGENT}}.rddConsentimiento` in .orca-stack.json is absent or `"politica"` (the default); with `"humano"`, ask with a `Consulta: {{AGENT}}` comment on PR #{{PR}} instead.
 - Run the configured verification:
 

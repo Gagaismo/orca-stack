@@ -258,3 +258,53 @@ describe('#431 despachar: out of quota right after the launch', () => {
     assert.equal(accountCalls(twice).length, 2)
   })
 })
+
+// #463 Rule 6, as main decided on #463 (option A): a supervised pi that comes up waiting with an empty input gets its
+// dispatch fenced with worker-stop and the same task retried once on a new terminal with --retry-of.
+describe('#463 despachar: pi with an empty input on the supervised path', () => {
+  const WAITING = ['pi v1.5.2', '', '─ ✿ waiting for input ─── INSERT ─', '', '─'.repeat(40), '~/wt/proj-7 (proj-7)']
+  const STOP = ['worker-stop', '--dispatch', 'ctx_1', '--json']
+  const RETRY = ['worker-start', '--run', 'run_main', '--task', 'task_1', '--retry-of', 'ctx_1', '--terminal', 'term_2', '--json']
+  const emptyPi = retry => {
+    let starts = 0
+    const session = path.join(home, '.pi', 'agent', 'sessions', 'project', 's2.jsonl')
+    const env = fakeIo({
+      'worker-start': () => {
+        starts += 1
+        if (starts === 1) return STARTED
+        if (retry) return retry
+        write(session, [JSON.stringify({ type: 'session', cwd: worktree }), '{}', '{}', '{}', JSON.stringify({ message: { sections: { tools: '<tools>\n- read' } } })].join('\n'))
+        return STARTED
+      },
+      'worker-stop': json({ ok: true, result: { processAction: 'closed_agent_terminal' } }),
+    })
+    const sessionDir = path.dirname(session)
+    env.io.listFiles = dir => dir === path.dirname(sessionDir) ? [sessionDir] : dir === sessionDir && existsSync(session) ? [session] : []
+    const sh = env.io.sh
+    env.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
+        env.calls.push([cmd, ...args])
+        return json({ result: { terminal: { tail: WAITING } } })
+      }
+      return sh(cmd, args, opts)
+    }
+    return env
+  }
+
+  test('#463 Rule 6: despachar stops the empty pi dispatch with worker-stop and retries the same task on a new terminal, once', async () => {
+    const env = emptyPi()
+    assert.equal(await dispatch('ticket', { n: '7', agent: 'pi' }, env.io), 0)
+    assert.deepEqual(env.orchestration(), [['run-current', '--json'], workerStart('pi'), STOP, RETRY])
+    assert.equal(env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'close').length, 0)
+    assert.equal(env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'create').length, 2)
+    assert.ok(env.out.some(line => line.startsWith('✔ pi despachado')), env.out.join('\n'))
+  })
+
+  test('#463 Rule 6: a failed retry worker-start fails naming the new terminal and Orca\'s error, with no third launch', async () => {
+    const refused = { status: 1, stdout: JSON.stringify({ ok: false, error: { code: 'task_not_ready', message: 'Task task_1 cannot start' } }), stderr: '' }
+    const env = emptyPi(refused)
+    await assert.rejects(() => dispatch('ticket', { n: '7', agent: 'pi' }, env.io), error => error.message.includes('Task task_1 cannot start') && error.message.includes('term_2'))
+    assert.deepEqual(env.orchestration(), [['run-current', '--json'], workerStart('pi'), STOP, RETRY])
+    assert.equal(env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'create').length, 2)
+  })
+})
