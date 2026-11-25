@@ -24,6 +24,60 @@
       ]
     },
     {
+      "rule": "shallow-module",
+      "file": "assets/skills/statechart/scripts/ir.ts",
+      "location": "module",
+      "fingerprint": "sha256:9d09600b510d644a"
+    },
+    {
+      "rule": "shallow-module",
+      "file": "mods/puente-gentle/hooks/puente.ts",
+      "location": "module",
+      "fingerprint": "sha256:0e159fc2b56ec383"
+    },
+    {
+      "rule": "shallow-module",
+      "file": "mods/tablero-despacho/hooks/tablero.ts",
+      "location": "module",
+      "fingerprint": "sha256:f2967ce39ec4d39b"
+    },
+    {
+      "rule": "shallow-module",
+      "file": "src/avisar.mjs",
+      "location": "module",
+      "fingerprint": "sha256:7115c5f01b34dfc1"
+    },
+    {
+      "rule": "shallow-module",
+      "file": "src/gentle.mjs",
+      "location": "module",
+      "fingerprint": "sha256:cdc68e2bf8a34bb9"
+    },
+    {
+      "rule": "shallow-module",
+      "file": "src/pi.mjs",
+      "location": "module",
+      "fingerprint": "sha256:630f76188d3b5edb"
+    },
+    {
+      "rule": "shallow-module",
+      "file": "src/templates.mjs",
+      "location": "module",
+      "fingerprint": "sha256:9359cc49156bf365"
+    },
+    {
+      "rule": "shallow-module",
+      "file": "src/util.mjs",
+      "location": "module",
+      "fingerprint": "sha256:11ab3760a200d344"
+    },
+    {
+      "rule": "shallow-module",
+      "file": "test/helpers.mjs",
+      "location": "module",
+      "fingerprint": "sha256:53c64b72d71b84e6"
+    },
+    {
       "rule": "wide-directory",
       "file": "./",
       "location": "directory",

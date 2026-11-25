@@ -40,7 +40,7 @@ Comandos:
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
   limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
   novedades Precheck de una automatización de Orca que sondea GitHub: sale con 1 (Orca saltea la corrida) si no hay nada nuevo.
-  lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y en JS/TS, los comentarios y module-cycle: módulos que se importan en círculo) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
+  lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y en JS/TS, los comentarios, module-cycle: módulos que se importan en círculo, y el diseño: tangle, field-leak y shallow-module) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
   --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
@@ -388,6 +388,23 @@ Cada ciclo sale como un recorrido cerrado que pasa por todos sus módulos y empi
   module-cycle src/a.mjs → src/b.mjs → src/a.mjs — dale una dirección a los módulos
 Go, Python, Shell y los demás lenguajes no dan hallazgos de module-cycle.
 
+Tres chequeos de diseño más, en los mismos archivos JS/TS, portados de deslop-please (MIT; las definiciones, en el manual).
+Una cosa es una clase, una función exportada del nivel del módulo o un objeto literal del nivel del módulo; una función
+que no se exporta es un ayudante (lo que nombra cuenta como de quien la usa). Una referencia que no se resuelve (acceso
+dinámico, import() calculado, paquete, archivo que no existe) se saltea y nunca hace fallar la corrida.
+tangle          cosas que se conocen en círculo, escritas en más de un módulo, o más de 7 en un círculo:
+  tangle src/kernel.mjs:Tasks, src/timers.mjs:Timers: 2 cosas en 2 módulos (máximo 7 cosas en un solo módulo) — …
+field-leak      código de afuera de una clase que escribe, modifica o le llama un método a un campo suyo
+                (queue.items.push(x)), cuando la clase se guarda un campo que usa un método suyo; leer queue.size o
+                llamar queue.push(x) no es fuga. Solo se resuelve una variable creada con const v = new Clase() en el
+                mismo archivo:
+  field-leak src/queue.mjs:Queue.items: se trabaja fuera de Queue en 1 lugar de 1 módulo (src/app.mjs; máximo 0), …
+shallow-module  un módulo (un archivo, o un directorio con index.*) que muestra más de 7 funciones que usa código de
+                afuera y al menos tantas como esconde:
+  shallow-module src/store.mjs: muestra 9 de 15 funciones (…) y esconde 6 (máximo 7 mostradas, o más escondidas …) — …
+La entrada de tangle es como la de module-cycle, con "members" de la forma archivo:nombre; la de field-leak es
+Clase.campo y la de shallow-module, el módulo.
+
 Los comentarios y los imports se leen con ast-grep 0.51.3, fijado por versión y sha256 (lo instala npm ci en la instalación de
 orca-stack; ORCA_STACK_AST_GREP apunta a otro binario, que también se verifica). Si hay algún archivo JS/TS y ast-grep
 falta, tiene otra versión o no coincide su checksum, el lint falla con 1 nombrando la versión y nunca pasa en silencio.
@@ -414,7 +431,7 @@ conjunto de sus módulos: {"rule":"module-cycle","file":<el primero>,"location":
 achica sigue pasando y uno con un módulo que no está en ninguna entrada es nuevo. La entrada vence solo cuando ningún
 ciclo actual contiene dos o más de sus módulos (o uno que se importa a sí mismo), aunque pase por módulos de afuera:
 cortar un import mientras otro camino los sigue uniendo en un ciclo la mantiene. En el alcance "diff",
-module-cycle se revisa igual que long-file y wide-directory.
+module-cycle, tangle, field-leak y shallow-module se revisan igual que long-file y wide-directory.
 lint no acepta --dry-run.
 Una entrada cuya violación ya no está en ningún archivo del repo está vencida: el lint falla y pide sacarla a mano.
 Sin Baseline, todas las violaciones son nuevas; una Baseline mal formada falla nombrando el archivo y nunca se reescribe.
