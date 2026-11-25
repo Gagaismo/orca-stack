@@ -177,7 +177,7 @@ pin | global)" y el brief guarda la misma línea.
 
 Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
 (línea \`Implementador:\`) o si el agente usa un modelo de la misma familia (según \`agentes.modelos\`; pi y claude pueden revisarse entre sí).
-Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, sin un agente trabajando, y su HEAD anterior alcanza el nuevo head del PR; rechaza el mismo head, los commits locales y los perfiles de Pi distintos.
+Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, sin un agente trabajando, y su HEAD anterior alcanza el nuevo head del PR; rechaza el mismo head (salvo con --rutas), los commits locales y los perfiles de Pi distintos.
 Las terminales en done y las shells vacías de ese worktree las cierra sola antes de reutilizarlo, y dice cuáles cerró.
 Con --rutas <a,b> (rutas separadas por coma) el review lee solo esas rutas y lista en ## Cobertura lo que leyó (Leído:) y lo que no (Sin leer:);
 ese review cuenta para el paso 7 solo si ninguna ruta de Sin leer: es de riesgo.

@@ -268,6 +268,14 @@ describe('despachar: refusals', () => {
     assert.equal(await run('ticket', { n: '7', agent: 'codex', dryRun: true }, blockedAt('2026-11-19', new Date(2026, 10, 19, 0, 0))), 0)
   })
 
+  test('#388 Rule 7: the setup guide and the manual describe hasta with a local time', () => {
+    const guide = readFileSync(path.join(PACKAGE_ROOT, 'docs/guia-setup.md'), 'utf8')
+    const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs/manual.md'), 'utf8')
+    assert.ok(guide.includes('`AAAA-MM-DDTHH:MM` (por ejemplo `"2026-11-19T19:12"`, sin zona) a esa hora'), 'guia-setup.md')
+    assert.ok(manual.includes('`AAAA-MM-DDTHH:MM` (por ejemplo `"2026-11-19T19:12"`, sin zona) a esa hora'), 'manual.md')
+    assert.ok(manual.includes('`AAAA-MM-DD` se levanta a las 00:00 de ese d\u00eda'), 'manual.md date only')
+  })
+
   test('#388 Rule 6: a malformed hasta is refused with the format error that names both valid formats', async () => {
     for (const hasta of ['2026-11-19 19:12', '19:12', '2026-11-19T24:00', '2026-11-19T19:60']) {
       const env = blockedAt(hasta, new Date(2030, 0, 1, 10, 0))
