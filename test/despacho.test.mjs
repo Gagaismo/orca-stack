@@ -1399,6 +1399,12 @@ describe('issue #277: pi workers run as an interactive TUI', () => {
     const env = fakeIo({ 'orca terminal read': EMPTY }, { piTools: 'missing' })
     await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), error => error.message === noSession())
     assert.equal(enters(env).length, 0)
+    // #444: pi gone back to the shell: a brief line left on screen is no input of pi's.
+    const briefFile = path.join(home, 'orca', 'briefs', 'proj-7.md')
+    const shell = () => json({ ok: true, result: { terminal: { tail: [readFileSync(briefFile, 'utf8').split('\n')[0], 'PS C:\\wt\\proj-7>'] } } })
+    const gone = fakeIo({ 'orca terminal read': shell }, { piTools: 'missing' })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, gone), error => error.message === noSession())
+    assert.equal(enters(gone).length, 0)
   })
 
   test('Rule 5: README and the manual describe how pi is launched, as an interactive TUI', () => {

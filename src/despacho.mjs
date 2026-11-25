@@ -551,16 +551,17 @@ const piSessionTools = (io, home, worktree, after = 0) => {
 }
 
 // #444: pi's editor shows a long paste as `[paste #1 +120 lines]`; a typed brief shows its own lines. Nothing was
-// submitted yet (no session), so brief text on screen can only be in the input.
+// submitted yet (no session), so brief text on screen can only be in the input, unless pi is gone (a shell prompt).
 const PI_PASTE_MARKER = /\[paste #\d+(?: \+\d+ lines| \d+ chars)?\]/
 const PI_BRIEF_LINE_MIN = 20
-const briefInPiInput = (io, handle, brief, briefPath) => {
+const briefInPiInput = (io, handle, brief) => {
   const lines = screenLines(io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json']))
-  const sent = `${brief ?? ''}\n${briefPath ?? ''}`
+  const last = [...lines].reverse().find(line => line.trim() !== '')
+  if (last === undefined || shellPrompt(last)) return false
 
   return lines.some(line => {
     const text = line.replace(/^[\s│┃|>]+|[\s│┃|]+$/g, '')
-    return PI_PASTE_MARKER.test(text) || (text.length >= PI_BRIEF_LINE_MIN && sent.includes(text))
+    return PI_PASTE_MARKER.test(text) || (text.length >= PI_BRIEF_LINE_MIN && String(brief ?? '').includes(text))
   })
 }
 
@@ -770,7 +771,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     }
     let { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
     // #444: the brief can stay typed in pi's input without its Enter: one Enter, never a second, then one more wait.
-    if (piSessionAfter > 0 && tools === undefined && handle && briefInPiInput(io, handle, brief, briefPath)) {
+    if (piSessionAfter > 0 && tools === undefined && handle && briefInPiInput(io, handle, brief)) {
       say(`El brief quedó escrito en la entrada de pi sin enviar: mando un Enter a ${handle}.`)
       io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
       ;({ tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter))
