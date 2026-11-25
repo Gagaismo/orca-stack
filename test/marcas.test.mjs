@@ -9,7 +9,7 @@ const HEAD = 'abc1234aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 describe('protocol marker normaliser (issue #365, S9)', () => {
   test('MARKERS lists every protocol marker of issue #365', () => {
     assert.deepEqual(MARKERS, [
-      'Revisor', 'Commit', 'Implementador', 'Rebote', 'Rebote CI', 'Rebote conflicto', 'RDD', 'Consulta',
+      'Revisor', 'Commit', 'Implementador', 'Rebote', 'Rebote CI', 'Rebote conflicto', 'RDD',
       'Respuesta de main', 'Respuesta del humano', 'Verificado por main', 'Decidido por main', 'Sin review',
     ])
   })

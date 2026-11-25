@@ -145,14 +145,14 @@ describe('gear contract', () => {
     // Issue 250 Rule 12: the rebote markers sit between the existing lines and the gear lines.
     const bounceLines = ['Rebote: <sha>', 'Rebote CI: <sha>', 'Rebote conflicto: <sha>']
     const addedLines = [
-      'Marcha: <lazy|medium|proactive>', 'Esperando marcha: <items>', 'Consulta: <agente>',
+      'Marcha: <lazy|medium|proactive>', 'Esperando marcha: <items>',
       'Respuesta de main:', 'Respuesta del humano:',
     ]
     assert.ok(fixedLine)
     const markerList = fixedLine.split(', son marcas fijas')[0]
     const actual = [...markerList.matchAll(/`([^`]+)`/g)].map(([, marker]) => marker)
-    assert.deepEqual(actual, [...existingHeadings, ...addedHeadings, ...existingLines, ...bounceLines, ...addedLines.slice(0, 3), 'Diagn\u00f3stico: <agente>', ...addedLines.slice(3)])
-    assert.equal(addedHeadings.length + addedLines.length, 7)
+    assert.deepEqual(actual, [...existingHeadings, ...addedHeadings, ...existingLines, ...bounceLines, ...addedLines.slice(0, 2), 'Diagn\u00f3stico: <agente>', ...addedLines.slice(2)])
+    assert.equal(addedHeadings.length + addedLines.length, 6)
   })
 
   test('rule 4: no Marcha message means Medium', () => {

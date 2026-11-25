@@ -24,10 +24,10 @@ describe('issue 398: MAIN.md answers worker questions through Orca', () => {
       'Un worker que necesita un archivo fuera de lo que cubre el ticket lo propone con `ask`: `main` lo aprueba con `reply` solo dentro del objetivo del ticket; si sirve a otro objetivo, toca una ruta de `riesgo` o es una puerta de una vía, va al humano como gate.'
     ]) assert.ok(despacho.includes(kept), kept)
     const cycle = section(main, '### Ciclo de `main`')
-    assert.ok(cycle.includes('Ante `consulta #<n> <agente> <message_id>`, o `worker-detenido #<n> <agente>: terminó sin abrir un PR` con `Consulta:` pendiente (sesión no supervisada), seguí el Despacho;'))
+    assert.ok(cycle.includes('Ante `consulta #<n> <agente> <message_id>`, seguí el Despacho; ante `worker-detenido #<n> <agente>: terminó sin abrir un PR`, actuá como con `diagnostico`.'))
     // A supervised worker that ended its turn waiting for an answer is answered and left for Orca to wake, never diagnosed.
     assert.ok(cycle.includes('Un `worker-detenido` de un worker supervisado sin diagnóstico cuya última `consulta` no tiene `reply`, o tiene un `reply` en el buzón del Run posterior a ella, no sigue esta regla: si falta el `reply`, respondela por id (si fue a un gate, esperá a que el humano lo resuelva y respondé con su resolución), y dejá que Orca lo despierte con la respuesta, sin `reanudar`, `rebote`, despacho nuevo ni `needs-info`.'))
-    assert.ok(cycle.includes('Si llega `worker-detenido #<n> <agente>: terminó sin abrir un PR` por el mismo worker con diagnóstico, o sin `Consulta:` pendiente (sesión no supervisada) ni una `consulta` de Orca en el caso anterior, seguí esta regla en lugar de buscar una `Consulta:`.'))
+    assert.ok(cycle.includes('Si llega `worker-detenido #<n> <agente>: terminó sin abrir un PR` con diagnóstico, o sin una `consulta` de Orca en el caso anterior, seguí esta regla.'))
     assert.ok(!cycle.includes('con diagnóstico o sin `Consulta:` pendiente, seguí esta regla'))
     assert.ok(!cycle.includes('o resolvé su gate pendiente'))
     // Negative: questions are no longer answered where they were asked, and product answers are no longer just relayed.
@@ -35,19 +35,17 @@ describe('issue 398: MAIN.md answers worker questions through Orca', () => {
     assert.ok(!despacho.includes('las de producto e interpretación van al humano y `main` transmite la respuesta'))
   })
 
-  test('S6: MAIN.md never answers a supervised worker with avisar or reanudar, and Consulta: stays for non-supervised sessions', () => {
+  test('S6: MAIN.md never answers a worker with avisar or reanudar, and Consulta: is gone (#466)', () => {
     for (const gone of [
       'le toca el timbre con `orca-stack avisar <issue|pr> <url-del-comentario>`: una sola línea que apunta a la respuesta',
-      'si hay `Consulta:` sin responder, respondela y corré `orca-stack reanudar <issue> <url-del-comentario>`'
+      'si hay `Consulta:` sin responder, respondela y corré `orca-stack reanudar <issue> <url-del-comentario>`',
+      'La `Consulta:` en GitHub queda solo para las sesiones no supervisadas',
+      'Consulta:'
     ]) assert.ok(!main.includes(gone), gone)
-    // Every clause of the worker-question rules (step 5 and Despacho) that pairs avisar/reanudar with answering a question
-    // names a non-supervised session. Step 6 is the PR path (rebote, reviews), which is never supervised.
     const step5 = main.split(/\r?\n/).find(line => line.startsWith('5. '))
     const paired = clauses(`${step5}\n${section(main, '### Despacho')}`).filter(clause => /avisar|reanudar/.test(clause) && /respond|Consulta|\bpreguntas?\b/.test(clause))
-    assert.ok(paired.length > 0)
-    for (const clause of paired) assert.match(clause, /no supervisad/, clause)
+    assert.equal(paired.length, 0)
     const despacho = section(main, '### Despacho')
-    assert.ok(despacho.includes('La `Consulta:` en GitHub queda solo para las sesiones no supervisadas (reviews y rebotes): `main` la responde con un comentario `Respuesta de main:` y, si la sesión se detuvo, la retoma con `orca-stack reanudar <issue> <url-del-comentario>`.'))
     assert.ok(despacho.includes('le toca el timbre con `orca-stack avisar <issue|pr> <url-del-comentario>`, una sola línea que apunta al comentario'))
     assert.ok(despacho.includes('`avisar` mientras trabaja, para un cambio de reglas publicado después del despacho'))
   })

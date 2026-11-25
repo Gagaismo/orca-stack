@@ -3,7 +3,7 @@
 
 Este bloque lo mantiene orca-stack y describe cómo trabajan los agentes en este repo. Las reglas del proyecto que están fuera del bloque valen por encima de él cuando nombran la regla que cambian. Es igual en todos los proyectos: lo que cambia de un repo a otro vive en `.orca-stack.json` y se lee de ahí, no de este texto. Al final del bloque están las rutas de la política general y de los briefs por rol.
 
-Los encabezados `## Evidencia`, `## Desvíos del ticket`, `## BLOQUEA`, `## SUGERENCIAS`, `## Arena` y `## Swarm`, y las líneas `Implementador: <agente>`, `Revisor: <agente>`, `Commit: <sha>`, `Verificado por main: hallazgos <n,…> corregidos en <sha>`, `Decidido por main: <hallazgo> — <razón>`, `Rebote: <sha>`, `Rebote CI: <sha>`, `Rebote conflicto: <sha>`, `Consulta: <agente>`, `Diagnóstico: <agente>`, `Respuesta de main:` y `Respuesta del humano:`, son marcas fijas del protocolo: no se traducen aunque el resto del texto vaya en otro idioma, porque la sesión de `main` las busca literalmente.
+Los encabezados `## Evidencia`, `## Desvíos del ticket`, `## BLOQUEA`, `## SUGERENCIAS`, `## Arena` y `## Swarm`, y las líneas `Implementador: <agente>`, `Revisor: <agente>`, `Commit: <sha>`, `Verificado por main: hallazgos <n,…> corregidos en <sha>`, `Decidido por main: <hallazgo> — <razón>`, `Rebote: <sha>`, `Rebote CI: <sha>`, `Rebote conflicto: <sha>`, `Diagnóstico: <agente>`, `Respuesta de main:` y `Respuesta del humano:`, son marcas fijas del protocolo: no se traducen aunque el resto del texto vaya en otro idioma, porque la sesión de `main` las busca literalmente.
 
 Un comentario `Diagnóstico: <agente>` incluye las líneas `Causa:`, `Probado:` y `Siguiente hipótesis:` (puede ser `ninguna`).
 
@@ -106,7 +106,6 @@ Corré la verificación con los comandos de `verificacion` (`suite` y `typecheck
 - El cuerpo de un PR o de un review se manda con `--body-file`, nunca con `--body` ni por tubería: desde la consola de Windows se rompen los acentos y los saltos de línea.
 - Si existe `CODING_STANDARDS.md`, leelo antes de commitear y verificá tu cambio contra él.
 - Los implementadores no editan `GLOSSARY.md` ni `docs/adr/`: lo proponen en el cuerpo del PR bajo `## Propuesta para GLOSSARY.md` o `## Propuesta de ADR`, y lo integra `main`.
-- Si el diff proyecta más de 700 líneas, pará y avisá en el issue antes de seguir.
 
 ### Dónde vive cada regla
 

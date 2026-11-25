@@ -2,7 +2,7 @@
 // comments. Every reader matches them through this file, so a body written by a tool that adds a UTF-8 BOM, or a blank
 // line before the first marker, reads the same as a clean one (#365). (src/marker.mjs is about AGENTS.md blocks.)
 export const MARKERS = [
-  'Revisor', 'Commit', 'Implementador', 'Rebote', 'Rebote CI', 'Rebote conflicto', 'RDD', 'Consulta',
+  'Revisor', 'Commit', 'Implementador', 'Rebote', 'Rebote CI', 'Rebote conflicto', 'RDD',
   'Respuesta de main', 'Respuesta del humano', 'Verificado por main', 'Decidido por main', 'Sin review',
 ]
 

@@ -3328,10 +3328,11 @@ describe('rebote', () => {
   })
 
   describe('issue #165: worker questions in briefs', () => {
-    test('Rule 5: The brief despachar renders for every implementing agent carries the Consulta: line and the re-read line, and the bounce brief asks main through the Run mailbox (#462)', () => {
+    test('Rule 5: The brief despachar renders for every implementing agent asks main through the Run mailbox (#466) and carries the re-read line, and the bounce brief asks main through the Run mailbox (#462)', () => {
       for (const agent of ['claude', 'codex', 'agy', 'pi']) {
         const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '165', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
-        assert.ok(brief.includes(`Consulta: ${agent}`), `${agent} brief must carry Consulta: ${agent}`)
+        assert.ok(brief.includes('orca orchestration ask'), `${agent} brief must ask main through the Run mailbox`)
+        assert.ok(!brief.includes('Consulta:'), `${agent} brief must not carry Consulta:`)
         assert.ok(brief.includes('Before opening the PR, re-read the issue comments and handle any `Respuesta de main:` / `Respuesta del humano:`.'), `${agent} brief must carry the re-read line`)
       }
       const bounceBrief = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-rebote.md'), 'utf8')
@@ -3856,33 +3857,28 @@ describe('rebote', () => {
     })
   })
 
-  describe('issue #278: every notice to main starts with Consulta:, and one 700-line rule', () => {
+  describe('issue #278 / #466: questions go through orca orchestration ask without Consulta: or the 700-line rule', () => {
     const briefOf = env => env.written.find(([file]) => file.endsWith('-rebote.md'))?.[1]
 
-    test('Rule 1: The 700-line rule appears once in brief-ticket.md: "If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket."', () => {
+    test('Rule 1: brief-ticket.md no longer contains the 700-line rule or Consulta: (#466)', () => {
       const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
-      const targetRule = 'If the diff will pass 700 lines, post a `Consulta: {{AGENT}}` comment on the issue saying so, then keep going with the ticket.'
-      assert.ok(ticket.includes(targetRule), 'brief-ticket.md must contain the exact 700-line rule with Consulta: {{AGENT}}')
-      const occurrences = (ticket.match(/700\s+lines/g) || []).length
-      assert.equal(occurrences, 1, '700 lines rule must appear exactly once in brief-ticket.md')
+      assert.ok(!ticket.includes('700 lines'), 'brief-ticket.md must not contain the 700-line rule')
+      assert.ok(!ticket.includes('Consulta:'), 'brief-ticket.md must not mention Consulta:')
 
-      // Rendered for pi (like client report finding 3, traslado #11)
       const briefPi = renderBrief('ticket', { AGENT: 'pi', ISSUE: '11', REPO: 'traslado', BASE: 'main', BRANCH: 'branch' })
-      assert.ok(briefPi.includes('If the diff will pass 700 lines, post a `Consulta: pi` comment on the issue saying so, then keep going with the ticket.'))
-      const renderedOccurrences = (briefPi.match(/700\s+lines/g) || []).length
-      assert.equal(renderedOccurrences, 1, '700 lines rule must appear exactly once in rendered brief')
+      assert.ok(!briefPi.includes('700 lines'))
+      assert.ok(!briefPi.includes('Consulta:'))
     })
 
-    test('Rule 2: The brief\'s general rule covers every notice, not only questions, including caps set in --nota', () => {
+    test('Rule 2: the ticket brief sends every question through orca orchestration ask (#466) and preserves --nota', () => {
       const ticket = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'brief-ticket.md'), 'utf8')
-      // #398: a question goes through `orca orchestration ask`; a notice that is not a question still starts with Consulta:.
-      const generalNoticeRule = 'Anything you post for main on GitHub that is not a question (a cap you passed) starts with `Consulta: {{AGENT}}`; a question, including a deviation that needs a decision, goes through `orca orchestration ask`.'
-      assert.ok(ticket.includes(generalNoticeRule), 'brief-ticket.md must carry the general notice rule for notices that are not questions')
-      assert.ok(!ticket.includes('Questions start with `Consulta: {{AGENT}}`.'), 'brief-ticket.md must not limit Consulta: to questions only')
+      const askRule = 'A question, including a deviation that needs a decision, always goes through `orca orchestration ask`.'
+      assert.ok(ticket.includes(askRule), 'brief-ticket.md must send every question through orca orchestration ask')
+      assert.ok(!ticket.includes('Consulta:'), 'brief-ticket.md must not mention Consulta:')
 
       for (const agent of AGENTS) {
         const brief = renderBrief('ticket', { AGENT: agent, ISSUE: '278', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' }, 'cap diff at 1000 lines')
-        assert.ok(brief.includes(`Anything you post for main on GitHub that is not a question (a cap you passed) starts with \`Consulta: ${agent}\`; a question, including a deviation that needs a decision, goes through \`orca orchestration ask\`.`), `${agent} brief must render general notice rule`)
+        assert.ok(brief.includes(askRule), `${agent} brief must render ask rule`)
         assert.ok(brief.includes('cap diff at 1000 lines'), `${agent} brief must carry the --nota cap`)
       }
     })
@@ -3913,37 +3909,19 @@ describe('rebote', () => {
       assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Note: 700 lines cap exceeded' }, stackAccount), false)
     })
 
-    test('Rule 5: A test reads the rendered ticket brief and fails if the 700-line line lacks Consulta: or if the brief contains both "stop and say so" and "keep going" for that rule', () => {
+    test('Rule 5: rendered ticket brief carries neither the 700-line rule nor Consulta: (#466)', () => {
       const brief = renderBrief('ticket', { AGENT: 'agy', ISSUE: '278', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
-      const lines = brief.split('\n')
-      const rule700Lines = lines.filter(line => line.includes('700 lines'))
-      assert.equal(rule700Lines.length, 1, 'must have exactly one line mentioning 700 lines')
-      assert.ok(rule700Lines[0].includes('Consulta:'), '700-line line must contain Consulta:')
-      assert.ok(rule700Lines[0].includes('keep going'), '700-line line must say keep going')
+      assert.ok(!brief.includes('700 lines'), 'brief must not contain 700 lines')
+      assert.ok(!brief.includes('Consulta:'), 'brief must not contain Consulta:')
       assert.ok(!brief.includes('stop and say so on the issue before going on'), 'brief must not contain stop and say so')
-
-      const validateBrief = text => {
-        const hasStop = text.includes('stop and say so')
-        const hasKeepGoing = text.includes('keep going')
-        if (hasStop && hasKeepGoing) throw new Error('brief contains both "stop and say so" and "keep going" for that rule')
-        if (hasStop) throw new Error('brief contains "stop and say so"')
-        const matchingLines = text.split('\n').filter(l => l.includes('700 lines'))
-        if (matchingLines.length === 0) throw new Error('missing 700 lines rule')
-        for (const l of matchingLines) {
-          if (!l.includes('Consulta:')) throw new Error('700-line line lacks Consulta:')
-        }
-      }
-
-      assert.doesNotThrow(() => validateBrief(brief))
-      assert.throws(() => validateBrief('If the diff will pass 700 lines, say so on the issue and keep going.'), /lacks Consulta:/)
-      assert.throws(() => validateBrief('If the diff will pass 700 lines, stop and say so.\nIf the diff passes about 700 lines, post a Consulta: agy and keep going.'), /contains both "stop and say so" and "keep going"/)
     })
 
-    test('Preserve touched public entries in despacho: renderBrief and reboteCommand maintain public contracts with Consulta: updates', async () => {
+    test('Preserve touched public entries in despacho: renderBrief and reboteCommand maintain public contracts without Consulta:', async () => {
       // renderBrief for ticket
       const ticket = renderBrief('ticket', { AGENT: 'codex', ISSUE: '99', REPO: 'orca-stack', BASE: 'main', BRANCH: 'branch' })
       assert.ok(ticket.startsWith('# Ticket brief: issue #99 (orca-stack)'))
-      assert.ok(ticket.includes('Consulta: codex'))
+      assert.ok(ticket.includes('orca orchestration ask'))
+      assert.ok(!ticket.includes('Consulta:'))
 
       // renderBrief for revision remains untouched
       const rev = renderBrief('review', { AGENT: 'codex', PR: '99', REPO: 'orca-stack', BASE: 'main', SHA: 'def456', IMPLEMENTER: 'agy' })
