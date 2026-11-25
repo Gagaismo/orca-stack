@@ -971,3 +971,113 @@ describe('#431 reanudar: a worker an account switch left pending', () => {
     assert.deepEqual(JSON.parse(h.files[episode]).codex.resumed, { 212: false })
   })
 })
+
+describe('#454 reanudar: the relaunch rebinds the Run task', () => {
+  const RUN = 'run_084b4726f7fd'
+  const TASKS = [{ id: 'task_f887345917b8', status: 'completed', title: '#417 pi' }, { id: 'task_b9ee2b19bb17', status: 'ready', title: '#212 pi' }]
+  const START = ['orchestration', 'worker-start', '--run', RUN, '--task', 'task_b9ee2b19bb17', '--terminal', 'term-new', '--json']
+  const withRun = (h, { tasks = TASKS, start = json({ ok: true, result: { dispatchId: 'ctx_new' } }) } = {}) => {
+    const sh = h.io.sh
+    h.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && args[0] === 'orchestration') {
+        h.calls.push({ cmd, args, cwd: opts?.cwd })
+        if (args[1] === 'run-current') return json({ ok: true, result: { runId: RUN } })
+        if (args[1] === 'task-list') return json({ ok: true, result: { runId: RUN, tasks } })
+        if (args[1] === 'worker-start') return start
+      }
+      return sh(cmd, args, opts)
+    }
+    return h
+  }
+  const orchestration = h => h.calls.filter(({ cmd, args }) => cmd === 'orca' && args[0] === 'orchestration').map(({ args }) => args)
+  const creates = h => h.calls.filter(({ cmd, args }) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create')
+  // The #444 case: pi exited, its task "#<n> pi" is back to ready with its dispatch closed.
+  const exitedPi = () => {
+    const h = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
+    h.io.gentleSkills = () => '/pi/skills'
+    const sessionDir = path.join('/home', '.pi', 'agent', 'sessions', 'wt')
+    const session = path.join(sessionDir, '2026-11-25T00-00-00-000Z_s.jsonl')
+    h.io.listFiles = dir => (dir === path.dirname(sessionDir) ? [sessionDir] : dir === sessionDir ? [session] : [])
+    h.io.modifiedAt = () => Number.MAX_SAFE_INTEGER
+    h.files[session] = [JSON.stringify({ type: 'session', cwd: WT }), '{}', '{}', '{}', JSON.stringify({ type: 'message', message: { role: 'system', content: '<tools>\n- read' } }), JSON.stringify({ type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall' }], stopReason: 'toolUse' } })].join('\n')
+    return h
+  }
+  const exitedCodex = () => harness({ state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
+
+  test('S1: an exited pi whose task "#212 pi" is ready launches without the brief, gets worker-start --run --task --terminal on the new terminal, then the single comment URL line', async () => {
+    const h = withRun(exitedPi())
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.deepEqual(orchestration(h), [['orchestration', 'run-current', '--json'], ['orchestration', 'task-list', '--run', RUN, '--json'], START])
+    assert.equal(creates(h).length, 1)
+    assert.ok(!creates(h)[0].args.some(arg => /brief in/.test(arg)), creates(h)[0].args.join(' '))
+    assert.deepEqual(h.sends().map(send => send.args.slice(2)), [['--terminal', 'term-new', '--text', LINE, '--enter', '--wait-submit', '10', '--json']])
+    const created = h.calls.indexOf(creates(h)[0])
+    const started = h.calls.findIndex(({ args }) => args[1] === 'worker-start')
+    const sent = h.calls.indexOf(h.sends()[0])
+    assert.ok(created < started && started < sent, `${created} ${started} ${sent}`)
+    assert.ok(h.outputs.includes(`orca orchestration ${START.slice(1).join(' ')}`), h.outputs.join('\n'))
+    assert.ok(h.outputs.includes(`Reanudación enviada a term-new (#212): ${LINE}`), h.outputs.join('\n'))
+    assert.ok(h.outputs.some(line => line.startsWith('✔ pi despachado')), h.outputs.join('\n'))
+  })
+
+  test('S2: a TUI still open in done gets only the URL line, with no worker-start and no task-list', async () => {
+    const h = withRun(harness(), { tasks: [{ id: 'task_212', status: 'ready', title: '#212 codex' }] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
+    assert.deepEqual(h.sends().map(send => send.args.slice(2)), [['--terminal', 'term-1', '--text', LINE, '--enter', '--wait-submit', '10', '--json']])
+    assert.deepEqual(orchestration(h), [])
+    assert.equal(creates(h).length, 0)
+  })
+
+  test('S3: with no task "#212 codex" in the Run, a completed one, or no Run, the relaunch starts no dispatch and prints what it prints today', async () => {
+    const today = exitedCodex()
+    assert.equal(await reanudarCommand({}, ISSUE, URL, today.io), 0)
+    const others = [{ id: 'task_1', status: 'ready', title: '#212 pi' }, { id: 'task_2', status: 'ready', title: '#213 codex' }, { id: 'task_3', status: 'ready', title: '#212 codex (fork)' }]
+    const unlisted = withRun(exitedCodex(), { tasks: others })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, unlisted.io), 0)
+    assert.deepEqual(orchestration(unlisted), [['orchestration', 'run-current', '--json'], ['orchestration', 'task-list', '--run', RUN, '--json']])
+    assert.deepEqual(unlisted.outputs, today.outputs)
+    assert.deepEqual(unlisted.sends().map(send => send.args), today.sends().map(send => send.args))
+    assert.equal(creates(unlisted).length, 1)
+    const completed = withRun(exitedCodex(), { tasks: [{ id: 'task_212', status: 'completed', title: '#212 codex' }] })
+    assert.equal(await reanudarCommand({}, ISSUE, URL, completed.io), 0)
+    assert.deepEqual(orchestration(completed), [['orchestration', 'run-current', '--json'], ['orchestration', 'task-list', '--run', RUN, '--json']])
+    assert.deepEqual(completed.outputs, today.outputs)
+    assert.equal(creates(completed).length, 1)
+  })
+
+  test('S4: a failed worker-start, or an unconfirmed line after it, prints the error and the new terminal, exits non-zero, and a rerun does not relaunch a second time', async () => {
+    const refused = { status: 1, stdout: JSON.stringify({ ok: false, error: { message: 'task_not_ready: Task task_212 cannot start' } }), stderr: '' }
+    const h = withRun(exitedCodex(), { tasks: [{ id: 'task_212', status: 'ready', title: '#212 codex' }], start: refused })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error => {
+      assert.match(error.message, /task_not_ready: Task task_212 cannot start/)
+      assert.match(error.message, /term-new/)
+      return true
+    })
+    assert.deepEqual(orchestration(h).at(-1), ['orchestration', 'worker-start', '--run', RUN, '--task', 'task_212', '--terminal', 'term-new', '--json'])
+    assert.equal(creates(h).length, 1)
+    assert.equal(h.sends().length, 0)
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), /Ya intent\u00E9 reanudar con el comentario 6205678817/)
+    assert.equal(creates(h).length, 1)
+    assert.equal(orchestration(h).filter(args => args[1] === 'worker-start').length, 1)
+
+    const unconfirmed = withRun(harness({ state: null, screen: ['PS C:\\wt\\orca-stack-212>'], send: ok('') }), { tasks: [{ id: 'task_212', status: 'ready', title: '#212 codex' }] })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, unconfirmed.io), error =>
+      error.message === 'No hay recibo de entrega de orca terminal send en term-new: la l\u{ed}nea pudo haber llegado. No la reenv\u{ed}o; revis\u{e1} la terminal antes de volver a reanudar.')
+    assert.deepEqual(unconfirmed.sends().map(send => send.args[send.args.indexOf('--text') + 1]), [LINE])
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, unconfirmed.io), /Ya intent\u00E9 reanudar con el comentario 6205678817/)
+    assert.equal(creates(unconfirmed).length, 1)
+
+    const unknown = { status: 1, stdout: JSON.stringify({ ok: false, error: { code: 'outcome_unknown', message: 'worker-start timed out' } }), stderr: '' }
+    const lost = withRun(exitedCodex(), { tasks: [{ id: 'task_212', status: 'ready', title: '#212 codex' }], start: unknown })
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, lost.io), error =>
+      error.message === `orca orchestration worker-start falló: worker-start timed out\nEl resultado de worker-start es desconocido (outcome_unknown): el dispatch de la terminal nueva term-new puede haber arrancado; no relanzo. Comprobalo con \`orca orchestration task-list --run ${RUN} --json\`.`)
+    assert.equal(lost.sends().length, 0)
+
+    const noSession = withRun(exitedPi())
+    noSession.io.listFiles = () => []
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, noSession.io), error =>
+      error.message.startsWith('No observé una sesión nueva de Pi después del lanzamiento') && error.message.endsWith('; no doy el lanzamiento por iniciado. Terminal: term-new.'))
+    assert.equal(orchestration(noSession).filter(args => args[1] === 'worker-start').length, 1)
+    assert.equal(noSession.sends().length, 0)
+  })
+})

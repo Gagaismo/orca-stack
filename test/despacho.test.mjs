@@ -2436,6 +2436,58 @@ describe('rebote', () => {
     assert.equal(enters(empty).length, 0)
   })
 
+  // #454: pi's Gentle Shell frame waiting for input, with `input` in its input line. The nth terminal create answers term_<n>;
+  // with `startsOn` set, only that create starts pi's session.
+  const waitingPi = (input, { piTools = 'missing', startsOn } = {}) => {
+    const tail = ['pi v1.5.2', '', '\u2500 \u273F waiting for input \u2500\u2500\u2500 INSERT \u2500', input, '\u2500'.repeat(40), '~/wt/proj-7 (proj-7)']
+    const env = bounceEnv(pr({ body: 'Implementador: pi' }), { 'orca terminal read': json({ ok: true, result: { terminal: { tail } } }) }, PROJECT, [], piTools)
+    env.io.gentleSkills = () => 'C:\\pi\\skills'
+    env.io.now = () => 100
+    env.io.modifiedAt = () => 101
+    let creates = 0
+    const original = env.io.sh
+    env.io.sh = (cmd, args, opts) => {
+      if (cmd !== 'orca' || args[0] !== 'terminal' || args[1] !== 'create') return original(cmd, args, opts)
+      creates += 1
+      if (creates === startsOn) original(cmd, args, opts)
+      else env.calls.push([cmd, ...args])
+      return json({ result: { terminal: { handle: `term_${creates}` } } })
+    }
+    return env
+  }
+  const creates = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'create')
+  const closes = env => env.calls.filter(call => call[0] === 'orca' && call[1] === 'terminal' && call[2] === 'close').map(call => call.join(' '))
+  const markers = env => env.calls.filter(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+
+  test('#454 Rule 5: pi waiting with an empty input and no session is closed and launched once more; the marker follows the launch that started', async () => {
+    const env = waitingPi('', { piTools: 'available', startsOn: 2 })
+    assert.equal(await reboteCommand({}, '12', env.io), 0)
+    assert.equal(creates(env).length, 2)
+    assert.deepEqual(closes(env), ['orca terminal close --terminal term_1 --json'])
+    assert.equal(markers(env).length, 1)
+    assert.ok(env.calls.indexOf(creates(env)[1]) < env.calls.indexOf(markers(env)[0]))
+    assert.equal(env.written.find(([file]) => file.endsWith('-comment.md'))?.[1], 'Rebote: abc123\nRonda: 1\n')
+    assert.ok(env.out.some(line => line.startsWith('\u2714 pi despachado')), env.out.join('\n'))
+  })
+
+  test('#454 Rule 6: a second empty input fails naming the second terminal, posts no marker and leaves only that terminal open', async () => {
+    const env = waitingPi('')
+    await assert.rejects(reboteCommand({}, '12', env.io), error => error.message === `No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: term_2.`)
+    assert.equal(creates(env).length, 2)
+    assert.deepEqual(closes(env), ['orca terminal close --terminal term_1 --json'])
+    assert.equal(markers(env).length, 0)
+    assert.ok(!env.out.some(line => line.includes('pi despachado')))
+  })
+
+  test('#454 Rule 7: a brief typed in pi\'s waiting input gets #444\'s single Enter, no close and no second launch', async () => {
+    const env = waitingPi('[paste #1 +40 lines]', { piTools: 'enter' })
+    assert.equal(await reboteCommand({}, '12', env.io), 0)
+    assert.deepEqual(env.calls.filter(call => call.join(' ') === 'orca terminal send --terminal term_1 --enter').length, 1)
+    assert.equal(creates(env).length, 1)
+    assert.deepEqual(closes(env), [])
+    assert.equal(markers(env).length, 1)
+  })
+
   test('issue 276 Rules 1 and 7: a pi bounce honors the pin, traces it, and refuses with no pin and no profile', async () => {
     write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ active: 'OpusFull', profiles: {
       'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },

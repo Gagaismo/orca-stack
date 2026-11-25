@@ -102,7 +102,9 @@ agrega .orca-stack.local.json a .gitignore. No pisa archivos de config que ya ex
 
 Instala el lint (\`orca-stack lint\`) con cinco piezas, cada una solo si falta:
   1. la clave lint en .orca-stack.json: {"enabled": true, "comentarios": {"alcance": "repo"}}; si ya hay una clave lint,
-     aunque sea {"enabled": false}, no se toca. Agregarla no cambia el resto del archivo (con respaldo).
+     aunque sea {"enabled": false}, no se toca. Agregarla no cambia el resto del archivo (con respaldo). Para esto
+     solo cuenta la de .orca-stack.json, no la de .orca-stack.local.json (al correr el lint, la capa local sigue ganando).
+     Si .orca-stack.json no es JSON válido, no lo toca: nombra el archivo y el error, y sale con 1.
   2. .github/workflows/orca-stack-lint.yml, con un job orca-stack-lint que corre el lint con npx; no se crea si el
      archivo existe o si otro workflow de .github/workflows ya tiene un job orca-stack-lint o un paso que corre
      orca-stack lint (o bin/orca-stack.mjs lint). Nunca edita tus workflows.
@@ -160,6 +162,8 @@ Con pi leen la sesión nueva de Pi con las mismas pausas y fallan si su primera 
 con esa línea y el CLAUDE_CONFIG_DIR usado.
 Si la sesión nueva de Pi no aparece y el brief quedó escrito en la entrada de pi sin enviar, mandan un solo Enter a la
 terminal y la esperan de nuevo; si sigue sin aparecer, fallan con el mismo mensaje y el term_<id>, sin un segundo Enter.
+En revisar, rebote y planificar, si pi queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, cierran esa terminal y lo
+lanzan una vez más; si la segunda también queda vacía, fallan con el mismo mensaje y el term_<id> de la segunda, que queda abierta.
 
 Con pi, --perfil-pi <nombre> (o agentes.pi.perfil en la config; el flag gana) fija para ese worktree uno de los perfiles de
 ~/.pi/gentle-ai/profiles.json: escribe .pi/gentle-ai/profile.json en el worktree (fuera de git, vía info/exclude) y lanza pi con el
@@ -193,6 +197,8 @@ Desde la ronda 2 imprime, sin publicarla ni frenar el rebote, una l\u00EDnea que
 El brief de un rebote por review le pide al autor nombrar la clase de defecto de cada hallazgo, corregir todas sus instancias en el diff y decir en su comentario cu\u00E1les otras revis\u00F3.
 Un PR en conflicto con la base (mergeable CONFLICTING) rebota aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente:
 el brief suma \`## Merge conflict\` (git merge origin/<base>, nunca rebase) y publica \`Rebote conflicto: <sha>\`, con contador propio; repetirlo en el mismo head se niega.
+Con pi, si el autor queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, cierra esa terminal y lo lanza una vez más;
+si la segunda también queda vacía, falla con "No observé una sesión nueva de Pi después del lanzamiento" y la terminal, sin publicar marcador.
 Publica el marcador después de lanzar al autor; si \`gh pr comment\` falla, lo reintenta hasta 3 intentos con unos segundos entre uno y otro.
 Si los 3 intentos fallan, sale con código 1 e imprime que el autor ya está relanzado, las líneas del marcador, su archivo y el comando
 \`gh pr comment <pr> --body-file <archivo>\`, que main tiene que correr antes de cualquier otro rebote o merge de ese PR.
@@ -233,7 +239,10 @@ Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
   reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--terminal <handle>] [--dry-run]
 
 Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una línea con la URL de la respuesta; si ya salió,
-lo relanza en su worktree existente con el brief original y la URL al principio. Exige que la respuesta sea un comentario real
+lo relanza en su worktree existente. Si el Run de main tiene una tarea \`#<issue> <agente>\` en ready, el relanzamiento arranca un dispatch
+nuevo con \`orca orchestration worker-start --run <run> --task <task_id> --terminal <handle>\`: Orca le entrega el brief una vez y la URL
+va sola en una línea aparte; si worker-start falla, imprime el error de Orca y la terminal nueva, y sale con código distinto de cero.
+Sin esa tarea, lo relanza con el brief original y la URL al principio; con pi, una entrada vacía se relanza una vez como en rebote. Exige que la respuesta sea un comentario real
 de la cuenta del stack o del humano (del issue o de su PR abierto), y se niega si el worker sigue trabajando, si ya hay un PR abierto
 y la respuesta es del issue, o si el worktree está sucio. Un worker que quedó pendiente tras un \`cuenta cambiada:\` se relanza
 (nunca una línea a la sesión pausada, que conserva su cuenta) aunque el worktree esté sucio.

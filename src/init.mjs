@@ -76,8 +76,8 @@ const withLintKey = text => {
   let parsed
   try {
     parsed = JSON.parse(text.replace(/^﻿/, ''))
-  } catch {
-    parsed = undefined
+  } catch (error) {
+    throw new Error(`${PROJECT_CONFIG} no es JSON válido (${error.message}); no lo toco`)
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${PROJECT_CONFIG} no es un objeto JSON válido; no lo toco`)
   if ('lint' in parsed) return null
@@ -106,6 +106,15 @@ const ownLintJob = root => {
   return null
 }
 
+// #451: a broken symlink in .git/hooks is not an active hook and must not make init throw.
+const isFile = file => {
+  try {
+    return statSync(file).isFile()
+  } catch {
+    return false
+  }
+}
+
 // #424: pointing core.hooksPath away from .git/hooks would silently stop the repo's own hooks (husky v4, pre-commit).
 const activeGitHooks = (git, root, env) => {
   const found = git ? run(git, ['rev-parse', '--git-path', 'hooks'], { cwd: root, env, timeout: 10_000 }) : { status: 1 }
@@ -113,7 +122,7 @@ const activeGitHooks = (git, root, env) => {
   const dir = path.resolve(root, found.stdout.trim())
   if (!existsSync(dir)) return []
 
-  return readdirSync(dir).filter(name => !name.endsWith('.sample') && statSync(path.join(dir, name)).isFile()).sort()
+  return readdirSync(dir).filter(name => !name.endsWith('.sample') && isFile(path.join(dir, name))).sort()
 }
 
 const ttyAsk = () =>

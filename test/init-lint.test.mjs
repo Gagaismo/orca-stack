@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync, statSync, symlinkSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
@@ -398,6 +399,85 @@ describe('init installs the lint (#424)', () => {
     assert.equal(parseArgs(['init', '--activar-hook']).flags.activarHook, true)
     assert.equal(parseArgs(['init']).flags.activarHook, undefined)
     assert.throws(() => parseArgs(['lint', '--activar-hook']), /^Error: Opción desconocida: --activar-hook$/)
+  })
+})
+
+describe('init: hook scan, invalid config and the committed lint key (#451)', () => {
+  const sha1 = rel => createHash('sha1').update(readFileSync(file(rel))).digest('hex')
+  const lines = out => out.split(/\r?\n/)
+  const PIECES = ['agrego la clave lint a .orca-stack.json', `creo ${WORKFLOW}`, `creo ${HOOK}`, 'creo CODING_STANDARDS.md', `creo ${BASELINE} (0 entradas)`]
+
+  test('S16: a broken symlink in .git/hooks never makes init throw: init writes every piece, exits 0 and does not count it as an active hook', t => {
+    try {
+      symlinkSync('nope', file('.git/hooks/pre-commit'))
+    } catch (error) {
+      if (process.platform !== 'win32' || error.code !== 'EPERM') throw error
+      try {
+        symlinkSync(file('.git/hooks/nope'), file('.git/hooks/pre-commit'), 'junction')
+      } catch {
+        return t.skip('creating a symlink needs privileges on this Windows machine')
+      }
+    }
+    const result = run()
+    assert.equal(result.status, 0, result.out)
+    for (const line of PIECES) assert.ok(lines(result.out).includes(line), `missing "${line}" in:\n${result.out}`)
+    assert.ok(lines(result.out).includes(`core.hooksPath: no lo cambié; para activar el hook corré \`${HOW_TO_ENABLE}\``), result.out)
+    assert.doesNotMatch(result.out, /hooks propios/)
+    assert.doesNotMatch(result.out, /✖/)
+  })
+
+  test('S17: negative: a real, non-sample hook file in .git/hooks keeps core.hooksPath unset, even with --activar-hook', () => {
+    write(file('.git/hooks/pre-push'), '#!/bin/sh\necho propio\n')
+    const result = run('--activar-hook')
+    assert.equal(result.status, 0, result.out)
+    assert.equal(hooksPath().status, 1, 'core.hooksPath stays unset')
+    assert.ok(lines(result.out).includes('core.hooksPath: no lo cambio, el repo ya tiene hooks propios en .git/hooks (pre-push); para usar el hook, llamá a .githooks/pre-push desde tu .git/hooks/pre-push'), result.out)
+  })
+
+  test('S18: an existing .orca-stack.json that is not valid JSON makes init exit 1, name the file and the parse error, and stay byte for byte; a valid one without lint gets the key', () => {
+    const broken = '{ // comment\n "version": 1 }'
+    write(file('.orca-stack.json'), broken)
+    const before = sha1('.orca-stack.json')
+    let parseError
+    try {
+      JSON.parse(broken)
+    } catch (error) {
+      parseError = error.message
+    }
+    const result = run()
+    assert.equal(result.status, 1, result.out)
+    assert.ok(lines(result.out).includes(`✖ .orca-stack.json: no se pudo escribir (.orca-stack.json no es JSON válido (${parseError}); no lo toco)`), result.out)
+    assert.ok(lines(result.out).includes('✖ lint: no se escribió .orca-stack.json; arreglá el problema y volvé a correr orca-stack init, que completa lo que falta sin duplicar nada'), result.out)
+    assert.equal(sha1('.orca-stack.json'), before)
+    assert.equal(read(file('.orca-stack.json')), broken)
+
+    write(file('.orca-stack.json'), '{\n  "version": 1\n}\n')
+    const valid = run()
+    assert.equal(valid.status, 0, valid.out)
+    assert.deepEqual(JSON.parse(read(file('.orca-stack.json'))), { version: 1, lint: LINT_DEFAULTS })
+  })
+
+  test('S19: a lint key only in .orca-stack.local.json does not count: init adds it to .orca-stack.json, lint still honors the local false, and a committed key stays byte for byte', () => {
+    write(file('.orca-stack.json'), '{\n  "version": 1\n}\n')
+    write(file('.orca-stack.local.json'), '{"lint":{"enabled":false}}\n')
+    const result = run()
+    assert.equal(result.status, 0, result.out)
+    assert.ok(lines(result.out).includes('agrego la clave lint a .orca-stack.json'), result.out)
+    assert.deepEqual(JSON.parse(read(file('.orca-stack.json'))), { version: 1, lint: LINT_DEFAULTS })
+    assert.equal(read(file('.orca-stack.local.json')), '{"lint":{"enabled":false}}\n')
+    const lint = cli(home, ['lint'], { cwd: repo })
+    assert.equal(lint.status, 0, lint.out)
+    assert.equal(lint.out, 'lint apagado: lint.enabled es false en .orca-stack.local.json; no se revisó nada.\n')
+
+    const committed = read(file('.orca-stack.json'))
+    const again = run()
+    assert.equal(again.status, 0, again.out)
+    assert.equal(read(file('.orca-stack.json')), committed)
+    assert.ok(lines(again.out).includes('.orca-stack.json: ya tiene una clave lint propia, no se toca'), again.out)
+
+    const help = cli(home, ['init', '--help']).stdout
+    const manual = read(path.join(ROOT, 'docs', 'manual.md')).split('#### `init`')[1].split('\n#### ')[0]
+    for (const text of [help, manual]) assert.match(text, /solo cuenta la de `?\.orca-stack\.json`?, no la de `?\.orca-stack\.local\.json`?/)
   })
 })
 
