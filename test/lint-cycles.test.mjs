@@ -302,9 +302,9 @@ describe('orca-stack lint module-cycle (#420)', () => {
       cleanup(home)
     }
     const manual = readFileSync(path.join(ROOT, 'docs', 'manual.md'), 'utf8')
-    assert.match(manual, /`module-cycle`/)
-    assert.match(manual, /"members"/)
-    assert.match(manual, /\(#420\)/)
+    const lintSection = manual.split('#### `lint`')[1].split('\n#### ')[0]
+    assert.match(lintSection, /`module-cycle`/)
+    assert.match(lintSection, /"members"/)
   })
 })
 
