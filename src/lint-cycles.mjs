@@ -8,6 +8,7 @@ export const CYCLE_RULE = 'module-cycle'
 const LOCATION = 'cycle'
 const LANGUAGES = ['javascript', 'typescript', 'tsx']
 const RESOLVE_EXTENSIONS = ['.mjs', '.js', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.jsx']
+const TS_SIBLINGS = { '.js': ['.ts', '.tsx'], '.mjs': ['.mts'], '.cjs': ['.cts'] }
 
 const RULES = LANGUAGES.flatMap(language => [
   [
@@ -62,7 +63,9 @@ const resolve = (from, specifier, known) => {
   const base = path.posix.normalize(path.posix.join(path.posix.dirname(from), specifier)).replace(/\/$/, '')
   if (base === '..' || base.startsWith('../')) return undefined
   const index = RESOLVE_EXTENSIONS.map(ext => (base === '.' ? `index${ext}` : `${base}/index${ext}`))
-  const candidates = base === '.' ? index : [base, ...RESOLVE_EXTENSIONS.map(ext => `${base}${ext}`), ...index]
+  const extension = path.posix.extname(base)
+  const siblings = (TS_SIBLINGS[extension] ?? []).map(sibling => `${base.slice(0, -extension.length)}${sibling}`)
+  const candidates = base === '.' ? index : [base, ...siblings, ...RESOLVE_EXTENSIONS.map(ext => `${base}${ext}`), ...index]
   return candidates.find(candidate => known.has(candidate))
 }
 

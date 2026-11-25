@@ -307,3 +307,55 @@ describe('orca-stack lint module-cycle (#420)', () => {
     assert.match(manual, /\(#420\)/)
   })
 })
+
+describe('orca-stack lint module-cycle TypeScript siblings (#450)', () => {
+  test('S9: ./b.js resolves to b.ts or b.tsx when b.js does not exist', () => {
+    withRepo(({ add, lint }) => {
+      add('ts/a.ts', "import { b } from './b.js'\nexport const a = b\n")
+      add('ts/b.ts', "import { a } from './a.js'\nexport const b = a\n")
+      add('tsx/a.tsx', "import { b } from './b.js'\nexport const a = b\n")
+      add('tsx/b.tsx', "import { a } from './a.js'\nexport const b = a\n")
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, [
+        CYCLE('ts/a.ts', 'ts/b.ts', 'ts/a.ts'),
+        CYCLE('tsx/a.tsx', 'tsx/b.tsx', 'tsx/a.tsx'),
+      ].join('\n') + `\n${SUMMARY(2, 0)}`)
+    })
+  })
+
+  test('S10: ./b.mjs resolves to b.mts and ./b.cjs to b.cts', () => {
+    withRepo(({ add, lint }) => {
+      add('esm/a.mts', "import { b } from './b.mjs'\nexport const a = b\n")
+      add('esm/b.mts', "import { a } from './a.mjs'\nexport const b = a\n")
+      add('cjs/a.cts', "import { b } from './b.cjs'\nexport const a = b\n")
+      add('cjs/b.cts', "import { a } from './a.cjs'\nexport const b = a\n")
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, [
+        CYCLE('cjs/a.cts', 'cjs/b.cts', 'cjs/a.cts'),
+        CYCLE('esm/a.mts', 'esm/b.mts', 'esm/a.mts'),
+      ].join('\n') + `\n${SUMMARY(2, 0)}`)
+    })
+  })
+
+  test('S11: when b.js exists it is the target even if b.ts exists too', () => {
+    withRepo(({ add, lint }) => {
+      add('src/a.ts', "import { b } from './b.js'\nexport const a = b\n")
+      add('src/b.js', 'export const b = 1\n')
+      add('src/b.ts', "import { a } from './a.js'\nexport const b = a\n")
+      const result = lint()
+      assert.equal(result.status, 0, result.out)
+      assert.equal(result.stdout, OK(0))
+    })
+  })
+
+  test('S12: ./b.js with neither b.js nor b.ts is ignored without error', () => {
+    withRepo(({ add, lint }) => {
+      add('src/a.ts', "import { b } from './b.js'\nexport const a = b\n")
+      const result = lint()
+      assert.equal(result.status, 0, result.out)
+      assert.equal(result.out, OK(0))
+    })
+  })
+})
