@@ -194,7 +194,7 @@ Los marcadores de los wrappers siguen solo `~/.orca-stack/config.json`: después
 | `humano` | `puente-gentle` | Cómo se refiere el puente a la persona ("mostrale a Ana las dos posturas"). Sin valor: "el usuario". |
 | `mensajes.destinatarios` | `bandeja-mensajes` | Lista de nombres que Claude conoce para los bloques ` ```mensaje <nombre> `. Sin lista, el mod captura cualquier nombre. |
 | `despacho.script`, `despacho.revisar` | `guardia-despacho`, `tablero-despacho` | Rutas (relativas al repo) a tus scripts de despacho y revisión. **Sin `despacho`, la guardia está apagada** y el tablero no muestra los atajos de despacho. |
-| `guardia.bloquear` | `guardia-despacho` | Lista de `{ "agente", "hasta", "motivo" }`. Mientras la fecha local `hasta` (AAAA-MM-DD, a las 00:00) no llegue, despacharle algo a ese agente se rechaza con el `motivo`: lo aplican `orca-stack despachar` y `revisar`, y `guardia-despacho` para los scripts de despacho. Las reglas de las tres capas se suman: una capa no puede borrar el bloqueo de otra. |
+| `guardia.bloquear` | `guardia-despacho` | Lista de `{ "agente", "hasta", "motivo" }`. Mientras la fecha local `hasta` (AAAA-MM-DD, a las 00:00, o AAAA-MM-DDTHH:MM, a esa hora) no llegue, despacharle algo a ese agente se rechaza con el `motivo`: lo aplican `orca-stack despachar` y `revisar`, y `guardia-despacho` para los scripts de despacho. Las reglas de las tres capas se suman: una capa no puede borrar el bloqueo de otra. |
 | `guardia.modeloClaude` | `guardia-despacho` | Modelo obligatorio para `despacho.script ... claude`. Si falta, el mod antepone `CLAUDE_MODELO=<modelo>`; si pasan otro modelo, lo rechaza. Tu script de despacho debe leer `CLAUDE_MODELO`. |
 
 ### Ejemplos

@@ -202,9 +202,9 @@ orca-stack revisar 15 agy --nota "Mirá con cuidado la migración."
 
 Igual que `despachar`, para un review: crea el worktree `revision-<pr>-<agente>` parado en la rama del PR. Se niega si el PR no trae la línea `Implementador: <agente>`, si el revisor es el implementador, o si los dos corren modelos de la misma familia (sale de `agentes.modelos`; pi y claude sí se revisan entre sí).
 
-Con `--rutas <a,b>` (rutas separadas por coma) pide un review solo de esas rutas: el brief suma `## Partial review by design` y le pide al revisor listar en `## Cobertura` lo que leyó (`Leído:`) y cada otra ruta del PR (`Sin leer:`). Todo review lleva `## Cobertura`; uno que deja sin leer una ruta de `riesgo` es parcial y no cuenta para el paso 7 por esa ruta, y uno que se declara parcial sin `## Cobertura` no cuenta. En un PR de más de 1500 líneas cambiadas, el brief pide revisar por capas, primero las rutas de `riesgo`.
+Con `--rutas <a,b>` (rutas separadas por coma) pide un review solo de esas rutas: el brief suma `## Partial review by design` y le pide al revisor listar en `## Cobertura` lo que leyó (`Leído:`) y cada otra ruta del PR (`Sin leer:`). Todo review lleva `## Cobertura`; uno que deja sin leer una ruta de `riesgo` es parcial y no cuenta para el paso 7 por esa ruta, y uno que se declara parcial sin `## Cobertura` no cuenta. En un PR de más de 700 líneas cambiadas, el brief pide revisar por capas, primero las rutas de `riesgo`.
 
-Si ya existe ese worktree porque el PR rebotó, `revisar` lo reutiliza en una segunda ronda: se niega si hay un agente trabajando, cierra sola las terminales en `done` y las shells vacías de ese worktree (y dice cuáles cerró), exige que el árbol esté limpio y que el HEAD anterior sea alcanzable desde el nuevo head del PR. Rechaza si ese revisor ya vio el mismo head, si el worktree tiene cambios o commits locales, o si el perfil de Pi no coincide. El brief fija el commit anterior como base para que el reviewer lea solo el delta; el review previo se archiva con ese SHA. `--dry-run` muestra el caso sin cambiar el worktree ni los archivos.
+Si ya existe ese worktree porque el PR rebotó, `revisar` lo reutiliza en una segunda ronda: se niega si hay un agente trabajando, cierra sola las terminales en `done` y las shells vacías de ese worktree (y dice cuáles cerró), exige que el árbol esté limpio y que el HEAD anterior sea alcanzable desde el nuevo head del PR. Rechaza si ese revisor ya vio el mismo head (salvo con `--rutas`, que lanza el review de esas rutas sobre ese head en el mismo worktree), si el worktree tiene cambios o commits locales, o si el perfil de Pi no coincide. El brief fija el commit anterior como base para que el reviewer lea solo el delta; el review previo se archiva con ese SHA. Con `--rutas` sobre el mismo head, el brief no pide delta sino las rutas de `## Partial review by design`, y si ya hay un review archivado con ese SHA (por ejemplo, después de una ronda con `--rutas`), el nuevo se archiva con un sufijo (`.2`, `.3`…) sin pisar los anteriores. `--dry-run` muestra el caso sin cambiar el worktree ni los archivos.
 
 #### `rebote`
 
@@ -493,7 +493,7 @@ Ejemplo: bloquear a un agente sin cuota hasta una fecha, en `.orca-stack.local.j
 }
 ```
 
-La fecha `hasta` es local, a las 00:00. Mientras no llegue, `despachar`, `revisar` y `rebote` rechazan ese agente con el `motivo`.
+La fecha `hasta` es local: `AAAA-MM-DD` se levanta a las 00:00 de ese día, y `AAAA-MM-DDTHH:MM` (por ejemplo `"2026-11-19T19:12"`, sin zona) a esa hora. Otro formato, como `"2026-11-19 19:12"` o `"19:12"`, se rechaza con un error que nombra los dos válidos. Mientras no llegue, `despachar`, `revisar` y `rebote` rechazan ese agente con el `motivo`.
 
 #### Reviews de codex con ChatGPT Web, sin cuota de Codex
 

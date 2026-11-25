@@ -418,3 +418,18 @@ describe('issue #426: comment axis in the review brief', () => {
     }
   })
 })
+
+describe('issue 390: review by layers from 700 changed lines', () => {
+  const brief = () => renderBrief('review', { REPO: 'repo', PR: '7', IMPLEMENTER: 'pi', SHA: 'abc123', BASE: 'main', VERIFICATION: 'npm test', AGENT: 'codex' })
+
+  test('Rule 1: a PR over 700 changed lines is reviewed by layers, riesgo paths first, and what was not reached goes under Sin leer', () => {
+    assert.ok(brief().includes('For a PR over 700 changed lines (`gh pr view 7 --json additions,deletions`), review by layers: first every path that matches a `riesgo` glob of .orca-stack.json, then the rest; whatever you did not reach goes under `Sin leer:`.'), brief())
+  })
+
+  test('Rule 4: a PR of 700 changed lines or fewer is not asked to review by layers', () => {
+    const text = brief()
+    assert.equal(text.match(/review by layers/g)?.length, 1)
+    assert.ok(!text.includes('1500'), text)
+    assert.ok(!/700 changed lines or (more|fewer)|at least 700/.test(text), text)
+  })
+})

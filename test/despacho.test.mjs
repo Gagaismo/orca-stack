@@ -249,6 +249,40 @@ describe('despachar: refusals', () => {
     write(layout(home).config, JSON.stringify({ guardia: { bloquear: [{ agente: 'codex', hasta: '29/10' }] } }))
     await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, fakeIo()), /fecha "hasta" que no es AAAA-MM-DD/)
   })
+
+  const blockedAt = (hasta, at) => {
+    const env = fakeIo({}, { config: { ...PROJECT, guardia: { bloquear: [{ agente: 'codex', hasta, motivo: 'Codex sin cuota.' }] } } })
+    env.io.now = () => at.getTime()
+    return env
+  }
+
+  test('#388 Rule 4: hasta 2026-11-19T19:12 refuses despachar codex at 19:11 and dispatches it at 19:12', async () => {
+    const before = blockedAt('2026-11-19T19:12', new Date(2026, 10, 19, 19, 11))
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, before), error => error.message.includes('No despacho a codex: Codex sin cuota.'))
+    assert.deepEqual(before.writes(), [])
+    assert.equal(await run('ticket', { n: '7', agent: 'codex', dryRun: true }, blockedAt('2026-11-19T19:12', new Date(2026, 10, 19, 19, 12))), 0)
+  })
+
+  test('#388 Rule 5: a date alone still lifts the block at 00:00 of that day', async () => {
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, blockedAt('2026-11-19', new Date(2026, 10, 18, 23, 59))), /No despacho a codex: Codex sin cuota\./)
+    assert.equal(await run('ticket', { n: '7', agent: 'codex', dryRun: true }, blockedAt('2026-11-19', new Date(2026, 10, 19, 0, 0))), 0)
+  })
+
+  test('#388 Rule 7: the setup guide and the manual describe hasta with a local time', () => {
+    const guide = readFileSync(path.join(PACKAGE_ROOT, 'docs/guia-setup.md'), 'utf8')
+    const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs/manual.md'), 'utf8')
+    assert.ok(guide.includes('`AAAA-MM-DDTHH:MM` (por ejemplo `"2026-11-19T19:12"`, sin zona) a esa hora'), 'guia-setup.md')
+    assert.ok(manual.includes('`AAAA-MM-DDTHH:MM` (por ejemplo `"2026-11-19T19:12"`, sin zona) a esa hora'), 'manual.md')
+    assert.ok(manual.includes('`AAAA-MM-DD` se levanta a las 00:00 de ese d\u00eda'), 'manual.md date only')
+  })
+
+  test('#388 Rule 6: a malformed hasta is refused with the format error that names both valid formats', async () => {
+    for (const hasta of ['2026-11-19 19:12', '19:12', '2026-11-19T24:00', '2026-11-19T19:60']) {
+      const env = blockedAt(hasta, new Date(2030, 0, 1, 10, 0))
+      await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), error => error.message.includes(`La regla guardia.bloquear de codex tiene una fecha "hasta" que no es AAAA-MM-DD ni AAAA-MM-DDTHH:MM (${hasta}): corregila antes de despacharlo.`))
+      assert.deepEqual(env.writes(), [])
+    }
+  })
 })
 
 describe('issue #198: branch output and post-launch terminal checks', () => {
@@ -494,6 +528,48 @@ describe('revisar: one worktree per reviewer', () => {
     const { env } = reusable({ head: 'bbb222', prHead: 'bbb222' })
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /Ya revisaste bbb222 con agy\./)
     assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+  })
+
+  test('#388 Rule 1: revisar --rutas on a head the reviewer already reviewed launches the review of those paths in the reused worktree', async () => {
+    const { env } = reusable({ head: 'bbb222', prHead: 'bbb222', over: { 'git ls-tree -r': okRes('openapi/openapi.yaml\nsrc/app.ts\n') } })
+    assert.equal(await run('review', { n: '9', agent: 'agy', rutas: 'openapi/openapi.yaml' }, env), 0)
+    assert.ok(env.calls.some(call => call.join(' ') === 'git checkout --detach bbb222'))
+    assert.ok(!env.calls.some(call => call.includes('--force') || call.join(' ').startsWith('orca worktree rm') || call.join(' ').startsWith('git worktree remove')))
+    const brief = env.written.find(([file]) => file.endsWith('proj-revision-9-agy.md'))?.[1]
+    assert.match(brief, /## Partial review by design[\s\S]*- `openapi\/openapi\.yaml`/)
+    assert.ok(!brief.includes('git diff bbb222..bbb222'), brief)
+    assert.ok(brief.includes('You already reviewed commit `bbb222`; this round reviews only the paths under `## Partial review by design`.'), brief)
+    assert.ok(!brief.includes('This is the first review round'), brief)
+    assert.ok(env.out.includes('Review parcial por diseño: openapi/openapi.yaml'))
+  })
+
+  test('#388 Rule 1: a second revisar --rutas on the same reviewed head launches too and keeps both earlier reviews', async () => {
+    const briefs = path.join(home, 'orca', 'briefs')
+    write(path.join(briefs, 'proj-revision-9-agy.review.bbb222.md'), 'full review')
+    write(path.join(briefs, 'proj-revision-9-agy.review.md'), 'first partial review')
+    const { env } = reusable({ head: 'bbb222', prHead: 'bbb222', over: { 'git ls-tree -r': okRes('openapi/openapi.yaml\nsrc/app.ts\n') } })
+    assert.equal(await run('review', { n: '9', agent: 'agy', rutas: 'src/app.ts' }, env), 0)
+    assert.equal(readFileSync(path.join(briefs, 'proj-revision-9-agy.review.bbb222.md'), 'utf8'), 'full review')
+    assert.equal(readFileSync(path.join(briefs, 'proj-revision-9-agy.review.bbb222.2.md'), 'utf8'), 'first partial review')
+    assert.ok(env.written.some(([file, text]) => file.endsWith('proj-revision-9-agy.md') && text.includes('- `src/app.ts`')))
+  })
+
+  test('#388 Rule 1: after a revisar --rutas round, the next round on a new head launches and keeps every earlier review', async () => {
+    const briefs = path.join(home, 'orca', 'briefs')
+    write(path.join(briefs, 'proj-revision-9-agy.review.bbb222.md'), 'full review')
+    write(path.join(briefs, 'proj-revision-9-agy.review.md'), 'partial review')
+    const { env } = reusable({ head: 'bbb222', prHead: 'ccc333' })
+    assert.equal(await run('review', { n: '9', agent: 'agy' }, env), 0)
+    assert.equal(readFileSync(path.join(briefs, 'proj-revision-9-agy.review.bbb222.md'), 'utf8'), 'full review')
+    assert.equal(readFileSync(path.join(briefs, 'proj-revision-9-agy.review.bbb222.2.md'), 'utf8'), 'partial review')
+    assert.ok(env.written.some(([file, text]) => file.endsWith('proj-revision-9-agy.md') && text.includes('git diff bbb222..ccc333')))
+  })
+
+  test('#388 Rule 3: revisar --rutas on a reviewed head is still refused while an agent works in that worktree', async () => {
+    const { env } = reusable({ head: 'bbb222', prHead: 'bbb222', agents: [{ state: 'working' }], over: { 'git ls-tree -r': okRes('openapi/openapi.yaml\n') } })
+    await assert.rejects(run('review', { n: '9', agent: 'agy', rutas: 'openapi/openapi.yaml' }, env), /Orca ya tiene un worktree para revision-9-agy con un agente vivo/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+    assert.deepEqual(env.written, [])
   })
 
   test('Rule 5: dirty or unreachable review worktrees are refused without checkout', async () => {
