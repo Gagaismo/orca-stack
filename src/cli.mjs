@@ -321,7 +321,8 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
   tanda-cerrada #<n> #<m>...         terminaron todos los items; sale con 0
 En cada vuelta lee también el buzón del Run de Orca ligado a main (\`orca orchestration run-current\`), con
 \`orca orchestration check --all\`, que no marca nada como leído, y nombra cada worker por el título "#<n> <agente>" de
-su tarea (las tareas con otro título se ignoran). Sin Run ligado vigila solo GitHub; si Orca falla, lo dice una vez
+su tarea, también con el sufijo " rebote #<pr>" o " reanudado" de un relanzamiento (las tareas con otro título
+se ignoran). Sin Run ligado vigila solo GitHub; si Orca falla, lo dice una vez
 por corte en stderr y sigue con GitHub.
 Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue o por una línea
 \`Closes #<n>\` en su cuerpo; nunca por adivinar el nombre de la rama. Un issue cerrado sin PR cuenta como terminado.

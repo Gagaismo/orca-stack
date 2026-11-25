@@ -1,7 +1,7 @@
 import path from 'node:path'
 
-import { getCommonDir } from './consultas.mjs'
 import { defaultIo } from './despacho.mjs'
+import { getCommonDir } from './repo.mjs'
 import { run, sha256, which } from './util.mjs'
 
 export const STATE_REL = ['orca-stack', 'novedades.json']
