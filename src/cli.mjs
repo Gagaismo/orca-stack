@@ -246,12 +246,15 @@ Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
   reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--terminal <handle>] [--dry-run]
 
 Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una línea con la URL de la respuesta; si ya salió,
-lo relanza en su worktree existente. Si el Run de main tiene una tarea \`#<issue> <agente>\` en ready, el relanzamiento arranca un dispatch
-nuevo con \`orca orchestration worker-start --run <run> --task <task_id> --terminal <handle>\`: Orca le entrega el brief una vez y la URL
-va sola en una línea aparte; si worker-start falla, imprime el error de Orca y la terminal nueva, y sale con código distinto de cero.
-Sin esa tarea, lo relanza con el brief original y la URL al principio; con pi, una entrada vacía se relanza una vez como en rebote.
-Si la tarea sigue en dispatched, lo relanza igual que sin tarea (sin worker-start) e imprime una línea \`⚠ La tarea #<issue> <agente> sigue
-dispatched en el Run de main (dispatch <id>)…\`: Orca va a rechazar su worker_done, así que seguí el PR con vigilar. Exige que la respuesta sea un comentario real
+lo relanza en su worktree existente, siempre como worker supervisado del Run de main, en uno de tres casos:
+- Con una tarea \`#<issue> <agente>\` en ready, arranca un dispatch nuevo sobre ella con
+  \`orca orchestration worker-start --run <run> --task <task_id> --terminal <handle>\`: Orca le entrega el brief una vez y la URL va sola
+  en una línea aparte. No crea otra tarea.
+- Sin Run o sin esa tarea, crea la tarea supervisada \`#<issue> <agente>\` como despachar (reusa el Run ligado a main o lo crea):
+  \`orca orchestration worker-start --spec-file <brief> --task-title "#<issue> <agente>"\`, con la URL al principio del brief.
+- Con esa tarea todavía en dispatched, crea una tarea supervisada nueva \`#<issue> <agente> reanudado\` y lo relanza ligado a ella.
+Si worker-start falla, sale con el error de Orca, con código distinto de cero, y deja el worktree como estaba.
+Con pi, una entrada vacía se relanza una vez sobre la misma tarea, como en despachar. Exige que la respuesta sea un comentario real
 de la cuenta del stack o del humano (del issue o de su PR abierto), y se niega si el worker sigue trabajando, si ya hay un PR abierto
 y la respuesta es del issue, o si el worktree está sucio. Un worker que quedó pendiente tras un \`cuenta cambiada:\` se relanza
 (nunca una línea a la sesión pausada, que conserva su cuenta) aunque el worktree esté sucio.

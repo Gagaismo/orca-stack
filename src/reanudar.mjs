@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, shellPrompt, writePin, writeRddConsent } from './despacho.mjs'
+import { AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, shellPrompt, supervisedTask, writePin, writeRddConsent } from './despacho.mjs'
 import { identityOf, isDialog, paneAgents, stackAgent, piIdle, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { pendingAfterSwitch } from './orca.mjs'
 import { samePath } from './util.mjs'
@@ -24,7 +24,8 @@ const isWorkerRecord = record => {
   return !record?.parentPaneKey && brief !== undefined && !/(?:^|-)revision-/.test(brief)
 }
 // #454: a relaunched worker's worker_done is accepted only from the terminal that owns the dispatch, so the Task "#<n>
-// <agente>" of main's Run, when its dispatch closed, gets a new one on the new terminal. No Run, no such Task: unsupervised.
+// <agente>" of main's Run, when its dispatch closed, gets a new one on the new terminal. #463: any other case relaunches
+// supervised too, on a new Task: "#<n> <agente> reanudado" while that Task is still dispatched, else "#<n> <agente>".
 const closedRunTask = (io, root, n, agent) => {
   const current = io.sh('orca', ['orchestration', 'run-current', '--json'], { cwd: root })
   const run = current.status === 0 ? parse(current)?.result?.runId : undefined
@@ -35,8 +36,7 @@ const closedRunTask = (io, root, n, agent) => {
   const task = tasks.find(candidate => String(candidate?.title ?? '') === `#${n} ${agent}`)
   if (!task?.id) return undefined
   if (task.status === 'ready') return { run, task: task.id }
-  // #457 (D1 = a): a Task still dispatched is not rebound; the relaunch goes unsupervised with a warning.
-  return task.status === 'dispatched' ? { dispatched: String(task.dispatchId ?? 'desconocido') } : undefined
+  return task.status === 'dispatched' ? { dispatched: true } : undefined
 }
 const recordTime = record => Number(record?.updatedAt ?? record?.stateStartedAt ?? 0) || 0
 const prMatchesIssue = (pr, issue, branches) =>
@@ -274,6 +274,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   const task = closedRunTask(io, root, n, agent)
   // #454: with a ready Task, Orca's worker-start delivers the brief once (#397), and the answer goes as its own line.
   const rebind = task?.task && { ...task, deliver: handle => sendLine(io, n, handle, agent, answerLine(url, originalPath), originalPath) }
+  const supervised = rebind ? undefined : supervisedTask(path.basename(root), `#${n} ${agent}${task?.dispatched ? ' reanudado' : ''}`)
   originalBrief ??= io.readFile(originalPath)
   if (profile) for (const line of piProfileLines(profile)) io.out(`${flags.dryRun ? '[simulaci\u{f3}n] ' : ''}${line}`)
   if (needsPin(profile) && !flags.dryRun) writePin(io, row.path, commonDir, profile.name)
@@ -286,9 +287,8 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     writeConsent()
   }
   const session = `${repo}-${n}-reanudar-${(io.now ?? Date.now)()}`
-  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: n, rebind })
+  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: n, rebind, supervised })
   if (rebind && flags.dryRun) io.out(`[simulaci\u{f3}n] orca ${lineArgv('<terminal>', answerLine(url, originalPath)).map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
-  if (task?.dispatched) io.out(`${flags.dryRun ? '[simulaci\u{f3}n] ' : ''}⚠ La tarea #${n} ${agent} sigue dispatched en el Run de main (dispatch ${task.dispatched}): relanc\u{e9} sin ligarla y Orca va a rechazar su worker_done; segu\u{ed} el PR con vigilar, o esper\u{e1} a que Orca cierre el dispatch y volv\u{e9} a correr orca-stack reanudar.`)
   if (afterSwitch && !flags.dryRun) pendingAfterSwitch(io, commonDir, agent, n, true)
 
   return 0
