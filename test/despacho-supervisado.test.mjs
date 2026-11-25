@@ -37,6 +37,7 @@ afterEach(() => {
 // #431: `account` answers `orca account`; the first `quota` terminals created show a usage limit after the launch.
 const fakeIo = (orch = {}, { card, account, quota = 0 } = {}) => {
   let terminals = 0
+  let launchedAgent
   write(path.join(root, '.orca-stack.json'), JSON.stringify(PROJECT))
   const calls = []
   const out = []
@@ -83,10 +84,14 @@ const fakeIo = (orch = {}, { card, account, quota = 0 } = {}) => {
       if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'set' && card) return card
       if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'create') return json({ result: { worktree: { path: worktree, branch: 'refs/heads/proj-7' } } })
       if (cmd === 'orca' && args[0] === 'account' && account) return account(args)
-      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') return json({ result: { terminal: { handle: `term_${++terminals}` } } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') {
+        launchedAgent = args[args.indexOf('--title') + 1]
+        return json({ result: { terminal: { handle: `term_${++terminals}` } } })
+      }
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
         const n = Number(args[args.indexOf('--terminal') + 1].slice(5))
-        return json({ result: { terminal: { tail: n <= quota ? ['ready', "You've hit your usage limit."] : ['ready'] } } })
+        const ready = launchedAgent === 'agy' ? ['ready', '>'] : ['ready']
+        return json({ result: { terminal: { tail: n <= quota ? [...ready, "You've hit your usage limit."] : ready } } })
       }
       return okRes()
     },
