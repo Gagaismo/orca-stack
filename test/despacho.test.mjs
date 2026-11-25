@@ -2488,6 +2488,46 @@ describe('rebote', () => {
     assert.equal(markers(env).length, 1)
   })
 
+  test('#457 Rule 1: a failed close of the first terminal fails naming it and the close error, with no second launch and no marker', async () => {
+    const env = waitingPi('')
+    const original = env.io.sh
+    env.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'close') {
+        env.calls.push([cmd, ...args])
+        return { status: 1, stdout: '', stderr: 'terminal_busy: la terminal no responde' }
+      }
+      return original(cmd, args, opts)
+    }
+    await assert.rejects(reboteCommand({}, '12', env.io), error => !(error instanceof TypeError) && error.message.includes('term_1') && error.message.includes('terminal_busy: la terminal no responde'))
+    assert.equal(creates(env).length, 1)
+    assert.deepEqual(closes(env), ['orca terminal close --terminal term_1 --json'])
+    assert.equal(markers(env).length, 0)
+    assert.ok(!env.out.some(line => line.includes('pi despachado')))
+  })
+
+  test('#457 Rule 2: after the relaunch only a session newer than the second launch counts; a late one from the first launch does not', async () => {
+    const relaunched = sessionAt => {
+      const env = waitingPi('', { piTools: 'available', startsOn: 2 })
+      let clock = 100
+      env.io.now = () => clock
+      env.io.modifiedAt = () => sessionAt
+      const original = env.io.sh
+      env.io.sh = (cmd, args, opts) => {
+        if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'close') clock = 200
+        return original(cmd, args, opts)
+      }
+      return env
+    }
+    const late = relaunched(150)
+    await assert.rejects(reboteCommand({}, '12', late.io), error => error.message === `No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: term_2.`)
+    assert.equal(creates(late).length, 2)
+    assert.equal(markers(late).length, 0)
+    const own = relaunched(250)
+    assert.equal(await reboteCommand({}, '12', own.io), 0)
+    assert.equal(creates(own).length, 2)
+    assert.equal(markers(own).length, 1)
+  })
+
   test('issue 276 Rules 1 and 7: a pi bounce honors the pin, traces it, and refuses with no pin and no profile', async () => {
     write(path.join(home, '.pi', 'gentle-ai', 'profiles.json'), JSON.stringify({ active: 'OpusFull', profiles: {
       'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },

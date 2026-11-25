@@ -786,7 +786,8 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
       if (!handle) throw new Error('orca terminal create no devolvió el handle de la terminal.')
       await startWorker(io, say, { agent, handle, briefPath, supervised, rebind })
     }
-    let { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
+    let after = piSessionAfter
+    let { tools, file } = await waitForPiSession(io, home, worktree, after)
     // #444: the brief can stay typed in pi's input without its Enter: one Enter, never a second, then one more wait.
     let handle
     if (piSessionAfter > 0 && tools === undefined) try { handle = handleOf() } catch {}
@@ -795,22 +796,28 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     // terminal and launch once more; a second empty input fails, naming the second terminal, which stays open.
     if (input === 'empty' && !supervised && !rebind) {
       say(`Pi quedó esperando con la entrada vacía en ${handle}: cierro esa terminal y lo lanzo una vez más.`)
-      act('orca', ['terminal', 'close', '--terminal', handle, '--json'])
+      try {
+        act('orca', ['terminal', 'close', '--terminal', handle, '--json'])
+      } catch (error) {
+        throw new Error(`No pude cerrar la terminal ${handle} de Pi con la entrada vacía, así que no lo lanzo de nuevo: ${error.message}`)
+      }
+      // #457: a session of the closed terminal that shows up late never counts as the second launch's.
+      after = (io.now ?? Date.now)()
       term = create()
       handle = handleOf()
-      ;({ tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter))
+      ;({ tools, file } = await waitForPiSession(io, home, worktree, after))
       input = tools === undefined && handle ? piInputOf(io, handle, brief) : undefined
       if (tools === undefined && input !== 'brief') throw new Error(`No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: ${handle}.`)
     }
     if (input === 'brief') {
       say(`El brief quedó escrito en la entrada de pi sin enviar: mando un Enter a ${handle}.`)
       io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
-      ;({ tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter))
+      ;({ tools, file } = await waitForPiSession(io, home, worktree, after))
       if (tools === undefined) throw new Error(`No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: ${handle}.`)
     }
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
     if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.${rebind ? ` Terminal: ${handleOf()}.` : ''}`)
-    if (file) await checkPiAuth(io, file, config.piClaudeConfigDir, piSessionAfter)
+    if (file) await checkPiAuth(io, file, config.piClaudeConfigDir, after)
     if (rebind) await rebind.deliver(handleOf())
   }
   say(`\u2714 ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
