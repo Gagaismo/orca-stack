@@ -33,7 +33,7 @@ export const WRAPPERS = {
 }
 
 // caveman: a caveman 3.2.0 mode (`caveman`, `ultracave`, `megacave`); its old `full` level is now `caveman`.
-export const STACK_LEVELS = { mode: 'auto', caveman: 'caveman', ponytail: 'full' }
+export const STACK_LEVELS = { mode: 'auto', caveman: 'caveman' }
 
 export const MARKER_BEGIN = '<!-- orca-stack:begin -->'
 export const MARKER_END = '<!-- orca-stack:end -->'

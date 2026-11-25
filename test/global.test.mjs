@@ -328,7 +328,7 @@ describe('global', () => {
     for (const root of ['.claude', '.agents']) {
       const policy = read(path.join(home, root, 'skills', 'orca-stack-policy', 'SKILL.md'))
       assert.ok(policy.includes(path.join(home, 'orca', 'stack', 'ORCA-STACK.md')), 'policy path rendered')
-      assert.ok(existsSync(path.join(home, root, 'skills', 'ponytail-review', 'SKILL.md')))
+      assert.ok(existsSync(path.join(home, root, 'skills', 'orca-setup', 'SKILL.md')))
     }
     for (const mod of MODS) {
       assert.ok(existsSync(path.join(home, '.claude', 'mods', mod, '.claude-plugin', 'plugin.json')), mod)
@@ -512,10 +512,10 @@ describe('wrappers', () => {
     const file = path.join(home, 'orca', 'stack', 'scripts', `claude-orca-stack.${ext}`)
     const run = spawnSync(file, ['--orca-stack-self-test'], { encoding: 'utf8', shell: process.platform === 'win32' })
     assert.equal(run.status, 0, run.stdout + run.stderr)
-    // #394: Caveman and Ponytail are perks, off by default.
+    // #394, #429: Caveman is a perk (off by default); Ponytail was removed.
     assert.match(run.stdout, /ORCA_STACK_MODE=off/)
     assert.match(run.stdout, /ORCA_STACK_CAVEMAN_LEVEL=off/)
-    assert.match(run.stdout, /ORCA_STACK_PONYTAIL_LEVEL=off/)
+    assert.doesNotMatch(run.stdout, /ORCA_STACK_PONYTAIL_LEVEL/)
     assert.ok(run.stdout.includes(path.join(home, 'orca', 'stack', 'ORCA-STACK.md')), run.stdout)
   })
 

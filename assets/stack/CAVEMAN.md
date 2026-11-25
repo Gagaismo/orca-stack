@@ -12,7 +12,7 @@ Este fragmento lo instala `orca-stack global` junto a `MAIN.md`, `ORCA-STACK.md`
 
 ### Authority order (`ORCA-STACK.md`)
 
-Caveman takes its own level, after the specialized skill for the current role (and after Ponytail's level when that perk is on) and before Provider defaults, which move down one level:
+Caveman takes its own level, after the specialized skill for the current role and before Provider defaults, which move down one level:
 
 - Caveman communication policy.
 

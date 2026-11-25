@@ -6,7 +6,6 @@ import { ensureCandidateWorktreesExclude } from './candidate-worktrees.mjs'
 import { analyzeChecks, isHigherRunId, isPending, latestChecks } from './checks.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { setCard, switchAccount } from './orca.mjs'
-import { perksOf } from './perks.mjs'
 import { resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
 import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
@@ -35,7 +34,7 @@ const CODEX_CC_REMOVED = 'codex-cc ya no existe en orca-stack (Command Code se e
 // extension (orca-agent-status.ts) reports pi's card state through the Orca pane variables, so a worker keeps them,
 // while the consult clears them too because it runs inside claude's pane (#277).
 const STACK_VARS_CLEARED = [
-  'ORCA_STACK_AGENT', 'ORCA_STACK_MODE', 'ORCA_STACK_POLICY_PATH', 'ORCA_STACK_PONYTAIL_LEVEL',
+  'ORCA_STACK_AGENT', 'ORCA_STACK_MODE', 'ORCA_STACK_POLICY_PATH',
   'ORCA_STACK_CAVEMAN_LEVEL',
 ]
 // gentle-pi tools that open a TUI dialog: nobody answers one in an unattended worker (under `pi -p` they failed).
@@ -317,7 +316,6 @@ export const renderBrief = (kind, vars, nota) => {
     CODING_STANDARDS_INSTRUCTION: vars.HAS_CODING_STANDARDS ? 'Read CODING_STANDARDS.md and check the change against it before every commit.' : '',
     REVIEW_STANDARDS: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md and AGENTS.md' : 'AGENTS.md',
     REVIEW_STANDARDS_ANY: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md or AGENTS.md (a rule in either file alone is enough)' : 'AGENTS.md',
-    SHORTCUT_EXCUSE: perksOf({ perks: vars.PERKS }).ponytail ? " The Ponytail perk is on, and its `shortcut: <limit>, <when to upgrade>` comments are Excuses under orca-stack's ADR 0002: do not write them, and the self-check deletes them like any other Excuse." : '',
     COMMENT_REGLA_ESCRITA: vars.HAS_CODING_STANDARDS ? '`regla escrita`, citing `CODING_STANDARDS.md:<line>` of the rule it breaks, or as ' : '',
     REVIEW_STANDARDS_EITHER: vars.HAS_CODING_STANDARDS ? 'CODING_STANDARDS.md or AGENTS.md' : 'AGENTS.md',
     FANOUT_INSTRUCTIONS: fanoutInstructions(vars.AGENT, nota),

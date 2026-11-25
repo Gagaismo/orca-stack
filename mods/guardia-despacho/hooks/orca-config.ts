@@ -28,10 +28,10 @@ export type StackConfig = {
     modeloClaude?: string
   }
   // Perks (#393): each one is on only when its value is exactly `true`; anything else, or nothing, is off.
-  perks?: { marchas?: unknown; ponytail?: unknown; caveman?: unknown }
+  perks?: { marchas?: unknown; caveman?: unknown }
 }
 
-export const perkOn = (config: StackConfig, perk: 'marchas' | 'ponytail' | 'caveman'): boolean => config.perks?.[perk] === true
+export const perkOn = (config: StackConfig, perk: 'marchas' | 'caveman'): boolean => config.perks?.[perk] === true
 
 // Model families. Two agents whose models share a family share blind spots: one does not review the other, and
 // they do not count as two independent reviews. The family comes from the model in `agentes.modelos` (the one the
