@@ -107,11 +107,11 @@ export const familyOf = (config, agent, mode) => {
 }
 
 export const parseUntil = date => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim())
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(date.trim())
   if (match === null) return undefined
-  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
-  const at = new Date(year, month - 1, day)
-  if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== day) return undefined
+  const [year, month, day, hour, minute] = match.slice(1).map(part => Number(part ?? 0))
+  const at = new Date(year, month - 1, day, hour, minute)
+  if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== day || at.getHours() !== hour || at.getMinutes() !== minute) return undefined
 
   return at.getTime()
 }
@@ -120,7 +120,7 @@ export const blockOf = (config, agent, now) => {
   for (const rule of config.guardia?.bloquear ?? []) {
     if (typeof rule?.agente !== 'string' || rule.agente.toLowerCase() !== agent.toLowerCase()) continue
     const until = typeof rule.hasta === 'string' ? parseUntil(rule.hasta) : undefined
-    if (until === undefined) return `La regla guardia.bloquear de ${agent} tiene una fecha "hasta" que no es AAAA-MM-DD (${String(rule.hasta)}): corregila antes de despacharlo.`
+    if (until === undefined) return `La regla guardia.bloquear de ${agent} tiene una fecha "hasta" que no es AAAA-MM-DD ni AAAA-MM-DDTHH:MM (${String(rule.hasta)}): corregila antes de despacharlo.`
     if (now < until) return typeof rule.motivo === 'string' && rule.motivo.trim() !== '' ? rule.motivo : `${agent} está bloqueado hasta el ${rule.hasta}.`
   }
 

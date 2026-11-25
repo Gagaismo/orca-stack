@@ -249,6 +249,32 @@ describe('despachar: refusals', () => {
     write(layout(home).config, JSON.stringify({ guardia: { bloquear: [{ agente: 'codex', hasta: '29/10' }] } }))
     await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, fakeIo()), /fecha "hasta" que no es AAAA-MM-DD/)
   })
+
+  const blockedAt = (hasta, at) => {
+    const env = fakeIo({}, { config: { ...PROJECT, guardia: { bloquear: [{ agente: 'codex', hasta, motivo: 'Codex sin cuota.' }] } } })
+    env.io.now = () => at.getTime()
+    return env
+  }
+
+  test('#388 Rule 4: hasta 2026-11-19T19:12 refuses despachar codex at 19:11 and dispatches it at 19:12', async () => {
+    const before = blockedAt('2026-11-19T19:12', new Date(2026, 10, 19, 19, 11))
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, before), error => error.message.includes('No despacho a codex: Codex sin cuota.'))
+    assert.deepEqual(before.writes(), [])
+    assert.equal(await run('ticket', { n: '7', agent: 'codex', dryRun: true }, blockedAt('2026-11-19T19:12', new Date(2026, 10, 19, 19, 12))), 0)
+  })
+
+  test('#388 Rule 5: a date alone still lifts the block at 00:00 of that day', async () => {
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, blockedAt('2026-11-19', new Date(2026, 10, 18, 23, 59))), /No despacho a codex: Codex sin cuota\./)
+    assert.equal(await run('ticket', { n: '7', agent: 'codex', dryRun: true }, blockedAt('2026-11-19', new Date(2026, 10, 19, 0, 0))), 0)
+  })
+
+  test('#388 Rule 6: a malformed hasta is refused with the format error that names both valid formats', async () => {
+    for (const hasta of ['2026-11-19 19:12', '19:12', '2026-11-19T24:00', '2026-11-19T19:60']) {
+      const env = blockedAt(hasta, new Date(2030, 0, 1, 10, 0))
+      await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), error => error.message.includes(`La regla guardia.bloquear de codex tiene una fecha "hasta" que no es AAAA-MM-DD ni AAAA-MM-DDTHH:MM (${hasta}): corregila antes de despacharlo.`))
+      assert.deepEqual(env.writes(), [])
+    }
+  })
 })
 
 describe('issue #198: branch output and post-launch terminal checks', () => {

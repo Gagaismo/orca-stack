@@ -125,16 +125,23 @@ export const piProfileProblem = (name: string, profile: unknown): string | undef
   return undefined
 }
 
-// "2026-10-29" -> local midnight of that day; an agent is blocked while now < that instant.
+// "2026-10-29" -> local midnight of that day, "2026-10-29T19:12" -> that local minute (#388); an agent is blocked
+// while now < that instant.
 export const parseUntil = (date: string): number | undefined => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim())
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(date.trim())
   if (match === null) {
     return undefined
   }
-  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
-  const at = new Date(year, month - 1, day)
+  const [year, month, day, hour, minute] = match.slice(1).map(part => Number(part ?? 0))
+  const at = new Date(year, month - 1, day, hour, minute)
   // Round trip: 2026-02-30 would silently become 2026-03-02.
-  if (at.getFullYear() !== year || at.getMonth() !== month - 1 || at.getDate() !== day) {
+  if (
+    at.getFullYear() !== year ||
+    at.getMonth() !== month - 1 ||
+    at.getDate() !== day ||
+    at.getHours() !== hour ||
+    at.getMinutes() !== minute
+  ) {
     return undefined
   }
 
@@ -150,7 +157,7 @@ export const blockOf = (config: StackConfig, agent: string, now: number): string
     }
     const until = typeof rule.hasta === 'string' ? parseUntil(rule.hasta) : undefined
     if (until === undefined) {
-      return `La regla guardia.bloquear de ${agent} tiene una fecha "hasta" que no es AAAA-MM-DD (${String(rule.hasta)}): corregila antes de despacharlo.`
+      return `La regla guardia.bloquear de ${agent} tiene una fecha "hasta" que no es AAAA-MM-DD ni AAAA-MM-DDTHH:MM (${String(rule.hasta)}): corregila antes de despacharlo.`
     }
     if (now < until) {
       return typeof rule.motivo === 'string' && rule.motivo.trim() !== '' ? rule.motivo : `${agent} está bloqueado hasta el ${rule.hasta}.`
