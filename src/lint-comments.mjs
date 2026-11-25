@@ -56,7 +56,35 @@ const GO_RULES = [
   ].join('\n'),
 ].join('\n---\n')
 
-const RULES_BY_LANG = { js: JS_RULES, go: GO_RULES }
+const PYTHON_RULES = [
+  'id: comment-python\nlanguage: python\nrule:\n  kind: comment',
+  [
+    'id: symbol-python',
+    'language: python',
+    'rule:',
+    '  has:',
+    '    field: name',
+    '    pattern: $NAME',
+    '  any:',
+    '    - kind: function_definition',
+    '    - kind: class_definition',
+  ].join('\n'),
+].join('\n---\n')
+
+const SHELL_RULES = [
+  'id: comment-shell\nlanguage: bash\nrule:\n  kind: comment',
+  [
+    'id: symbol-shell',
+    'language: bash',
+    'rule:',
+    '  kind: function_definition',
+    '  has:',
+    '    field: name',
+    '    pattern: $NAME',
+  ].join('\n'),
+].join('\n---\n')
+
+const RULES_BY_LANG = { js: JS_RULES, go: GO_RULES, python: PYTHON_RULES, shell: SHELL_RULES }
 
 // #419: Windows caps a command line at 32,767 characters, so file paths go to ast-grep in batches.
 const ARG_BUDGET = 24000
@@ -96,6 +124,11 @@ const scan = (root, files, lang) => {
         const recv = GO_RECV.exec(match.text)?.[1]
         const isClass = !match.text.startsWith('func')
         found.symbols.push({ name: recv ? `${recv}.${name}` : name, start, end, isClass })
+      } else if (lang === 'python') {
+        const isClass = /^class\b/.test(match.text)
+        found.symbols.push({ name: match.metaVariables.single.NAME.text, start, end, isClass })
+      } else if (lang === 'shell') {
+        found.symbols.push({ name: match.metaVariables.single.NAME.text, start, end, isClass: false })
       } else {
         const isClass = /^(?:abstract\s+)?class\b|^[\w$]+\s*(?::[^=]*)?=\s*class\b/.test(match.text)
         found.symbols.push({ name: match.metaVariables.single.NAME.text, start, end, isClass })
@@ -115,7 +148,7 @@ const readSource = full => {
 }
 
 const normalize = raw => raw
-  .replace(/^\/\/+|^\/\*+|\*+\/$/g, '')
+  .replace(/^\/\/+|^\/\*+|\*+\/$|^#+/g, '')
   .split('\n')
   .map(line => line.replace(/^\s*\*+(?!\/)/, ''))
   .join(' ')
@@ -136,6 +169,9 @@ const blank = (bytes, comments) => {
 
 const DIRECTIVE = /^(?:eslint\b|eslint-|global\s|globals\s|jshint\b|jscs:|@ts-|ts-|prettier-ignore|c8\s+ignore|v8\s+ignore|istanbul\s+ignore|node:coverage|biome-ignore|deno-lint-ignore|deno-fmt-ignore|tslint:|oxlint-|stylelint-|@jsx|@flow|@refresh|@vite-ignore|@license|@preserve|[#@]__PURE__|[#@]\s*sourceMappingURL|webpack[A-Z]|type-coverage:|<reference\b|<amd-)/
 const GO_DIRECTIVE = /^(?:go:[a-z]|\+build\b|nolint\b|line\s|#cgo\b|export\s|code generated\b.*do not edit)/i
+const PYTHON_DIRECTIVE = /^(?:type:\s*ignore\b|noqa\b|pyright:\s*ignore\b|pyre-ignore\b|mypy:|pragma:\s*no\s+cover\b|pylint:|flake8:|ruff:|fmt:\s*(?:off|on|skip)\b|isort:|nosec\b|bandit:)/i
+const SHELL_DIRECTIVE = /^shellcheck\b/i
+const PYTHON_CODING = /coding[:=]\s*[-\w.]+/
 const JSDOC_TYPE = /@(?:type|typedef|param|arg|argument|returns?|template|callback|property|prop|enum|this|satisfies|implements|extends|augments|overload|import|throws|yields)\b/
 const LICENSE = /\b(?:license[ds]?|copyright|spdx-license-identifier)\b|©/i
 const DECISION_RECORD = /(?<![\w&])#\d+\b|\badr[ -]?\d{4}\b|docs\/adr\/\d{4}-/i
@@ -157,8 +193,11 @@ const isGoPackageDoc = (comment, context) => {
   return new RegExp(`^Package\\s+${pkg[1]}\\b`).test(normalize(lineOf(context.lines, firstLine).trim()))
 }
 
-const notAComment = (comment, text, context) => DIRECTIVE.test(text)
+const notAComment = (comment, text, context) => (comment.line === 0 && comment.text.startsWith('#!'))
+  || DIRECTIVE.test(text)
   || (context.lang === 'go' && (GO_DIRECTIVE.test(text) || isGoPackageDoc(comment, context)))
+  || (context.lang === 'python' && (PYTHON_DIRECTIVE.test(text) || (comment.line <= 1 && PYTHON_CODING.test(text))))
+  || (context.lang === 'shell' && SHELL_DIRECTIVE.test(text))
   || (comment.text.startsWith('/**') && JSDOC_TYPE.test(text))
   || isLicenseHeader(comment, text, context.blanked)
 
@@ -197,7 +236,7 @@ const isGoDocTautology = (text, statement) => {
 
 const isTautology = (comment, text, context) => {
   const { lines, blankedLines } = context
-  if (!comment.text.startsWith('//') || comment.line !== comment.endLine) return false
+  if (!(comment.text.startsWith('//') || comment.text.startsWith('#')) || comment.line !== comment.endLine) return false
   if (lineOf(blankedLines, comment.line).trim() !== '') return false
   if (commentOnly(lines, blankedLines, comment.line - 1) || commentOnly(lines, blankedLines, comment.line + 1)) return false
   const statement = lineOf(blankedLines, comment.line + 1).replace(/(['"`])(?:\\.|(?!\1).)*\1/g, '""').trim()
@@ -233,7 +272,7 @@ const classify = (comment, context) => {
   return undefined
 }
 
-const DECLARATION_GAP = /^(?:\s|export\b|default\b|declare\b|const\b|let\b|var\b|type\b)*$/
+const DECLARATION_GAP = /^(?:\s|export\b|default\b|declare\b|const\b|let\b|var\b|type\b|async\b|@[^\n]*\n)*$/
 
 const labelOf = (symbol, symbols) => {
   if (symbol.isClass) return symbol.name

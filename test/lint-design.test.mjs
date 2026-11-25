@@ -245,11 +245,11 @@ describe('orca-stack lint tangle, field-leak and shallow-module (#421)', () => {
     })
   })
 
-  test('R8: classes, fields and modules in other languages never give a design finding', () => {
+  test('R8: classes, fields and modules in unsupported languages never give a design finding', () => {
     withRepo(({ add, lint }) => {
-      add('app/kernel.py', 'from app.timers import Timers\n\nclass Tasks:\n    def run(self):\n        return Timers().tick()\n')
-      add('app/timers.py', 'from app.kernel import Tasks\n\nclass Timers:\n    def tick(self):\n        return Tasks\n')
-      add('app/queue.go', 'package app\n\ntype Queue struct{ items []int }\n\nfunc Use(q *Queue) { q.items = append(q.items, 1) }\n')
+      add('app/kernel.rb', "require_relative 'timers'\nclass Tasks\n  def run; Timers.new.tick; end\nend\n")
+      add('app/timers.rb', "require_relative 'kernel'\nclass Timers\n  def tick; Tasks; end\nend\n")
+      add('app/queue.rs', 'pub struct Queue { pub items: Vec<i32> }\nfn use_q(q: &mut Queue) { q.items.push(1); }\n')
       const result = lint()
       assert.equal(result.status, 0, result.out)
       assert.equal(result.stdout, OK(0))

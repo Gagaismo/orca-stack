@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
+import path from 'node:path'
 
 import { runAstGrepJson } from './ast-grep.mjs'
 import { goImportGraph } from './lint-go.mjs'
 import { batches, components, languageOf, relative, resolve } from './lint-graph.mjs'
+import { pythonImportGraph } from './lint-python.mjs'
 
 export const CYCLE_RULE = 'module-cycle'
 const LOCATION = 'cycle'
@@ -90,6 +92,40 @@ export const isCycleEntry = entry => entry.rule === CYCLE_RULE
 export const validCycleEntry = entry => Array.isArray(entry.members) && entry.members.length > 0
   && entry.members.every(member => typeof member === 'string' && member !== '')
 
+const SHELL_SOURCE_RULE = JSON.stringify({
+  id: 'source-bash',
+  language: 'bash',
+  rule: {
+    all: [
+      { kind: 'command' },
+      { has: { field: 'name', kind: 'command_name', regex: '^(?:source|\\.)$' } },
+    ],
+  },
+})
+
+// #423: shell module-cycle follows relative source/. targets with a path separator, skipping $PATH lookups and dynamic paths.
+const shellTarget = (from, text, known) => {
+  const match = /^(?:source|\.)\s+(?:"([^"]+)"|'([^']+)'|([^\s;|&<>#]+))/.exec(text.trim())
+  const raw = match?.[1] ?? match?.[2] ?? match?.[3]
+  if (!raw || /[$`]/.test(raw) || raw.startsWith('/') || raw.startsWith('~') || !raw.includes('/')) return undefined
+  const resolved = path.posix.normalize(path.posix.join(path.posix.dirname(from), raw))
+  return known.has(resolved) ? resolved : undefined
+}
+
+const shellImportGraph = (root, files) => {
+  const known = new Set(files)
+  const graph = new Map(files.map(file => [file, new Set()]))
+  for (const batch of batches(files)) {
+    for (const match of runAstGrepJson(['scan', '--inline-rules', SHELL_SOURCE_RULE, '--json=compact', '--', ...batch], { cwd: root })) {
+      const file = relative(root, match.file)
+      if (!graph.has(file)) continue
+      const target = shellTarget(file, match.text, known)
+      if (target !== undefined) graph.get(file).add(target)
+    }
+  }
+  return new Map([...graph].map(([file, targets]) => [file, [...targets].sort()]))
+}
+
 const cyclesOf = (graph, lang) => {
   const cycles = components(graph)
     .sort((a, b) => a[0].localeCompare(b[0]))
@@ -101,6 +137,8 @@ const cyclesOf = (graph, lang) => {
 export const moduleCycles = (root, files) => {
   const jsFiles = files.filter(file => languageOf(file) === 'js')
   const goFiles = files.filter(file => languageOf(file) === 'go')
+  const pyFiles = files.filter(file => languageOf(file) === 'python')
+  const shFiles = files.filter(file => languageOf(file) === 'shell')
   const cycles = []
   const selfImports = new Set()
   const addGraph = (graph, lang) => {
@@ -110,6 +148,8 @@ export const moduleCycles = (root, files) => {
   }
   if (jsFiles.length > 0) addGraph(importGraph(root, jsFiles), 'js')
   if (goFiles.length > 0) addGraph(goImportGraph(root, goFiles), 'go')
+  if (pyFiles.length > 0) addGraph(pythonImportGraph(root, pyFiles), 'python')
+  if (shFiles.length > 0) addGraph(shellImportGraph(root, shFiles), 'shell')
   cycles.sort((a, b) => a.file.localeCompare(b.file))
   return { cycles, selfImports }
 }

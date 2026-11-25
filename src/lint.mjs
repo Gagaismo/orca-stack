@@ -1,14 +1,15 @@
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { loadConfig } from './despacho.mjs'
+import { globToRegExp } from './estado.mjs'
 import { commentViolations, isCommentRule, reportComment } from './lint-comments.mjs'
 import { cycleEntry, isCycleEntry, matchCycles, moduleCycles, reportCycle, validCycleEntry } from './lint-cycles.mjs'
 import { DESIGN_REPORT, TANGLE_RULE, designChecks, reportTangle } from './lint-design.mjs'
-import { languageOf } from './lint-graph.mjs'
+import { LANGUAGE_EXTENSIONS, languageOf } from './lint-graph.mjs'
 import { homeDir, layout } from './util.mjs'
 
 export const BASELINE_FILE = '.orca-stack-baseline.json'
@@ -162,11 +163,70 @@ const alcanceOf = config => {
 }
 
 const LAYERS = '(en .orca-stack.json, .orca-stack.local.json o ~/.orca-stack/config.json)'
+const VALID_LANGUAGES = new Set(Object.keys(LANGUAGE_EXTENSIONS))
+const VALID_MODES = new Set(['blocking', 'warning'])
+const PYTHON_CI_STEP = /\b(?:pytest|py\.test|python3?\s+-m\s+(?:pytest|unittest)|uv\s+run\s+pytest|poetry\s+run\s+pytest|tox|nox)\b/
 
 const lintEnabled = config => {
   const value = config.lint?.enabled
   if (value === undefined || typeof value === 'boolean') return value !== false
   throw new Error(`lint.enabled tiene que ser true o false, no ${JSON.stringify(value)} ${LAYERS}.`)
+}
+
+const excludedMatchers = config => {
+  const value = config.lint?.excluir
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || item.trim() === '')) {
+    throw new Error(`lint.excluir tiene que ser una lista de globs no vacíos, no ${JSON.stringify(value)} ${LAYERS}.`)
+  }
+  return value.map(glob => globToRegExp(glob.trim().replace(/\\/g, '/').replace(/^\.\//, '')))
+}
+
+const filterExcluded = (files, matchers) => (matchers.length === 0 ? files : files.filter(file => !matchers.some(re => re.test(file))))
+
+// #423: Python defaults to warning unless a GitHub Actions workflow runs a Python test suite.
+const ciRunsPython = root => {
+  const dir = path.join(root, '.github', 'workflows')
+  if (!existsSync(dir)) return false
+  for (const name of readdirSync(dir).filter(one => /\.ya?ml$/i.test(one))) {
+    const text = readFileSync(path.join(dir, name), 'utf8')
+    const steps = text.split(/\r?\n/).filter(line => !/^\s*(?:#|(?:-\s*)?name\s*:)/.test(line)).join('\n')
+    if (PYTHON_CI_STEP.test(steps)) return true
+  }
+  return false
+}
+
+const languageModes = (root, config) => {
+  const modes = { js: 'blocking', go: 'blocking', python: ciRunsPython(root) ? 'blocking' : 'warning', shell: 'blocking' }
+  const raw = config.lint?.lenguajes
+  if (raw === undefined) return modes
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`lint.lenguajes tiene que ser un objeto {lenguaje: "blocking" | "warning"}, no ${JSON.stringify(raw)} ${LAYERS}.`)
+  }
+  for (const [lang, mode] of Object.entries(raw)) {
+    if (!VALID_LANGUAGES.has(lang)) {
+      throw new Error(`lint.lenguajes no conoce el lenguaje ${JSON.stringify(lang)} (válidos: ${[...VALID_LANGUAGES].join(', ')}) ${LAYERS}.`)
+    }
+    if (!VALID_MODES.has(mode)) {
+      throw new Error(`lint.lenguajes.${lang} tiene que ser "blocking" o "warning", no ${JSON.stringify(mode)} ${LAYERS}.`)
+    }
+    modes[lang] = mode
+  }
+  return modes
+}
+
+const entryLanguage = (entry, files) => {
+  if (entry.rule === 'long-file' || entry.rule === 'wide-directory') return undefined
+  const direct = languageOf(entry.file)
+  if (direct) return direct
+  if (Array.isArray(entry.members) && entry.members.length > 0) {
+    const first = entry.members[0].split(':')[0]
+    const fromMember = languageOf(first)
+    if (fromMember) return fromMember
+  }
+  const prefix = entry.file === '.' || entry.file === './' ? '' : `${entry.file.replace(/\/$/, '')}/`
+  const sample = files.find(file => (prefix === '' ? !file.includes('/') : file.startsWith(prefix)) && languageOf(file) !== undefined)
+  return sample ? languageOf(sample) : undefined
 }
 
 const layerJson = file => {
@@ -303,9 +363,10 @@ export const seedBaseline = (cwd, { home = homeDir(), extraFiles = [] } = {}) =>
   const root = repoRoot(cwd)
   const config = loadConfig(home, root)
   if (!lintEnabled(config)) return { disabled: true }
+  const matchers = excludedMatchers(config)
   const candidates = [...new Set([...extraFiles, BASELINE_FILE])]
   const ignored = new Set(nulList(spawnSync('git', ['check-ignore', '--no-index', '-z', '--', ...candidates], { cwd: root, encoding: 'utf8' }).stdout ?? ''))
-  const files = [...new Set([...checkedFiles(root), ...candidates.filter(file => !ignored.has(file))])].sort()
+  const files = filterExcluded([...new Set([...checkedFiles(root), ...candidates.filter(file => !ignored.has(file))])].sort(), matchers)
   const { matchInScope } = inspect(root, config, files)
   return sembrar(root, readBaseline(root), matchInScope)
 }
@@ -318,8 +379,11 @@ export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir()
     console.log(lintOff(home, root))
     return 0
   }
+  const matchers = excludedMatchers(config)
+  const modes = languageModes(root, config)
+  const files = filterExcluded(checkedFiles(root), matchers)
   let entries = readBaseline(root)
-  const { diff, matchInScope } = inspect(root, config, checkedFiles(root))
+  const { diff, matchInScope } = inspect(root, config, files)
 
   if (flags.sembrar) {
     const seeded = sembrar(root, entries, matchInScope)
@@ -328,18 +392,32 @@ export const lintCommand = async (flags, { cwd = process.cwd(), home = homeDir()
   }
 
   const { unmatched, stale: expired, cycles: newCycles, staleCycles } = matchInScope(entries)
-  const stale = [...(diff ? expired.filter(entry => !isCommentRule(entry.rule)) : expired), ...staleCycles]
-  if (unmatched.length === 0 && newCycles.length === 0 && stale.length === 0) {
-    console.log(`lint OK: ninguna violación nueva ni entrada vencida (${entries.length} en la Baseline)`)
+  const allStale = [...(diff ? expired.filter(entry => !isCommentRule(entry.rule)) : expired), ...staleCycles]
+  const isWarning = lang => lang !== undefined && modes[lang] === 'warning'
+  const blocking = unmatched.filter(item => !isWarning(item.lang))
+  const warnViolations = unmatched.filter(item => isWarning(item.lang))
+  const blockingCycles = newCycles.filter(item => !isWarning(item.lang))
+  const warnCycles = newCycles.filter(item => isWarning(item.lang))
+  const stale = allStale.filter(entry => !isWarning(entryLanguage(entry, files)))
+  const warnStale = allStale.filter(entry => isWarning(entryLanguage(entry, files)))
+
+  const formatViolation = violation => (isCommentRule(violation.rule) ? reportComment(violation) : REPORT[violation.rule](violation))
+  const formatCycle = cycle => (cycle.rule === TANGLE_RULE ? reportTangle(cycle) : reportCycle(cycle))
+  const formatStale = entry => `entrada vencida en ${BASELINE_FILE}: ${entry.rule} ${entry.file} (${entry.location}, ${entry.fingerprint}) — la violación ya no está en el repo: sacá esta entrada`
+
+  for (const violation of blocking) console.log(formatViolation(violation))
+  for (const cycle of blockingCycles) console.log(formatCycle(cycle))
+  for (const entry of stale) console.log(formatStale(entry))
+  for (const violation of warnViolations) console.log(`warning: ${formatViolation(violation)}`)
+  for (const cycle of warnCycles) console.log(`warning: ${formatCycle(cycle)}`)
+  for (const entry of warnStale) console.log(`warning: ${formatStale(entry)}`)
+
+  const totalWarnings = warnViolations.length + warnCycles.length + warnStale.length
+  if (blocking.length === 0 && blockingCycles.length === 0 && stale.length === 0) {
+    const suffix = totalWarnings === 0 ? '' : `, ${plural(totalWarnings, 'aviso', 'avisos')}`
+    console.log(`lint OK: ninguna violación nueva ni entrada vencida (${entries.length} en la Baseline${suffix})`)
     return 0
   }
-  for (const violation of unmatched) {
-    console.log(isCommentRule(violation.rule) ? reportComment(violation) : REPORT[violation.rule](violation))
-  }
-  for (const cycle of newCycles) console.log(cycle.rule === TANGLE_RULE ? reportTangle(cycle) : reportCycle(cycle))
-  for (const entry of stale) {
-    console.log(`entrada vencida en ${BASELINE_FILE}: ${entry.rule} ${entry.file} (${entry.location}, ${entry.fingerprint}) — la violación ya no está en el repo: sacá esta entrada`)
-  }
-  console.log(`✖ lint: ${plural(unmatched.length + newCycles.length, 'violación nueva', 'violaciones nuevas')}, ${plural(stale.length, 'entrada vencida', 'entradas vencidas')}`)
+  console.log(`✖ lint: ${plural(blocking.length + blockingCycles.length, 'violación nueva', 'violaciones nuevas')}, ${plural(stale.length, 'entrada vencida', 'entradas vencidas')}`)
   return 1
 }

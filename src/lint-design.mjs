@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { goDesignChecks } from './lint-go.mjs'
 import { components, languageOf } from './lint-graph.mjs'
+import { pythonDesignChecks } from './lint-python.mjs'
 import { classShape, fieldUses, isInside, symbolGraph } from './lint-symbols.mjs'
 
 export const TANGLE_RULE = 'tangle'
@@ -78,6 +79,7 @@ const shallowModules = ({ byFile, nodes, users }) => {
 export const designChecks = (root, files) => {
   const jsFiles = files.filter(file => languageOf(file) === 'js')
   const goFiles = files.filter(file => languageOf(file) === 'go')
+  const pyFiles = files.filter(file => languageOf(file) === 'python')
   const tanglesList = []
   const violations = []
   if (jsFiles.length > 0) {
@@ -89,6 +91,11 @@ export const designChecks = (root, files) => {
     const go = goDesignChecks(root, goFiles)
     tanglesList.push(...go.tangles)
     violations.push(...go.violations)
+  }
+  if (pyFiles.length > 0) {
+    const py = pythonDesignChecks(root, pyFiles)
+    tanglesList.push(...py.tangles)
+    violations.push(...py.violations)
   }
   tanglesList.sort((a, b) => a.members[0].localeCompare(b.members[0]))
   return { tangles: tanglesList, violations }
