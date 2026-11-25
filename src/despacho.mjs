@@ -1041,7 +1041,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   if (review) {
     const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'headRefName,headRefOid,body,number'], { cwd: root }), 'gh pr view'), 'gh pr view')
     implementer = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim().toLowerCase()
-    if (!implementer) throw new Error(`El PR #${n} no tiene la línea "Implementador: <agente>": sin ella no puedo comprobar que el revisor sea otro.`)
+    if (!implementer) throw new Error(`El PR #${n} no tiene la línea "Implementador: <agente>" (la llevan los PRs de ticket y los de orquestación): sin ella no puedo comprobar que el revisor sea otro.`)
     if (implementer === agent.trim().toLowerCase()) throw new Error(`${agent} implementó el PR #${n}: nadie revisa su propio PR.`)
     // Same model family, same blind spots. pi is the exception: next to a Claude agent it brings another methodology.
     // A model with no known family proves nothing, so it does not stop the review.

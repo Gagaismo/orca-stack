@@ -619,7 +619,7 @@ export const main = async (argv, io) => {
       case 'despachar':
         return await despacharCommand(flags, rest[1], rest[2])
       case 'revisar':
-        return await revisarCommand(flags, rest[1], rest[2])
+        return await revisarCommand(flags, rest[1], rest[2], io)
       case 'rebote':
         return await reboteCommand(flags, rest[1], io)
       case 'brief-revision':
