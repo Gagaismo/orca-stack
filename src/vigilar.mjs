@@ -3,11 +3,12 @@ import path from 'node:path'
 
 import { identityOf, paneAgents, paneKey, readScreen, repoWorktrees, stackAgent, turnRunning, workerTerminals } from './avisar.mjs'
 import { analyzeChecks, checkRunId, isHigherRunId, isStatus, latestChecks } from './checks.mjs'
-import { consultasCommand, getCommonDir } from './consultas.mjs'
+import { consultasCommand } from './consultas.mjs'
 import { defaultIo, quotaLine, shellPrompt } from './despacho.mjs'
 import { commitOf, markerValue } from './marcas.mjs'
 import { switchAccount } from './orca.mjs'
 import { watchParent } from './parent-watch.mjs'
+import { getCommonDir } from './repo.mjs'
 import { sha256 } from './util.mjs'
 
 export const CURSOR_REL = ['orca-stack', 'vigilar.json']
@@ -625,7 +626,7 @@ const watchUmbrella = async (flags, items, io, warn) => {
 // entry in vigilar.json, pruned to the ids `check --all` still returns, so the entry stays bounded and a restart neither
 // loses nor repeats a message.
 const runKey = runId => `run:${runId}`
-const TASK_TITLE = /^#(\d+) (\S+)$/
+const TASK_TITLE = /^#(\d+) (\S+)(?: rebote #\d+| reanudado)?$/
 const MAILBOX_TYPES = ['worker_done', 'escalation', 'question']
 
 const orchestration = (io, root, args) => {

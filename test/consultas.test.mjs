@@ -202,3 +202,23 @@ describe('orca-stack consultas: shared marker normaliser (#365, S9)', () => {
     assert.deepEqual(JSON.parse(io.files[path.join('/repo/.git', 'orca-stack', 'consultas-reportadas.json')]), ['bom'])
   })
 })
+
+describe('the common-dir and stack-account helpers live in src/repo.mjs (#461)', () => {
+  test('#461 Rule 1: avisar, estado, limpiar, novedades and vigilar import the helpers from repo.mjs and no module imports them from consultas.mjs', async () => {
+    const src = path.join(PACKAGE_ROOT, 'src')
+    const importsOf = file => [...readFileSync(path.join(src, file), 'utf8').matchAll(/^import \{([^}]*)\} from '\.\/([^']+)'/gm)].map(([, names, from]) => ({ names: names.split(',').map(n => n.trim()), from }))
+    for (const file of ['avisar.mjs', 'estado.mjs', 'limpiar.mjs', 'novedades.mjs', 'vigilar.mjs', 'consultas.mjs']) {
+      const imports = importsOf(file)
+      assert.ok(imports.some(({ names, from }) => from === 'repo.mjs' && names.includes('getCommonDir')), file)
+      for (const { names, from } of imports.filter(({ from }) => from === 'consultas.mjs')) {
+        assert.deepEqual(names.filter(n => n === 'getCommonDir' || n === 'getStackAccount'), [], file)
+      }
+    }
+    const consultas = await import('../src/consultas.mjs')
+    assert.equal(consultas.getCommonDir, undefined)
+    assert.equal(consultas.getStackAccount, undefined)
+    const repo = await import('../src/repo.mjs')
+    assert.equal(typeof repo.getCommonDir, 'function')
+    assert.equal(typeof repo.getStackAccount, 'function')
+  })
+})
