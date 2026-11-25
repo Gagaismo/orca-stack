@@ -266,3 +266,52 @@ describe('orca-stack vigilar: an escalation without worker_done (#445)', () => {
     assert.ok(output.includes('worker-sin-reporte #<n> <agente>'))
   })
 })
+
+describe('orca-stack vigilar: rebote and reanudado task titles (#461)', () => {
+  const stopped = (sequence, taskId) =>
+    ({ id: `msg_${sequence}`, run_id: RUN, type: 'escalation', subject: 'Worker stopped without reporting', body: 'b', sequence, payload: JSON.stringify({ taskId, dispatchId: `ctx_${sequence}`, handle: 'term_1', stopReason: 'finished' }) })
+  const relaunched = status => [
+    { id: 'task_rebote', status, title: '#419 pi rebote #442' },
+    { id: 'task_reanudado', status, title: '#212 codex reanudado' },
+  ]
+
+  test('#461 Rule 2: a worker_done ok on task "#419 pi rebote #442" emits worker-terminado #419 pi ok', async () => {
+    const h = harness({ run: RUN, mailbox: [msg(10, 'worker_done', 'task_rebote', 'succeeded')], tasks: relaunched('completed') })
+    assert.equal(await once(h), 0)
+    assert.deepEqual(h.out, ['worker-terminado #419 pi ok'])
+    assert.deepEqual(h.err, [])
+  })
+
+  test('#461 Rule 3: a question on task "#212 codex reanudado" emits consulta #212 codex <message_id>', async () => {
+    const h = harness({ run: RUN, mailbox: [{ ...msg(21, 'question', 'task_reanudado'), subject: 'Question', body: '¿Sigo?' }], tasks: relaunched('dispatched') })
+    assert.equal(await once(h), 0)
+    assert.deepEqual(h.out, ['consulta #212 codex msg_21'])
+  })
+
+  test('#461 Rule 4: an escalation on a rebote or reanudado task emits nothing while dispatched and worker-sin-reporte once it leaves dispatched', async () => {
+    const h = harness({ run: RUN, mailbox: [stopped(10, 'task_rebote'), stopped(11, 'task_reanudado')], tasks: relaunched('dispatched') })
+    await once(h)
+    assert.deepEqual(h.out, [])
+    h.world.tasks = relaunched('failed')
+    await once(h)
+    assert.deepEqual(h.out, ['worker-sin-reporte #419 pi', 'worker-sin-reporte #212 codex'])
+  })
+
+  test('#461 Rule 5: "#419: rebote de PR #442 (B), 3 bloqueos" and "#436 pi (gentle-shell fork)" produce no event', async () => {
+    const tasks = [
+      { id: 'task_chain', status: 'completed', title: '#419: rebote de PR #442 (B), 3 bloqueos' },
+      { id: 'task_fork', status: 'completed', title: '#436 pi (gentle-shell fork)' },
+    ]
+    const h = harness({ run: RUN, mailbox: [msg(10, 'worker_done', 'task_chain', 'succeeded'), msg(11, 'question', 'task_fork'), stopped(12, 'task_fork')], tasks })
+    assert.equal(await once(h), 0)
+    assert.deepEqual(h.out, [])
+    assert.deepEqual(h.err, [])
+  })
+
+  test('#461 Rule 6: a "#<n> <agente>" task behaves exactly as today', async () => {
+    const tasks = [{ id: 'task_7', status: 'completed', title: '#7 claude' }, { id: 'task_8', status: 'dispatched', title: '#8 codex' }, { id: 'task_9', status: 'failed', title: '#9 agy' }]
+    const h = harness({ run: RUN, mailbox: [msg(10, 'worker_done', 'task_7', 'succeeded'), msg(11, 'question', 'task_8'), stopped(12, 'task_8'), stopped(13, 'task_9')], tasks })
+    await once(h)
+    assert.deepEqual(h.out, ['worker-terminado #7 claude ok', 'consulta #8 codex msg_11', 'worker-sin-reporte #9 agy'])
+  })
+})

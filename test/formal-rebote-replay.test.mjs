@@ -50,6 +50,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
   const sessionFile = path.join(sessionDir, '2026-10-09T00-00-00-000Z_session.jsonl')
   const files = new Map()
   const modified = new Map()
+  let launchedAgent
   const io = {
     home,
     cwd: root,
@@ -81,6 +82,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
       if (args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })
       if (args.join(' ').startsWith('worktree create')) return json({ result: { worktree: { path: worktree, branch: 'refs/heads/proj-7' } } })
       if (args[0] === 'terminal' && args[1] === 'create') {
+        launchedAgent = args[args.indexOf('--title') + 1]
         if (/(^|; )pi /.test(String(args[args.indexOf('--command') + 1] ?? '')) && piTools !== 'missing') {
           const text = piTools === 'none' ? '<tools>\n(none)' : '<tools>\n- read: Read file contents\n- bash: Execute commands'
           files.set(sessionFile, [
@@ -92,7 +94,10 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
         return json({ result: { terminal: { handle: 'term_1' } } })
       }
       if (args[0] === 'terminal' && args[1] === 'send' && args.includes('--wait-submit')) return json({ result: { submission: 'submitted', turnStarted: true } })
-      if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'], latestCursor: calls.length } } })
+      if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: launchedAgent === 'agy' ? ['ready', '>'] : ['ready'], latestCursor: calls.length } } })
+      // #462: rebote starts the author with worker-start in the Run bound to main.
+      if (args[0] === 'orchestration' && args[1] === 'run-current') return json({ ok: true, result: { runId: 'run_main' } })
+      if (args[0] === 'orchestration' && args[1] === 'worker-start') return json({ ok: true, result: { taskId: 'task_1', dispatchId: 'ctx_1', status: 'ready' } })
       return okRes()
     },
   }

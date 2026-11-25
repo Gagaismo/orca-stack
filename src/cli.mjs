@@ -32,7 +32,7 @@ Comandos:
   revisar   Despacha el review de un PR a un agente que no sea su autor.
   brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
-  consultas Filtra y avisa comentarios Consulta: nuevos en issues y PRs en curso.
+  consultas Filtra y avisa comentarios Consulta: nuevos en issues y PRs en curso (deprecado, ADR 0004: se saca en la próxima release).
   avisar    Le toca el timbre a un worker con el turno en curso: una línea con la URL de la respuesta de main.
   reanudar  Reanuda un worker detenido con una respuesta de main o relanza su trabajo en el mismo worktree.
   vigilar   Vigila los PRs de una tanda para el Monitor: solo emite eventos, retoma donde quedó e ignora los merges de main.
@@ -40,7 +40,7 @@ Comandos:
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
   limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
   novedades Precheck de una automatización de Orca que sondea GitHub: sale con 1 (Orca saltea la corrida) si no hay nada nuevo.
-  lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y en JS/TS, los comentarios, module-cycle: módulos que se importan en círculo, y el diseño: tangle, field-leak y shallow-module) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
+  lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y en JS/TS, Go, Python y Shell: comentarios, module-cycle y diseño: tangle, field-leak y shallow-module) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
   --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
@@ -60,7 +60,7 @@ Opciones:
   --limpiar-sdd    (global) Respaldar y mover solo los restos SDD conocidos a ~/.orca-stack/backups.
   --cada <segundos> (vigilar) Cada cuánto consulta GitHub (por defecto: 60).
   --una-vez        (vigilar) Consulta una sola vez y sale.
-  --consultas      (vigilar) En cada vuelta corre también el chequeo de \`consultas\` para los mismos items.
+  --consultas      (vigilar) [deprecado, ADR 0004] En cada vuelta corre también el chequeo de \`consultas\` para los mismos items (se saca en la próxima release).
   --merge-de-main <pr> (vigilar) Registra que main está por mergear <pr> y sale, sin imprimir nada.
   --paraguas <n>   (vigilar) Vigila los sub-issues del issue paraguas <n>: un evento por cada tanda nueva de tickets publicada.
   --json           (estado) Imprime un objeto JSON por PR (un arreglo si son varios) y sale con 0 solo si están listos.
@@ -162,8 +162,11 @@ Con pi leen la sesión nueva de Pi con las mismas pausas y fallan si su primera 
 con esa línea y el CLAUDE_CONFIG_DIR usado.
 Si la sesión nueva de Pi no aparece y el brief quedó escrito en la entrada de pi sin enviar, mandan un solo Enter a la
 terminal y la esperan de nuevo; si sigue sin aparecer, fallan con el mismo mensaje y el term_<id>, sin un segundo Enter.
-En revisar, rebote y planificar, si pi queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, cierran esa terminal y lo
-lanzan una vez más; si la segunda también queda vacía, fallan con el mismo mensaje y el term_<id> de la segunda, que queda abierta.
+Si pi queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, lo lanzan una vez más: revisar y planificar cierran esa
+terminal; despachar, rebote y reanudar, que lo arrancaron supervisado, detienen su dispatch con \`orca orchestration worker-stop\` y lo
+relanzan en una terminal nueva sobre la misma tarea (\`worker-start --task <id> --retry-of <dispatch>\`). Si el cierre, el worker-stop o
+ese worker-start fallan, fallan nombrando la terminal y el error, sin otro lanzamiento. Si la segunda también queda vacía, fallan con el
+mismo mensaje y el term_<id> de la segunda, que queda abierta.
 
 Con pi, --perfil-pi <nombre> (o agentes.pi.perfil en la config; el flag gana) fija para ese worktree uno de los perfiles de
 ~/.pi/gentle-ai/profiles.json: escribe .pi/gentle-ai/profile.json en el worktree (fuera de git, vía info/exclude) y lanza pi con el
@@ -184,7 +187,11 @@ ese review cuenta para el paso 7 solo si ninguna ruta de Sin leer: es de riesgo.
 `,
   rebote: `orca-stack rebote <pr> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--continuar] [--rdd <lentes>] [--dry-run]
 
-Relanza al autor indicado por \`Implementador:\` en el worktree existente de la rama del PR. Exige un review bloqueante
+Relanza al autor indicado por \`Implementador:\` en el worktree existente de la rama del PR, como worker supervisado del Run ligado a
+main (como despachar: reusa el Run o lo crea): abre la terminal del agente sin el brief y se lo entrega
+\`orca orchestration worker-start --spec-file <brief> --task-title "#<issue> <agente> rebote #<pr>"\`, así el autor le pregunta a main
+con \`orca orchestration ask\`. El issue sale del primer \`Closes #<n>\` del PR, si no del sufijo numérico de la rama, si no del número
+del PR. Si worker-start falla, sale con el error de Orca y no publica marcador. Lo mismo vale para --rdd y --continuar. Exige un review bloqueante
 vigente o checks fallidos sobre el head, worktree limpio y detenido en ese commit; los hallazgos de interpretaci\u00F3n (los que llevan \`interpretaci\u00F3n\` al final de su etiqueta, no en su texto) solo bloquean el rebote por review,
 salvo que despu\u00E9s del review haya un comentario \`Respuesta del humano:\` en el PR o en un issue que cierra (\`Closes #<n>\`): entonces van al autor con el enlace a esa respuesta.
 El rebote por review se cuenta por el \`Commit:\` de cada review: un \`Rebote: <sha>\` de un head anterior no frena ning\u00FAn rebote, y un head que avanz\u00F3 rebota si tiene un review bloqueante propio.
@@ -197,8 +204,8 @@ Desde la ronda 2 imprime, sin publicarla ni frenar el rebote, una l\u00EDnea que
 El brief de un rebote por review le pide al autor nombrar la clase de defecto de cada hallazgo, corregir todas sus instancias en el diff y decir en su comentario cu\u00E1les otras revis\u00F3.
 Un PR en conflicto con la base (mergeable CONFLICTING) rebota aunque no tenga bloqueos y su CI esté verde, falte o siga pendiente:
 el brief suma \`## Merge conflict\` (git merge origin/<base>, nunca rebase) y publica \`Rebote conflicto: <sha>\`, con contador propio; repetirlo en el mismo head se niega.
-Con pi, si el autor queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, cierra esa terminal y lo lanza una vez más;
-si la segunda también queda vacía, falla con "No observé una sesión nueva de Pi después del lanzamiento" y la terminal, sin publicar marcador.
+Con pi, si el autor queda en \`waiting for input\` con la entrada vacía y sin sesión nueva, detiene ese dispatch con worker-stop y lo
+lanza una vez más en la misma tarea (--retry-of); si la segunda también queda vacía, falla con "No observé una sesión nueva de Pi después del lanzamiento" y la terminal, sin publicar marcador.
 Publica el marcador después de lanzar al autor; si \`gh pr comment\` falla, lo reintenta hasta 3 intentos con unos segundos entre uno y otro.
 Si los 3 intentos fallan, sale con código 1 e imprime que el autor ya está relanzado, las líneas del marcador, su archivo y el comando
 \`gh pr comment <pr> --body-file <archivo>\`, que main tiene que correr antes de cualquier otro rebote o merge de ese PR.
@@ -221,6 +228,8 @@ Con --dry-run muestra las acciones y las rutas, sin crear worktree ni brief.
 `,
   consultas: `orca-stack consultas <n...> [--dry-run]
 
+DEPRECADO (ADR 0004): los workers le preguntan a main por el buzón del Run. Se saca en la próxima release.
+
 Para los issues y PRs en curso indicados, busca comentarios nuevos que comiencen con "Consulta:" hechos por la cuenta de GitHub del stack (leída con \`gh api user\`).
 Emite una sola línea "consulta nueva en #<n>" por cada comentario nuevo y recuerda lo reportado en .git/orca-stack/consultas-reportadas.json para ser idempotente.
 `,
@@ -239,12 +248,15 @@ Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
   reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--terminal <handle>] [--dry-run]
 
 Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una línea con la URL de la respuesta; si ya salió,
-lo relanza en su worktree existente. Si el Run de main tiene una tarea \`#<issue> <agente>\` en ready, el relanzamiento arranca un dispatch
-nuevo con \`orca orchestration worker-start --run <run> --task <task_id> --terminal <handle>\`: Orca le entrega el brief una vez y la URL
-va sola en una línea aparte; si worker-start falla, imprime el error de Orca y la terminal nueva, y sale con código distinto de cero.
-Sin esa tarea, lo relanza con el brief original y la URL al principio; con pi, una entrada vacía se relanza una vez como en rebote.
-Si la tarea sigue en dispatched, lo relanza igual que sin tarea (sin worker-start) e imprime una línea \`⚠ La tarea #<issue> <agente> sigue
-dispatched en el Run de main (dispatch <id>)…\`: Orca va a rechazar su worker_done, así que seguí el PR con vigilar. Exige que la respuesta sea un comentario real
+lo relanza en su worktree existente, siempre como worker supervisado del Run de main, en uno de tres casos:
+- Con una tarea \`#<issue> <agente>\` en ready, arranca un dispatch nuevo sobre ella con
+  \`orca orchestration worker-start --run <run> --task <task_id> --terminal <handle>\`: Orca le entrega el brief una vez y la URL va sola
+  en una línea aparte. No crea otra tarea.
+- Sin Run o sin esa tarea, crea la tarea supervisada \`#<issue> <agente>\` como despachar (reusa el Run ligado a main o lo crea):
+  \`orca orchestration worker-start --spec-file <brief> --task-title "#<issue> <agente>"\`, con la URL al principio del brief.
+- Con esa tarea todavía en dispatched, crea una tarea supervisada nueva \`#<issue> <agente> reanudado\` y lo relanza ligado a ella.
+Si worker-start falla, sale con el error de Orca, con código distinto de cero, y deja el worktree como estaba.
+Con pi, una entrada vacía se relanza una vez sobre la misma tarea, como en despachar. Exige que la respuesta sea un comentario real
 de la cuenta del stack o del humano (del issue o de su PR abierto), y se niega si el worker sigue trabajando, si ya hay un PR abierto
 y la respuesta es del issue, o si el worktree está sucio. Un worker que quedó pendiente tras un \`cuenta cambiada:\` se relanza
 (nunca una línea a la sesión pausada, que conserva su cuenta) aunque el worktree esté sucio.
@@ -321,14 +333,16 @@ por línea, y todo diagnóstico va a stderr. Cada --cada segundos (por defecto 6
   tanda-cerrada #<n> #<m>...         terminaron todos los items; sale con 0
 En cada vuelta lee también el buzón del Run de Orca ligado a main (\`orca orchestration run-current\`), con
 \`orca orchestration check --all\`, que no marca nada como leído, y nombra cada worker por el título "#<n> <agente>" de
-su tarea (las tareas con otro título se ignoran). Sin Run ligado vigila solo GitHub; si Orca falla, lo dice una vez
+su tarea, también con el sufijo " rebote #<pr>" o " reanudado" de un relanzamiento (las tareas con otro título
+se ignoran). Sin Run ligado vigila solo GitHub; si Orca falla, lo dice una vez
 por corte en stderr y sigue con GitHub.
 Un PR es del issue por su referencia de cierre, por la rama del worktree de este repo enlazado al issue o por una línea
 \`Closes #<n>\` en su cuerpo; nunca por adivinar el nombre de la rama. Un issue cerrado sin PR cuenta como terminado.
 Guarda lo emitido en <git-common-dir>/orca-stack/vigilar.json: rearmado con los mismos argumentos, retoma sin repetir.
 Si el proceso que lo lanzó desaparece (el Monitor venció o se paró), sale en menos de 5 segundos con su gh u orca.
 --una-vez consulta una vez y sale; --dry-run consulta una vez y no escribe nada; --consultas corre en cada vuelta el
-chequeo de \`orca-stack consultas\` para los mismos items (un solo Monitor).
+chequeo de \`orca-stack consultas\` para los mismos items (deprecado, ADR 0004: los workers le preguntan a main por el
+buzón del Run; se saca en la próxima release).
 
 --merge-de-main <pr> registra el head del PR en <git-common-dir>/orca-stack/vigilar-merges.json y sale sin imprimir
 nada en stdout. main lo corre justo antes de cada intento de \`gh pr merge <pr>\`, también después de
@@ -366,48 +380,51 @@ Cada violación nueva sale en una línea con la regla, el archivo o directorio, 
   long-file test/foo.mjs: 2345 líneas (máximo 2000) — dividí el archivo
   wide-directory src/: 37 entradas (máximo 15) — agrupá los archivos relacionados en subdirectorios
 
-En los archivos .js, .mjs, .cjs, .jsx, .ts, .tsx, .mts y .cts aplica la regla de los comentarios de CODING_STANDARDS.md:
+En los archivos JS/TS (.js, .mjs, .cjs, .jsx, .ts, .tsx, .mts, .cts), Go (.go), Python (.py) y Shell (.sh, .bash) aplica la regla de los comentarios de CODING_STANDARDS.md:
   comment-excuse     TODO, FIXME, HACK o XXX (en mayúsculas), o hack, workaround, temporary (salvo "temporary file",
                      "temporary directory" y parecidos), for now, shortcut: o upgrade when
-  comment-tautology  un comentario corto de una línea que repite la sentencia que sigue ("// increment i" sobre i++)
+  comment-tautology  un comentario corto de una línea que repite la sentencia que sigue ("// increment i" sobre i++;
+                     en Go también un doc comment que solo repite el nombre de la función, como "// Foo does foo." sobre func Foo)
   comment-stale      un comentario que nombra una llamada fooBar() que no está definida ni importada en el archivo; un
                      identificador entre backticks nunca se marca
 Un comentario que cita un issue (#123), un ADR (ADR 0002) o docs/adr/0002-… es un Decision Record y pasa.
-Nunca se marcan los shebangs, los encabezados de licencia, las directivas (eslint-…, @ts-…, prettier-ignore, c8 ignore…),
-el JSDoc con tags de tipo (@type, @param…) ni un // dentro de un string. La ubicación es la función, el método o la clase
-que lo contiene (o la declaración que sigue), o <módulo>:
+Nunca se marcan los shebangs, los encabezados de licencia, las directivas (eslint-…, @ts-…, prettier-ignore, c8 ignore…,
+//go:build, //go:generate, //nolint, # shellcheck …, # type: ignore, # noqa, # -*- coding: … -*-), el comentario de paquete
+golint ("// Package foo …" sobre package foo), los docstrings de Python, el JSDoc con tags de tipo (@type, @param…) ni un //
+dentro de un string. La ubicación es la función, el método o la clase/tipo que lo contiene (o la declaración que sigue), o <módulo>:
   comment-excuse src/x.mjs:foo() (Excuse) — borralo y abrí un issue para arreglar la implementación
-Go, Python, Shell, Markdown y los demás lenguajes no dan hallazgos de comentarios.
+Go, Python, Shell y JS/TS corren solo cuando el repo tiene archivos de ese lenguaje; Markdown y los demás lenguajes no dan hallazgos de comentarios.
 
-module-cycle, en los mismos archivos JS/TS: los módulos que se importan en círculo (a importa b y b importa a, o
-a → b → c → a) son una violación; una cadena a → b → c no. Cuentan import … from, import './x', export … from y
+module-cycle, en JS/TS, Go (por paquete dentro del módulo de go.mod; sin go.mod no falla), Python (imports relativos y del
+propio repo) y Shell (solo source / . de archivos relativos): los módulos que se importan en círculo (a importa b y b importa
+a, o a → b → c → a) son una violación; una cadena a → b → c no. En JS/TS cuentan import … from, import './x', export … from y
 require('./x') con un string; no cuentan import type ni export type … from de TS, ningún import() dinámico, los
 paquetes (node:fs, nombres de npm) ni un especificador que no resuelve a un archivo revisado. Un especificador relativo
 resuelve al archivo exacto, o con .mjs, .js, .cjs, .ts, .tsx, .mts, .cts o .jsx, o a /index con esas extensiones.
 Cada ciclo sale como un recorrido cerrado que pasa por todos sus módulos y empieza y termina en el menor:
   module-cycle src/a.mjs → src/b.mjs → src/a.mjs — dale una dirección a los módulos
-Go, Python, Shell y los demás lenguajes no dan hallazgos de module-cycle.
 
-Tres chequeos de diseño más, en los mismos archivos JS/TS, portados de deslop-please (MIT; las definiciones, en el manual).
-Una cosa es una clase, una función exportada del nivel del módulo o un objeto literal del nivel del módulo; una función
+Tres chequeos de diseño más, en JS/TS, Go (paquete = módulo, struct/tipo/función exportada = cosa) y Python (archivo o paquete
+con __init__.py = módulo, clase o función pública del nivel del módulo = cosa), portados de deslop-please (MIT; las definiciones,
+en el manual). En Shell no corren y no producen nada.
+Una cosa es una clase/struct, una función exportada del nivel del módulo o un objeto literal del nivel del módulo; una función
 que no se exporta es un ayudante (lo que nombra cuenta como de quien la usa). Una referencia que no se resuelve (acceso
 dinámico, import() calculado, paquete, archivo que no existe) se saltea y nunca hace fallar la corrida.
 tangle          cosas que se conocen en círculo, escritas en más de un módulo, o más de 7 en un círculo:
   tangle src/kernel.mjs:Tasks, src/timers.mjs:Timers: 2 cosas en 2 módulos (máximo 7 cosas en un solo módulo) — …
-field-leak      código de afuera de una clase que escribe, modifica o le llama un método a un campo suyo
-                (queue.items.push(x)), cuando la clase se guarda un campo que usa un método suyo; leer queue.size o
-                llamar queue.push(x) no es fuga. Solo se resuelve una variable creada con const v = new Clase() en el
-                mismo archivo:
+field-leak      código de afuera de una clase (o, en Go, de otro paquete) que escribe, modifica o le llama un método a un campo suyo
+                (queue.items.push(x)), cuando la clase se guarda un campo que usa un método suyo (en Go, un campo exportado
+                que usan sus métodos); leer queue.size o llamar queue.push(x) no es fuga:
   field-leak src/queue.mjs:Queue.items: se trabaja fuera de Queue en 1 lugar de 1 módulo (src/app.mjs; máximo 0), …
-shallow-module  un módulo (un archivo, o un directorio con index.*) que muestra más de 7 funciones que usa código de
-                afuera y al menos tantas como esconde:
+shallow-module  un módulo (un archivo, un directorio con index.* o __init__.py, o un paquete Go) que muestra más de 7 funciones
+                que usa código de afuera y al menos tantas como esconde:
   shallow-module src/store.mjs: muestra 9 de 15 funciones (…) y esconde 6 (máximo 7 mostradas, o más escondidas …) — …
-La entrada de tangle es como la de module-cycle, con "members" de la forma archivo:nombre; la de field-leak es
-Clase.campo y la de shallow-module, el módulo.
+La entrada de tangle es como la de module-cycle, con "members" de la forma archivo:nombre (en Go, paquete:Nombre); la de
+field-leak es Clase.campo (en Go, paquete + Struct.Campo) y la de shallow-module, el módulo o paquete.
 
 Los comentarios y los imports se leen con ast-grep 0.51.3, fijado por versión y sha256 (lo instala npm ci en la instalación de
-orca-stack; ORCA_STACK_AST_GREP apunta a otro binario, que también se verifica). Si hay algún archivo JS/TS y ast-grep
-falta, tiene otra versión o no coincide su checksum, el lint falla con 1 nombrando la versión y nunca pasa en silencio.
+orca-stack; ORCA_STACK_AST_GREP apunta a otro binario, que también se verifica). Si hay algún archivo JS/TS, Go, Python o Shell
+y ast-grep falta, tiene otra versión o no coincide su checksum, el lint falla con 1 nombrando la versión y nunca pasa en silencio.
 
 lint.comentarios.alcance, en la configuración (.orca-stack.json, .orca-stack.local.json o ~/.orca-stack/config.json):
   "repo" (por defecto)  revisa los comentarios de todo el repo contra la Baseline
@@ -415,6 +432,13 @@ lint.comentarios.alcance, en la configuración (.orca-stack.json, .orca-stack.lo
                         de HEAD con ramaBase (o origin/<ramaBase>), con los cambios sin commitear incluidos; las
                         entradas de comentarios de la Baseline no se evalúan, y long-file y wide-directory siguen igual
 Un valor distinto, o un ramaBase que falta, no se encuentra o no tiene merge-base con HEAD, falla con 1.
+
+lint.lenguajes: marca cada lenguaje (js, go, python, shell) como "blocking" o "warning". Un lenguaje en "warning" imprime
+líneas "warning: …" y sale con 0 aunque haya violaciones nuevas. Por defecto, js, go y shell son "blocking" y python es
+"warning" si los workflows de .github/workflows/ no corren sus suites de Python (pytest, unittest, tox, nox) y "blocking" si sí.
+
+lint.excluir: lista de globs de rutas excluidas (por ejemplo ["vendor/**", "third_party/"]). Los archivos que coinciden nunca
+se revisan por ninguna regla ni entran a la Baseline; un glob que no coincide con nada no es un error.
 
 lint.enabled: false apaga el lint: imprime una línea que dice que está apagado y en qué archivo, sale con 0 y no escribe
 nada (tampoco con --sembrar). Sin la clave, o con true, revisa como siempre; otro valor falla con 1.
@@ -595,7 +619,7 @@ export const main = async (argv, io) => {
       case 'despachar':
         return await despacharCommand(flags, rest[1], rest[2])
       case 'revisar':
-        return await revisarCommand(flags, rest[1], rest[2])
+        return await revisarCommand(flags, rest[1], rest[2], io)
       case 'rebote':
         return await reboteCommand(flags, rest[1], io)
       case 'brief-revision':

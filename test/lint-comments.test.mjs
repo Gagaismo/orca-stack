@@ -345,11 +345,10 @@ describe('orca-stack lint comment rules (#419)', () => {
     })
   })
 
-  test('S10: Go, Python, Shell and Markdown give no comment findings and never need ast-grep', () => {
+  test('S10: unsupported languages (Markdown, Rust, Ruby) give no comment findings and never need ast-grep', () => {
     withRepo(({ dir, put, add, lint }) => {
-      add('main.go', 'package main\n// TODO hack for now\nfunc main() {}\n')
-      add('tool.py', '# TODO hack for now\nprint(1)\n')
-      add('run.sh', '#!/bin/sh\n# TODO hack for now\necho 1\n')
+      add('lib.rs', '// TODO hack for now\nfn main() {}\n')
+      add('tool.rb', '# TODO hack for now\nputs 1\n')
       add('README.md', '```js\n// TODO hack for now\n```\n')
       put('untracked.mjs', '// TODO hack for now\n')
       const missing = { ORCA_STACK_AST_GREP: path.join(dir, 'missing', 'ast-grep') }

@@ -2,36 +2,10 @@ import path from 'node:path'
 
 import { defaultIo } from './despacho.mjs'
 import { startsWithMarker } from './marcas.mjs'
+import { getCommonDir, getStackAccount } from './repo.mjs'
 
 export const STORE_REL = ['orca-stack', 'consultas-reportadas.json']
-
-export const getStackAccount = io => {
-  const res = io.sh('gh', ['api', 'user'])
-  if (res.status !== 0 || !res.stdout) {
-    throw new Error(`No pude obtener la cuenta de GitHub actual con \`gh api user\`: ${(res.stderr || res.stdout || '').trim()}`)
-  }
-  let login
-  try {
-    login = JSON.parse(res.stdout)?.login
-  } catch {}
-  if (!login || typeof login !== 'string') {
-    throw new Error('La respuesta de `gh api user` no contiene un login válido.')
-  }
-
-  return login.trim().toLowerCase()
-}
-
-export const getCommonDir = io => {
-  const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
-  if (git.status !== 0 || !git.stdout) {
-    throw new Error('Corré este comando dentro de un repositorio git.')
-  }
-  const lines = git.stdout.split(/\r?\n/).map(l => l.trim())
-  const commonDir = lines[1]
-  const top = lines[2]
-
-  return { commonDir, root: top || io.cwd }
-}
+export const CONSULTAS_DEPRECATION = '⚠ orca-stack consultas está deprecado (ADR 0004): los workers le preguntan a main por el buzón del Run. Se saca en la próxima release.'
 
 export const loadReportedConsultas = (storePath, io) => {
   if (!io.exists(storePath)) return new Set()
@@ -73,7 +47,7 @@ export const isConsultaComment = (comment, stackAccount) => {
   return startsWithMarker(comment?.body, 'Consulta')
 }
 
-export const consultasCommand = async (flags = {}, items = [], io = defaultIo()) => {
+export const checkConsultas = async (flags = {}, items = [], io = defaultIo()) => {
   const targets = (items || []).map(x => String(x).trim().replace(/^#/, '')).filter(x => /^\d+$/.test(x))
   if (targets.length === 0) return 0
 
@@ -100,4 +74,11 @@ export const consultasCommand = async (flags = {}, items = [], io = defaultIo())
   }
 
   return 0
+}
+
+export const consultasCommand = async (flags = {}, items = [], io = defaultIo()) => {
+  const warn = io.err ?? (message => console.error(message))
+  warn(CONSULTAS_DEPRECATION)
+
+  return checkConsultas(flags, items, io)
 }

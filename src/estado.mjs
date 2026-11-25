@@ -1,10 +1,10 @@
 import { repoWorktrees } from './avisar.mjs'
 import { isPending, isStatus, latestChecks } from './checks.mjs'
-import { getCommonDir } from './consultas.mjs'
 import { FAMILIES, blockOf, defaultIo, familyOf, loadConfig } from './despacho.mjs'
 import { commitOf, markerLines, markerValue, namesCommit, normalizeBody } from './marcas.mjs'
 import { baseMigrations, migrationSpec, openReservations, orderBlockers, rawNumberOf } from './migraciones.mjs'
 import { setCard } from './orca.mjs'
+import { getCommonDir } from './repo.mjs'
 import { closedIssues } from './vigilar.mjs'
 
 // `orca-stack estado`: MAIN.md step 7 on the current head of each PR, read once (S1, #366). Its `--json` output is the
@@ -26,7 +26,8 @@ const parse = res => {
 
 // shortcut: everything from here to riskDeny mirrors mods/puente-gentle/hooks/puente.ts (globToRegExp, riskyFile,
 // implementerOf, prFacts, reviewsOf, rddRequestOf, rddBudgetStopped, riskDeny) because the CLI cannot import the TypeScript mod. The two
-// copies must decide the same; the only additions here are the BOM-tolerant marker reading (#365) and S12's coverage.
+// copies must decide the same; the only additions here are the BOM-tolerant marker reading (#365) and S12's coverage,
+// and the one deliberate difference is #465's out-of-budget marker (budgetStopOf), left out of puente-gentle, which #391 removes.
 
 // Minimal glob: * and ? stay inside one path segment, ** crosses segments, `**/` may match nothing, a trailing / means
 // "everything under".
@@ -108,20 +109,19 @@ const rddRequestsOf = (bodies, head) => bodies.flatMap(body => {
   const lenses = rddRequestOf(body, head)
   return lenses === undefined ? [] : [lenses]
 })
-// main-autonomo S2: pi's `Consulta: pi` comment with a line `RDD fuera de presupuesto: <sha> (<stop reason>)` naming this
-// head, posted after main's `RDD: <sha> (…)` request for it. A body that is a review is never this comment.
+// #465 S3: pi's comment whose first line is `RDD fuera de presupuesto: <sha> (<stop reason>)` naming this head, posted
+// after main's `RDD: <sha> (…)` request for it. A body that is a review is never this comment.
 const budgetStopOf = (body, head) => {
   const lines = markerLines(body)
   if (lines.some(line => /^Revisor:/i.test(line) || /^##\s*BLOQUEA\b/i.test(line))) return false
-  if (!/^Consulta:\s*pi\b/i.test(lines.find(line => line !== '') ?? '')) return false
 
-  return lines.some(line => namesCommit(/^RDD fuera de presupuesto:\s*`?([0-9a-f]{7,40})`?\s*\([^()]+\)$/i.exec(line.trim())?.[1], head))
+  return namesCommit(/^RDD fuera de presupuesto:\s*`?([0-9a-f]{7,40})`?\s*\([^()]+\)$/i.exec((lines.find(line => line !== '') ?? '').trim())?.[1], head)
 }
 const rddBudgetStopped = (bodies, head) => bodies.some((body, at) => budgetStopOf(body, head) && rddRequestsOf(bodies.slice(0, at), head).length > 0)
 const rddMissing = (n, sha) =>
   `falta un review RDD limpio de pi con la lente risk sobre el commit ${sha} ` +
-  'o, si el RDD no entró en el presupuesto, dos reviews limpios de dos familias distintas de la de pi; eso último cuenta solo con un comentario "Consulta: pi" ' +
-  `con la línea "RDD fuera de presupuesto: ${sha} (<motivo>)" publicado después de tu pedido RDD: sobre ese commit, y sin él los reviews de otras familias no lo reemplazan. ` +
+  'o, si el RDD no entró en el presupuesto, dos reviews limpios de dos familias distintas de la de pi; eso último cuenta solo con un comentario cuya primera línea es ' +
+  `"RDD fuera de presupuesto: ${sha} (<motivo>)", publicado después de tu pedido RDD: sobre ese commit, y sin él los reviews de otras familias no lo reemplazan. ` +
   `Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).`
 const sameLenses = (a, b) => [...(a ?? [])].sort().join(',') === [...(b ?? [])].sort().join(',')
 
