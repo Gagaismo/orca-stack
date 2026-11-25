@@ -1,6 +1,6 @@
 # RDD review brief
 
-You are pi, the author of PR #{{PR}}, relaunched in its existing worktree at commit {{SHA}}. main chose an RDD review of this commit with lenses {{LENSES}}: an RDD review pi runs on its own PR when main asks is a review of record, and its clean-context reviewers review a frozen commit. If you are blocked, ask with a `Consulta:` comment on PR #{{PR}} (gh pr comment {{PR}} --body-file <file>), then continue with whatever is not blocked. Anything you post for main (a question, a cap you passed, a deviation that needs a decision) starts with `Consulta: {{AGENT}}`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait.
+You are pi, the author of PR #{{PR}}, relaunched in its existing worktree at commit {{SHA}}. main chose an RDD review of this commit with lenses {{LENSES}}: an RDD review pi runs on its own PR when main asks is a review of record, and its clean-context reviewers review a frozen commit. If you are blocked, ask main with `orca orchestration ask` (the command is in Orca's preamble above), then continue with whatever is not blocked, and end your turn once only blocked work is left: Orca wakes you with the answer, as Orca mail, not as a comment. A question, including a deviation that needs a decision, always goes through `orca orchestration ask`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait.
 
 ## Work
 

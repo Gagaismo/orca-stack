@@ -93,6 +93,9 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available' } = {}) => 
       }
       if (args[0] === 'terminal' && args[1] === 'send' && args.includes('--wait-submit')) return json({ result: { submission: 'submitted', turnStarted: true } })
       if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'], latestCursor: calls.length } } })
+      // #462: rebote starts the author with worker-start in the Run bound to main.
+      if (args[0] === 'orchestration' && args[1] === 'run-current') return json({ ok: true, result: { runId: 'run_main' } })
+      if (args[0] === 'orchestration' && args[1] === 'worker-start') return json({ ok: true, result: { taskId: 'task_1', dispatchId: 'ctx_1', status: 'ready' } })
       return okRes()
     },
   }

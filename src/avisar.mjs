@@ -1,6 +1,6 @@
-import { getCommonDir, getStackAccount } from './consultas.mjs'
 import { WRAPPERS } from './constants.mjs'
 import { AGENTS, defaultIo, getRemoteOrigin, shellPrompt } from './despacho.mjs'
+import { getCommonDir, getStackAccount } from './repo.mjs'
 import { samePath } from './util.mjs'
 
 // Agents whose TUI takes a line typed during a running turn.
