@@ -20,7 +20,6 @@ Un item que espera un cambio de marcha queda esperando; el resto de la tanda sig
 ### Lo que cambia cada marcha en `MAIN.md` y `ORCA-STACK.md`
 
 - **Orden de autoridad.** La marcha actual de main va entre las instrucciones del proyecto (ADRs, spec y ticket) y el brief del rol: solo gira la lista cerrada de Gear knobs, más abajo, y nunca amplía nada de lo que tiene encima.
-- **Ciclo de `main`, paso 5.** Solo en marcha Proactive se arma `vigilar` con `--consultas`; en Lazy y Medium, sin él.
 - **Ciclo de `main`, paso 10.** Al cerrar la tanda, registrá en la nota de handoff la marcha que deja y proponele al humano volver a Medium si la sesión estaba en Lazy o Proactive. La sesión siguiente sugiere en una línea esa marcha, pero sin aplicarla.
 - **Arena y swarm.** El swarm de solo lectura que no requiere OK nunca se hace en Lazy. En las señales, Proactive agrega la señal «no saber qué enfoque conviene» antes, y el primer bounce no mecánico después. En modo autónomo, Proactive no agrega otro límite.
 - **Despacho.** Solo elegir la marcha Proactive cuenta como pedir que `main` supervise y colabore; en Lazy y Medium el despacho es un handoff y las reglas de colaboración no aplican. Al bajar de marcha desde Proactive, `main` responde las preguntas que ya tenga y deja de vigilar; al subir a Proactive, empieza a vigilar los items en curso y no relanza nada.

@@ -15,8 +15,6 @@ const COMMON = '/repo/.git'
 const CURSOR = path.join(COMMON, 'orca-stack', 'vigilar.json')
 const MERGES = path.join(COMMON, 'orca-stack', 'vigilar-merges.json')
 const MINUTE = 60 * 1000
-const REPORTED = path.join(COMMON, 'orca-stack', 'consultas-reportadas.json')
-const CONSULTA = { id: 'IC_1', author: { login: 'stack-bot' }, body: 'Consulta: claude — ¿uso X o Y?' }
 const T0 = Date.parse('2026-10-15T18:00:00Z')
 const ABC = 'abc1234aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const DEF = 'def5678bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
@@ -478,12 +476,6 @@ describe('orca-stack vigilar (#195)', () => {
     assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'ci-verde #7 PR #70 abc1234'])
     assert.deepEqual(Object.keys(h.files), [])
     assert.deepEqual(h.sleeps, [])
-
-    // With --consultas, the consultas check runs in dry-run too: consultas-reportadas.json is not written either.
-    const asking = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] } })
-    assert.equal(await vigilarCommand({ dryRun: true, consultas: true }, ['7'], asking.io), 0)
-    assert.deepEqual(asking.out, ['pr-abierto #7 PR #70 abc1234', 'consulta nueva en #7'])
-    assert.deepEqual(Object.keys(asking.files), [])
   })
 
   test('Rule 14: --merge-de-main writes the record, prints nothing on stdout and exits 0; a bad argument or an unknown PR writes nothing', async () => {
@@ -569,27 +561,6 @@ describe('orca-stack vigilar (#195)', () => {
     assert.deepEqual(again.out, [])
   })
 
-  test('Rule 19: with --consultas one watcher reports a new Consulta: once; without it no Consulta is reported', async () => {
-    const h = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] } })
-    h.world.script = [() => {}, world => {
-      world.prs = [pr(70, { state: 'MERGED' })]
-    }]
-    assert.equal(await vigilarCommand({ consultas: true }, ['7'], h.io), 0)
-    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'consulta nueva en #7', 'pr-mergeado #7 PR #70 abc1234', 'tanda-cerrada #7'])
-    assert.deepEqual(JSON.parse(h.files[REPORTED]), ['IC_1'])
-
-    const plain = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] } })
-    await once(plain, ['7'])
-    assert.deepEqual(plain.out, ['pr-abierto #7 PR #70 abc1234'])
-    assert.equal(plain.files[REPORTED], undefined)
-
-    // A failing consultas check goes to stderr; the PR events of that poll are still printed.
-    const broken = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] }, userDown: 'HTTP 401: Bad credentials' })
-    assert.equal(await once(broken, ['7'], { consultas: true }), 0)
-    assert.deepEqual(broken.out, ['pr-abierto #7 PR #70 abc1234'])
-    assert.ok(broken.err.some(line => /HTTP 401: Bad credentials/.test(line)))
-  })
-
   test('Rule 20: an issue closed with no PR counts as ended', async () => {
     const h = harness({ prs: [pr(70, { state: 'MERGED' })], issues: { 8: 'CLOSED' } })
     assert.equal(await vigilarCommand({}, ['7', '8'], h.io), 0)
@@ -603,15 +574,15 @@ describe('orca-stack vigilar (#195)', () => {
     try {
       assert.equal(await main(['--help']), 0)
       assert.match(output, /\n  vigilar\s+\S/)
-      for (const flag of ['--cada <segundos>', '--una-vez', '--consultas', '--merge-de-main <pr>']) {
+      for (const flag of ['--cada <segundos>', '--una-vez', '--merge-de-main <pr>']) {
         assert.ok(output.split('\n').some(line => line.trimStart().startsWith(flag) && line.includes('(vigilar)')), flag)
       }
-      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar)'))
+      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, avisar, reanudar, vigilar, planificar, limpiar)'))
       output = ''
       assert.equal(await main(['vigilar', '--help']), 0)
       assert.ok(output.includes('review-publicado #<pr> <agente> <sha> bloquea=<n>'))
       assert.ok(output.includes('head-nuevo #<pr> <sha>'))
-      assert.ok(output.includes('orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]'))
+      assert.ok(output.includes('orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run]'))
       assert.ok(output.includes('orca-stack vigilar --merge-de-main <pr>'))
     } finally {
       console.log = oldLog
@@ -1238,14 +1209,6 @@ describe('orca-stack vigilar (main-autonomo S9, #365)', () => {
     assert.deepEqual(drain(h), ['pr-abierto #7 PR #70 abc1234'])
     assert.equal(h.calls.some(call => call.includes('sub_issues')), false)
   })
-
-  test('S9: --consultas reads the linked PR too, so a Consulta: on PR #70 is reported', async () => {
-    const h = harness({ prs: [pr(70)], comments: { 70: [{ ...CONSULTA, id: 'IC_pr', body: `${BOM}Consulta: pi — ¿consentimiento RDD?` }] } })
-    await once(h, ['7'], { consultas: true })
-    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'consulta nueva en #70'])
-    assert.ok(h.calls.includes('gh issue view 7 --json comments'))
-    assert.ok(h.calls.includes('gh issue view 70 --json comments'))
-  })
 })
 
 describe('orca-stack vigilar --paraguas (S3, #370)', () => {
@@ -1338,7 +1301,7 @@ describe('orca-stack vigilar --paraguas (S3, #370)', () => {
 
   test('negative: --paraguas takes one umbrella number and no batch items', async () => {
     const usage = 'Uso: orca-stack vigilar --paraguas <n> [--cada <segundos>] [--una-vez] [--dry-run], con el número de un solo issue paraguas y sin otros items.'
-    for (const [flags, items] of [[{ paraguas: 'x' }, []], [{ paraguas: '' }, []], [{ paraguas: '29' }, ['7']], [{ paraguas: '29', consultas: true }, []]]) {
+    for (const [flags, items] of [[{ paraguas: 'x' }, []], [{ paraguas: '' }, []], [{ paraguas: '29' }, ['7']]]) {
       const h = harness()
       await assert.rejects(vigilarCommand({ unaVez: true, ...flags }, items, h.io), error => error.message === usage, JSON.stringify([flags, items]))
       assert.deepEqual(h.calls, [])
@@ -1955,25 +1918,5 @@ describe('#431 vigilar: a quota stop switches the Orca account of the same agent
     await once(h, ['7'])
     assert.ok(accountCalls(h).length === 2 && accountCalls(h).every(call => /^orca account (list|select) --agent claude /.test(call)))
     assert.ok(![...h.out, ...h.err, ...Object.values(h.files)].some(text => text.includes('@example.com')))
-  })
-})
-
-describe('deprecation of vigilar --consultas (#464)', () => {
-  const WARN = '⚠ vigilar --consultas está deprecado (ADR 0004): los workers le preguntan a main por el buzón del Run. Se saca en la próxima release.'
-
-  test('#464 R2: vigilar --consultas prints the deprecation warning once on stderr across polls and keeps stdout unchanged', async () => {
-    const h = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] } })
-    h.world.script = [() => {}, world => { world.prs = [pr(70, { state: 'MERGED' })] }]
-    assert.equal(await vigilarCommand({ consultas: true }, ['7'], h.io), 0)
-    assert.deepEqual(h.err.filter(line => line === WARN), [WARN])
-    assert.ok(!h.err.some(line => line.includes('orca-stack consultas está deprecado')))
-    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234', 'consulta nueva en #7', 'pr-mergeado #7 PR #70 abc1234', 'tanda-cerrada #7'])
-  })
-
-  test('#464 R3: vigilar without --consultas prints no deprecation warning', async () => {
-    const h = harness({ prs: [pr(70)], comments: { 7: [CONSULTA] } })
-    assert.equal(await once(h, ['7']), 0)
-    assert.ok(!h.err.some(line => /deprecado/i.test(line)))
-    assert.deepEqual(h.out, ['pr-abierto #7 PR #70 abc1234'])
   })
 })
