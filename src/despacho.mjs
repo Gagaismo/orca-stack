@@ -554,15 +554,20 @@ const piSessionTools = (io, home, worktree, after = 0) => {
 // submitted yet (no session), so brief text on screen can only be in the input, unless pi is gone (a shell prompt).
 const PI_PASTE_MARKER = /\[paste #\d+(?: \+\d+ lines| \d+ chars)?\]/
 const PI_BRIEF_LINE_MIN = 20
-const briefInPiInput = (io, handle, brief) => {
+// #454: Gentle Shell's frame line reads `─ ✿ waiting for input ─── INSERT ─` when pi waits with nothing submitted.
+const PI_FRAME_LINE = /^\s*╭?─ [✿❀❁✾] /u
+const PI_WAITING = /^\s*─ ✿ waiting for input ─/u
+// What pi's input holds: 'brief' (typed, unsent), 'empty' (waiting for input with no brief), or undefined.
+const piInputOf = (io, handle, brief) => {
   const lines = screenLines(io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json']))
   const last = [...lines].reverse().find(line => line.trim() !== '')
-  if (last === undefined || shellPrompt(last)) return false
-
-  return lines.some(line => {
+  if (last === undefined || shellPrompt(last)) return undefined
+  const typed = lines.some(line => {
     const text = line.replace(/^[\s│┃|>]+|[\s│┃|]+$/g, '')
     return PI_PASTE_MARKER.test(text) || (text.length >= PI_BRIEF_LINE_MIN && String(brief ?? '').includes(text))
   })
+  if (typed) return 'brief'
+  return PI_WAITING.test(lines.findLast(line => PI_FRAME_LINE.test(line)) ?? '') ? 'empty' : undefined
 }
 
 // Up to 30 s: the TUI draws its screen before it takes the first message, so it can start slower than `pi -p` did.
@@ -698,7 +703,8 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
   }
 
   say(`Lanzador (${agent}): ${launcher}`)
-  const term = act('orca', ['terminal', 'create', '--worktree', `path:${worktree}`, '--title', agent, '--command', launcher, '--json'])
+  const create = () => act('orca', ['terminal', 'create', '--worktree', `path:${worktree}`, '--title', agent, '--command', launcher, '--json'])
+  let term = create()
   if (dryRun) {
     if (supervised) {
       if (agent !== 'pi') say(`[simulación] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''}`)
@@ -783,7 +789,19 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     // #444: the brief can stay typed in pi's input without its Enter: one Enter, never a second, then one more wait.
     let handle
     if (piSessionAfter > 0 && tools === undefined) try { handle = handleOf() } catch {}
-    if (handle && briefInPiInput(io, handle, brief)) {
+    let input = handle ? piInputOf(io, handle, brief) : undefined
+    // #454: pi launched with its prompt on the command line can come up waiting with an empty input: close that
+    // terminal and launch once more; a second empty input fails, naming the second terminal, which stays open.
+    if (input === 'empty' && !supervised && !rebind) {
+      say(`Pi quedó esperando con la entrada vacía en ${handle}: cierro esa terminal y lo lanzo una vez más.`)
+      act('orca', ['terminal', 'close', '--terminal', handle, '--json'])
+      term = create()
+      handle = handleOf()
+      ;({ tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter))
+      input = tools === undefined && handle ? piInputOf(io, handle, brief) : undefined
+      if (tools === undefined && input !== 'brief') throw new Error(`No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: ${handle}.`)
+    }
+    if (input === 'brief') {
       say(`El brief quedó escrito en la entrada de pi sin enviar: mando un Enter a ${handle}.`)
       io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
       ;({ tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter))
