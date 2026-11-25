@@ -70,7 +70,6 @@ describe('#393 perk switch, gears first', () => {
       const fragment = read(path.join(stack, 'MARCHAS.md'))
       assert.match(fragment, /^### Marchas$/m)
       assert.match(fragment, /^## Gear knobs$/m)
-      assert.match(fragment, /Solo en marcha Proactive se arma `vigilar` con `--consultas`/)
       assert.match(fragment, /El swarm de solo lectura que no requiere OK nunca se hace en Lazy/)
       assert.match(fragment, /Proactive agrega la señal «no saber qué enfoque conviene»/)
       assert.match(fragment, /Solo elegir la marcha Proactive cuenta como pedir que `main` supervise y colabore/)
@@ -132,7 +131,7 @@ describe('#393 perk switch, gears first', () => {
     assert.doesNotMatch(arena, /Lazy|Proactive/)
   })
 
-  test('R8: without gears main always arms vigilar with --consultas and collaborates, and the CLI help agrees', () => {
+  test('R8: without gears main supervises and collaborates, and the CLI help agrees', () => {
     const main = asset('MAIN.md')
     const step5 = main.split('\n').find(line => line.startsWith('5. '))
     assert.doesNotMatch(step5, /--consultas/)
@@ -145,7 +144,7 @@ describe('#393 perk switch, gears first', () => {
     const home = tempDir('perks-help')
     try {
       const help = cli(home, ['vigilar', '--help'])
-      assert.match(help.out, /--consultas corre en cada vuelta/)
+      assert.doesNotMatch(help.out, /--consultas/)
       assert.doesNotMatch(help.out, /Proactive/)
       assert.doesNotMatch(cli(home, ['avisar', '--help']).out, /Proactive/)
     } finally {
