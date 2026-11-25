@@ -98,6 +98,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = 
   const sessionFile = path.join(sessionDir, '2026-10-09T00-00-00-000Z_session.jsonl')
   const files = new Map()
   const modified = new Map()
+  let launchedAgent
   const startPiSession = () => {
     const text = piTools === 'none' ? '<tools>\n(none)' : '<tools>\n- read: Read file contents\n- bash: Execute commands'
     files.set(sessionFile, [
@@ -138,12 +139,13 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = 
       if (args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })
       if (args.join(' ').startsWith('worktree create')) return json({ result: { worktree: { path: worktree, branch: 'refs/heads/proj-7' } } })
       if (args[0] === 'terminal' && args[1] === 'create') {
+        launchedAgent = args[args.indexOf('--title') + 1]
         if (/(^|; )pi /.test(String(args[args.indexOf('--command') + 1] ?? '')) && piTools !== 'missing' && piTools !== 'enter') startPiSession()
         return json({ result: { terminal: { handle: 'term_1' } } })
       }
       if (piTools === 'enter' && args.join(' ') === 'terminal send --terminal term_1 --enter') startPiSession()
       if (args[0] === 'terminal' && args[1] === 'send' && args.includes('--wait-submit')) return json({ result: { submission: 'submitted', turnStarted: true } })
-      if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'], latestCursor: calls.length } } })
+      if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: launchedAgent === 'agy' ? ['ready', '>'] : ['ready'], latestCursor: calls.length } } })
       // A worktree Orca lists with no open terminals (main-autonomo S8 lists them before reusing a worktree).
       if (args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: [] } })
       // #397: despachar starts its worker in the Run bound to main.
@@ -317,7 +319,7 @@ describe('issue #198: branch output and post-launch terminal checks', () => {
   test('Rule 4: quota on the first post-launch read fails with recovery details and no success', async () => {
     let reads = 0
     const quota = '\u26A0 Individual quota reached\u2026 Resets in 10h45m19s'
-    const env = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: ++reads <= 3 ? ['ready'] : [quota] } } }) })
+    const env = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: ++reads <= 3 ? ['ready', '>'] : [quota] } } }) })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, env), error =>
       error.message.includes('agy') && error.message.includes('term_1') && error.message.includes(quota))
     assert.ok(env.out.some(line => line.includes('El despacho qued\u00f3 a medias')))
@@ -684,7 +686,7 @@ describe('despachar: the TUI wait', () => {
       ...over,
       'orca terminal read': () => {
         reads += 1
-        return json({ result: { terminal: { tail: reads <= trustReads ? AGY_TRUST : ['agy ready'] } } })
+        return json({ result: { terminal: { tail: reads <= trustReads ? AGY_TRUST : ['agy ready', '>'] } } })
       },
     })
     const timeline = []
@@ -1853,7 +1855,7 @@ describe('rebote', () => {
     let reads = 0
     const quota = '\u26A0 Individual quota reached\u2026 Resets in 10h45m19s'
     const env = bounceEnv(pr(), {
-      'orca terminal read': () => json({ result: { terminal: { tail: ++reads <= 3 ? ['ready'] : [quota] } } }),
+      'orca terminal read': () => json({ result: { terminal: { tail: ++reads <= 3 ? ['ready', '>'] : [quota] } } }),
     })
     await assert.rejects(reboteCommand({}, '12', env.io), error =>
       error.message.includes('agy') && error.message.includes('term_1') && error.message.includes(quota))
@@ -2301,7 +2303,7 @@ describe('rebote', () => {
       let reads = 0
       const agy = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), {
         ...dirty,
-        'orca terminal read': () => json({ result: { terminal: { tail: ++reads <= 3 ? ['ready'] : ['Claude usage limit reached. resets 02:20:00'] } } }),
+        'orca terminal read': () => json({ result: { terminal: { tail: ++reads <= 3 ? ['ready', '>'] : ['Claude usage limit reached. resets 02:20:00'] } } }),
       })
       await assert.rejects(reboteCommand({ continuar: true }, '12', agy.io), error =>
         error.message.includes('resets 02:20') && error.message.includes('orca-stack rebote 12 --continuar'))
@@ -4282,7 +4284,7 @@ describe('main-autonomo T1: launcher false negatives', () => {
       { handle: 'term_other', tabId: 'tab-c', leafId: 'leaf-c', worktreePath: wt },
     ]
     const reads = { term_shell: ['PS C:\\x>'], term_other: ['node server.js', 'listening on 3000'] }
-    const readByHandle = args => json({ result: { terminal: { tail: reads[args[args.indexOf('--terminal') + 1]] ?? ['ready'] } } })
+    const readByHandle = args => json({ result: { terminal: { tail: reads[args[args.indexOf('--terminal') + 1]] ?? ['ready', '>'] } } })
     const reviewEnv = agents => {
       const wt = reviewWorktree()
       return fakeIo({
@@ -4706,5 +4708,141 @@ describe('issue #426: no-comments self-check in the ticket brief', () => {
       assert.ok(brief.includes(heading), heading)
     }
     assert.doesNotMatch(brief, /\{\{[A-Z_]+\}\}/)
+  })
+})
+
+describe('issue #476: agy waitForTui requires prompt or splash', () => {
+  const SIGN_IN = [
+    'Welcome to the Antigravity CLI.',
+    'You are currently not signed in.',
+    '\u28F7 Signing in...',
+  ]
+  const PROMPT = ['>']
+  const bouncePr = (agent = 'agy') => ({
+    state: 'OPEN',
+    headRefName: 'feat/fix',
+    headRefOid: 'abc123',
+    body: `Implementador: ${agent}`,
+    statusCheckRollup: [],
+    comments: [],
+    reviews: [{
+      body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, concreta, implementaci\u00F3n): fix it.\n\n## SUGERENCIAS\n(none)',
+      url: 'https://example.test/review/1',
+    }],
+  })
+  const bounceIo = (agent, over = {}) => {
+    const env = fakeIo({
+      'gh pr': json(bouncePr(agent)),
+      'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`),
+      'git status': okRes(''),
+      ...over,
+    })
+    const original = env.io.sh
+    env.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD'
+      ? okRes('abc123\n')
+      : original(cmd, args, opts)
+    return env
+  }
+  const scriptedReads = (screens, makeEnv) => {
+    let reads = 0
+    const timeline = []
+    const env = makeEnv({
+      'orca terminal read': () => {
+        const tail = screens[Math.min(reads, screens.length - 1)]
+        reads += 1
+        timeline.push(tail === SIGN_IN ? 'read sign-in' : tail === PROMPT ? 'read prompt' : 'read other')
+        return json({ result: { terminal: { tail } } })
+      },
+    })
+    const original = env.io.sh
+    env.io.sh = (cmd, args, opts) => {
+      if (cmd === 'orca' && args[0] === 'orchestration' && args[1] === 'worker-start') timeline.push('worker-start')
+      if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'comment') timeline.push('comment')
+      return original(cmd, args, opts)
+    }
+    const workerStarts = () => env.calls.filter(c => c[0] === 'orca' && c[1] === 'orchestration' && c[2] === 'worker-start')
+    const prComments = () => env.calls.filter(c => c[0] === 'gh' && c[1] === 'pr' && c[2] === 'comment')
+    return { env, timeline, workerStarts, prComments }
+  }
+
+  test('Rule 1 and 2: rebote and despachar wait past three identical agy sign-in reads until > before calling worker-start once', async () => {
+    const sequence = [SIGN_IN, SIGN_IN, SIGN_IN, PROMPT]
+
+    const bounce = scriptedReads(sequence, over => bounceIo('agy', over))
+    assert.equal(await reboteCommand({}, '12', bounce.env.io), 0)
+    assert.equal(bounce.workerStarts().length, 1)
+    assert.equal(bounce.timeline.filter(step => step === 'read sign-in').length, 3)
+    const bouncePrompt = bounce.timeline.indexOf('read prompt')
+    const bounceStart = bounce.timeline.indexOf('worker-start')
+    assert.ok(bouncePrompt > bounce.timeline.lastIndexOf('read sign-in'), bounce.timeline.join(', '))
+    assert.ok(bounceStart > bouncePrompt, bounce.timeline.join(', '))
+    assert.equal(bounce.prComments().length, 1)
+    const markerFile = bounce.env.written.find(([file]) => file.endsWith('proj-pr-12-rebote-comment.md'))?.[1]
+    assert.ok(markerFile?.includes('Rebote: abc123'), markerFile)
+
+    const ticket = scriptedReads(sequence, over => fakeIo(over))
+    assert.equal(await run('ticket', { n: '7', agent: 'agy' }, ticket.env), 0)
+    assert.equal(ticket.workerStarts().length, 1)
+    assert.equal(ticket.timeline.filter(step => step === 'read sign-in').length, 3)
+    const ticketPrompt = ticket.timeline.indexOf('read prompt')
+    const ticketStart = ticket.timeline.indexOf('worker-start')
+    assert.ok(ticketPrompt > ticket.timeline.lastIndexOf('read sign-in'), ticket.timeline.join(', '))
+    assert.ok(ticketStart > ticketPrompt, ticket.timeline.join(', '))
+    assert.ok(ticket.env.out.some(line => line.includes('\u2714 agy despachado')))
+  })
+
+  test('Rule 3: rebote and despachar fail with La TUI de agy no apareció a tiempo when sign-in never ends, without worker-start or marker', async () => {
+    const bounce = scriptedReads([SIGN_IN], over => bounceIo('agy', over))
+    await assert.rejects(reboteCommand({}, '12', bounce.env.io), error => {
+      assert.ok(error.message.startsWith('La TUI de agy no apareci\u00F3 a tiempo.'), error.message)
+      return true
+    })
+    assert.equal(bounce.workerStarts().length, 0)
+    assert.equal(bounce.prComments().length, 0)
+
+    const ticket = scriptedReads([SIGN_IN], over => fakeIo(over))
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, ticket.env), error => {
+      assert.ok(error.message.startsWith('La TUI de agy no apareci\u00F3 a tiempo.'), error.message)
+      return true
+    })
+    assert.equal(ticket.workerStarts().length, 0)
+    assert.ok(!ticket.env.out.some(line => line.includes('\u2714 agy despachado')))
+  })
+
+  test('Rule 5: codex and claude proceed on a stable screen without an agy prompt', async () => {
+    const stableScreen = ['Agent TUI ready', 'Waiting for instructions']
+    for (const agent of ['codex', 'claude']) {
+      const ticket = scriptedReads([stableScreen], over => fakeIo(over))
+      assert.equal(await run('ticket', { n: '7', agent }, ticket.env), 0, agent)
+      assert.equal(ticket.workerStarts().length, 1, agent)
+      assert.ok(ticket.env.out.some(line => line.includes(`\u2714 ${agent} despachado`)), agent)
+
+      const bounce = scriptedReads([stableScreen], over => bounceIo(agent, over))
+      assert.equal(await reboteCommand({}, '12', bounce.env.io), 0, agent)
+      assert.equal(bounce.workerStarts().length, 1, agent)
+      assert.equal(bounce.prComments().length, 1, agent)
+    }
+  })
+
+  test('PRESERVE: launchInWorktree and revisarCommand keep agy prompt and non-agy stable-screen delivery intact', async () => {
+    const agyDirect = scriptedReads([SIGN_IN, SIGN_IN, SIGN_IN, PROMPT], over => fakeIo(over))
+    const briefPath = path.join(home, 'orca', 'briefs', 'existing.md')
+    assert.equal(await launchInWorktree({
+      agent: 'agy', mode: 'ticket', worktree, briefPath, brief: 'brief', session: 'existing',
+      config: PROJECT, win: true, home, repositoryRoot: root, io: agyDirect.env.io,
+    }), 0)
+    assert.equal(agyDirect.timeline.filter(step => step === 'read sign-in').length, 3)
+    assert.ok(agyDirect.env.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send' && c.includes(`Read and follow the brief in ${briefPath}`)))
+
+    const agyReview = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) })
+    assert.equal(await revisarCommand({}, '9', 'agy', agyReview.io), 0)
+    assert.ok(agyReview.out.some(line => line.includes('\u2714 agy despachado')))
+
+    const codexReview = fakeIo({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }),
+      'orca terminal read': () => json({ result: { terminal: { tail: ['Codex ready'] } } }),
+    })
+    assert.equal(await revisarCommand({}, '9', 'codex', codexReview.io), 0)
+    assert.ok(codexReview.out.some(line => line.includes('\u2714 codex despachado')))
   })
 })

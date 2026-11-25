@@ -483,7 +483,9 @@ const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45) =>
     last = text
     if (stable >= 2) {
       if (/trust this folder\?/i.test(text)) throw new Error(`La pantalla de confianza sigue abierta; no envío el brief sobre ese menú. Pantalla: ${text}`)
-      return text
+      // #476: agy's sign-in screen can stay stable before the TUI is ready; require its empty prompt or dismissible splash.
+      const lines = text.split(/\r?\n/)
+      if (agent !== 'agy' || readyForInput(lines) || showsSplash(lines)) return text
     }
   }
 
