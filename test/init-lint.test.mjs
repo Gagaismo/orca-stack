@@ -381,7 +381,7 @@ describe('init installs the lint (#424)', () => {
     const manual = read(path.join(ROOT, 'docs', 'manual.md'))
     const initSection = manual.split('#### `init`')[1].split('\n#### ')[0]
     for (const piece of ['`lint`', `\`${WORKFLOW}\``, `\`${HOOK}\``, '`CODING_STANDARDS.md`', `\`${BASELINE}\``, '`--activar-hook`', '`core.hooksPath`', HOW_TO_ENABLE, '`.git/hooks`']) assert.ok(initSection.includes(piece), piece)
-    assert.match(manual.split('## 7. Qué hay solo en `main`')[1], /\(#424\)/)
+    assert.match(initSection, /con cinco piezas\. Escribe cada una solo si falta, nunca pisa lo que el repo ya tiene/)
   })
 
   test('PRESERVE: init --dry-run writes nothing, not even with --activar-hook, and lists the lint pieces it would write', () => {

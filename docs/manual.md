@@ -2,7 +2,7 @@
 
 Este manual cuenta cómo se usa orca-stack día a día: qué hace cada comando, mod y skill, cuándo conviene usarlo y cuándo no, qué pasa en los bordes y cómo se opera y se arregla. No repite el setup: para instalar y configurar un proyecto, seguí la [guía de setup](guia-setup.md). Para el detalle de cada instalación y de cada clave de configuración, el [README](../README.md).
 
-Versión de referencia: `orca-stack v0.21.0`. Lo que se mergee después de ese tag lleva la marca **`[solo en main]`** y se lista en la [sección 7](#7-qué-hay-solo-en-main): todavía no está publicado en un release, así que con `npx github:Gagaismo/orca-stack#v0.18.0` no lo vas a tener. Para usarlo, corré el CLI desde un checkout de `main` (`node bin/orca-stack.mjs <comando>`) o esperá al próximo release.
+Versión de referencia: `orca-stack v0.22.0`. Lo que se mergee después de ese tag lleva la marca **`[solo en main]`** y se lista en la [sección 7](#7-qué-hay-solo-en-main): todavía no está publicado en un release, así que con `npx github:Gagaismo/orca-stack#v0.18.0` no lo vas a tener. Para usarlo, corré el CLI desde un checkout de `main` (`node bin/orca-stack.mjs <comando>`) o esperá al próximo release.
 
 ## Contenido
 
@@ -101,8 +101,8 @@ Reglas que sostienen todo lo demás:
 | `vigilar` | Monitor de una tanda de PRs | Checkout principal |
 | `estado` | Qué le falta a cada PR para el paso 7, de solo lectura (con `--json`, la atestación) | Checkout principal |
 | `limpiar` | Cierra terminales y saca worktrees de PRs mergeados o cerrados | Checkout principal |
-| `lint` | Revisa el repo contra su Baseline (`long-file`, `wide-directory`) y los comentarios y los ciclos de módulos (`module-cycle`) de JS/TS **`[solo en main]`** | Dentro de un repo git (también la CI y el hook `pre-push`) |
-| `novedades` | Precheck de una automatización de Orca que sondea GitHub: sale con 1 si no hay nada nuevo **`[solo en main]`** | Dentro del clon que sondea |
+| `lint` | Revisa el repo contra su Baseline (`long-file`, `wide-directory`) y los comentarios y los ciclos de módulos (`module-cycle`) de JS/TS | Dentro de un repo git (también la CI y el hook `pre-push`) |
+| `novedades` | Precheck de una automatización de Orca que sondea GitHub: sale con 1 si no hay nada nuevo | Dentro del clon que sondea |
 | `planificar` | Abre una sesión de planificación interactiva en su propio worktree `docs/<slug>` | Checkout principal |
 | `sesiones` | Lista sesiones recientes de Claude, Pi y agy (entrada de `/retro`) | Cualquier carpeta |
 
@@ -137,7 +137,7 @@ También crea `orca.yaml` y `.worktreeinclude` si faltan; si ya existen, no los 
 - `orca.yaml`: Orca corre `scripts.setup` en cada worktree nuevo apenas lo crea. Con `package-lock.json` el setup es `npm install`; si `init` no detecta un paso de instalación, no escribe script de setup. No prende `worktree.sharedDirectories` (un `node_modules` compartido por symlink): un worker que cambia dependencias se las cambiaría a los demás. Orca lee `orca.yaml` de la rama de la que parte el worktree, así que rige recién después de mergearlo. Si en Settings → Repository ya tenías el setup como comando local, poné Command source & orca.yaml en `orca.yaml only`: con `Run both`, el `npm install` corre dos veces.
 - `.worktreeinclude`: los archivos locales ignorados por git que Orca copia a cada worktree nuevo, en rutas literales (Orca saltea los globs y las negaciones con un aviso). Lista `.orca-stack.local.json`; nunca pongas secretos ahí. Una ruta que no existe en una máquina simplemente no se copia.
 
-**`[solo en main]`** `init` también instala [`orca-stack lint`](#lint) en el repo que cablea, con cinco piezas. Escribe cada una solo si falta, nunca pisa lo que el repo ya tiene y dice, por pieza, si la escribió o la salteó y por qué:
+`init` también instala [`orca-stack lint`](#lint) en el repo que cablea, con cinco piezas. Escribe cada una solo si falta, nunca pisa lo que el repo ya tiene y dice, por pieza, si la escribió o la salteó y por qué:
 
 - La clave `lint` en `.orca-stack.json`: `{"enabled": true, "comentarios": {"alcance": "repo"}}`, el lint prendido con la regla de los comentarios sobre todo el repo. Si ya hay una clave `lint`, aunque sea `{"enabled": false}`, no se toca. Para esto solo cuenta la de `.orca-stack.json`, no la de `.orca-stack.local.json`: una clave `lint` que vive solo en la local no impide agregarla, y al correr `orca-stack lint` la capa local sigue ganando. Si `.orca-stack.json` no es JSON válido, `init` no lo toca, nombra el archivo y el error y sale con 1. Agregarla no cambia el resto del archivo y deja un respaldo. Con `lint.enabled` en `false`, `orca-stack lint` imprime una línea que dice que está apagado y en qué archivo, sale con 0 y no escribe nada (tampoco con `--sembrar`).
 - `.github/workflows/orca-stack-lint.yml`, un workflow nuevo con un job `orca-stack-lint` que corre `npx --yes github:Gagaismo/orca-stack#v<versión> lint`. No se crea si el archivo ya existe o si otro workflow de `.github/workflows/` ya tiene un job `orca-stack-lint` o un paso que corre `orca-stack lint` (o `bin/orca-stack.mjs lint`), como el job `lint` de orca-stack; `init` nunca edita tus workflows.
@@ -320,8 +320,6 @@ Para cada worktree de este repo (salvo el checkout principal) cuyo PR se mergeó
 
 #### `lint`
 
-**`[solo en main]`**
-
 ```bash
 orca-stack lint             # revisa el repo contra la Baseline
 orca-stack lint --sembrar   # una vez, al prender el lint: anota las violaciones que ya existen
@@ -363,8 +361,6 @@ Sale con 0 y una línea `lint OK` cuando toda violación tiene su entrada y ning
 En orca-stack, el job `lint` de la CI forma parte de `ci-ok` y es el chequeo que cuenta. El hook `.githooks/pre-push` corre el lint antes de cada push como aviso temprano; se activa por clon con `git config core.hooksPath .githooks` (si ya tenés hooks propios en `.git/hooks`, llamá a `.githooks/pre-push` desde el tuyo en vez de cambiar `core.hooksPath`). `git push --no-verify` lo saltea y la CI sigue igual.
 
 #### `novedades`
-
-**`[solo en main]`**
 
 ```bash
 orca-stack novedades            # precheck de una automatización que sondea este clon
@@ -732,13 +728,8 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 
 ## 7. Qué hay solo en `main`
 
-Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.21.0`, todavía no publicado en un release.
+Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.22.0`, todavía no publicado en un release.
 
-- `orca-stack lint` con la regla `long-file`, la Baseline `.orca-stack-baseline.json`, `--sembrar`, el job `lint` de la CI y el hook `.githooks/pre-push` (#417).
-- Las reglas de comentarios de `orca-stack lint` para JS/TS (`comment-excuse`, `comment-tautology`, `comment-stale`), ast-grep 0.51.3 fijado y `lint.comentarios.alcance` (#419).
-- La regla `wide-directory` de `orca-stack lint` (#418).
-- La regla `module-cycle` de `orca-stack lint` para JS/TS, con la entrada de Baseline por conjunto de módulos (#420).
-- `orca-stack init` instala el lint en el repo que cablea: la clave `lint`, el workflow `orca-stack-lint`, el hook `.githooks/pre-push`, la Baseline sembrada y `CODING_STANDARDS.md`, cada pieza solo si falta; `--activar-hook` y la pregunta de `core.hooksPath`; `lint.enabled` (#424).
-- `orca-stack novedades`, el precheck de las automatizaciones de sondeo, y los Quick Commands del stack en el [checklist personal de Orca](orca-personal.md) (#433).
+(nada por ahora)
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.
