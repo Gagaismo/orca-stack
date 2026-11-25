@@ -1439,13 +1439,13 @@ const partialReviewSection = paths => paths
 
 export const CONTINUE_LINE = 'You were stopped before finishing this bounce (for example by a usage limit). The worktree keeps your work in progress (a merge in progress stays in progress): continue it, do not abort or reset it.'
 
+// #462: a branch suffix after the issue number (`orca-stack-419-alcance`) still names issue #419.
+const bounceIssue = (pr, n) => /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /^.*-(\d+)(?:-[^\d/][^/]*)?$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
+const bounceTask = (repo, issue, agent, n) => supervisedTask(repo, `#${issue} ${agent} rebote #${n}`)
+
 // `rebote <pr> --continuar` (#292): relaunch the author of the bounce on the current head, in its worktree as it is,
 // with the bounce brief and the session id the bounce used. It posts no marker, so it counts toward no bounce limit.
 // Only pi is launched with a session id (`--session-id`); claude, codex and agy start a fresh session with the same brief.
-// #462: a branch suffix after the issue number (`orca-stack-419-alcance`) still names issue #419.
-const bounceIssue = (pr, n) => /^\s*Closes\s+#(\d+)/mi.exec(pr.body ?? '')?.[1] ?? /-(\d+)(?:-[^\d/][^/]*)?$/.exec(pr.headRefName ?? '')?.[1] ?? String(n)
-const bounceTask = (repo, issue, agent, n) => supervisedTask(repo, `#${issue} ${agent} rebote #${n}`)
-
 const continueBounce = async ({ n, pr, agent, root, repo, config, commonDir, perfilPi, dryRun }, io) => {
   const say = io.out
   const sim = dryRun ? '[simulación] ' : ''

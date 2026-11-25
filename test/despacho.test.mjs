@@ -2052,6 +2052,7 @@ describe('rebote', () => {
       assert.equal(await titleOf('Implementador: agy\nCloses #419', 'Gagaismo/orca-stack-7'), '#419 agy rebote #442')
       assert.equal(await titleOf('Implementador: agy', 'Gagaismo/orca-stack-419-alcance'), '#419 agy rebote #442')
       assert.equal(await titleOf('Implementador: agy', 'Gagaismo/orca-stack-419'), '#419 agy rebote #442')
+      assert.equal(await titleOf('Implementador: agy', 'Gagaismo/web-3-app-88'), '#88 agy rebote #442')
       assert.equal(await titleOf('Implementador: agy', 'feat/fix'), '#442 agy rebote #442')
     })
 
