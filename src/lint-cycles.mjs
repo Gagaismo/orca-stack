@@ -39,12 +39,12 @@ const TYPE_ONLY = /^(?:import|export)\s+type\s+(?!from\b)[\w$*{]/
 // #419: Windows caps a command line at 32,767 characters, so file paths go to ast-grep in batches.
 const ARG_BUDGET = 24000
 
-const batches = files => {
+export const batches = (files, budget = ARG_BUDGET) => {
   const out = []
   let current = []
   let size = 0
   for (const file of files) {
-    if (current.length > 0 && size + file.length + 3 > ARG_BUDGET) {
+    if (current.length > 0 && size + file.length + 3 > budget) {
       out.push(current)
       current = []
       size = 0
@@ -56,9 +56,9 @@ const batches = files => {
   return out
 }
 
-const relative = (root, file) => path.relative(root, path.resolve(root, file)).split(path.sep).join('/')
+export const relative = (root, file) => path.relative(root, path.resolve(root, file)).split(path.sep).join('/')
 
-const resolve = (from, specifier, known) => {
+export const resolve = (from, specifier, known) => {
   if (!/^\.\.?(?:\/|$)/.test(specifier)) return undefined
   const base = path.posix.normalize(path.posix.join(path.posix.dirname(from), specifier)).replace(/\/$/, '')
   if (base === '..' || base.startsWith('../')) return undefined
@@ -84,7 +84,7 @@ const importGraph = (root, files) => {
 }
 
 // #420: Tarjan's algorithm without recursion, so a long import chain never overflows the stack.
-const components = graph => {
+export const components = graph => {
   const index = new Map()
   const low = new Map()
   const stack = []
