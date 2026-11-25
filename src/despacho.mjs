@@ -1189,9 +1189,8 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     if (existing && io.exists(reviewPath)) {
       const archiveFor = round => path.join(io.home, 'orca', 'briefs', `${session}.review.${previousHead}${round > 1 ? `.${round}` : ''}.md`)
       let round = 1
-      while (previousHead === sha && io.exists(archiveFor(round))) round += 1
+      while (io.exists(archiveFor(round))) round += 1
       const archivedReviewPath = archiveFor(round)
-      if (io.exists(archivedReviewPath)) throw new Error(`Ya existe el review archivado ${archivedReviewPath}; no voy a sobrescribirlo.`)
       say(`${dryRun ? '[simulación] ' : ''}review anterior -> ${archivedReviewPath}`)
       if (!dryRun) io.rename(reviewPath, archivedReviewPath)
     }

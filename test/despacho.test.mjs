@@ -554,6 +554,17 @@ describe('revisar: one worktree per reviewer', () => {
     assert.ok(env.written.some(([file, text]) => file.endsWith('proj-revision-9-agy.md') && text.includes('- `src/app.ts`')))
   })
 
+  test('#388 Rule 1: after a revisar --rutas round, the next round on a new head launches and keeps every earlier review', async () => {
+    const briefs = path.join(home, 'orca', 'briefs')
+    write(path.join(briefs, 'proj-revision-9-agy.review.bbb222.md'), 'full review')
+    write(path.join(briefs, 'proj-revision-9-agy.review.md'), 'partial review')
+    const { env } = reusable({ head: 'bbb222', prHead: 'ccc333' })
+    assert.equal(await run('review', { n: '9', agent: 'agy' }, env), 0)
+    assert.equal(readFileSync(path.join(briefs, 'proj-revision-9-agy.review.bbb222.md'), 'utf8'), 'full review')
+    assert.equal(readFileSync(path.join(briefs, 'proj-revision-9-agy.review.bbb222.2.md'), 'utf8'), 'partial review')
+    assert.ok(env.written.some(([file, text]) => file.endsWith('proj-revision-9-agy.md') && text.includes('git diff bbb222..ccc333')))
+  })
+
   test('#388 Rule 3: revisar --rutas on a reviewed head is still refused while an agent works in that worktree', async () => {
     const { env } = reusable({ head: 'bbb222', prHead: 'bbb222', agents: [{ state: 'working' }], over: { 'git ls-tree -r': okRes('openapi/openapi.yaml\n') } })
     await assert.rejects(run('review', { n: '9', agent: 'agy', rutas: 'openapi/openapi.yaml' }, env), /Orca ya tiene un worktree para revision-9-agy con un agente vivo/)
