@@ -232,8 +232,8 @@ describe('PR evidence test-name checker', () => {
   test('Issue 205 Rule 1: accepts all five repository test titles in double-backtick spans', () => {
     const titles = [
       'ticket rule 4: ultracode exempts only main own arena and still announces it',
-      'rule 4: ponytail-debt finds `shortcut:` and older `ponytail:` markers, not prose',
-      'rule 4 negative: no text in assets/ asks for new `ponytail:` comments',
+      'rule 1: renaming Ciclo de `main` fails the heading check and names the knob and missing heading',
+      'Rule 2 (#365): a quoted `> Revisor: codex` line is not a marker, nor is a marker in the middle of a line',
       'an indented fence (inside a list item) hides its `# comment` lines too',
       'a balanced fence inside the removed text may hold `# comment` lines',
     ]

@@ -14,7 +14,7 @@ const BRIEFS = ['brief-planificacion.md', 'brief-rdd.md', 'brief-rebote.md', 'br
 const win = process.platform === 'win32'
 const flat = text => text.replace(/\s+/g, ' ')
 // The stack markers start unset, so a probe never inherits them from the session running the tests.
-const NO_MARKERS = { ORCA_STACK_MODE: undefined, ORCA_STACK_CAVEMAN_LEVEL: undefined, ORCA_STACK_PONYTAIL_LEVEL: undefined }
+const NO_MARKERS = { ORCA_STACK_MODE: undefined, ORCA_STACK_CAVEMAN_LEVEL: undefined }
 
 // The temp dirs avoid the word "caveman": the rendered docs carry the home path.
 // `global` into a fresh home with the given personal config, then `init` in a fresh repo.
@@ -96,7 +96,7 @@ describe('#394 Caveman as a perk', () => {
     }
   })
 
-  test('S7: doctor accepts off or absent markers for a perk that is off, requires today’s values for a perk that is on, and fails a Ponytail level lite', () => {
+  test('S7: doctor accepts off or absent markers for a perk that is off, requires today’s values for a perk that is on, and fails a stale Caveman level', () => {
     const env = setup()
     try {
       const file = wrapper(env.home, 'claude')
@@ -104,13 +104,13 @@ describe('#394 Caveman as a perk', () => {
       let out = doctor(env.home)
       for (const agent of Object.keys(WRAPPERS)) assert.match(out, probeRow(agent), out)
       // Off and absent: the assignments removed, the self-test prints them empty.
-      writeFileSync(file, off.replace(/^.*ORCA_STACK_(MODE|CAVEMAN_LEVEL|PONYTAIL_LEVEL)=off"?\r?\n/gm, ''))
+      writeFileSync(file, off.replace(/^.*ORCA_STACK_(MODE|CAVEMAN_LEVEL)=off"?\r?\n/gm, ''))
       assert.match(doctor(env.home), probeRow('claude'))
       // A perk that is off with another value is a stale marker too.
       writeFileSync(file, off.replace('ORCA_STACK_MODE=off', 'ORCA_STACK_MODE=auto'))
       assert.match(doctor(env.home), STALE)
 
-      write(path.join(env.home, '.orca-stack', 'config.json'), JSON.stringify({ perks: { caveman: true, ponytail: true } }))
+      write(path.join(env.home, '.orca-stack', 'config.json'), JSON.stringify({ perks: { caveman: true } }))
       // On with the off wrapper: stale.
       writeFileSync(file, off)
       assert.match(doctor(env.home), STALE)
@@ -118,7 +118,7 @@ describe('#394 Caveman as a perk', () => {
       const on = readFileSync(file, 'utf8')
       out = doctor(env.home)
       for (const agent of Object.keys(WRAPPERS)) assert.match(out, probeRow(agent), out)
-      writeFileSync(file, on.replace('ORCA_STACK_PONYTAIL_LEVEL=full', 'ORCA_STACK_PONYTAIL_LEVEL=lite'))
+      writeFileSync(file, on.replace('ORCA_STACK_CAVEMAN_LEVEL=caveman', 'ORCA_STACK_CAVEMAN_LEVEL=full'))
       assert.match(doctor(env.home), STALE)
     } finally {
       teardown(env)
@@ -127,13 +127,11 @@ describe('#394 Caveman as a perk', () => {
 })
 
 describe('#394 docs', () => {
-  test('S8: the setup guide and the manual describe Ponytail and Caveman as optional perks, off by default', () => {
+  test('S8: the setup guide and the manual describe Caveman as an optional perk, off by default', () => {
     for (const file of [path.join('docs', 'guia-setup.md'), path.join('docs', 'manual.md')]) {
       const text = read(path.join(ROOT, file))
-      assert.match(text, /"perks": \{ "ponytail": true \}/, file)
       assert.match(text, /"perks": \{ "caveman": true \}/, file)
-      assert.match(text, /Ponytail y Caveman son perks opcionales, apagados por defecto/, file)
-      assert.match(text, /PONYTAIL\.md/, file)
+      assert.match(text, /Caveman es un perk opcional, apagado por defecto/, file)
       assert.match(text, /CAVEMAN\.md/, file)
       assert.doesNotMatch(text, /todavía no cambian nada/, file)
     }

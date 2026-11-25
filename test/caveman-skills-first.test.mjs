@@ -40,11 +40,11 @@ describe('#142: caveman is recommended as skills only, and the plugin gets a war
     }
   })
 
-  test('rule 2: README, right after the ponytail plugin bullet, says to disable the caveman plugin in Orca sessions and why', () => {
+  test('rule 2: README, right after the hooks exclusion bullet, says to disable the caveman plugin in Orca sessions and why', () => {
     const lines = read('README.md').split('\n')
-    const ponytail = lines.findIndex(line => line.startsWith('- **El plugin `ponytail` de Claude Code**'))
-    assert.ok(ponytail >= 0, 'the ponytail plugin bullet from PR #140 is there')
-    const caveman = lines[ponytail + 1]
+    const hooks = lines.findIndex(line => line.startsWith('- **Los hooks de ciclo de vida completos de Caveman**'))
+    assert.ok(hooks >= 0, 'the Caveman hooks exclusion bullet is there')
+    const caveman = lines[hooks + 1]
     assert.match(caveman, /^- \*\*El plugin `caveman` de Claude Code\*\*: si lo tenés instalado, desactivalo en las sesiones de Orca \(`claude plugin disable caveman@caveman`\)/)
     assert.match(caveman, /sus hooks inyectan caveman en cada subagente y duplican el control de Orca/)
   })

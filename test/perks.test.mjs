@@ -25,8 +25,8 @@ const hasGears = block => /^### Marchas$/m.test(block) && block.includes('`March
 
 describe('#393 perk switch, gears first', () => {
   test('R1: perks merge across layers, default off, and doctor reports a non-boolean value', () => {
-    assert.deepEqual(perksOf({}), { marchas: false, ponytail: false, caveman: false })
-    assert.deepEqual(perksOf({ perks: { marchas: 'yes', ponytail: true } }), { marchas: false, ponytail: true, caveman: false })
+    assert.deepEqual(perksOf({}), { marchas: false, caveman: false })
+    assert.deepEqual(perksOf({ perks: { marchas: 'yes', caveman: true } }), { marchas: false, caveman: true })
     const home = tempDir('perks-home')
     const repos = []
     try {

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { mergedPerks, perkProblems, perksOf, ponytailDeprecation } from './perks.mjs'
+import { hasRetiredPonytailPerk, mergedPerks, perkProblems, perksOf } from './perks.mjs'
 import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
 import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { CODEX_DOC_DEFAULT, readCodexDocBytes } from './codex-doc-bytes.mjs'
@@ -160,7 +160,6 @@ export const pluginIds = (home, name) => {
 
 // Upstream plugins whose hooks duplicate Orca's control, and why.
 const PLUGIN_WARNINGS = {
-  ponytail: 'sus hooks duplican el control de Orca y su skill `ponytail` no trae `## In Orca`',
   caveman: 'sus hooks inyectan caveman en cada subagente y duplican el control de Orca',
 }
 
@@ -284,7 +283,7 @@ export const doctorCommand = async flags => {
 
   // Policy docs
   section('Política del stack')
-  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md', 'PONYTAIL.md', 'CAVEMAN.md']) {
+  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md', 'CAVEMAN.md']) {
     const file = path.join(L.stackDir, name)
     if (!existsSync(file)) {
       add('fail', name, `falta ${tilde(file, home)}`)
@@ -607,8 +606,11 @@ export const doctorCommand = async flags => {
   for (const { label, detail } of perkProblems({ perks: mergedPerks(personal, committed, local) })) {
     add('warn', label, detail)
   }
-  const deprecation = ponytailDeprecation({ perks: mergedPerks(personal, committed, local) })
-  if (deprecation) add('warn', 'perks.ponytail', deprecation)
+  for (const [file, config] of retiredLayers) {
+    if (hasRetiredPonytailPerk(config)) {
+      add('warn', 'perks.ponytail', `el perk ponytail se retiró: podés borrarlo de ${file}`)
+    }
+  }
 
   // codex on Windows reads files through PowerShell 5.1 (#58). Off Windows or without codex, not even the title prints.
   const codexChecks = codexWindowsChecks({

@@ -108,36 +108,36 @@ describe('5. duplicated marker pairs are refused', () => {
 })
 
 describe('3. foreign files are not overwritten; backups live outside the files’ folders', () => {
-  const skill = () => path.join(home, '.claude', 'skills', 'ponytail', 'SKILL.md')
+  const skill = () => path.join(home, '.claude', 'skills', 'orca-setup', 'SKILL.md')
 
   test('a pre-existing different skill is skipped with a warning', () => {
-    write(skill(), 'mi ponytail\n')
+    write(skill(), 'mi orca-setup\n')
     const result = cli(home, ['global', '--skip-pi'])
     assert.equal(result.status, 0, result.out)
     assert.match(result.out, /⚠ .*SKILL\.md ya existe y no es de orca-stack/)
-    assert.equal(read(skill()), 'mi ponytail\n')
+    assert.equal(read(skill()), 'mi orca-setup\n')
     assert.deepEqual(backups(home), [])
     // and a second run still leaves it alone
     cli(home, ['global', '--skip-pi'])
-    assert.equal(read(skill()), 'mi ponytail\n')
+    assert.equal(read(skill()), 'mi orca-setup\n')
   })
 
   test('--force replaces it; every backup is under ~/.orca-stack/backups and none next to a file', () => {
-    write(skill(), 'mi ponytail\n')
+    write(skill(), 'mi orca-setup\n')
     write(settingsPath(), JSON.stringify({ model: 'opus' }))
     write(claudeMdPath(), 'reglas mías\n')
     assert.equal(cli(home, ['global', '--skip-pi', '--force']).status, 0)
-    assert.notEqual(read(skill()), 'mi ponytail\n')
+    assert.notEqual(read(skill()), 'mi orca-setup\n')
     assert.equal(allFiles(home).filter(name => name.includes('.bak-orca-stack-')).length, 0)
     const saved = backups(home)
-    for (const needle of ['ponytail/SKILL.md', 'settings.json']) {
+    for (const needle of ['orca-setup/SKILL.md', 'settings.json']) {
       assert.ok(saved.some(name => name.endsWith(needle)), needle)
     }
     for (const name of saved) {
       assert.match(name, /^\.orca-stack\/backups\/\d{8}-\d{6}\//)
     }
     assert.equal(cli(home, ['remove']).status, 0)
-    assert.equal(read(skill()), 'mi ponytail\n')
+    assert.equal(read(skill()), 'mi orca-setup\n')
     assert.equal(read(claudeMdPath()), 'reglas mías\n')
   })
 })

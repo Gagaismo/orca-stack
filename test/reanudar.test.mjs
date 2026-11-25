@@ -478,9 +478,18 @@ describe('orca-stack reanudar (#214)', () => {
   })
 
   test('issue 382: reanudar relaunches agy with --model gemini-4-neon-high', async () => {
-    const gone = harness({ agents: [{ paneKey: 'tab-9:leaf-9', state: 'done', agentType: 'antigravity' }], terminals: [] })
-    assert.equal(await reanudarCommand({}, ISSUE, URL, gone.io), 0)
-    assert.ok(gone.outputs.includes('Lanzador (agy): "/home/orca/stack/scripts/agy-orca-stack.sh" --dangerously-skip-permissions --model gemini-4-neon-high'), gone.outputs.join('\n'))
+    const root = mkdtempSync(path.join(os.tmpdir(), 'orca-stack-382-agy-'))
+    writeFileSync(path.join(root, '.orca-stack.json'), JSON.stringify({
+      setup: 'completo', modo: 'multiagente',
+      agentes: { usa: ['agy'], preguntarAntes: [] },
+    }))
+    try {
+      const gone = harness({ root, agents: [{ paneKey: 'tab-9:leaf-9', state: 'done', agentType: 'antigravity' }], terminals: [] })
+      assert.equal(await reanudarCommand({}, ISSUE, URL, gone.io), 0)
+      assert.ok(gone.outputs.includes('Lanzador (agy): "/home/orca/stack/scripts/agy-orca-stack.sh" --dangerously-skip-permissions --model gemini-4-neon-high'), gone.outputs.join('\n'))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   test('issue 330 Rule 4: Orca\'s antigravity agentType is agy; an unknown agentType still refuses', async () => {

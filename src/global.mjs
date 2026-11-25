@@ -1,10 +1,9 @@
-import { chmodSync, existsSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 
 import { GRILL_SKILLS, INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
-import { PERKS, perksOf, ponytailDeprecation } from './perks.mjs'
-import { loadConfig } from './despacho.mjs'
+import { PERKS, perksOf } from './perks.mjs'
 import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestratorMode, rddMode, readPersonalConfig, refreshLazyPointer, restoreBlock, sddBlock, trimReviewSections } from './gentle.mjs'
 import { cleanupKnownSdd } from './sdd-cleanup.mjs'
 import { CODEX_ASCII_MARKERS, CODEX_ASCII_RULE, codexAgentsMd } from './codex-windows.mjs'
@@ -28,7 +27,7 @@ import {
   wrapperContent,
   wrapperFile,
 } from './templates.mjs'
-import { deepEqual, homeDir, isWindows, readTextIfExists, run, sha256, which } from './util.mjs'
+import { deepEqual, homeDir, isWindows, readTextIfExists, run, samePath, sha256, which } from './util.mjs'
 
 const PKG_ROOT = path.resolve(assetPath(), '..')
 
@@ -47,8 +46,8 @@ export const stackVars = L => {
 const installPolicyDocs = ctx => {
   ctx.say('\nPolítica del stack')
   const vars = stackVars(ctx.L)
-  // MARCHAS.md, PONYTAIL.md and CAVEMAN.md are perk fragments (#393, #394): installed always, read only while their perk is on.
-  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md', 'PONYTAIL.md', 'CAVEMAN.md']) {
+  // MARCHAS.md and CAVEMAN.md are perk fragments (#393, #394): installed always, read only while their perk is on.
+  for (const name of ['ORCA-STACK.md', 'ROLE-BRIEFS.md', 'MAIN.md', 'MARCHAS.md', 'CAVEMAN.md']) {
     ctx.writeOwned(path.join(ctx.L.stackDir, name), render(readAsset('stack', name), vars))
   }
 }
@@ -103,6 +102,81 @@ const installSkills = ctx => {
     }
   }
   ctx.state.skills = names
+}
+
+const RETIRED_PONYTAIL_SKILLS = ['ponytail', 'ponytail-audit', 'ponytail-debt', 'ponytail-help', 'ponytail-review']
+
+const isUnderDir = (file, dir) => {
+  const rel = path.relative(path.resolve(dir), path.resolve(file))
+
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel)
+}
+
+const pruneEmptyDir = (dir, dryRun) => {
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+    return false
+  }
+  let empty = true
+  for (const name of readdirSync(dir)) {
+    const full = path.join(dir, name)
+    if (statSync(full).isDirectory() && pruneEmptyDir(full, dryRun)) {
+      continue
+    }
+    empty = false
+  }
+  if (empty && !dryRun) {
+    rmdirSync(dir)
+  }
+
+  return empty
+}
+
+// #429: remove Ponytail files that an earlier `global` installed, leaving any user file with the same name alone.
+const removeRetiredPonytail = ctx => {
+  const stackFile = path.join(ctx.L.stackDir, 'PONYTAIL.md')
+  const skillDirs = [ctx.L.claudeSkills, ctx.L.agentsSkills].flatMap(root =>
+    RETIRED_PONYTAIL_SKILLS.map(skill => path.join(root, skill)),
+  )
+  const trackedKeys = Object.keys(ctx.state.files).filter(
+    file => samePath(file, stackFile) || skillDirs.some(dir => isUnderDir(file, dir)),
+  )
+  const diskFiles = [
+    ...(existsSync(stackFile) && statSync(stackFile).isFile() ? [stackFile] : []),
+    ...skillDirs.flatMap(dir =>
+      existsSync(dir) && statSync(dir).isDirectory() ? listFiles(dir).map(rel => path.join(dir, ...rel.split('/'))) : [],
+    ),
+  ]
+  if (trackedKeys.length === 0 && diskFiles.length === 0) {
+    return
+  }
+  ctx.say('\nLimpieza de Ponytail retirado')
+  for (const key of trackedKeys) {
+    const entry = ctx.state.files[key]
+    if (!existsSync(key)) {
+      if (!ctx.dryRun) {
+        delete ctx.state.files[key]
+      }
+      continue
+    }
+    if (sha256(readFileSync(key)) !== entry.sha256) {
+      ctx.say(`  ⚠ ${ctx.show(key)} fue modificado después de instalarlo: lo dejo como está`)
+      continue
+    }
+    ctx.act(`borro ${ctx.show(key)} (perk ponytail retirado)`)
+    if (!ctx.dryRun) {
+      unlinkSync(key)
+      delete ctx.state.files[key]
+    }
+  }
+  for (const file of diskFiles) {
+    if (trackedKeys.some(key => samePath(key, file))) {
+      continue
+    }
+    ctx.say(`  ⚠ ${ctx.show(file)} no lo instaló orca-stack: lo dejo como está`)
+  }
+  for (const dir of skillDirs) {
+    pruneEmptyDir(dir, ctx.dryRun)
+  }
 }
 
 const installMods = ctx => {
@@ -535,6 +609,7 @@ export const globalCommand = async flags => {
     installPolicyDocs(ctx)
     installWrappers(ctx)
     installSkills(ctx)
+    removeRetiredPonytail(ctx)
     installMods(ctx)
     removeClaudeMdBlock(ctx)
     homeAgentsPointer(ctx)
@@ -554,8 +629,6 @@ Estado guardado en ${ctx.show(ctx.L.state)}`)
   }
   detectTools(ctx)
   printManualSteps(ctx, { skipPi: flags.skipPi })
-  const deprecation = ponytailDeprecation(loadConfig(ctx.home, process.cwd()))
-  if (deprecation) ctx.say(`\n⚠ ${deprecation}`)
   if (ctx.skipped.length > 0) {
     ctx.say(`
 ⚠ ${ctx.skipped.length} archivos existentes que no son de orca-stack quedaron como estaban. Para reemplazarlos (con respaldo): orca-stack global --force`)

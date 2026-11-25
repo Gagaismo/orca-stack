@@ -4692,13 +4692,11 @@ describe('issue #426: no-comments self-check in the ticket brief', () => {
     assert.ok(!review.includes('no-comments'), 'the review brief does not ask for the author self-check')
   })
 
-  test('Rule 6: with the Ponytail perk on in the config, despachar notes that shortcut: is an Excuse under ADR 0002 and never asks for one; with it off or absent the brief has no Ponytail text', async () => {
-    const on = await ticketBrief({ ...PROJECT, perks: { ponytail: true } })
-    assert.ok(on.includes(`${SELF_CHECK} The Ponytail perk is on, and its \`shortcut: <limit>, <when to upgrade>\` comments ${EXCUSE}: do not write them, and the self-check deletes them like any other Excuse.`), on)
-    for (const config of [{ ...PROJECT, perks: { ponytail: false } }, PROJECT, { ...PROJECT, perks: { ponytail: 'yes' } }]) {
-      const off = await ticketBrief(config)
-      assert.ok(off.includes(SELF_CHECK), 'the self-check stays with the perk off')
-      assert.doesNotMatch(off, /ponytail|shortcut:|perk:/i, `perks ${JSON.stringify(config.perks)}`)
+  test('Rule 6 (#429): despachar never includes Ponytail or shortcut: text even if perks.ponytail is left in config', async () => {
+    for (const config of [{ ...PROJECT, perks: { ponytail: true } }, { ...PROJECT, perks: { ponytail: false } }, PROJECT, { ...PROJECT, perks: { ponytail: 'yes' } }]) {
+      const brief = await ticketBrief(config)
+      assert.ok(brief.includes(SELF_CHECK), 'the self-check stays')
+      assert.doesNotMatch(brief, /ponytail|shortcut:|perk:/i, `perks ${JSON.stringify(config.perks)}`)
     }
   })
 
