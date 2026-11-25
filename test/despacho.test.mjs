@@ -496,6 +496,24 @@ describe('revisar: one worktree per reviewer', () => {
     assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
   })
 
+  test('#388 Rule 1: revisar --rutas on a head the reviewer already reviewed launches the review of those paths in the reused worktree', async () => {
+    const { env } = reusable({ head: 'bbb222', prHead: 'bbb222', over: { 'git ls-tree -r': okRes('openapi/openapi.yaml\nsrc/app.ts\n') } })
+    assert.equal(await run('review', { n: '9', agent: 'agy', rutas: 'openapi/openapi.yaml' }, env), 0)
+    assert.ok(env.calls.some(call => call.join(' ') === 'git checkout --detach bbb222'))
+    assert.ok(!env.calls.some(call => call.includes('--force') || call.join(' ').startsWith('orca worktree rm') || call.join(' ').startsWith('git worktree remove')))
+    const brief = env.written.find(([file]) => file.endsWith('proj-revision-9-agy.md'))?.[1]
+    assert.match(brief, /## Partial review by design[\s\S]*- `openapi\/openapi\.yaml`/)
+    assert.ok(!brief.includes('git diff bbb222..bbb222'), brief)
+    assert.ok(env.out.includes('Review parcial por diseño: openapi/openapi.yaml'))
+  })
+
+  test('#388 Rule 3: revisar --rutas on a reviewed head is still refused while an agent works in that worktree', async () => {
+    const { env } = reusable({ head: 'bbb222', prHead: 'bbb222', agents: [{ state: 'working' }], over: { 'git ls-tree -r': okRes('openapi/openapi.yaml\n') } })
+    await assert.rejects(run('review', { n: '9', agent: 'agy', rutas: 'openapi/openapi.yaml' }, env), /Orca ya tiene un worktree para revision-9-agy con un agente vivo/)
+    assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
+    assert.deepEqual(env.written, [])
+  })
+
   test('Rule 5: dirty or unreachable review worktrees are refused without checkout', async () => {
     const dirty = reusable({ status: '?? derived-test.mjs\n' }).env
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, dirty), /est\u00E1 sucio/)

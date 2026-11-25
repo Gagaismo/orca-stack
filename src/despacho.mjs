@@ -1096,7 +1096,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     PERKS: config.perks,
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n), MIGRACION: migration?.texto }),
     ...(review ? {
-      DELTA_INSTRUCTIONS: previousHead ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : 'This is the first review round; review the full PR.',
+      DELTA_INSTRUCTIONS: previousHead && previousHead !== sha ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : 'This is the first review round; review the full PR.',
       PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
       PUBLISH_COMMAND: `gh pr review ${n} --comment --body-file ${reviewPath}`,
     } : {}),
@@ -1116,7 +1116,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: existingPath })
     if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${existingPath}: ${(status.stderr || status.stdout).trim()}`)
     if (status.stdout.trim() !== '') throw new Error(`El worktree ${existingPath} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de revisar de nuevo.`)
-    if (previousHead === sha) throw new Error(`Ya revisaste ${sha} con ${agent}.`)
+    if (previousHead === sha && !paths) throw new Error(`Ya revisaste ${sha} con ${agent}.`)
     if (agent === 'pi') {
       const pinned = readPin(io, existingPath)
       // "global" writes no pin, so it matches a worktree without one.
