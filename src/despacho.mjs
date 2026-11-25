@@ -764,14 +764,17 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     if (!started) throw fail(`orca terminal send acept\u00f3 o envi\u00f3 el brief, pero no hay evidencia de que el turno haya arrancado. Terminal: ${handle}. Pantalla anterior: ${before}`)
     await checkPostLaunchScreen(io, handle, agent)
   } else {
-    const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
+    const handleOf = () => deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
     if (supervised) {
+      const handle = handleOf()
       if (!handle) throw new Error('orca terminal create no devolvió el handle de la terminal.')
       await startWorker(io, say, { agent, handle, briefPath, supervised })
     }
     let { tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter)
     // #444: the brief can stay typed in pi's input without its Enter: one Enter, never a second, then one more wait.
-    if (piSessionAfter > 0 && tools === undefined && handle && briefInPiInput(io, handle, brief)) {
+    let handle
+    if (piSessionAfter > 0 && tools === undefined) try { handle = handleOf() } catch {}
+    if (handle && briefInPiInput(io, handle, brief)) {
       say(`El brief quedó escrito en la entrada de pi sin enviar: mando un Enter a ${handle}.`)
       io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
       ;({ tools, file } = await waitForPiSession(io, home, worktree, piSessionAfter))
