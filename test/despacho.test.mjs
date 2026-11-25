@@ -538,7 +538,20 @@ describe('revisar: one worktree per reviewer', () => {
     const brief = env.written.find(([file]) => file.endsWith('proj-revision-9-agy.md'))?.[1]
     assert.match(brief, /## Partial review by design[\s\S]*- `openapi\/openapi\.yaml`/)
     assert.ok(!brief.includes('git diff bbb222..bbb222'), brief)
+    assert.ok(brief.includes('You already reviewed commit `bbb222`; this round reviews only the paths under `## Partial review by design`.'), brief)
+    assert.ok(!brief.includes('This is the first review round'), brief)
     assert.ok(env.out.includes('Review parcial por diseño: openapi/openapi.yaml'))
+  })
+
+  test('#388 Rule 1: a second revisar --rutas on the same reviewed head launches too and keeps both earlier reviews', async () => {
+    const briefs = path.join(home, 'orca', 'briefs')
+    write(path.join(briefs, 'proj-revision-9-agy.review.bbb222.md'), 'full review')
+    write(path.join(briefs, 'proj-revision-9-agy.review.md'), 'first partial review')
+    const { env } = reusable({ head: 'bbb222', prHead: 'bbb222', over: { 'git ls-tree -r': okRes('openapi/openapi.yaml\nsrc/app.ts\n') } })
+    assert.equal(await run('review', { n: '9', agent: 'agy', rutas: 'src/app.ts' }, env), 0)
+    assert.equal(readFileSync(path.join(briefs, 'proj-revision-9-agy.review.bbb222.md'), 'utf8'), 'full review')
+    assert.equal(readFileSync(path.join(briefs, 'proj-revision-9-agy.review.bbb222.2.md'), 'utf8'), 'first partial review')
+    assert.ok(env.written.some(([file, text]) => file.endsWith('proj-revision-9-agy.md') && text.includes('- `src/app.ts`')))
   })
 
   test('#388 Rule 3: revisar --rutas on a reviewed head is still refused while an agent works in that worktree', async () => {

@@ -1096,7 +1096,9 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     PERKS: config.perks,
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n), MIGRACION: migration?.texto }),
     ...(review ? {
-      DELTA_INSTRUCTIONS: previousHead && previousHead !== sha ? `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.` : 'This is the first review round; review the full PR.',
+      DELTA_INSTRUCTIONS: !previousHead ? 'This is the first review round; review the full PR.'
+        : previousHead === sha ? `You already reviewed commit \`${sha}\`; this round reviews only the paths under \`## Partial review by design\`.`
+          : `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.`,
       PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
       PUBLISH_COMMAND: `gh pr review ${n} --comment --body-file ${reviewPath}`,
     } : {}),
@@ -1185,7 +1187,10 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     }
     const brief = withProfileLines(briefFor(branch), profile)
     if (existing && io.exists(reviewPath)) {
-      const archivedReviewPath = path.join(io.home, 'orca', 'briefs', `${session}.review.${previousHead}.md`)
+      const archiveFor = round => path.join(io.home, 'orca', 'briefs', `${session}.review.${previousHead}${round > 1 ? `.${round}` : ''}.md`)
+      let round = 1
+      while (previousHead === sha && io.exists(archiveFor(round))) round += 1
+      const archivedReviewPath = archiveFor(round)
       if (io.exists(archivedReviewPath)) throw new Error(`Ya existe el review archivado ${archivedReviewPath}; no voy a sobrescribirlo.`)
       say(`${dryRun ? '[simulación] ' : ''}review anterior -> ${archivedReviewPath}`)
       if (!dryRun) io.rename(reviewPath, archivedReviewPath)

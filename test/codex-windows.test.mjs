@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
@@ -376,6 +376,16 @@ describe('issue 390: codex on Windows writes the body file as UTF-8 without BOM'
   })
 
   test('Rule 3: the agy and pi briefs do not carry the WriteAllText line', () => {
+    const bin = path.join(home, 'path-bin')
+    write(path.join(bin, '.probe'), '')
+    write(agentsMd(), '## Rules\n')
+    const result = cli(home, ['global', '--skip-pi'], { env: { ORCA_STACK_PLATFORM: 'win32', PATH: [bin, path.dirname(process.execPath)].join(path.delimiter) } })
+    assert.equal(result.status, 0, result.out)
+    const carriers = readdirSync(home, { recursive: true, withFileTypes: true })
+      .filter(entry => entry.isFile() && readFileSync(path.join(entry.parentPath, entry.name), 'utf8').includes('WriteAllText'))
+      .map(entry => path.relative(home, path.join(entry.parentPath, entry.name)))
+      .filter(file => !file.startsWith(path.join('.orca-stack', 'cli') + path.sep))
+    assert.deepEqual(carriers, [path.join('.codex', 'AGENTS.md')])
     for (const AGENT of ['agy', 'pi']) {
       for (const kind of ['review', 'ticket']) {
         const brief = renderBrief(kind, { REPO: 'repo', PR: '7', ISSUE: '7', IMPLEMENTER: 'codex', SHA: 'abc123', BASE: 'main', BRANCH: 'feat', VERIFICATION: 'npm test', AGENT })
