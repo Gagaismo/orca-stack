@@ -46,6 +46,7 @@ const orchestrationDefault = args => {
 const harness = ({ root = ROOT, home = '/home', state = 'done', agent = 'codex', screen = ['\u{273b} Baked for 2m 5s'], dirty = '', pr = false, comment = {}, send = sendReceipt, psDown = false, dryRun = false, agents, terminals, brief, now = () => 1760616000000 } = {}) => {
   const outputs = []
   const calls = []
+  let createdAgent
   const files = {
     [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')]: brief ?? 'Original ticket brief\nKeep this unchanged.\n',
   }
@@ -68,13 +69,17 @@ const harness = ({ root = ROOT, home = '/home', state = 'done', agent = 'codex',
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: terminals ?? [{ handle: 'term-1', tabId: 'tab-1', leafId: 'leaf-1', title: agent, agentIdentity: agent, worktreePath: WT }] } })
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
         const handle = args[args.indexOf('--terminal') + 1]
-        return json({ result: { terminal: { tail: handle === 'term-new' ? ['\u{2722} Churning... (1m 2s)'] : screen } } })
+        const newScreen = createdAgent === 'agy' ? ['>'] : ['\u{2722} Churning... (1m 2s)']
+        return json({ result: { terminal: { tail: handle === 'term-new' ? newScreen : screen } } })
       }
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send') {
         const line = args[args.indexOf('--text') + 1]
         return line?.startsWith('Read and follow the brief in') ? json({ result: { send: { turnStarted: true } } }) : send
       }
-      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') return json({ result: { handle: 'term-new' } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') {
+        createdAgent = args[args.indexOf('--title') + 1]
+        return json({ result: { handle: 'term-new' } })
+      }
       // #463: every relaunch is supervised; by default main's Run has no task of this worker, so reanudar creates one.
       if (cmd === 'orca' && args[0] === 'orchestration') return orchestrationDefault(args)
       return fail(`unexpected call: ${cmd} ${args.join(' ')}`)
