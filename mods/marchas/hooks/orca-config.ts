@@ -125,8 +125,6 @@ export const piProfileProblem = (name: string, profile: unknown): string | undef
   return undefined
 }
 
-// "2026-10-29" -> local midnight of that day, "2026-10-29T19:12" -> that local minute (#388); an agent is blocked
-// while now < that instant.
 export const parseUntil = (date: string): number | undefined => {
   const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(date.trim())
   if (match === null) {
