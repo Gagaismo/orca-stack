@@ -19,7 +19,7 @@ El único comentario permitido es un Decision Record que cita un ADR o un issue 
 
 ## Qué revisa el lint
 
-`orca-stack lint` revisa los comentarios de JavaScript y TypeScript. Go, Python y Shell todavía no dan hallazgos de comentarios.
+`orca-stack lint` revisa los comentarios de JavaScript, TypeScript, Go, Python y Shell. Los demás lenguajes no dan hallazgos de comentarios.
 
 - **Decision Record:** un comentario que cita `#123`, `ADR 0002` o un link a `docs/adr/0002-…` pasa. Un "ver el ADR" que no nombra ninguno no es un Decision Record.
 - **Excuse:** `TODO`, `FIXME`, `HACK` o `XXX` en mayúsculas, o "hack", "workaround", "temporary", "for now", "shortcut:" o "upgrade when" en cualquier caja, sin una cita. Un `// TODO(#123): …` cita un issue y pasa. Un "todo" en castellano no es una marca, y "temporary" seguido de file, directory, folder, path, home, repo, copy, name o worktree describe un archivo temporal, no una excusa.

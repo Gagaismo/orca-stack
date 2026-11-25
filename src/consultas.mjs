@@ -5,6 +5,7 @@ import { startsWithMarker } from './marcas.mjs'
 import { getCommonDir, getStackAccount } from './repo.mjs'
 
 export const STORE_REL = ['orca-stack', 'consultas-reportadas.json']
+export const CONSULTAS_DEPRECATION = '⚠ orca-stack consultas está deprecado (ADR 0004): los workers le preguntan a main por el buzón del Run. Se saca en la próxima release.'
 
 export const loadReportedConsultas = (storePath, io) => {
   if (!io.exists(storePath)) return new Set()
@@ -46,7 +47,7 @@ export const isConsultaComment = (comment, stackAccount) => {
   return startsWithMarker(comment?.body, 'Consulta')
 }
 
-export const consultasCommand = async (flags = {}, items = [], io = defaultIo()) => {
+export const checkConsultas = async (flags = {}, items = [], io = defaultIo()) => {
   const targets = (items || []).map(x => String(x).trim().replace(/^#/, '')).filter(x => /^\d+$/.test(x))
   if (targets.length === 0) return 0
 
@@ -73,4 +74,11 @@ export const consultasCommand = async (flags = {}, items = [], io = defaultIo())
   }
 
   return 0
+}
+
+export const consultasCommand = async (flags = {}, items = [], io = defaultIo()) => {
+  const warn = io.err ?? (message => console.error(message))
+  warn(CONSULTAS_DEPRECATION)
+
+  return checkConsultas(flags, items, io)
 }
