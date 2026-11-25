@@ -57,6 +57,7 @@ describe('issue 468: orchestration PRs carry Implementador: and revisar names th
     const calls = []
     const out = []
     const written = []
+    let launchedAgent
     const io = {
       home,
       cwd: root,
@@ -84,9 +85,12 @@ describe('issue 468: orchestration PRs carry Implementador: and revisar names th
         if (cmd === 'gh' && args[0] === 'pr') return json({ headRefName: 'docs/plan', headRefOid: 'abc123', body: prBody, number: 61 })
         if (args.join(' ') === 'worktree ps --json') return json({ result: { worktrees: [] } })
         if (args.join(' ').startsWith('worktree create')) return json({ result: { worktree: { path: worktree, branch: 'refs/heads/revision-61-agy' } } })
-        if (args[0] === 'terminal' && args[1] === 'create') return json({ result: { terminal: { handle: 'term_1' } } })
+        if (args[0] === 'terminal' && args[1] === 'create') {
+          launchedAgent = args[args.indexOf('--title') + 1]
+          return json({ result: { terminal: { handle: 'term_1' } } })
+        }
         if (args[0] === 'terminal' && args[1] === 'send' && args.includes('--wait-submit')) return json({ result: { submission: 'submitted', turnStarted: true } })
-        if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: ['ready'], latestCursor: calls.length } } })
+        if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: launchedAgent === 'agy' ? ['ready', '>'] : ['ready'], latestCursor: calls.length } } })
         if (args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: [] } })
         return okRes()
       },
