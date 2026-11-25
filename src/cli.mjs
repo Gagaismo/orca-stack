@@ -40,7 +40,7 @@ Comandos:
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
   limpiar   Cierra las terminales y saca los worktrees cuyo PR se mergeó o se cerró (omite los sucios y los que tienen un agente trabajando).
   novedades Precheck de una automatización de Orca que sondea GitHub: sale con 1 (Orca saltea la corrida) si no hay nada nuevo.
-  lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y en JS/TS, los comentarios, module-cycle: módulos que se importan en círculo, y el diseño: tangle, field-leak y shallow-module) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
+  lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y en JS/TS, Go, Python y Shell: comentarios, module-cycle y diseño: tangle, field-leak y shallow-module) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
   --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
@@ -366,48 +366,51 @@ Cada violación nueva sale en una línea con la regla, el archivo o directorio, 
   long-file test/foo.mjs: 2345 líneas (máximo 2000) — dividí el archivo
   wide-directory src/: 37 entradas (máximo 15) — agrupá los archivos relacionados en subdirectorios
 
-En los archivos .js, .mjs, .cjs, .jsx, .ts, .tsx, .mts y .cts aplica la regla de los comentarios de CODING_STANDARDS.md:
+En los archivos JS/TS (.js, .mjs, .cjs, .jsx, .ts, .tsx, .mts, .cts), Go (.go), Python (.py) y Shell (.sh, .bash) aplica la regla de los comentarios de CODING_STANDARDS.md:
   comment-excuse     TODO, FIXME, HACK o XXX (en mayúsculas), o hack, workaround, temporary (salvo "temporary file",
                      "temporary directory" y parecidos), for now, shortcut: o upgrade when
-  comment-tautology  un comentario corto de una línea que repite la sentencia que sigue ("// increment i" sobre i++)
+  comment-tautology  un comentario corto de una línea que repite la sentencia que sigue ("// increment i" sobre i++;
+                     en Go también un doc comment que solo repite el nombre de la función, como "// Foo does foo." sobre func Foo)
   comment-stale      un comentario que nombra una llamada fooBar() que no está definida ni importada en el archivo; un
                      identificador entre backticks nunca se marca
 Un comentario que cita un issue (#123), un ADR (ADR 0002) o docs/adr/0002-… es un Decision Record y pasa.
-Nunca se marcan los shebangs, los encabezados de licencia, las directivas (eslint-…, @ts-…, prettier-ignore, c8 ignore…),
-el JSDoc con tags de tipo (@type, @param…) ni un // dentro de un string. La ubicación es la función, el método o la clase
-que lo contiene (o la declaración que sigue), o <módulo>:
+Nunca se marcan los shebangs, los encabezados de licencia, las directivas (eslint-…, @ts-…, prettier-ignore, c8 ignore…,
+//go:build, //go:generate, //nolint, # shellcheck …, # type: ignore, # noqa, # -*- coding: … -*-), el comentario de paquete
+golint ("// Package foo …" sobre package foo), los docstrings de Python, el JSDoc con tags de tipo (@type, @param…) ni un //
+dentro de un string. La ubicación es la función, el método o la clase/tipo que lo contiene (o la declaración que sigue), o <módulo>:
   comment-excuse src/x.mjs:foo() (Excuse) — borralo y abrí un issue para arreglar la implementación
-Go, Python, Shell, Markdown y los demás lenguajes no dan hallazgos de comentarios.
+Go, Python, Shell y JS/TS corren solo cuando el repo tiene archivos de ese lenguaje; Markdown y los demás lenguajes no dan hallazgos de comentarios.
 
-module-cycle, en los mismos archivos JS/TS: los módulos que se importan en círculo (a importa b y b importa a, o
-a → b → c → a) son una violación; una cadena a → b → c no. Cuentan import … from, import './x', export … from y
+module-cycle, en JS/TS, Go (por paquete dentro del módulo de go.mod; sin go.mod no falla), Python (imports relativos y del
+propio repo) y Shell (solo source / . de archivos relativos): los módulos que se importan en círculo (a importa b y b importa
+a, o a → b → c → a) son una violación; una cadena a → b → c no. En JS/TS cuentan import … from, import './x', export … from y
 require('./x') con un string; no cuentan import type ni export type … from de TS, ningún import() dinámico, los
 paquetes (node:fs, nombres de npm) ni un especificador que no resuelve a un archivo revisado. Un especificador relativo
 resuelve al archivo exacto, o con .mjs, .js, .cjs, .ts, .tsx, .mts, .cts o .jsx, o a /index con esas extensiones.
 Cada ciclo sale como un recorrido cerrado que pasa por todos sus módulos y empieza y termina en el menor:
   module-cycle src/a.mjs → src/b.mjs → src/a.mjs — dale una dirección a los módulos
-Go, Python, Shell y los demás lenguajes no dan hallazgos de module-cycle.
 
-Tres chequeos de diseño más, en los mismos archivos JS/TS, portados de deslop-please (MIT; las definiciones, en el manual).
-Una cosa es una clase, una función exportada del nivel del módulo o un objeto literal del nivel del módulo; una función
+Tres chequeos de diseño más, en JS/TS, Go (paquete = módulo, struct/tipo/función exportada = cosa) y Python (archivo o paquete
+con __init__.py = módulo, clase o función pública del nivel del módulo = cosa), portados de deslop-please (MIT; las definiciones,
+en el manual). En Shell no corren y no producen nada.
+Una cosa es una clase/struct, una función exportada del nivel del módulo o un objeto literal del nivel del módulo; una función
 que no se exporta es un ayudante (lo que nombra cuenta como de quien la usa). Una referencia que no se resuelve (acceso
 dinámico, import() calculado, paquete, archivo que no existe) se saltea y nunca hace fallar la corrida.
 tangle          cosas que se conocen en círculo, escritas en más de un módulo, o más de 7 en un círculo:
   tangle src/kernel.mjs:Tasks, src/timers.mjs:Timers: 2 cosas en 2 módulos (máximo 7 cosas en un solo módulo) — …
-field-leak      código de afuera de una clase que escribe, modifica o le llama un método a un campo suyo
-                (queue.items.push(x)), cuando la clase se guarda un campo que usa un método suyo; leer queue.size o
-                llamar queue.push(x) no es fuga. Solo se resuelve una variable creada con const v = new Clase() en el
-                mismo archivo:
+field-leak      código de afuera de una clase (o, en Go, de otro paquete) que escribe, modifica o le llama un método a un campo suyo
+                (queue.items.push(x)), cuando la clase se guarda un campo que usa un método suyo (en Go, un campo exportado
+                que usan sus métodos); leer queue.size o llamar queue.push(x) no es fuga:
   field-leak src/queue.mjs:Queue.items: se trabaja fuera de Queue en 1 lugar de 1 módulo (src/app.mjs; máximo 0), …
-shallow-module  un módulo (un archivo, o un directorio con index.*) que muestra más de 7 funciones que usa código de
-                afuera y al menos tantas como esconde:
+shallow-module  un módulo (un archivo, un directorio con index.* o __init__.py, o un paquete Go) que muestra más de 7 funciones
+                que usa código de afuera y al menos tantas como esconde:
   shallow-module src/store.mjs: muestra 9 de 15 funciones (…) y esconde 6 (máximo 7 mostradas, o más escondidas …) — …
-La entrada de tangle es como la de module-cycle, con "members" de la forma archivo:nombre; la de field-leak es
-Clase.campo y la de shallow-module, el módulo.
+La entrada de tangle es como la de module-cycle, con "members" de la forma archivo:nombre (en Go, paquete:Nombre); la de
+field-leak es Clase.campo (en Go, paquete + Struct.Campo) y la de shallow-module, el módulo o paquete.
 
 Los comentarios y los imports se leen con ast-grep 0.51.3, fijado por versión y sha256 (lo instala npm ci en la instalación de
-orca-stack; ORCA_STACK_AST_GREP apunta a otro binario, que también se verifica). Si hay algún archivo JS/TS y ast-grep
-falta, tiene otra versión o no coincide su checksum, el lint falla con 1 nombrando la versión y nunca pasa en silencio.
+orca-stack; ORCA_STACK_AST_GREP apunta a otro binario, que también se verifica). Si hay algún archivo JS/TS, Go, Python o Shell
+y ast-grep falta, tiene otra versión o no coincide su checksum, el lint falla con 1 nombrando la versión y nunca pasa en silencio.
 
 lint.comentarios.alcance, en la configuración (.orca-stack.json, .orca-stack.local.json o ~/.orca-stack/config.json):
   "repo" (por defecto)  revisa los comentarios de todo el repo contra la Baseline
@@ -415,6 +418,13 @@ lint.comentarios.alcance, en la configuración (.orca-stack.json, .orca-stack.lo
                         de HEAD con ramaBase (o origin/<ramaBase>), con los cambios sin commitear incluidos; las
                         entradas de comentarios de la Baseline no se evalúan, y long-file y wide-directory siguen igual
 Un valor distinto, o un ramaBase que falta, no se encuentra o no tiene merge-base con HEAD, falla con 1.
+
+lint.lenguajes: marca cada lenguaje (js, go, python, shell) como "blocking" o "warning". Un lenguaje en "warning" imprime
+líneas "warning: …" y sale con 0 aunque haya violaciones nuevas. Por defecto, js, go y shell son "blocking" y python es
+"warning" si los workflows de .github/workflows/ no corren sus suites de Python (pytest, unittest, tox, nox) y "blocking" si sí.
+
+lint.excluir: lista de globs de rutas excluidas (por ejemplo ["vendor/**", "third_party/"]). Los archivos que coinciden nunca
+se revisan por ninguna regla ni entran a la Baseline; un glob que no coincide con nada no es un error.
 
 lint.enabled: false apaga el lint: imprime una línea que dice que está apagado y en qué archivo, sale con 0 y no escribe
 nada (tampoco con --sembrar). Sin la clave, o con true, revisa como siempre; otro valor falla con 1.
