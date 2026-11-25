@@ -26,7 +26,8 @@ const parse = res => {
 
 // shortcut: everything from here to riskDeny mirrors mods/puente-gentle/hooks/puente.ts (globToRegExp, riskyFile,
 // implementerOf, prFacts, reviewsOf, rddRequestOf, rddBudgetStopped, riskDeny) because the CLI cannot import the TypeScript mod. The two
-// copies must decide the same; the only additions here are the BOM-tolerant marker reading (#365) and S12's coverage.
+// copies must decide the same; the only additions here are the BOM-tolerant marker reading (#365) and S12's coverage,
+// and the one deliberate difference is #465's out-of-budget marker (budgetStopOf), left out of puente-gentle, which #391 removes.
 
 // Minimal glob: * and ? stay inside one path segment, ** crosses segments, `**/` may match nothing, a trailing / means
 // "everything under".
@@ -109,8 +110,7 @@ const rddRequestsOf = (bodies, head) => bodies.flatMap(body => {
   return lenses === undefined ? [] : [lenses]
 })
 // #465 S3: pi's comment whose first line is `RDD fuera de presupuesto: <sha> (<stop reason>)` naming this head, posted
-// after main's `RDD: <sha> (…)` request for it. A body that is a review is never this comment. Only estado reads this
-// marker; puente-gentle is out of #465's scope.
+// after main's `RDD: <sha> (…)` request for it. A body that is a review is never this comment.
 const budgetStopOf = (body, head) => {
   const lines = markerLines(body)
   if (lines.some(line => /^Revisor:/i.test(line) || /^##\s*BLOQUEA\b/i.test(line))) return false
