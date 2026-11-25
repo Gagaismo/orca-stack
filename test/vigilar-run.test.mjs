@@ -202,3 +202,67 @@ describe('orca-stack vigilar: worker questions in the Run mailbox (S3, #398)', (
     assert.equal(restarted.calls.some(call => call.includes('--ack') || call.includes('--peek') || call.includes('--unread')), false)
   })
 })
+
+// #445: Orca's own stop report, "Worker stopped without reporting", is an escalation whose payload has stopReason.
+describe('orca-stack vigilar: an escalation without worker_done (#445)', () => {
+  const stopped = (sequence, taskId) =>
+    ({ id: `msg_${sequence}`, run_id: RUN, type: 'escalation', subject: 'Worker stopped without reporting', body: 'b', sequence, payload: JSON.stringify({ taskId, dispatchId: `ctx_${sequence}`, handle: 'term_1', stopReason: 'finished' }) })
+  const tasks = status => [{ id: 'task_430', status, title: '#430 pi' }, { id: 'task_417', status, title: '#417 pi' }]
+
+  test('#445 Rule 1: with the task still dispatched it emits nothing, where it used to emit worker-terminado #430 pi partial', async () => {
+    const h = harness({ run: RUN, mailbox: [stopped(10, 'task_430')], tasks: tasks('dispatched') })
+    assert.equal(await once(h), 0)
+    assert.deepEqual(h.out, [])
+    assert.deepEqual(h.err, [])
+  })
+
+  test('#445 Rule 2: with the task out of dispatched it emits worker-sin-reporte #417 pi, also when it leaves dispatched on a later poll', async () => {
+    for (const status of ['failed', 'completed']) {
+      const h = harness({ run: RUN, mailbox: [stopped(10, 'task_417')], tasks: tasks(status) })
+      await once(h)
+      assert.deepEqual(h.out, ['worker-sin-reporte #417 pi'], status)
+    }
+    const h = harness({ run: RUN, mailbox: [stopped(10, 'task_417')], tasks: tasks('dispatched') })
+    await once(h)
+    assert.deepEqual(h.out, [])
+    h.world.tasks = tasks('failed')
+    await once(h)
+    assert.deepEqual(h.out, ['worker-sin-reporte #417 pi'])
+  })
+
+  test('#445 Rule 3: a real worker_done partial still emits worker-terminado partial, and an earlier escalation of that task adds nothing', async () => {
+    for (const outcome of ['failed', 'partial']) {
+      const h = harness({ run: RUN, mailbox: [stopped(10, 'task_430'), msg(11, 'worker_done', 'task_430', outcome)], tasks: tasks('failed') })
+      await once(h)
+      assert.deepEqual(h.out, ['worker-terminado #430 pi partial'], outcome)
+    }
+  })
+
+  test('#445 Rule 4: a real worker_done ok still emits worker-terminado ok', async () => {
+    const h = harness({ run: RUN, mailbox: [msg(11, 'worker_done', 'task_430', 'succeeded')], tasks: tasks('completed') })
+    await once(h)
+    assert.deepEqual(h.out, ['worker-terminado #430 pi ok'])
+  })
+
+  test('#445 Rule 5: re-running vigilar after a restart does not emit worker-sin-reporte twice for the same escalation', async () => {
+    const first = harness({ run: RUN, mailbox: [stopped(10, 'task_417')], tasks: tasks('failed') })
+    await once(first)
+    assert.deepEqual(first.out, ['worker-sin-reporte #417 pi'])
+    const restarted = harness({ run: RUN, mailbox: [stopped(10, 'task_417')], tasks: tasks('failed') })
+    restarted.files[CURSOR] = first.files[CURSOR]
+    await once(restarted)
+    assert.deepEqual(restarted.out, [])
+  })
+
+  test('#445 Rule 5: vigilar --help names the worker-sin-reporte event', async () => {
+    const oldLog = console.log
+    let output = ''
+    console.log = value => { output += `${value}\n` }
+    try {
+      assert.equal(await main(['vigilar', '--help']), 0)
+    } finally {
+      console.log = oldLog
+    }
+    assert.ok(output.includes('worker-sin-reporte #<n> <agente>'))
+  })
+})

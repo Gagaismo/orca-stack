@@ -660,15 +660,26 @@ const readMailbox = (before, io, root) => {
   const handled = new Set()
   if (fresh.length > 0) {
     const { tasks } = orchestration(io, root, ['task-list', '--run', runId, '--json'])
-    const titles = new Map((Array.isArray(tasks) ? tasks : []).map(task => [task?.id, String(task?.title ?? '')]))
+    const listed = Array.isArray(tasks) ? tasks : []
+    const titles = new Map(listed.map(task => [task?.id, String(task?.title ?? '')]))
+    const statuses = new Map(listed.map(task => [task?.id, String(task?.status ?? '')]))
+    const reported = new Set(ours.filter(m => m.type === 'worker_done').map(m => payloadOf(m).taskId))
     for (const message of fresh) {
       const payload = payloadOf(message)
       if (!titles.has(payload.taskId)) continue
+      // #445: Orca's "Worker stopped without reporting" is no ending: silent while the task is dispatched (it stays
+      // unseen, so a later poll tells it once the task leaves dispatched), dropped when the worker did report.
+      const unreported = message.type === 'escalation' && payload.stopReason === 'finished'
+      if (unreported && !reported.has(payload.taskId) && statuses.get(payload.taskId) === 'dispatched') continue
       handled.add(message.id)
       const title = TASK_TITLE.exec(titles.get(payload.taskId))
       if (!title) continue
       if (message.type === 'question') {
         lines.push(`consulta #${title[1]} ${title[2]} ${message.id}`)
+        continue
+      }
+      if (unreported) {
+        if (!reported.has(payload.taskId)) lines.push(`worker-sin-reporte #${title[1]} ${title[2]}`)
         continue
       }
       const ok = message.type === 'worker_done' && payload.outcome === 'succeeded'
