@@ -8,7 +8,7 @@ import { upsertBlock } from '../src/marker.mjs'
 import { policyBlock } from '../src/templates.mjs'
 import { sha256 } from '../src/util.mjs'
 import { SHARED_USERS } from '../scripts/sync-shared.mjs'
-import { cleanup, cli, isolatePath, read, ROOT, tempDir, write } from './helpers.mjs'
+import { cleanup, cli, read, ROOT, tempDir, write } from './helpers.mjs'
 
 const ACTIVE_MODS = [
   'bandeja-mensajes',
@@ -206,11 +206,11 @@ describe('#391 Remove puente-gentle mod and Gentle Shell consult', () => {
       const piExe = path.join(bin, win ? 'pi.cmd' : 'pi')
       write(piExe, win ? '@echo off\r\necho 1.5.2\r\n' : '#!/bin/sh\necho 1.5.2\n')
       if (!win) chmodSync(piExe, 0o755)
-      const env = isolatePath(bin)
+      const piEnv = { PATH: [bin, path.dirname(process.execPath)].join(path.delimiter) }
 
       const install = cli(home, ['global', '--skip-pi'])
       assert.equal(install.status, 0, install.out)
-      const cleanWithPi = cli(home, ['doctor', '--offline'], { env })
+      const cleanWithPi = cli(home, ['doctor', '--offline'], { env: piEnv })
       assert.match(cleanWithPi.out, /✔ pi 1\.5\.2/)
       assert.doesNotMatch(cleanWithPi.out, /puente-gentle|skills de gentle-pi/i)
 
