@@ -96,7 +96,7 @@ export const gentleAiBinaryCheck = async L => {
     binary = binaryModule.gentleAiBinaryPath(checkout.dir)
     command = binaryModule.GENTLE_AI_INSTALL_RECOVERY_COMMAND
   } catch (error) {
-    return { status: 'warn', detail: `no pude preguntarle a ${checkout.dir} dónde va su binario (${error.message.split('\n')[0]})` }
+    return { status: 'warn', detail: `no pude preguntarle a ${checkout.dir} dónde va su binario (${String(error?.message ?? error).split('\n')[0]})` }
   }
   if (typeof binary !== 'string' || typeof command !== 'string') {
     return { status: 'warn', detail: `${checkout.dir} no dice dónde va su binario (runtime/gentle-ai-binary.mjs sin gentleAiBinaryPath o GENTLE_AI_INSTALL_RECOVERY_COMMAND)` }
