@@ -24,10 +24,8 @@ const parse = res => {
   }
 }
 
-// shortcut: everything from here to riskDeny mirrors mods/puente-gentle/hooks/puente.ts (globToRegExp, riskyFile,
-// implementerOf, prFacts, reviewsOf, rddRequestOf, rddBudgetStopped, riskDeny) because the CLI cannot import the TypeScript mod. The two
-// copies must decide the same; the only additions here are the BOM-tolerant marker reading (#365) and S12's coverage,
-// and the one deliberate difference is #465's out-of-budget marker (budgetStopOf), left out of puente-gentle, which #391 removes.
+// Source of truth for riesgo path matching, review parsing, RDD requests and riskDeny (#391), with BOM-tolerant marker
+// reading (#365), S12's coverage and #465's out-of-budget marker.
 
 // Minimal glob: * and ? stay inside one path segment, ** crosses segments, `**/` may match nothing, a trailing / means
 // "everything under".
@@ -152,7 +150,7 @@ export const coverageOf = (body, riesgo) => {
   return file === undefined ? { counts: true } : { counts: false, why: `no leyó ${file}, que es de riesgo` }
 }
 
-// Why a PR touching a riesgo path cannot merge yet, or undefined (puente.ts riskDeny, over the same facts). A review
+// Why a PR touching a riesgo path cannot merge yet, or undefined (#391: estado is the single source). A review
 // that S12 does not count still blocks, but never covers.
 const riskDeny = (n, file, facts, config, now) => {
   const sha = facts.head.slice(0, 7)
@@ -233,19 +231,6 @@ const riskDeny = (n, file, facts, config, now) => {
     `${prefix} y lo escribió pi: faltan reviews limpios sobre el commit ${sha} de dos familias de modelo distintas ` +
     `que no sean la de pi (${own ?? '?'}). ${have}.${notCounted}${next}`
   )
-}
-
-// #446: a Gentle Shell consult main confirmed and published (AGENTS.md Project rules): `Revisor: pi (consulta <tema>,
-// publicada por main)` and `Commit: <sha>` among the first five lines. Blocking unless its ## BLOQUEA is `nada`.
-const consultOf = body => {
-  const lines = markerLines(body)
-  const named = lines.slice(0, 5).map(line => /^Revisor:\s*(\S+)\s+\(consulta\s+([^,()]*?),\s*publicada por main\)$/i.exec(line)).find(match => match !== null)
-  const commit = commitOf(body, { within: 5 })
-  if (!named || !commit) return undefined
-  const at = lines.findIndex(line => /^##\s*BLOQUEA\b/i.test(line))
-  const verdict = at < 0 ? undefined : lines.slice(at + 1).find(line => line !== '')
-
-  return { reviewer: named[1].toLowerCase(), tema: named[2].trim(), commit, clean: verdict?.toLowerCase() === 'nada' }
 }
 
 // MAIN.md step 7 (c): the latest row of every check finished SUCCESS, SKIPPED or NEUTRAL; none is pending.
@@ -389,7 +374,7 @@ const evaluate = (pr, config, root, io, now, ctx) => {
     return review ? [{ ...review, at, covered: coverageOf(body, riesgo).counts }] : []
   })
   const requested = one => one.reviewer === 'pi' && rddRequestsOf(bodies.slice(0, one.at), head).some(lenses => sameLenses(lenses, one.lenses))
-  // An RDD review main did not ask for on this head is not a review at all (puente.ts): it neither counts nor blocks.
+  // An RDD review main did not ask for on this head is not a review at all (#391): it neither counts nor blocks.
   const reviews = posted.filter(one => one.lenses === undefined || (rdd && requested(one)))
   const onHead = reviews.filter(one => namesCommit(one.commit, head))
   const marks = (marker, enabled = true) => (enabled ? bodies.flatMap((body, at) => (markerValue(body, marker) === undefined ? [] : [{ at, commit: commitOf(body) }])) : [])
@@ -426,14 +411,6 @@ const evaluate = (pr, config, root, io, now, ctx) => {
       }
     }
   }
-
-  // #446: a blocking consult on the head stays in falta until a later Verificado por main or Decidido por main on it.
-  bodies.forEach((body, at) => {
-    const consult = consultOf(body)
-    if (consult && !consult.clean && namesCommit(consult.commit, head) && !mainOnHead.some(mark => mark.at > at)) {
-      falta.push(`(a) la consulta de ${consult.reviewer} (${consult.tema}) sobre ${sha7} tiene bloqueos`)
-    }
-  })
 
   // (c)
   const ci = ciOf(pr.statusCheckRollup)
