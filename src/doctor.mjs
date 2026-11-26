@@ -17,7 +17,7 @@ import { knownSddLeftovers } from './sdd-cleanup.mjs'
 import { removeAnyBlock } from './marker.mjs'
 import { checkPathCommand } from './path-command.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
-import { describeCheckout, installedPackageVersion, localPiPackages, npmGlobalRoot, piBinary, piModulesDir, piTooOld, readBundledShell } from './pi.mjs'
+import { describeCheckout, gentleAiBinaryCheck, installedPackageVersion, localPiPackages, npmGlobalRoot, piBinary, piModulesDir, piTooOld, readBundledShell } from './pi.mjs'
 import { codexCodemodeStatus, piCodemodeStatus } from './codemode.mjs'
 import { parseSettings } from './settings.mjs'
 import { assetPath, listDirs, stackMarkers, wrapperFile } from './templates.mjs'
@@ -424,6 +424,10 @@ export const doctorCommand = async flags => {
       if (checkout) {
         const { label, older, note } = describeCheckout(pkg, checkout)
         add(older ? 'warn' : 'ok', label, `checkout local en ${checkout.dir}${note ? `; ${note}` : ''}`)
+        if (pkg.name === 'gentle-pi') {
+          const binary = await gentleAiBinaryCheck(L)
+          add(binary.status, 'binario Gentle AI de gentle-pi', binary.detail)
+        }
         continue
       }
       const have = installedPackageVersion(piModulesDir(L), pkg.name)

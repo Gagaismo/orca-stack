@@ -61,6 +61,7 @@ const makeFakeIo = (repoRoot, wtDir, over = {}) => {
       write(file, text)
     },
     gentleSkills: () => null,
+    gentleAiBinary: async () => null,
     sh: (cmd, args, opts = {}) => {
       calls.push([cmd, ...args])
       const key = `${cmd} ${args[0]} ${args[1] ?? ''}`.trim()

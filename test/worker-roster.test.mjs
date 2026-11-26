@@ -80,6 +80,7 @@ const makeDispatchEnv = (over = {}, configOver = {}) => {
     },
     rename: renameSync,
     gentleSkills: () => 'C:\\pi\\gentle-pi\\skills',
+    gentleAiBinary: async () => null,
     sh: (cmd, args) => {
       calls.push([cmd, ...args])
       const key = `${cmd} ${args[0]} ${args[1] ?? ''}`.trim()

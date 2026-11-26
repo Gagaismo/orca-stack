@@ -61,6 +61,7 @@ const fakeIo = (orch = {}, { card, account, quota = 0 } = {}) => {
     writeFile: (file, text) => write(file, text),
     rename: () => {},
     gentleSkills: () => 'C:\\pi\\gentle-pi\\skills',
+    gentleAiBinary: async () => null,
     sh: (cmd, args) => {
       calls.push([cmd, ...args])
       if (cmd === 'orca' && args[0] === 'orchestration') {

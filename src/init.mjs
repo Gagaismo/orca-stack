@@ -17,14 +17,23 @@ export const POLICY = '~/orca/stack/ORCA-STACK.md'
 export const BRIEFS = '~/orca/stack/ROLE-BRIEFS.md'
 export const MAIN_DOC = '~/orca/stack/MAIN.md'
 
-// Orca's worktree files (#432): the setup step comes from the repo's lockfile, and the include list is the local config.
-const ORCA_YAML_HEAD = '# Orca runs scripts.setup in each new worktree right after creating it.\n# No worktree.sharedDirectories: a worker that changes dependencies would change them for every worktree.\n'
-export const orcaYaml = root =>
-  existsSync(path.join(root, 'package-lock.json'))
-    ? `${ORCA_YAML_HEAD}scripts:\n  setup: |\n    npm install\n`
-    : `${ORCA_YAML_HEAD}# orca-stack init found no install step (no package-lock.json): add one under scripts.setup if worktrees need it.\n`
+const ORCA_YAML_HEAD =
+  '# Gagaismo/orca-stack#432: no worktree.sharedDirectories; a worker that changes dependencies would change them for every worktree.\n'
+const LOCKFILE_SETUP = [
+  ['package-lock.json', 'npm install'],
+  ['pnpm-lock.yaml', 'pnpm install --frozen-lockfile'],
+  ['yarn.lock', 'yarn install --frozen-lockfile'],
+]
+const LOCKFILES_LIST = LOCKFILE_SETUP.map(([file]) => file).join(', ')
+export const orcaYaml = root => {
+  const match = LOCKFILE_SETUP.find(([file]) => existsSync(path.join(root, file)))
+
+  return match
+    ? `${ORCA_YAML_HEAD}scripts:\n  setup: |\n    ${match[1]}\n`
+    : `${ORCA_YAML_HEAD}# Gagaismo/orca-stack#487: no scripts.setup written (none of ${LOCKFILES_LIST} was found); add one if worktrees need an install step.\n`
+}
 export const WORKTREE_INCLUDE =
-  '# Gitignored local files Orca copies into each new worktree.\n# Literal paths only (Orca skips globs and negations); never list secrets such as .env files.\n' +
+  '# Gagaismo/orca-stack#432: literal paths only (Orca skips globs and negations); never list secrets such as .env files.\n' +
   `${PROJECT_LOCAL_CONFIG}\n`
 
 const projectRoot = cwd => {

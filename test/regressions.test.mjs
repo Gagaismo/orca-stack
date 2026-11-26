@@ -684,4 +684,74 @@ describe('8. a local gentle-pi checkout in Pi packages (#362)', () => {
     const older = cli(home, ['doctor', '--offline'], { env: fake.env() })
     assert.ok(doctorLines(older.out).includes(`⚠ gentle-pi 4.7.0 - checkout local en ${dir}; anterior a 4.8.0: actualizá tu checkout`), older.out)
   })
+
+  const binaryModule = dir => {
+    write(path.join(dir, 'runtime', 'gentle-ai-binary.mjs'), [
+      "import { join } from 'node:path'",
+      "export const GENTLE_AI_INSTALL_RECOVERY_COMMAND = 'node scripts/install-gentle-ai.mjs'",
+      "export const gentleAiBinaryPath = root => join(root, 'otra-carpeta', 'gentle-ai-bin')",
+      '',
+    ].join('\n'))
+    return path.join(dir, 'otra-carpeta', 'gentle-ai-bin')
+  }
+  const missingDetail = (dir, binary) => `falta ${binary}: sin él pi no puede pushear ni correr el review RDD; instalalo con \`cd ${dir} && node scripts/install-gentle-ai.mjs\``
+
+  test('issue 364 rule 1: doctor asks the local gentle-pi checkout where its Gentle AI binary goes, and warns when it cannot ask', () => {
+    const fake = fakeBin()
+    const dir = checkout('gentle-pi', '4.9.0')
+    declare(dir)
+    const unreadable = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env() }).out)
+    assert.ok(unreadable.some(line => line.startsWith(`⚠ binario Gentle AI de gentle-pi - no pude preguntarle a ${dir} dónde va su binario (`)), unreadable.join('\n'))
+    assert.ok(!unreadable.some(line => line.startsWith('✖ binario Gentle AI')), unreadable.join('\n'))
+
+    write(path.join(dir, 'runtime', 'gentle-ai-binary.mjs'), 'export const gentleAiBinaryPath = () => 7\n')
+    const silent = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env() }).out)
+    assert.ok(silent.includes(`⚠ binario Gentle AI de gentle-pi - ${dir} no dice dónde va su binario (runtime/gentle-ai-binary.mjs sin gentleAiBinaryPath o GENTLE_AI_INSTALL_RECOVERY_COMMAND)`), silent.join('\n'))
+
+    const binary = binaryModule(dir)
+    write(binary, '')
+    const present = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env() }).out)
+    assert.ok(present.includes(`✔ binario Gentle AI de gentle-pi - ${binary}`), present.join('\n'))
+  })
+
+  test('issue 364 rule 2: doctor fails a local gentle-pi checkout without its Gentle AI binary and prints the exact command to install it', () => {
+    const fake = fakeBin()
+    const dir = checkout('gentle-pi', '4.9.0')
+    declare(dir)
+    const binary = binaryModule(dir)
+    const result = cli(home, ['doctor', '--offline'], { env: fake.env() })
+    assert.equal(result.status, 1, result.out)
+    assert.ok(doctorLines(result.out).includes(`✖ binario Gentle AI de gentle-pi - ${missingDetail(dir, binary)}`), result.out)
+  })
+
+  test('issue 364 rule 3: despachar, rebote and reanudar refuse a pi with the same message doctor prints', async () => {
+    const { defaultIo, refuseMissingGentleAi } = await import('../src/despacho.mjs')
+    const dir = checkout('gentle-pi', '4.9.0')
+    declare(dir)
+    const binary = binaryModule(dir)
+    const io = { ...defaultIo(), home }
+    await assert.rejects(refuseMissingGentleAi(io), { message: `No lanzo a pi, binario Gentle AI de gentle-pi: ${missingDetail(dir, binary)}.` })
+    write(binary, '')
+    await refuseMissingGentleAi(io)
+  })
+
+  test('issue 364 rule 4: the setup guide and the manual tell a gentle-pi checkout to install its binary after cloning and after each pull', () => {
+    const guide = read(path.join(ROOT, 'docs', 'guia-setup.md'))
+    assert.ok(guide.includes('corré `npm install` en él (o `node scripts/install-gentle-ai.mjs`) después de clonarlo y después de cada `git pull` desde upstream'))
+    assert.ok(guide.includes('`doctor` falla si falta y te da el comando exacto; `despachar`, `rebote` y `reanudar` no lanzan a pi hasta que lo instales.'))
+    const manual = read(path.join(ROOT, 'docs', 'manual.md'))
+    assert.ok(manual.includes('`doctor` falla; `despachar`, `rebote` y `reanudar` a pi se niegan antes de lanzar, con el mismo mensaje'))
+    assert.ok(manual.includes('falla cuando falta su binario Gentle AI package-local'))
+  })
+
+  test('issue 364 rule 5: an npm-installed gentle-pi is not checked for its Gentle AI binary', async () => {
+    const fake = fakeBin()
+    write(path.join(home, '.pi', 'agent', 'npm', 'node_modules', 'gentle-pi', 'package.json'), JSON.stringify({ name: 'gentle-pi', version: PINNED.gentlePi }))
+    declare('npm:gentle-pi')
+    const lines = doctorLines(cli(home, ['doctor', '--offline'], { env: fake.env() }).out)
+    assert.ok(lines.includes(`✔ gentle-pi ${PINNED.gentlePi}`), lines.join('\n'))
+    assert.ok(!lines.some(line => line.includes('binario Gentle AI')), lines.join('\n'))
+    const { defaultIo, refuseMissingGentleAi } = await import('../src/despacho.mjs')
+    await refuseMissingGentleAi({ ...defaultIo(), home })
+  })
 })

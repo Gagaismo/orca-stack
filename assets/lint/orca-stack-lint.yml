@@ -1,4 +1,4 @@
-# Written by orca-stack init (#424): the CI gate of orca-stack lint. The .githooks/pre-push hook is only an early warning.
+# Gagaismo/orca-stack#424: the CI gate of orca-stack lint; .githooks/pre-push is only an early warning.
 name: orca-stack lint
 
 on:
