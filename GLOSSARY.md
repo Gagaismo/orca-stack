@@ -27,6 +27,14 @@ The check main's watch runs on every batch worker to detect one that stopped bef
 The state the human puts a session in so main works toward a goal they set without them: main does not wait for the human, records what needs them and carries on with the rest. It is independent of the gear. Spanish: *modo autónomo*.
 _Avoid_: autopilot, unattended gear
 
+**Roster**:
+The agents a repo can dispatch to right now: the ones its project lists, minus any that are blocked or out of quota. It may be Pi alone, and the stack never blocks because an agent is missing.
+_Avoid_: agent set, fleet
+
+**Record review**:
+The review that counts toward a merge: a cross-review by an agent of a different model family when the roster has one, else an RDD review that main requests from Pi. An author's own self-checks never count. Spanish: *review de registro*.
+_Avoid_: final review, approval
+
 ### Gears perk
 
 These terms apply only when the gears perk is on.
