@@ -200,6 +200,13 @@ describe('issue #488: claude leaves the worker roster and one record review from
       const text = oneJson(h).falta.join('\n')
       assert.doesNotMatch(text, /revisar 70 claude/, text)
     }
+
+    const claudeOnPi = makeEstadoEnv(
+      { prs: [prData(70, { files: ['src/a.mjs'], reviews: [review('claude', HEAD)] })] },
+      { agentes: { usa: ['claude', 'pi', 'agy'] } },
+    )
+    assert.equal(await estadoCommand({ json: true }, ['70'], claudeOnPi.io), 1)
+    assert.ok(oneJson(claudeOnPi).falta.some(line => line.includes('orca-stack revisar 70 agy')), oneJson(claudeOnPi).falta.join('\n'))
   })
 
   test('R3 & R4 example 1: roster pi, agy, codex on pi PR proposes agy (or codex if agy in preguntarAntes) and one clean review of either passes', async () => {
@@ -314,12 +321,16 @@ describe('issue #488: claude leaves the worker roster and one record review from
 
     assert.equal(contract.includes('| claude (worker) |'), false)
     assert.match(contract, /`?claude`? ya no es un agente worker/i)
+    assert.match(contract, /doctor`? avisa que se ignora/i)
     assert.match(contract, /roster/i)
+    assert.match(contract, /preguntarAntes/)
+    assert.match(contract, /un review cruzado/i)
     assert.match(contract, /orca-stack rebote <pr> --rdd/)
     const rendered = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md', perks: perksOf({}) })
     assert.equal(upsertBlock(agents, rendered), agents, 'AGENTS.md managed block must match CONTRATO.md')
 
     assert.match(step6, /`?claude`? ya no es un agente worker/i)
+    assert.match(step6, /doctor`? avisa que se ignora/i)
     assert.match(step6, /roster/i)
     assert.match(step6, /un review cruzado|un review limpio/i)
     assert.match(step6, /preguntarAntes/)
@@ -328,7 +339,10 @@ describe('issue #488: claude leaves the worker roster and one record review from
 
     for (const [name, doc] of [['docs/manual.md', manual], ['README.md', readme]]) {
       assert.match(doc, /`?claude`? ya no es un agente worker/i, name)
+      assert.match(doc, /doctor`? avisa|avisa \(`warn`\) si `agentes\.usa`/i, name)
       assert.match(doc, /roster/i, name)
+      assert.match(doc, /preguntarAntes/, name)
+      assert.match(doc, /un review cruzado/i, name)
       assert.doesNotMatch(doc, /dos reviews limpios de dos familias/, name)
     }
 
@@ -340,13 +354,34 @@ describe('issue #488: claude leaves the worker roster and one record review from
     assert.equal(await main(['estado', '70', '--json'], h.io), 0)
     assert.equal(oneJson(h).ok, true)
 
+    const d = makeDispatchEnv()
+    assert.equal(await main(['despachar', '7', 'agy', '--dry-run'], d.io), 0)
+    assert.ok(d.out.some(line => line.includes('Lanzador (agy):')))
+
+    const bounce = makeDispatchEnv({
+      'gh pr': json({
+        state: 'OPEN', number: 9, headRefName: 'Gagaismo/orca-stack-7', headRefOid: HEAD, baseRefName: 'main',
+        mergeable: 'MERGEABLE', body: 'Implementador: codex\nCloses #7', comments: [],
+        reviews: [{ body: `Revisor: agy\nCommit: ${HEAD}\n\n## BLOQUEA\n1. Falta test`, submittedAt: T(5) }],
+        statusCheckRollup: [],
+      }),
+      'git worktree': () => okRes(`worktree ${bounce.root}\nbranch refs/heads/main\n\nworktree ${bounce.worktree}\nHEAD ${HEAD}\nbranch refs/heads/Gagaismo/orca-stack-7\n`),
+    })
+    assert.equal(await reboteCommand({ dryRun: true }, '9', bounce.io), 0)
+    assert.ok(bounce.out.some(line => line.includes(`Rebote: ${HEAD}`)))
+
     const docHome = temp('r488-pres-home')
     const prev = process.env.ORCA_STACK_HOME
     process.env.ORCA_STACK_HOME = docHome
+    const logs = []
+    const origLog = console.log
+    console.log = (...args) => logs.push(args.join(' '))
     try {
       const code = await doctorCommand({ offline: true, skipPi: true })
-      assert.ok(code === 0 || code === 1)
+      assert.equal(code, 1)
+      assert.ok(logs.some(line => line.includes('Config')))
     } finally {
+      console.log = origLog
       if (prev === undefined) delete process.env.ORCA_STACK_HOME
       else process.env.ORCA_STACK_HOME = prev
     }

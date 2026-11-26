@@ -126,7 +126,6 @@ export const blockOf = (config, agent, now) => {
   return undefined
 }
 
-// ADR 0006 (#488): active worker roster is agentes.usa minus claude and minus agents with an active guardia.bloquear rule.
 export const rosterOf = (config, now) => {
   const usa = Array.isArray(config.agentes?.usa) ? config.agentes.usa : []
   const seen = new Set()
@@ -142,7 +141,6 @@ export const rosterOf = (config, now) => {
   return roster
 }
 
-// ADR 0006 (#488): cross-family reviewers available in the roster for `implementer`, non-preguntarAntes first.
 export const crossFamilyReviewers = (config, implementer, roster) => {
   const own = familyOf(config, implementer, 'ticket').family
   const ask = Array.isArray(config.agentes?.preguntarAntes) ? config.agentes.preguntarAntes.map(a => String(a).toLowerCase()) : []
@@ -158,6 +156,9 @@ export const crossFamilyReviewers = (config, implementer, roster) => {
 
   return [...all.filter(agent => !ask.includes(agent)), ...all.filter(agent => ask.includes(agent))]
 }
+
+export const rddFallbackFor = (config, agent, now) =>
+  agent === 'pi' && Array.isArray(config.agentes?.usa) && crossFamilyReviewers(config, 'pi', rosterOf(config, now)).length === 0
 
 const AGY_DEFAULT_MODEL = 'gemini-4-neon-high'
 const psQuote = text => `'${text.replace(/'/g, "''")}'`
@@ -1564,8 +1565,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   }
   if (perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
   if (rdd && agent !== 'pi') throw new Error(`--rdd solo vale para un PR de pi (Implementador: ${agent}).`)
-  const rddFallback = agent === 'pi' && Array.isArray(config.agentes?.usa) && crossFamilyReviewers(config, 'pi', rosterOf(config, (io.now ?? Date.now)())).length === 0
-  if (rdd && !rddMode(config, agent) && !rddFallback) throw new Error('--rdd necesita agentes.pi.review: "rdd" en la config del repo.')
+  if (rdd && !rddMode(config, agent) && !rddFallbackFor(config, agent, (io.now ?? Date.now)())) throw new Error('--rdd necesita agentes.pi.review: "rdd" en la config del repo.')
   const consent = rddConsentPolicy(config, agent)
 
   const sha = pr.headRefOid

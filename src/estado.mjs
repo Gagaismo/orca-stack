@@ -1,6 +1,6 @@
 import { repoWorktrees } from './avisar.mjs'
 import { isPending, isStatus, latestChecks } from './checks.mjs'
-import { FAMILIES, WORKER_AGENTS, crossFamilyReviewers, defaultIo, familyOf, loadConfig, rosterOf } from './despacho.mjs'
+import { FAMILIES, WORKER_AGENTS, crossFamilyReviewers, defaultIo, familyOf, loadConfig, rddFallbackFor, rosterOf } from './despacho.mjs'
 import { commitOf, markerLines, markerValue, namesCommit, normalizeBody } from './marcas.mjs'
 import { baseMigrations, migrationSpec, openReservations, orderBlockers, rawNumberOf } from './migraciones.mjs'
 import { setCard } from './orca.mjs'
@@ -150,6 +150,32 @@ export const coverageOf = (body, riesgo) => {
   return file === undefined ? { counts: true } : { counts: false, why: `no leyó ${file}, que es de riesgo` }
 }
 
+const revisarSuggestion = (n, config, candidates) => {
+  if (candidates.length === 0) return ''
+  const ask = Array.isArray(config.agentes?.preguntarAntes) ? config.agentes.preguntarAntes.map(a => String(a).toLowerCase()) : []
+  const pick = candidates[0]
+  const askNote = ask.includes(pick) ? ` ${pick} está en preguntarAntes: pedile el OK al humano y agregá --confirmado.` : ''
+
+  return `Corré \`orca-stack revisar ${n} ${pick}\`.${askNote}`
+}
+
+const rddReviewNotes = (posted, rddReviews, requested) => {
+  const unrequested = posted.some(one => one.reviewer === 'pi' && one.lenses !== undefined && !requested(one))
+    ? ' Un review RDD de pi que main no pidió antes, con esas lentes y sobre ese commit (el comentario `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`), no cuenta.'
+    : ''
+  const noRisk = rddReviews.length > 0 ? ' El review RDD de pi sobre ese commit no cuenta: no tiene la lente risk.' : ''
+
+  return `${noRisk}${unrequested}`
+}
+
+const isCrossFamilyPiReview = (config, reviewer) => {
+  if (!WORKER_AGENTS.includes(reviewer)) return false
+  const own = familyOf(config, 'pi', 'ticket').family
+  const { family } = familyOf(config, reviewer, 'review')
+
+  return family !== undefined && family !== own
+}
+
 // Why a PR touching a riesgo path cannot merge yet, or undefined (#391: estado is the single source). A review
 // that S12 does not count still blocks, but never covers.
 const riskDeny = (n, file, facts, config, now) => {
@@ -165,7 +191,7 @@ const riskDeny = (n, file, facts, config, now) => {
   const roster = rosterOf(config, now)
   const candidates = crossFamilyReviewers(config, facts.implementer, roster)
   const rdd = facts.implementer === 'pi' && config.agentes?.pi?.review === 'rdd'
-  const rddFallback = facts.implementer === 'pi' && candidates.length === 0
+  const rddFallback = rddFallbackFor(config, facts.implementer, now)
   const rddAllowed = rdd || rddFallback
   const requested = one => one.reviewer === 'pi' && rddRequestsOf(facts.bodies.slice(0, one.at), facts.head).some(lenses => sameLenses(lenses, one.lenses))
   const posted = facts.posted.filter(one => namesCommit(one.commit, facts.head))
@@ -182,13 +208,9 @@ const riskDeny = (n, file, facts, config, now) => {
   const rddReviews = counting.filter(review => review.lenses !== undefined)
   if (rddReviews.some(review => review.lenses.includes('risk'))) return undefined
   if (rdd && !rddBudgetStopped(facts.bodies, facts.head)) {
-    const unrequested = posted.some(one => one.reviewer === 'pi' && one.lenses !== undefined && !requested(one))
-      ? ' Un review RDD de pi que main no pidió antes, con esas lentes y sobre ese commit (el comentario `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`), no cuenta.'
-      : ''
-    const noRisk = rddReviews.length > 0 ? ' El review RDD de pi sobre ese commit no cuenta: no tiene la lente risk.' : ''
     const sinReview = facts.bodies.some(body => /^Sin review:/i.test(normalizeBody(body))) ? ' Un comentario "Sin review:" no cuenta en una ruta de riesgo.' : ''
 
-    return `${prefix} y lo escribió pi en modo RDD: ${rddMissing(n, sha)}${noRisk}${unrequested}${sinReview}`
+    return `${prefix} y lo escribió pi en modo RDD: ${rddMissing(n, sha)}${rddReviewNotes(posted, rddReviews, requested)}${sinReview}`
   }
   if (facts.implementer !== 'pi') {
     return reviewers.includes('pi')
@@ -210,28 +232,23 @@ const riskDeny = (n, file, facts, config, now) => {
 
   const notCounted = skipped.length === 0 ? '' : ` No cuento ${skipped.join('; ')}.`
   if (candidates.length > 0) {
-    const ask = Array.isArray(config.agentes?.preguntarAntes) ? config.agentes.preguntarAntes.map(a => String(a).toLowerCase()) : []
-    const pick = candidates[0]
-    const askNote = ask.includes(pick) ? ` ${pick} está en preguntarAntes: pedile el OK al humano y agregá --confirmado.` : ''
-
     return (
       `${prefix} y lo escribió pi: falta un review limpio sobre el commit ${sha} de un agente del roster ` +
       `de otra familia de modelo distinta de la de pi (${own ?? '?'}).${notCounted} ` +
-      `Corré \`orca-stack revisar ${n} ${pick}\`.${askNote}`
+      revisarSuggestion(n, config, candidates)
     )
   }
   if (rdd && rddBudgetStopped(facts.bodies, facts.head)) {
     return `${prefix} y lo escribió pi: el review RDD se detuvo por presupuesto y no hay otro agente de otra familia disponible en el roster (${own ?? '?'}): decidilo con el humano.${notCounted}`
   }
-  const unrequested = posted.some(one => one.reviewer === 'pi' && one.lenses !== undefined && !requested(one))
-    ? ' Un review RDD de pi que main no pidió antes, con esas lentes y sobre ese commit (el comentario `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`), no cuenta.'
-    : ''
-  const noRisk = rddReviews.length > 0 ? ' El review RDD de pi sobre ese commit no cuenta: no tiene la lente risk.' : ''
+  if (!rddFallback) {
+    return `${prefix} y lo escribió pi: falta un review limpio sobre el commit ${sha} de otra familia distinta de la de pi (${own ?? '?'}), pero falta agentes.usa en la config.${notCounted}`
+  }
 
   return (
     `${prefix} y lo escribió pi: no hay otro agente de otra familia disponible en el roster; ` +
     `falta un review RDD limpio de pi con la lente risk sobre el commit ${sha}.${notCounted} ` +
-    `Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).${noRisk}${unrequested}`
+    `Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).${rddReviewNotes(posted, rddReviews, requested)}`
   )
 }
 
@@ -362,11 +379,11 @@ const evaluate = (pr, config, root, io, now, ctx) => {
   else if (String(pr.mergeable ?? '').toUpperCase() === 'CONFLICTING') falta.push('el PR está en conflicto con la base')
 
   const implementer = implementerOf(pr.body)
-  const hasUsa = Array.isArray(config.agentes?.usa)
+  const hasConfiguredRoster = Array.isArray(config.agentes?.usa)
   const roster = rosterOf(config, now)
   const candidates = implementer ? crossFamilyReviewers(config, implementer, roster) : []
   const rdd = implementer === 'pi' && config.agentes?.pi?.review === 'rdd'
-  const rddFallback = implementer === 'pi' && hasUsa && candidates.length === 0
+  const rddFallback = rddFallbackFor(config, implementer, now)
   const rddAllowed = rdd || rddFallback
   // #377: the waiver and, while it applies, the committed riesgo come from the base branch on GitHub (an agent can empty
   // riesgo in its checkout, not on the protected base).
@@ -399,8 +416,8 @@ const evaluate = (pr, config, root, io, now, ctx) => {
   } else {
     const unsettled = onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))
     for (const one of unsettled) falta.push(`(a) el review de ${one.reviewer} sobre ${sha7} ${blockerReason(one)}`)
-    // pi's own RDD review counts when main asked for it (only those are in `reviews`).
-    const counted = onHead.filter(one => one.clean && (one.reviewer !== implementer || one.lenses !== undefined))
+    // pi's own RDD review counts when main asked for it (only those are in `reviews`); non-RDD reviews on a pi PR must come from a cross-family worker (#488).
+    const counted = onHead.filter(one => one.clean && (one.lenses !== undefined || (implementer === 'pi' ? isCrossFamilyPiReview(config, one.reviewer) : one.reviewer !== implementer)))
     const evidence = /^##\s*Evidencia\b/im.test(normalizeBody(pr.body))
     const satisfied = counted.some(one => one.covered) || mainOnHead.length > 0 || (sinOnHead.length > 0 && evidence)
     if (!satisfied && unsettled.length === 0) {
@@ -415,13 +432,8 @@ const evaluate = (pr, config, root, io, now, ctx) => {
       } else if (rddFallback && !rdd) {
         falta.push(`(a) falta un review RDD limpio de pi sobre ${sha7} (no hay otro agente de otra familia disponible en el roster). Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).`)
       } else {
-        let next = ''
-        if (!rdd && hasUsa && candidates.length > 0) {
-          const ask = Array.isArray(config.agentes?.preguntarAntes) ? config.agentes.preguntarAntes.map(a => String(a).toLowerCase()) : []
-          const pick = candidates[0]
-          next = `. Corré \`orca-stack revisar ${n} ${pick}\`.` + (ask.includes(pick) ? ` ${pick} está en preguntarAntes: pedile el OK al humano y agregá --confirmado.` : '')
-        }
-        falta.push(`(a) falta un review sin bloqueos sobre ${sha7} de alguien que no sea ${implementer}${rdd ? ' (o un review RDD pedido con RDD:, o un Sin review:)' : ''}${next}`)
+        const suggestion = !rdd && hasConfiguredRoster ? revisarSuggestion(n, config, candidates) : ''
+        falta.push(`(a) falta un review sin bloqueos sobre ${sha7} de alguien que no sea ${implementer}${rdd ? ' (o un review RDD pedido con RDD:, o un Sin review:)' : ''}${suggestion ? `. ${suggestion}` : ''}`)
         for (const one of counted) falta.push(`(a) el review de ${one.reviewer} ${coverageOf(one.body, riesgo).why}: no cuenta`)
       }
     }
