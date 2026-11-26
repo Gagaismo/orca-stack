@@ -58,6 +58,10 @@ describe('removal of orca-stack avisar (#384)', () => {
       assert.equal(rootHelp.status, 0)
       assert.doesNotMatch(rootHelp.stdout, /^\s+avisar\s/m)
       assert.doesNotMatch(rootHelp.stdout, /\bavisar\b/)
+
+      const avisarHelp = cli(home, ['avisar', '--help'])
+      assert.equal(avisarHelp.status, 0)
+      assert.doesNotMatch(avisarHelp.stdout, /\bavisar\b/)
     } finally {
       cleanup(home)
     }
