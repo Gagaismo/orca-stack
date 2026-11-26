@@ -10,11 +10,11 @@ import { upsertBlock } from '../src/marker.mjs'
 import { reanudarCommand } from '../src/reanudar.mjs'
 import { policyBlock } from '../src/templates.mjs'
 import { PACKAGE_ROOT } from '../src/util.mjs'
-import { cli, git } from './helpers.mjs'
+import { cleanup, cli, git, tempDir } from './helpers.mjs'
 
 const ISSUE = '212'
 const URL = 'https://github.com/Gagaismo/orca-stack/issues/212#issuecomment-6205678817'
-const FIXTURE = mkdtempSync(path.join(os.tmpdir(), 'orca-stack-reanudar-'))
+const FIXTURE = tempDir('reanudar')
 const ROOT = path.join(FIXTURE, 'orca-stack')
 const HOME = path.join(FIXTURE, 'home')
 mkdirSync(ROOT)
@@ -25,7 +25,7 @@ writeFileSync(path.join(ROOT, '.orca-stack.json'), JSON.stringify({
   ramaBase: 'main',
   agentes: { usa: ['agy', 'codex', 'pi'], preguntarAntes: [] },
 }))
-after(() => rmSync(FIXTURE, { recursive: true, force: true }))
+after(() => cleanup(FIXTURE))
 const BRIEF_PATH = path.join(HOME, 'orca', 'briefs', 'orca-stack-212.md')
 const LINE = `Message from main: ${URL} . Continue the ticket per your brief: ${BRIEF_PATH}.`
 const WT = path.join(path.dirname(ROOT), 'orca-stack-212')
@@ -555,7 +555,7 @@ describe('orca-stack reanudar (#214)', () => {
     assert.ok(contract.includes('worker-detenido #<n> <agente>: terminó sin abrir un PR'))
     assert.match(contract, /`orca-stack avisar` y `orca-stack reanudar` son las \u00FAnicas formas en que main llega a una terminal de worker/)
     assert.ok(contract.includes('orca-stack reanudar <issue> <url-del-comentario>'))
-    const dir = mkdtempSync(path.join(os.tmpdir(), 'orca-stack-init-rule10-'))
+    const dir = tempDir('init-rule10')
     const initHome = path.join(dir, 'home')
     const initRepo = path.join(dir, 'repo')
     mkdirSync(initHome)
@@ -569,7 +569,7 @@ describe('orca-stack reanudar (#214)', () => {
       const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
       assert.equal(upsertBlock(agents, block), agents, 'init rendered the current managed contract block')
     } finally {
-      rmSync(dir, { recursive: true, force: true })
+      cleanup(dir)
     }
   })
 

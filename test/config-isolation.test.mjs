@@ -6,7 +6,7 @@ import { describe, test } from 'node:test'
 
 import { loadConfig } from '../src/despacho.mjs'
 import { PACKAGE_ROOT } from '../src/util.mjs'
-import { cleanup, cli, tempDir, write } from './helpers.mjs'
+import { cleanup, cli, git, tempDir, write } from './helpers.mjs'
 
 const HOSTILE_LOCAL_CONFIG = {
   guardia: {
@@ -69,11 +69,15 @@ describe('test config isolation (#493)', () => {
       if (file === 'config-isolation.test.mjs') continue
 
       const hasConfigCmd = CONFIG_COMMANDS.test(source)
-      if (hasConfigCmd && /\bconst\s+\w+\s*=\s*process\.cwd\(\)/.test(source)) {
-        const match = source.match(/\bconst\s+(\w+)\s*=\s*process\.cwd\(\)/)
-        const varName = match[1]
-        if (new RegExp(`\\b(?:root|cwd)\\s*[:=]\\s*${varName}\\b`).test(source)) {
-          offenders.push(`test/${file}: binds ${varName} = process.cwd() and passes it as root/cwd`)
+      if (hasConfigCmd) {
+        if (/\b(?:root|cwd)\s*[:=]\s*process\.cwd\(\)/.test(source)) {
+          offenders.push(`test/${file}: passes process.cwd() directly as root/cwd`)
+        }
+        for (const match of source.matchAll(/\bconst\s+(\w+)\s*=\s*process\.cwd\(\)/g)) {
+          const varName = match[1]
+          if (new RegExp(`\\b(?:root|cwd)\\s*[:=]\\s*${varName}\\b`).test(source)) {
+            offenders.push(`test/${file}: binds ${varName} = process.cwd() and passes it as root/cwd`)
+          }
         }
       }
       if (/spawnSync\([^)]*bin['"],\s*['"]orca-stack\.mjs['"][\s\S]*?\b(?:init|doctor|lint)\b[\s\S]*?cwd\s*:\s*(?:PACKAGE_ROOT|ROOT)\b/.test(source)) {
@@ -88,13 +92,25 @@ describe('test config isolation (#493)', () => {
   })
 
   test('R1: cli() without an explicit cwd does not read .orca-stack.local.json from the checkout', () => {
-    const home = tempDir('cli-cwd-493')
+    const dir = tempDir('cli-cwd-493')
+    const home = path.join(dir, 'home')
+    const fakeCheckout = path.join(dir, 'checkout')
+    write(path.join(home, '.keep'), '')
+    write(path.join(fakeCheckout, '.orca-stack.json'), JSON.stringify({ setup: 'completo', ramaBase: 'main' }))
+    write(path.join(fakeCheckout, '.orca-stack.local.json'), '{invalid-json')
+    assert.equal(git(fakeCheckout, 'init').status, 0)
+    const prevCwd = process.cwd()
+    process.chdir(fakeCheckout)
     try {
-      const res = cli(home, ['doctor', '--offline', '--skip-pi'])
-      assert.doesNotMatch(res.out, /\.orca-stack\.local\.json/, res.out)
-      assert.doesNotMatch(res.out, /\.orca-stack\.json/, res.out)
+      const isolated = cli(home, ['doctor', '--offline', '--skip-pi'])
+      assert.doesNotMatch(isolated.out, /\.orca-stack\.local\.json/, isolated.out)
+      assert.doesNotMatch(isolated.out, /\.orca-stack\.json/, isolated.out)
+
+      const explicit = cli(home, ['doctor', '--offline', '--skip-pi'], { cwd: fakeCheckout })
+      assert.match(explicit.out, /\.orca-stack\.local\.json/, explicit.out)
     } finally {
-      cleanup(home)
+      process.chdir(prevCwd)
+      cleanup(dir)
     }
   })
 
