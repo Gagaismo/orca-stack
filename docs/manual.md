@@ -2,7 +2,7 @@
 
 Este manual cuenta cómo se usa orca-stack día a día: qué hace cada comando, mod y skill, cuándo conviene usarlo y cuándo no, qué pasa en los bordes y cómo se opera y se arregla. No repite el setup: para instalar y configurar un proyecto, seguí la [guía de setup](guia-setup.md). Para el detalle de cada instalación y de cada clave de configuración, el [README](../README.md).
 
-Versión de referencia: `orca-stack v0.25.0`. Lo que se mergee después de ese tag lleva la marca **`[solo en main]`** y se lista en la [sección 7](#7-qué-hay-solo-en-main): todavía no está publicado en un release, así que con `npx github:Gagaismo/orca-stack#v0.25.0` no lo vas a tener. Para usarlo, corré el CLI desde un checkout de `main` (`node bin/orca-stack.mjs <comando>`) o esperá al próximo release.
+Versión de referencia: `orca-stack v0.26.0`. Lo que se mergee después de ese tag lleva la marca **`[solo en main]`** y se lista en la [sección 7](#7-qué-hay-solo-en-main): todavía no está publicado en un release, así que con `npx github:Gagaismo/orca-stack#v0.26.0` no lo vas a tener. Para usarlo, corré el CLI desde un checkout de `main` (`node bin/orca-stack.mjs <comando>`) o esperá al próximo release.
 
 ## Contenido
 
@@ -265,7 +265,7 @@ Pensado para correr bajo el Monitor: **stdout lleva solo eventos, uno por línea
 | `pr-cerrado #<n> PR #<pr>` | Se cerró sin mergear |
 | `worker-terminado #<n> <agente> ok\|partial` | El worker de ese ticket mandó `worker_done` al buzón del Run de `main`: `ok` si terminó bien; `partial` si terminó con un `Diagnóstico:` o escaló. `vigilar` lee el buzón sin consumirlo y reconoce la tarea por su título `#<n> <agente>`, también con el sufijo ` rebote #<pr>` o ` reanudado` de un relanzamiento; sin Run ligado, vigila solo GitHub |
 | `worker-sin-reporte #<n> <agente>` | Orca avisó que el worker de ese ticket paró sin reportar (escalación con `stopReason` `finished`), el worker no mandó `worker_done` y su tarea ya no está `dispatched`. Mientras la tarea sigue `dispatched` (por ejemplo, el worker espera a sus subagentes) no emite nada, y nunca `worker-terminado`; se avisa una sola vez, también tras reiniciar `vigilar` |
-| `consulta #<n> <agente> <message_id>` | El worker supervisado de ese ticket preguntó con `orca orchestration ask`. `main` responde las preguntas de ejecución con `orca orchestration reply --id <message_id> --body <respuesta>`; las de producto e interpretación van al humano con `orca orchestration gate-create --task <task_id> --question <pregunta> --options <json_array>`, y si la respuesta cambia una regla del ticket, `main` la publica también en GitHub como `Respuesta del humano:` (o `Respuesta de main:` si el cambio es suyo) |
+| `consulta #<n> <agente> <message_id>` | El worker supervisado de ese ticket preguntó con `orca orchestration ask`. `main` responde las preguntas de ejecución con `orca orchestration reply --id <message_id> --body <respuesta>`; las de producto e interpretación van al humano con `orca orchestration gate-create --task <task_id> --question <pregunta> --options <json_array>`, y si la respuesta cambia una regla del ticket, `main` la publica también en GitHub como `Respuesta del humano:` (o `Respuesta de main:` si el cambio es suyo). Un cambio de reglas publicado después del despacho (`Respuesta de main:` o `Respuesta del humano:`) le llega al worker supervisado por el buzón del Run: `orca orchestration send --to dispatch:<id> --subject "<issue>: reglas cambiadas" --body "<url-del-comentario>"`. |
 | `worker-detenido #<n> <agente>: <motivo>` | Worker sin PR detenido: `cuota — <línea>`, `volvió al shell` o `terminó sin abrir un PR` (termina con la última línea no vacía de su pantalla, hasta 200 caracteres); cubre a todos los agentes, incluido `pi` |
 | `cuenta cambiada: <agente> <de> → <a>` | Después de un `worker-detenido` por cuota: `vigilar` seleccionó otra cuenta de Orca del mismo agente (ids de cuenta, nunca emails). Reanudá al worker con `orca-stack reanudar` |
 | `cuenta no cambiada: <agente> — <error>` | `orca account list` o `select` falló: el agente queda sin cuota como siempre |
@@ -741,8 +741,8 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 
 ## 7. Qué hay solo en `main`
 
-Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.25.0`, todavía no publicado en un release.
+Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.26.0`, todavía no publicado en un release.
 
-- Se sacó `orca-stack avisar` (#384, ADR 0004): un cambio de reglas publicado después del despacho (`Respuesta de main:` o `Respuesta del humano:`) le llega ahora al worker supervisado por el buzón del Run con `orca orchestration send --to dispatch:<id> --subject "<issue>: reglas cambiadas" --body "<url-del-comentario>"`.
+(nada por ahora)
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.

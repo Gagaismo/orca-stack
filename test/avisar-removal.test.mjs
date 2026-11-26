@@ -98,11 +98,11 @@ describe('removal of orca-stack avisar (#384)', () => {
     assert.doesNotMatch(readme, /- `avisar /)
   })
 
-  test('R4: manual section 7 notes that avisar was removed and how rule changes are delivered now', () => {
+  test('R4: the manual documents rule changes through the Run mailbox, not avisar', () => {
     const manual = read('docs/manual.md')
-    const sec7 = manual.split('## 7. Qué hay solo en `main`')[1] ?? ''
-    assert.match(sec7, /avisar/i)
-    assert.ok(sec7.includes(MAILBOX_CMD))
+    const manualBody = manual.split('## 7. Qué hay solo en `main`')[0]
+    assert.ok(manualBody.includes(MAILBOX_CMD), 'manual (outside section 7) must include the Run mailbox send command')
+    assert.doesNotMatch(manualBody, /orca-stack avisar/)
   })
 
   test('PRESERVE: CLI main still routes other commands and rejects unknown ones', async () => {
