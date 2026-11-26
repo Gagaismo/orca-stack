@@ -66,7 +66,7 @@ describe('1. global validates before writing and never orphans files', () => {
     if (process.platform === 'win32') {
       assert.ok(state.files[path.join(pathDir, 'orca-stack')], 'the Windows extensionless shim is adopted')
     }
-    assert.equal(state.settings.pluginDirsAdded.length, 9, 'already-present plugin dirs are claimed')
+    assert.equal(state.settings.pluginDirsAdded.length, 8, 'already-present plugin dirs are claimed')
     assert.equal(cli(home, ['remove'], { env }).status, 0)
     // Only the shared files (whose creation this run cannot know) and the personal config stay.
     assert.deepEqual(
@@ -370,7 +370,7 @@ describe('6. Pi 1.5.2, gentle-pi 4.8.0, pi-claude-bridge 0.12.0 and gentle-engra
       for (const needle of ['pi install npm:gentle-pi@4.8.0', 'npm i -g gentle-pi@4.8.0', 'pi-claude-bridge@0.12.0', 'gentle-engram@0.7.0', 'Pi `1.5.2`']) {
         assert.ok(text.includes(needle), `${doc}: ${needle}`)
       }
-      assert.match(text, /workers de pi y la consulta[^\n]*comparten[^\n]*`~\/\.engram`/, doc)
+      assert.match(text, /workers de pi[^\n]*comparten[^\n]*`~\/\.engram`/, doc)
       assert.match(text, /`gentle-shell update`[^\n]*no puede probar qué paquete global es dueño de Pi/, doc)
       assert.doesNotMatch(text, /gentle-pi@4\.2\.0|pi-claude-bridge@0\.9\.2|\.gentle-shell\/engram/, doc)
     }

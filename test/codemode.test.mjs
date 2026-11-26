@@ -321,24 +321,11 @@ describe('codemode rules 1-6', () => {
     assert.deepEqual(resolveDefaultTools(undefined), [])
   })
 
-  test('Rule 7: Gentle Shell consult and pi reviews pass codemode in --tools, and consult cannot write', () => {
+  test('Rule 7: pi reviews pass codemode in --tools', () => {
     // 1. Pi reviews pass codemode in PI_TOOLS.review
     assert.ok(PI_TOOLS.review.split(',').includes('codemode'), 'PI_TOOLS.review must include codemode')
     assert.deepEqual(PI_TOOLS.review.split(','), ['read', 'bash', 'grep', 'find', 'ls', 'codemode', ...ENGRAM_READ_TOOLS])
 
-    // 2. Gentle Shell consult passes codemode in READ_ONLY_TOOLS
-    const puentePath = path.join(ROOT, 'mods', 'puente-gentle', 'hooks', 'puente.ts')
-    const puenteContent = read(puentePath)
-    const match = /export const READ_ONLY_TOOLS = '([^']+)'/.exec(puenteContent)
-    assert.ok(match, 'READ_ONLY_TOOLS must be defined in puente.ts')
-    const readOnlyTools = match[1].split(',')
-    assert.ok(readOnlyTools.includes('codemode'), 'READ_ONLY_TOOLS must include codemode')
-    assert.ok(!readOnlyTools.includes('write'), 'READ_ONLY_TOOLS must not include write')
-    assert.ok(!readOnlyTools.includes('edit'), 'READ_ONLY_TOOLS must not include edit')
-    assert.ok(!readOnlyTools.includes('bash'), 'READ_ONLY_TOOLS must not include bash')
-    assert.deepEqual(readOnlyTools, ['read', 'grep', 'find', 'ls', 'codemode', ...ENGRAM_READ_TOOLS])
-
-    // 3. Launcher passes --tools with codemode for review mode
     const sh = launcherFor({
       agent: 'pi',
       mode: 'review',

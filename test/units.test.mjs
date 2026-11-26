@@ -190,13 +190,10 @@ describe('the repository itself', () => {
 
   test('every copy of the shared config module matches shared/orca-config.ts', () => {
     const shared = readFileSync(path.join(ROOT, 'shared', 'orca-config.ts'), 'utf8')
-    for (const mod of ['puente-gentle', 'bandeja-mensajes', 'guardia-despacho', 'tablero-despacho', 'marchas', 'main-md', 'modo-autonomo']) {
+    for (const mod of ['bandeja-mensajes', 'guardia-despacho', 'tablero-despacho', 'marchas', 'main-md', 'modo-autonomo']) {
       const copy = readFileSync(path.join(ROOT, 'mods', mod, 'hooks', 'orca-config.ts'), 'utf8')
       assert.equal(copy, shared, `${mod} is out of sync: run npm run sync-shared`)
     }
-    const cases = JSON.parse(readFileSync(path.join(ROOT, 'shared', 'familias.json'), 'utf8'))
-    const module = readFileSync(path.join(ROOT, 'mods', 'puente-gentle', 'tests', 'familias.ts'), 'utf8')
-    assert.deepEqual(JSON.parse(module.slice(module.indexOf('export default ') + 'export default '.length)), cases, 'puente-gentle/tests/familias.ts is out of sync: run npm run sync-shared')
     const profiles = JSON.parse(readFileSync(path.join(ROOT, 'shared', 'perfiles-pi.json'), 'utf8'))
     const profilesModule = readFileSync(path.join(ROOT, 'mods', 'guardia-despacho', 'tests', 'perfiles-pi.ts'), 'utf8')
     assert.deepEqual(JSON.parse(profilesModule.slice(profilesModule.indexOf('export default ') + 'export default '.length)), profiles, 'guardia-despacho/tests/perfiles-pi.ts is out of sync: run npm run sync-shared')
@@ -243,7 +240,6 @@ describe('the repository itself', () => {
     }
   })
 
-  // The mod runs the same cases against shared/orca-config.ts (its copy is mods/puente-gentle/tests/familias.ts).
   test('familyOf and blockOf answer shared/familias.json', () => {
     const cases = JSON.parse(readFileSync(path.join(ROOT, 'shared', 'familias.json'), 'utf8'))
     for (const c of cases.familyOf) assert.equal(familyOf(c.config, c.agent, c.mode).family ?? null, c.family, JSON.stringify(c))

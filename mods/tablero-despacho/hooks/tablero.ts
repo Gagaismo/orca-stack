@@ -156,5 +156,4 @@ export const prompts = {
   review: (n: number): string => `Lanzá el review del PR #${n} con agy`,
   status: (n: number): string => `Fijate el PR #${n} y decime cómo está`,
   merge: (n: number): string => `Si no hay bloqueos, mergeá el PR #${n}`,
-  gentle: (n: number): string => `Consultá a Gentle Shell sobre el PR #${n}`,
 }

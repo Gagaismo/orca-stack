@@ -509,7 +509,6 @@ const mergeSegments = (command: string): string[] => {
   return segments
 }
 
-// Mirrors the gh pr merge forms recognized by puente-gentle's merges() without importing another mod.
 const prMerges = (command: string): PrMerge[] => {
   const found: PrMerge[] = []
   for (const segment of mergeSegments(command)) {
