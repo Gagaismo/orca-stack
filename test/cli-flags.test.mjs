@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import { parseArgs } from '../src/cli.mjs'
-import { ROOT, cleanup, cli, tempDir } from './helpers.mjs'
+import { cleanup, cli, tempDir } from './helpers.mjs'
 
 describe('orca-stack CLI flags of main-autonomo (S1, S5, S12, S13)', () => {
   test('--json, --terminal <handle> and --rutas <a,b> are parsed, in both spellings', () => {
@@ -21,7 +21,7 @@ describe('orca-stack CLI flags of main-autonomo (S1, S5, S12, S13)', () => {
     assert.throws(() => parseArgs(['revisar', '70', 'pi', '--rutas', '']), /--rutas necesita una o más rutas separadas por coma/)
     const home = tempDir('cli-flags')
     try {
-      const result = cli(home, ['revisar', '70', 'pi', '--rutas'], { cwd: ROOT })
+      const result = cli(home, ['revisar', '70', 'pi', '--rutas'])
       assert.equal(result.status, 2)
       assert.match(result.out, /--rutas necesita una o más rutas separadas por coma/)
     } finally {
@@ -117,7 +117,7 @@ describe('orca-stack CLI of planning sessions (S3, #370)', () => {
   test('planificar without an umbrella number exits 1 with the usage line', () => {
     const home = tempDir('cli-planificar')
     try {
-      const result = cli(home, ['planificar'], { cwd: ROOT })
+      const result = cli(home, ['planificar'])
       assert.equal(result.status, 1)
       assert.match(result.out, /Uso: orca-stack planificar <issue-paraguas> \[--perfil-pi <nombre>\] \[--dry-run\]\./)
     } finally {

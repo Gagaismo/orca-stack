@@ -135,7 +135,7 @@ export const isolatePath = (rawPath, { ambientOnly = false, home, exclude = [], 
 }
 
 // Runs the CLI against a throwaway home. Every home variable points at it, so nothing real can be touched.
-export const cli = (home, args, { cwd = ROOT, env = {} } = {}) => {
+export const cli = (home, args, { cwd = home, env = {} } = {}) => {
   const merged = {
     ...process.env,
     HOME: home,

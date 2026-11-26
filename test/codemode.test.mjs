@@ -352,7 +352,9 @@ describe('codemode rules 1-6', () => {
 
   test('PRESERVE: doctorCommand runs successfully and includes Codemode section', async () => {
     const prevHome = process.env.ORCA_STACK_HOME
+    const prevCwd = process.cwd()
     process.env.ORCA_STACK_HOME = home
+    process.chdir(home)
     try {
       const logs = []
       const originalLog = console.log
@@ -366,6 +368,7 @@ describe('codemode rules 1-6', () => {
       assert.ok(output.includes('Codemode'), 'doctor output must have Codemode section')
       assert.ok(output.includes('Claude Code'), 'doctor output must report Claude Code')
     } finally {
+      process.chdir(prevCwd)
       process.env.ORCA_STACK_HOME = prevHome
     }
   })
