@@ -6,7 +6,7 @@ import { ensureCandidateWorktreesExclude } from './candidate-worktrees.mjs'
 import { analyzeChecks, isHigherRunId, isPending, latestChecks } from './checks.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { setCard, switchAccount } from './orca.mjs'
-import { resolveGentleSkills } from './pi.mjs'
+import { gentleAiBinaryCheck, resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
 import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
 
@@ -356,7 +356,15 @@ export const defaultIo = () => ({
   rename: (from, to) => renameSync(from, to),
   sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
   gentleSkills: home => resolveGentleSkills(layout(home))?.dir ?? null,
+  gentleAiBinary: home => gentleAiBinaryCheck(layout(home)),
 })
+
+// #364: a pi whose local gentle-pi checkout lacks its package-local Gentle AI binary would only fail at push time, after
+// the work. The same message as doctor, before any side effect; a binary doctor cannot locate does not stop the launch.
+export const refuseMissingGentleAi = async io => {
+  const binary = await io.gentleAiBinary(io.home)
+  if (binary?.status === 'fail') throw new Error(`No lanzo a pi, binario Gentle AI de gentle-pi: ${binary.detail}.`)
+}
 
 const ok = (res, what) => {
   if (res.status !== 0) throw new Error(`${what} falló: ${(res.stderr || res.stdout || String(res.error)).trim()}`)
@@ -1030,6 +1038,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
 
   if (perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
   const profile = agent === 'pi' ? piProfileFor({ flag: perfilPi, config, home: io.home, commonDir, io }) : undefined
+  if (agent === 'pi' && !review) await refuseMissingGentleAi(io)
 
   let implementer = agent
   let branchOfPr
@@ -1532,6 +1541,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
   if (rdd && agent !== 'pi') throw new Error(`--rdd solo vale para un PR de pi (Implementador: ${agent}).`)
   if (rdd && !rddMode(config, agent)) throw new Error('--rdd necesita agentes.pi.review: "rdd" en la config del repo.')
+  if (agent === 'pi') await refuseMissingGentleAi(io)
   const consent = rddConsentPolicy(config, agent)
 
   const sha = pr.headRefOid
