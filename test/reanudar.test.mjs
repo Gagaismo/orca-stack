@@ -56,6 +56,7 @@ const harness = ({ root = ROOT, home = '/home', state = 'done', agent = 'codex',
     readFile: file => { if (!(file in files)) throw new Error(`ENOENT ${file}`); return files[file] },
     writeFile: (file, content) => { files[file] = content }, rename: (from, to) => { files[to] = files[from]; delete files[from] },
     mkdirp: () => {}, sleep: async () => {}, out: line => outputs.push(line),
+    gentleAiBinary: async () => null,
     sh: (cmd, args, opts = {}) => {
       calls.push({ cmd, args, cwd: opts.cwd })
       if (cmd === 'git' && args[0] === 'rev-parse') return ok(`${path.join(root, '.git')}\n${path.join(root, '.git')}\n${root}\n`)
@@ -1246,5 +1247,21 @@ describe('#454 reanudar: the relaunch rebinds the Run task', () => {
     assert.equal(await reanudarCommand({}, ISSUE, URL, none.io), 0)
     assert.equal(creates(none).length, 1)
     assert.deepEqual(warned(none), [])
+  })
+})
+
+describe('#364 reanudar: a pi whose local gentle-pi checkout lacks its Gentle AI binary', () => {
+  const MISSING = { status: 'fail', detail: 'falta C:\\gs\\.gentle-ai\\v4.6.0\\gentle-ai.exe: sin \u00E9l pi no puede pushear ni correr el review RDD; instalalo con `cd C:\\gs && node scripts/install-gentle-ai.mjs`' }
+
+  test('issue 364 rule 3: reanudar refuses an exited or a paused pi with the doctor message before touching a terminal', async () => {
+    for (const state of [null, 'done']) {
+      const h = pinned(harness({ agent: 'pi', state, screen: ['PS C:\\wt\\orca-stack-212>'] }))
+      h.io.gentleSkills = () => '/pi/skills'
+      h.io.gentleAiBinary = async () => MISSING
+      const before = JSON.stringify(h.files)
+      await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), { message: `No lanzo a pi, binario Gentle AI de gentle-pi: ${MISSING.detail}.` }, String(state))
+      assert.equal(h.calls.some(({ cmd, args }) => cmd === 'orca' && ['create', 'send', 'worker-start', 'close'].includes(args[1])), false, String(state))
+      assert.equal(JSON.stringify(h.files), before, String(state))
+    }
   })
 })
