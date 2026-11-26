@@ -168,7 +168,8 @@ describe('Reglas 1-8', () => {
     assert.doesNotMatch(policy, /\bsdd\b/i, 'ORCA-STACK.md must not mention SDD')
 
     assert.ok(contract.includes('implementación con gentle-ai ODD (main corre ODD para su trabajo de orquestación, nunca implementa tickets)'))
-    assert.ok(contract.includes('| claude (worker) | Sí, con ODD |'))
+    assert.ok(contract.includes('| agy | Sí, con ODD |'))
+    assert.ok(contract.includes('| codex | Sí, con ODD |'))
     assert.ok(contract.includes('| Implementar un ticket | gentle-ai ODD |'))
     assert.ok(main.includes('Cuando `modo` es `"un-agente"` no hay workers: la misma sesión planifica e implementa con ODD'))
     assert.doesNotMatch(contract, /implement-spec/, 'implement-spec is no longer mentioned in contract')

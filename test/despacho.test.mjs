@@ -5,7 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief, revisarCommand } from '../src/despacho.mjs'
+import { AGENTS, WORKER_AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief, revisarCommand } from '../src/despacho.mjs'
 import { main, parseArgs } from '../src/cli.mjs'
 import { layout } from '../src/util.mjs'
 import { ROOT, cleanup, cli, read, tempDir, write } from './helpers.mjs'
@@ -229,12 +229,10 @@ describe('despachar: refusals', () => {
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('sin línea'))), /no tiene la línea "Implementador/)
   })
 
-  test('review: the family comes from the configured model, and pi may review a Claude agent', async () => {
+  test('review: the family comes from the configured model, and pi may review a Claude PR', async () => {
     const pr = body => ({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body, number: 9 }) })
-    // agy on a Claude model does not review claude; pi does, and claude reviews pi.
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, fakeIo(pr('Implementador: claude'), { config: withModels({ agy: 'claude-sonnet-5-5' }) })), /familia claude/)
     await run('review', { n: '9', agent: 'pi', dryRun: true }, fakeIo(pr('Implementador: claude')))
-    await run('review', { n: '9', agent: 'claude', dryRun: true }, fakeIo(pr('Implementador: pi')))
   })
 
   test('a guardia.bloquear rule stops despachar and revisar, from any layer', async () => {
@@ -662,7 +660,7 @@ describe('revisar: one worktree per reviewer', () => {
 describe('despachar: the TUI wait', () => {
   test('a still screen is stable even though every read carries a new request id', async () => {
     const env = fakeIo()
-    await run('ticket', { n: '7', agent: 'claude' }, env)
+    await run('ticket', { n: '7', agent: 'codex' }, env)
     // #397: once the screen is still, despachar starts the worker with worker-start.
     assert.equal(env.calls.filter(c => c[1] === 'orchestration' && c[2] === 'worker-start').length, 1)
     assert.ok(!env.calls.some(c => c[1] === 'terminal' && c[2] === 'send'))
@@ -746,14 +744,14 @@ describe('despachar: the TUI wait', () => {
     assert.ok(!timeline.includes('brief'))
   })
 
-  test('issue 330 Rule 5: codex keeps its trust error and claude its launch; neither gets a bare Enter', async () => {
+  test('issue 330 Rule 5: codex keeps its trust error and normal launch; neither gets a bare Enter', async () => {
     const codex = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: ['Trust this folder?'] } } }) })
     await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, codex), /Codex pide confiar en la carpeta y no recibió el brief\. /)
     assert.ok(!codex.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send'))
-    const claude = fakeIo()
-    await run('ticket', { n: '7', agent: 'claude' }, claude)
-    assert.equal(claude.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send').length, 0)
-    assert.equal(claude.calls.filter(c => c[0] === 'orca' && c[1] === 'orchestration' && c[2] === 'worker-start').length, 1)
+    const okLaunch = fakeIo()
+    await run('ticket', { n: '7', agent: 'codex' }, okLaunch)
+    assert.equal(okLaunch.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send').length, 0)
+    assert.equal(okLaunch.calls.filter(c => c[0] === 'orca' && c[1] === 'orchestration' && c[2] === 'worker-start').length, 1)
   })
 
   test('revisar applies the same trust check before sending its brief', async () => {
@@ -778,9 +776,9 @@ describe('despachar: the TUI wait', () => {
     const env = fakeIo({
       'orca terminal read': args => json({ result: { terminal: { tail: ['PS C:\\work>'] } } }),
     })
-    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, env), /shell prompt[\s\S]*PS C:/i)
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, env), /shell prompt[\s\S]*PS C:/i)
     assert.ok(!env.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send'))
-    assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
+    assert.ok(!env.out.some(line => line.includes('✔ codex despachado')))
   })
 
   // #397: despachar starts its worker with worker-start; revisar still sends the brief line, so it carries these.
@@ -791,10 +789,10 @@ describe('despachar: the TUI wait', () => {
         ? json({ result: { submission: 'submitted', turnStarted: true } })
         : okRes(),
     })
-    await run('review', { n: '9', agent: 'claude' }, env)
+    await run('review', { n: '9', agent: 'codex' }, env)
     const send = env.calls.find(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
     assert.ok(send.includes('--wait-submit') && send.includes('--json'))
-    assert.ok(env.out.some(line => line.includes('✔ claude despachado')))
+    assert.ok(env.out.some(line => line.includes('✔ codex despachado')))
   })
 
   test('an old host without --wait-submit falls back to a changed terminal screen', async () => {
@@ -805,11 +803,11 @@ describe('despachar: the TUI wait', () => {
         ? { status: 1, stdout: '', stderr: 'unknown option --wait-submit' }
         : okRes(),
     })
-    await run('review', { n: '9', agent: 'claude' }, env)
+    await run('review', { n: '9', agent: 'codex' }, env)
     const sends = env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
     assert.equal(sends.length, 2)
     assert.ok(sends[0].includes('--wait-submit') && !sends[1].includes('--wait-submit'))
-    assert.ok(env.out.some(line => line.includes('✔ claude despachado')))
+    assert.ok(env.out.some(line => line.includes('✔ codex despachado')))
   })
 
   test('an accepted but unobserved prompt is not reported as a started turn', async () => {
@@ -819,17 +817,17 @@ describe('despachar: the TUI wait', () => {
         : okRes(),
       'orca terminal read': args => json({ result: { terminal: { tail: ['ready'] } } }),
     })
-    await assert.rejects(run('review', { n: '9', agent: 'claude' }, env), /no hay evidencia.*turno haya arrancado/i)
-    assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
+    await assert.rejects(run('review', { n: '9', agent: 'codex' }, env), /no hay evidencia.*turno haya arrancado/i)
+    assert.ok(!env.out.some(line => line.includes('✔ codex despachado')))
   })
 
   test('a send transport error prints recovery details and never reports success', async () => {
     const env = reviewOf({
       'orca terminal send': { status: 1, stdout: '', stderr: 'agent_prompt_blocked' },
     })
-    await assert.rejects(run('review', { n: '9', agent: 'claude' }, env), /agent_prompt_blocked/)
+    await assert.rejects(run('review', { n: '9', agent: 'codex' }, env), /agent_prompt_blocked/)
     assert.ok(env.out.join('\n').includes('El despacho quedó a medias'))
-    assert.ok(!env.out.some(line => line.includes('✔ claude despachado')))
+    assert.ok(!env.out.some(line => line.includes('✔ codex despachado')))
   })
 
   test('a pi review with no tools fails fast, while the normal read/bash review tools pass', async () => {
@@ -898,10 +896,8 @@ describe('briefs', () => {
     assert.match(brief, /Do not use Workflow or run an unrequested arena or swarm fan-out/i)
   })
 
-  test('Rule 6: an approved claude note carries the exact one-round limit and effort', async () => {
-    const env = fakeIo()
-    await run('ticket', { n: '7', agent: 'claude', nota: fanoutNote }, env)
-    const brief = env.written[0][1]
+  test('Rule 6: an approved claude note carries the exact one-round limit and effort', () => {
+    const brief = renderBrief('ticket', { AGENT: 'claude', ISSUE: '7', REPO: 'proj', BASE: 'main', BRANCH: 'proj-7' }, fanoutNote)
     assert.match(brief, /the approved N, one round, no retry/)
     assert.match(brief, /Agent tool only/)
     assert.match(brief, /Candidates run at your effort unless the approved note specifies otherwise/)
@@ -1045,12 +1041,12 @@ describe('briefs', () => {
 
   test('Rule 7: despachar still writes the usual brief and keeps its refusal behavior', async () => {
     const env = fakeIo()
-    await run('ticket', { n: '7', agent: 'claude' }, env)
+    await run('ticket', { n: '7', agent: 'codex' }, env)
     const brief = env.written[0][1]
     assert.match(brief, /Read the issue and its comments first: gh issue view 7 --json title,body,comments/)
-    assert.match(brief, /No arena or swarm is authorized/)
+    assert.match(brief, /Arena and swarm are not supported for codex/)
     const refused = fakeIo({}, { config: { ...PROJECT, setup: undefined } })
-    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, refused), /setup .* pendiente/)
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, refused), /setup .* pendiente/)
   })
 
   test('dispatching a legacy ticket with only Modos de falla preserves acceptance criteria as TDD slices', async () => {
@@ -1212,13 +1208,17 @@ describe('launchers', () => {
 
   test('issue 236 Rule 5: despachar and revisar launch as before, codex only gains the flag', async () => {
     const prView = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }) }
-    const claude = `& "${path.win32.join(home, 'orca', 'stack', 'scripts', 'claude-orca-stack.cmd')}" --dangerously-skip-permissions`
-    for (const [kind, n, over] of [['ticket', '7', {}], ['review', '9', prView]]) {
-      for (const [agent, launcher] of [['codex', codexLauncher()], ['claude', claude]]) {
-        const env = fakeIo(over)
-        await run(kind, { n, agent, dryRun: true }, env)
-        assert.equal(env.out.find(line => line.startsWith(`Lanzador (${agent}):`)), `Lanzador (${agent}): ${launcher}`, `${kind} ${agent}`)
-      }
+    const agyPr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) }
+    const agyLauncher = `& "${path.win32.join(home, 'orca', 'stack', 'scripts', 'agy-orca-stack.cmd')}" --dangerously-skip-permissions --model gemini-4-neon-high`
+    for (const [kind, n, over, agent, launcher] of [
+      ['ticket', '7', {}, 'codex', codexLauncher()],
+      ['review', '9', prView, 'codex', codexLauncher()],
+      ['ticket', '7', {}, 'agy', agyLauncher],
+      ['review', '9', agyPr, 'agy', agyLauncher],
+    ]) {
+      const env = fakeIo(over)
+      await run(kind, { n, agent, dryRun: true }, env)
+      assert.equal(env.out.find(line => line.startsWith(`Lanzador (${agent}):`)), `Lanzador (${agent}): ${launcher}`, `${kind} ${agent}`)
     }
   })
 
@@ -1325,8 +1325,8 @@ describe('issue #295: pi launches report an auth failure', () => {
     }
   })
 
-  test('Rule 3: claude, codex and agy keep their screen checks and never read a pi session', async () => {
-    for (const agent of ['claude', 'codex', 'agy']) {
+  test('Rule 3: codex and agy keep their screen checks and never read a pi session', async () => {
+    for (const agent of ['codex', 'agy']) {
       const env = fakeIo({}, { piReply: [piAuthReply] })
       const read = env.io.readFile
       const sessionReads = []
@@ -1340,8 +1340,8 @@ describe('issue #295: pi launches report an auth failure', () => {
     }
   })
 
-  test('Rule 4: the ticket and review briefs generated for pi carry the foreground rule; claude, codex and agy briefs do not', async () => {
-    for (const agent of ['pi', 'claude', 'codex', 'agy']) {
+  test('Rule 4: the ticket and review briefs generated for pi carry the foreground rule; codex and agy briefs do not', async () => {
+    for (const agent of ['pi', 'codex', 'agy']) {
       const ticket = fakeIo()
       await run('ticket', { n: '7', agent }, ticket)
       const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: `Implementador: ${agent === 'agy' ? 'codex' : 'agy'}`, number: 9 }) })
@@ -1357,8 +1357,8 @@ describe('issue #295: pi launches report an auth failure', () => {
   const RDD_ASSESS = 'run `gentle_review` with operation `assess` and input `{"baseRef":"<git merge-base HEAD origin/main, the full 40-character sha>","committedOnly":true}` (a plain assess finds no pending changes once everything is committed) and write under `## Merge Danger` three lines: `Tier: <the tier assess returned>`, `reviewDue: <true|false, as assess returned it>` and your ODD `Risk:` line.'
   const RDD_CONFIG = { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { ...PROJECT.agentes.pi, review: 'rdd' } } }
 
-  test('issue #338 Rule 1: the RDD mode applies only to a pi ticket in a repo with agentes.pi.review "rdd"; codex, agy, claude and a repo without the key keep today\'s brief', async () => {
-    for (const [agent, config, on] of [['pi', RDD_CONFIG, true], ['codex', RDD_CONFIG, false], ['agy', RDD_CONFIG, false], ['claude', RDD_CONFIG, false], ['pi', PROJECT, false]]) {
+  test('issue #338 Rule 1: the RDD mode applies only to a pi ticket in a repo with agentes.pi.review "rdd"; codex, agy and a repo without the key keep today\'s brief', async () => {
+    for (const [agent, config, on] of [['pi', RDD_CONFIG, true], ['codex', RDD_CONFIG, false], ['agy', RDD_CONFIG, false], ['pi', PROJECT, false]]) {
       const env = fakeIo({}, { config })
       await run('ticket', { n: '7', agent }, env)
       const brief = env.written.find(([file]) => file.endsWith('proj-7.md'))?.[1]
@@ -1734,8 +1734,8 @@ describe('pi: --perfil-pi', () => {
 })
 
 describe('--dry-run', () => {
-  test('keeps launch output stable for claude, codex, agy and pi', async () => {
-    for (const agent of ['claude', 'codex', 'agy', 'pi']) {
+  test('keeps launch output stable for codex, agy and pi', async () => {
+    for (const agent of ['codex', 'agy', 'pi']) {
       const env = fakeIo()
       await run('ticket', { n: '7', agent, dryRun: true }, env)
       const output = env.out.join('\n')
@@ -3443,15 +3443,16 @@ describe('rebote', () => {
       assert.ok(ticketBrief('agy').includes("The body is UTF-8 without a BOM (Windows PowerShell's `Out-File` and `Set-Content -Encoding utf8` write one) and has exactly this shape."))
     })
 
-    test('Rule 8: despachar renders a ticket brief for every agent; the rebote and revisar briefs change only in the fanoutInstructions sentence', async () => {
-      for (const agent of AGENTS) {
+    test('Rule 8: despachar renders a ticket brief for every worker agent; the rebote and revisar briefs change only in the fanoutInstructions sentence', async () => {
+      for (const agent of WORKER_AGENTS) {
         const env = fakeIo()
         await run('ticket', { n: '300', agent, dryRun: true }, env)
         const out = env.out.join('\n')
         assert.ok(out.includes('# Ticket brief: issue #300'), `${agent} ticket brief`)
         assert.ok(out.includes("- Subagents: "), `${agent} subagents line`)
         assert.ok(!out.includes('{{'), `${agent}: placeholder left`)
-
+      }
+      for (const agent of AGENTS) {
         const bounce = bounceEnv(pr({ body: `Implementador: ${agent}` }))
         if (agent === 'pi') {
           bounce.io.gentleSkills = () => 'C:\\pi\\skills'
@@ -3699,7 +3700,7 @@ describe('rebote', () => {
         },
       }
       const env = fakeIo({}, { config: configWithPrecheck })
-      await run('ticket', { n: '300', agent: 'claude', dryRun: true }, env)
+      await run('ticket', { n: '300', agent: 'codex', dryRun: true }, env)
       const out = env.out.join('\n')
       assert.ok(out.includes('node scripts/check-evidencia.mjs <your body file>'))
       assert.ok(out.includes('6. Run `node scripts/check-evidencia.mjs <your body file>` on your PR body file and fix the body until it passes.'))
@@ -4524,7 +4525,7 @@ describe('agy: banner and splash before the brief (#357)', () => {
     assert.ok(live.env.out.some(line => line.includes('✔ agy despachado')))
   })
 
-  test('#357 live negative: blocked three times fails with the line to paste and Orca\'s reason; claude never gets the extra Enter', async () => {
+  test('#357 live negative: blocked three times fails with the line to paste and Orca\'s reason; codex never gets the extra Enter', async () => {
     // #397: despachar reports Orca's refusal of worker-start and releases the issue.
     const refused = splashIo({ splash: PROMPT, over: { 'orca orchestration worker-start': BLOCKED } })
     await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, refused.env), error => {
@@ -4534,10 +4535,10 @@ describe('agy: banner and splash before the brief (#357)', () => {
     assert.equal(refused.briefCalls().length, 4)
     assert.equal(refused.env.calls.filter(c => c[0] === 'orca' && isLoneEnter(c.slice(1))).length, 3)
     assert.ok(refused.env.calls.some(c => c.join(' ') === 'gh issue edit 7 --remove-assignee @me'))
-    const claude = splashIo({ splash: PROMPT, over: { 'orca orchestration worker-start': BLOCKED } })
-    await assert.rejects(run('ticket', { n: '7', agent: 'claude' }, claude.env))
-    assert.equal(claude.env.calls.filter(c => c[0] === 'orca' && isLoneEnter(c.slice(1))).length, 0)
-    assert.equal(claude.briefCalls().length, 1)
+    const codex = splashIo({ splash: PROMPT, over: { 'orca orchestration worker-start': BLOCKED } })
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, codex.env))
+    assert.equal(codex.env.calls.filter(c => c[0] === 'orca' && isLoneEnter(c.slice(1))).length, 0)
+    assert.equal(codex.briefCalls().length, 1)
   })
 
   test('S1: when the brief still does not arrive after the Esc, agy fails with exactly the line to paste, sent once', async () => {
@@ -4558,13 +4559,11 @@ describe('agy: banner and splash before the brief (#357)', () => {
     assert.ok(!unobserved.env.out.some(line => line.includes('✔ agy despachado')))
   })
 
-  test('S1 PRESERVE: claude and codex never get an Esc, even with "esc to dismiss" on screen', async () => {
-    for (const agent of ['claude', 'codex']) {
-      const { env, escCalls, briefCalls } = splashIo({ escs: Infinity })
-      await run('ticket', { n: '7', agent }, env)
-      assert.equal(escCalls().length, 0, agent)
-      assert.equal(briefCalls().length, 1, agent)
-    }
+  test('S1 PRESERVE: codex never gets an Esc, even with "esc to dismiss" on screen', async () => {
+    const { env, escCalls, briefCalls } = splashIo({ escs: Infinity })
+    await run('ticket', { n: '7', agent: 'codex' }, env)
+    assert.equal(escCalls().length, 0, 'codex')
+    assert.equal(briefCalls().length, 1, 'codex')
   })
 })
 
@@ -4776,14 +4775,14 @@ describe('issue #476: agy waitForTui requires prompt or splash', () => {
     assert.ok(!ticket.env.out.some(line => line.includes('\u2714 agy despachado')))
   })
 
-  test('Rule 5: codex and claude proceed on a stable screen without an agy prompt', async () => {
+  test('Rule 5: codex proceeds on a stable screen without an agy prompt', async () => {
     const stableScreen = ['Agent TUI ready', 'Waiting for instructions']
-    for (const agent of ['codex', 'claude']) {
-      const ticket = scriptedReads([stableScreen], over => fakeIo(over))
-      assert.equal(await run('ticket', { n: '7', agent }, ticket.env), 0, agent)
-      assert.equal(ticket.workerStarts().length, 1, agent)
-      assert.ok(ticket.env.out.some(line => line.includes(`\u2714 ${agent} despachado`)), agent)
+    const ticket = scriptedReads([stableScreen], over => fakeIo(over))
+    assert.equal(await run('ticket', { n: '7', agent: 'codex' }, ticket.env), 0)
+    assert.equal(ticket.workerStarts().length, 1)
+    assert.ok(ticket.env.out.some(line => line.includes('\u2714 codex despachado')))
 
+    for (const agent of ['codex', 'claude']) {
       const bounce = scriptedReads([stableScreen], over => bounceIo(agent, over))
       assert.equal(await reboteCommand({}, '12', bounce.env.io), 0, agent)
       assert.equal(bounce.workerStarts().length, 1, agent)

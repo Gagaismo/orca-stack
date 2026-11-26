@@ -186,6 +186,9 @@ const retiredAgentKeys = config => {
   return keys
 }
 
+const usesRetiredClaudeWorker = config =>
+  Array.isArray(config?.agentes?.usa) && config.agentes.usa.some(agent => String(agent).trim().toLowerCase() === 'claude')
+
 export const checkCodemode = (add, { L, flags = {} } = {}) => {
   if (flags.skipPi) {
     add('warn', 'Pi', 'omitido por --skip-pi')
@@ -601,6 +604,9 @@ export const doctorCommand = async flags => {
   for (const [file, config] of retiredLayers) {
     for (const key of retiredAgentKeys(config)) {
       add('warn', 'agente retirado', `codex-cc ya no existe: sacalo de ${file} (${key}).`)
+    }
+    if (usesRetiredClaudeWorker(config)) {
+      add('warn', 'agente retirado', `claude ya no es un agente worker (ADR 0006) y se ignora en ${file} (agentes.usa): sacalo cuando puedas.`)
     }
   }
 

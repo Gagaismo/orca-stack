@@ -228,17 +228,17 @@ describe('orca-stack estado (S1, #366)', () => {
     assert.deepEqual(one(noEvidence).falta, ['(a) el Sin review: necesita ## Evidencia en el body del PR'])
   })
 
-  test('#388 Preserve: a pi PR on riesgo waits for codex while a hasta with a time blocks it, and suggests it once the time passed', async () => {
+  test('#388 Preserve: a pi PR on riesgo falls back to RDD while a hasta with a time blocks the only other agent, and suggests it once the time passed', async () => {
     const files = ['src/auth/login.mjs']
     const piBody = 'Implementador: pi\n\nCloses #7'
-    const config = hasta => ({ riesgo: ['src/auth/'], agentes: { usa: ['claude', 'codex', 'agy', 'pi'] }, guardia: { bloquear: [{ agente: 'codex', hasta }] } })
+    const config = hasta => ({ riesgo: ['src/auth/'], agentes: { usa: ['codex', 'pi'] }, guardia: { bloquear: [{ agente: 'codex', hasta }] } })
     const blocked = harness({ prs: [prData(70, { body: piBody, files })] }, config('2026-11-17T09:30'))
     assert.equal(await estado(blocked, ['70'], { json: true }), 1)
     const risk = h => one(h).falta.find(line => line.startsWith('(d)'))
-    assert.ok(risk(blocked).endsWith('Hay 0. Esperá a que codex vuelva.'), risk(blocked))
+    assert.ok(risk(blocked).includes('Corré `orca-stack rebote 70 --rdd risk`'), risk(blocked))
     const lifted = harness({ prs: [prData(70, { body: piBody, files })] }, config('2026-11-14T09:30'))
     assert.equal(await estado(lifted, ['70'], { json: true }), 1)
-    assert.ok(risk(lifted).endsWith('Hay 0. Corré `orca-stack revisar 70 agy` y `orca-stack revisar 70 codex`.'), risk(lifted))
+    assert.ok(risk(lifted).endsWith('Corré `orca-stack revisar 70 codex`.'), risk(lifted))
   })
 
   test('S1 (d): a riesgo path needs the second review riskDeny asks for; riesgo=yes', async () => {
@@ -251,14 +251,14 @@ describe('orca-stack estado (S1, #366)', () => {
     const both = harness({ prs: [prData(70, { files, reviews: [review('agy', HEAD), review('pi', HEAD)] })] }, config)
     assert.equal(await estado(both, ['70'], { json: true }), 0)
 
-    // Written by pi: two clean reviews of families other than pi's (claude).
+    // ADR 0006 (#488): written by pi: one clean review of a family other than pi's (claude) from the roster.
     const piBody = 'Implementador: pi\n\nCloses #7'
     const piConfig = { ...config, agentes: { usa: ['claude', 'codex', 'agy', 'pi'] } }
+    const noReview = harness({ prs: [prData(70, { body: piBody, files })] }, piConfig)
+    assert.equal(await estado(noReview, ['70'], { json: true }), 1)
+    assert.ok(one(noReview).falta.some(line => line.startsWith('(d)') && line.includes('Corré `orca-stack revisar 70 agy`.')), one(noReview).falta.join('\n'))
     const oneFamily = harness({ prs: [prData(70, { body: piBody, files, reviews: [review('codex', HEAD)] })] }, piConfig)
-    assert.equal(await estado(oneFamily, ['70'], { json: true }), 1)
-    assert.deepEqual(one(oneFamily).falta, ['(d) PR #70 toca una ruta de riesgo (src/auth/login.mjs) y lo escribió pi: faltan reviews limpios sobre el commit abc1234 de dos familias de modelo distintas que no sean la de pi (claude). Hay 1 (gpt). Corré `orca-stack revisar 70 agy`.'])
-    const twoFamilies = harness({ prs: [prData(70, { body: piBody, files, reviews: [review('codex', HEAD), review('agy', HEAD)] })] }, piConfig)
-    assert.equal(await estado(twoFamilies, ['70'], { json: true }), 0)
+    assert.equal(await estado(oneFamily, ['70'], { json: true }), 0)
 
     // On a riesgo path, Decidido por main does not settle a blocker of the head.
     const decided = harness({ prs: [prData(70, { files, reviews: [review('agy', HEAD), review('pi', HEAD, { verdict: '1. Token sin expirar' })], comments: [comment(`Decidido por main: 1 — aceptado\nCommit: ${HEAD}`, T(9))] })] }, config)
@@ -275,18 +275,18 @@ describe('orca-stack estado (S1, #366)', () => {
     const crossed = [review('codex', HEAD, { at: T(8) }), review('agy', HEAD, { at: T(9) })]
     const rddDeny =
       '(d) PR #70 toca una ruta de riesgo (src/auth/login.mjs) y lo escribió pi en modo RDD: falta un review RDD limpio de pi con la lente risk sobre el commit abc1234 ' +
-      'o, si el RDD no entró en el presupuesto, dos reviews limpios de dos familias distintas de la de pi; eso último cuenta solo con un comentario cuya primera línea es ' +
+      'o, si el RDD no entró en el presupuesto, un review limpio de un agente del roster de otra familia distinta de la de pi; eso último cuenta solo con un comentario cuya primera línea es ' +
       '"RDD fuera de presupuesto: abc1234 (<motivo>)", publicado después de tu pedido RDD: sobre ese commit, y sin él los reviews de otras familias no lo reemplazan. ' +
       'Corré `orca-stack rebote 70 --rdd risk` (podés sumar lentes).'
 
-    test('R3: after main\'s RDD: request, a comment whose first line is RDD fuera de presupuesto: on the head lets two clean reviews of two other families clear (d)', async () => {
-      const fallback = harness({ prs: [prData(70, { body, files, comments: [request, stop()], reviews: crossed })] }, config)
+    test('R3: after main\'s RDD: request, a comment whose first line is RDD fuera de presupuesto: on the head lets one clean review of another family clear (d)', async () => {
+      const fallback = harness({ prs: [prData(70, { body, files, comments: [request, stop()], reviews: [crossed[0]] })] }, config)
       assert.equal(await estado(fallback, ['70'], { json: true }), 0)
       assert.deepEqual(fallback.out, [JSON.stringify({ pr: 70, head: HEAD, ok: true, falta: [], merge: MERGE })])
 
-      const oneFamily = harness({ prs: [prData(70, { body, files, comments: [request, stop()], reviews: [crossed[0]] })] }, config)
-      assert.equal(await estado(oneFamily, ['70'], { json: true }), 1)
-      assert.deepEqual(one(oneFamily).falta, ['(d) PR #70 toca una ruta de riesgo (src/auth/login.mjs) y lo escribió pi: faltan reviews limpios sobre el commit abc1234 de dos familias de modelo distintas que no sean la de pi (claude). Hay 1 (gpt). Corré `orca-stack revisar 70 agy`.'])
+      const none = harness({ prs: [prData(70, { body, files, comments: [request, stop()], reviews: [] })] }, config)
+      assert.equal(await estado(none, ['70'], { json: true }), 1)
+      assert.ok(one(none).falta.some(line => line.startsWith('(d)') && line.includes('Corré `orca-stack revisar 70 agy`.')), one(none).falta.join('\n'))
     })
 
     test('R4: a Consulta: pi with the marker line, the marker on another head, before the request, with no request, or inside a review does not count', async () => {

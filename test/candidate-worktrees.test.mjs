@@ -3,8 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { dispatch } from '../src/despacho.mjs'
-import { candidateWorktreesStatus, CANDIDATE_WORKTREES_EXCLUDE, CANDIDATE_WORKTREES_PROBE } from '../src/candidate-worktrees.mjs'
+import { candidateWorktreesStatus, ensureCandidateWorktreesExclude, CANDIDATE_WORKTREES_EXCLUDE, CANDIDATE_WORKTREES_PROBE } from '../src/candidate-worktrees.mjs'
 import { cleanup, cli, git, read, tempDir, write } from './helpers.mjs'
 
 const PROJECT = {
@@ -104,12 +103,12 @@ const makeFakeIo = (repoRoot, wtDir, over = {}) => {
 }
 
 describe('candidate worktrees: issue #161', () => {
-  test('Rule 1: despachar writes /.claude/worktrees/ once to info/exclude; check-ignore succeeds from main and worktree of #42', async () => {
+  test('Rule 1: ensureCandidateWorktreesExclude writes /.claude/worktrees/ once to info/exclude; check-ignore succeeds from main and worktree of #42', () => {
     assert.equal(existsSync(excludePath(root)), false)
 
     const env = makeFakeIo(root, worktreeDir)
-    const status = await dispatch('ticket', { n: '42', agent: 'claude' }, env.io)
-    assert.equal(status, 0)
+    ensureCandidateWorktreesExclude({ root, commonDir: path.join(root, '.git'), io: env.io })
+    git(root, 'worktree', 'add', '-q', '-b', 'repo-42', worktreeDir)
 
     assert.equal(existsSync(excludePath(root)), true)
     const content = read(excludePath(root))
@@ -124,30 +123,28 @@ describe('candidate worktrees: issue #161', () => {
     assert.equal(checkWt.status, 0, checkWt.stdout + checkWt.stderr)
   })
 
-  test('Rule 2: a second dispatch writes no second line', async () => {
+  test('Rule 2: a second ensureCandidateWorktreesExclude call writes no second line', () => {
+    const commonDir = path.join(root, '.git')
     const env1 = makeFakeIo(root, worktreeDir)
-    await dispatch('ticket', { n: '42', agent: 'claude' }, env1.io)
+    ensureCandidateWorktreesExclude({ root, commonDir, io: env1.io })
     const content1 = read(excludePath(root))
     const occurrences1 = content1.split(/\r?\n/).filter(line => line.trim() === CANDIDATE_WORKTREES_EXCLUDE).length
     assert.equal(occurrences1, 1)
 
-    const wt2 = path.join(tempDir('cw-wt2'), 'repo-43')
-    const env2 = makeFakeIo(root, wt2)
-    await dispatch('ticket', { n: '43', agent: 'claude' }, env2.io)
+    const env2 = makeFakeIo(root, worktreeDir)
+    ensureCandidateWorktreesExclude({ root, commonDir, io: env2.io })
     const content2 = read(excludePath(root))
     const occurrences2 = content2.split(/\r?\n/).filter(line => line.trim() === CANDIDATE_WORKTREES_EXCLUDE).length
     assert.equal(occurrences2, 1)
-    cleanup(path.dirname(wt2))
   })
 
-  test('Rule 3: with !.claude/worktrees/ in tracked .gitignore, despachar warns and dispatches anyway (exit 0)', async () => {
+  test('Rule 3: with !.claude/worktrees/ in tracked .gitignore, ensureCandidateWorktreesExclude warns without throwing', () => {
     write(path.join(root, '.gitignore'), '!.claude/worktrees/\n')
     git(root, 'add', '.gitignore')
     git(root, 'commit', '-q', '-m', 'add negation')
 
     const env = makeFakeIo(root, worktreeDir)
-    const status = await dispatch('ticket', { n: '42', agent: 'claude' }, env.io)
-    assert.equal(status, 0)
+    ensureCandidateWorktreesExclude({ root, commonDir: path.join(root, '.git'), io: env.io })
 
     const warnLine = env.out.find(l => l.includes('git no ignora /.claude/worktrees/'))
     assert.ok(warnLine, `Expected warning line about negation in out:\n${env.out.join('\n')}`)
@@ -198,11 +195,9 @@ describe('candidate worktrees: issue #161', () => {
     assert.match(doctorOverridden.out, /overridden|anulado/)
   })
 
-  test('Rule 6: --dry-run on despachar and init prints action and writes nothing', async () => {
-    // despachar --dry-run
+  test('Rule 6: --dry-run on ensureCandidateWorktreesExclude and init prints action and writes nothing', () => {
     const env = makeFakeIo(root, worktreeDir)
-    const status = await dispatch('ticket', { n: '42', agent: 'claude', dryRun: true }, env.io)
-    assert.equal(status, 0)
+    ensureCandidateWorktreesExclude({ root, commonDir: path.join(root, '.git'), io: env.io, dryRun: true })
     assert.equal(existsSync(excludePath(root)), false)
     const dryDispatchOut = env.out.join('\n')
     assert.match(dryDispatchOut, /\[simulación\].*agrega \/\.claude\/worktrees\//)
