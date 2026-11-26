@@ -55,7 +55,7 @@ Esta sección es solo de `main` y está en `~/orca/stack/MARCHAS.md`, el fragmen
 | claude (worker) | Sí, con ODD | Solo si el humano lo pide | Modo desatendido. |
 | agy | Sí | Sí, es el revisor por defecto | Las skills se le piden en prosa. |
 | codex | Sí | Sí | Codex directo. |
-| pi (Gentle Shell) | Sí, con su propia metodología (puede usar ODD) | Sí, como segundo review de los PRs que tocan `riesgo`, salvo los que escribió pi. Corre sobre Claude: al lado de claude aporta otra metodología, no otro modelo | También es el par que `main` consulta con `consultar_gentle_shell`. Esa consulta es de solo lectura y no reemplaza un review. |
+| pi (Gentle Shell) | Sí, con su propia metodología (puede usar ODD) | Sí, como segundo review de los PRs que tocan `riesgo`, salvo los que escribió pi. Corre sobre Claude: al lado de claude aporta otra metodología, no otro modelo | Corre sobre Claude con su propia metodología; con `agentes.pi.review: "rdd"` revisa sus propios PRs cuando `main` lo pide. |
 
 Revisa agy, salvo que el PR lo haya escrito agy: entonces revisa codex. Si codex está bloqueado o no tiene cuota, el PR espera a que codex vuelva. Una regla `guardia.bloquear` vigente cuenta como bloqueo: `despachar` y `revisar` se niegan a despachar a ese agente y dicen el motivo. Un revisor nunca corre un modelo de la misma familia que el autor: dos modelos de una familia comparten puntos ciegos. La familia sale del modelo que cada agente tiene en `agentes.modelos`, y `revisar` se niega cuando coinciden. pi es la excepción: corre sobre Claude, y al lado de claude aporta otra metodología. Un PR de codex lo revisa agy. Qué agentes están en uso en este repo lo dice `agentes` en `.orca-stack.json`; los que figuran en `preguntarAntes` se despachan solo con el OK del humano.
 
@@ -69,7 +69,7 @@ Esta sección es solo de `main` y está en `~/orca/stack/MAIN.md`.
 
 Sin preguntar: crear ramas, commitear, pushear, abrir PRs, comentar y etiquetar issues, despachar, elegir revisor y, en `main`, mergear cuando se cumple la condición de merge. Se hace y después se cuenta; esta lista cuenta como la autorización explícita de ODD para esas acciones.
 
-Se pregunta: lo irreversible (reescribir historia, force push, borrar ramas o issues, tocar algo ya publicado), gastar plata, credenciales, mensajes a terceros y cambios al stack global. Si Pi discrepa en algo material, se le muestran al humano las dos posturas con sus razones.
+Se pregunta: lo irreversible (reescribir historia, force push, borrar ramas o issues, tocar algo ya publicado), gastar plata, credenciales, mensajes a terceros y cambios al stack global.
 
 Excepción de `Arena y swarm`: el owner puede borrar, sin preguntar, las ramas y los worktrees candidatos que haya creado si se cumplen todas las condiciones de la excepción de abajo; se vuelven a comprobar justo antes de borrar.
 

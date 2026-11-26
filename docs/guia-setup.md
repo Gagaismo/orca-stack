@@ -20,8 +20,8 @@ Versión de referencia: `orca-stack v0.24.0` (octubre de 2026). Si sale una vers
 | --- | --- | --- |
 | Orca | Corre los Runs, las Tasks, los worktrees y los workers en paralelo | Instalador oficial (github.com/stablyai/orca) |
 | Skills de Matt Pocock | Son el método: grill, spec, tickets, implement con TDD y review | Claude Code: `claude plugin marketplace add mattpocock/skills` y `claude plugin install mattpocock-skills@mattpocock` (versión 1.3.1 o más nueva). Codex y Antigravity: ver la nota debajo |
-| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, las skills propias y los 9 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.24.0 global` |
-| Gentle Shell (Pi) | Un segundo orquestador al que Claude consulta en las decisiones | Pi con su instalador oficial (si falta, `global` lo instala con npm); los paquetes los instala `global` |
+| orca-stack | Política `ORCA-STACK.md`, wrappers de proveedores, las skills propias y los 8 mods de Claude Code | `npx github:Gagaismo/orca-stack#v0.24.0 global` |
+| Gentle Shell (Pi) | Worker y revisor independiente (con su propia metodología; en modo RDD revisa sus propios PRs cuando `main` lo pide) | Pi con su instalador oficial (si falta, `global` lo instala con npm); los paquetes los instala `global` |
 | Engram | Memoria entre sesiones (no planifica ni decide) | Instalador propio de Engram |
 | gentle-ai | Context7, permisos de Claude Code y skills extra | Instalador propio de gentle-ai |
 | Caveman | Comprime la prosa larga para ahorrar tokens (perk opcional, apagado por defecto) | Solo las skills: `npx skills add JuliusBrussee/caveman -g` (verificado con la 3.2.0). Si tenés el plugin de Claude Code, desactivalo en las sesiones de Orca: `claude plugin disable caveman@caveman` |
@@ -69,7 +69,7 @@ npx github:Gagaismo/orca-stack#v0.24.0 doctor
 - `global` respalda todo lo que toca en `~/.orca-stack/backups/<fecha>/` y anota lo que instaló en `~/.orca-stack/state.json`. `remove` lo deshace.
 - Si Pi, gentle-pi, pi-claude-bridge o gentle-engram faltan o están en otra versión, `global` instala la versión fijada **aunque no uses `--force`** (`pi install npm:gentle-pi@4.8.0`, `npm i -g gentle-pi@4.8.0`, `pi install npm:pi-claude-bridge@0.12.0` y `pi install npm:gentle-engram@0.7.0`). Si querés conservar tus versiones de Pi, agregá `--skip-pi`. Si `~/.pi/agent/settings.json` carga un paquete desde una carpeta local (por ejemplo tu fork de Gentle Shell en lugar de `npm:gentle-pi`), `global` no instala la versión npm de ese paquete: dice `uso tu checkout local en <ruta>` y avisa si tu checkout es anterior a la versión fijada; `doctor` lo cuenta como instalado.
 - Un Pi anterior a `1.5.2` se actualiza con `pi update --self` (va a la última versión) y, si sigue anterior, `global` no instala los paquetes y falla; si falta Pi, lo instala con `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.5.2` (sin `npm`, imprime el instalador oficial y sigue sin Pi); un Pi más nuevo no se toca, solo avisa. Si `pi update --self` no lo deja en `1.5.2` o más nuevo, actualizá Pi con el comando oficial que imprime y volvé a correrlo.
-- Los workers de pi y la consulta a Gentle Shell comparten tu memoria de Engram (`~/.engram`, el servidor global): `gentle-engram` les da las herramientas de memoria y orca-stack no les fija `ENGRAM_DATA_DIR`, que desde gentle-pi 4.4.0 apaga la memoria.
+- Los workers de pi comparten tu memoria de Engram (`~/.engram`, el servidor global): `gentle-engram` les da las herramientas de memoria y orca-stack no les fija `ENGRAM_DATA_DIR`, que desde gentle-pi 4.4.0 apaga la memoria.
 - Gentle Shell se actualiza volviendo a correr `global`. Desde gentle-pi 4.2.0, `gentle-shell update` reinstala solo el paquete global dueño del Pi que corre, y si no puede probar qué paquete global es dueño de Pi, no toca nada. Si ya tenés gentle-shell autocontenido (`gentle-shell upgrade` desde la 4.8.0: `%LOCALAPPDATA%\gentle-shell` en Windows, `~/.gentle-shell` en macOS y Linux) en `4.8.0` o más nuevo, `global` no corre `npm i -g gentle-pi`, para no taparlo en el PATH; si es anterior, falla y te pide `gentle-shell upgrade`.
 - Al final, `global` sugiere `doctor` e `init` sin la etiqueta de versión. Usalos con `#v0.24.0`.
 
@@ -77,7 +77,7 @@ npx github:Gagaismo/orca-stack#v0.24.0 doctor
 
 1. **Orca > Settings > Agents > command overrides:** apuntá Claude Code, Codex y Antigravity a `claude-orca-stack`, `codex-orca-stack` y `agy-orca-stack` (están en `~/orca/stack/scripts/`).
 2. Abrí `pi` y corré `/login`. Sin login, Gentle Shell no responde.
-3. Corré `gh auth login` (lo necesitan el tablero de PRs y el puente).
+3. Corré `gh auth login` (lo necesitan el tablero de PRs y los comandos de despacho).
 4. Corré `gentle-ai sync`.
 5. Instalá las skills de Matt Pocock (Claude Code con el marketplace de Matt y, para agy y codex, `npx skills add mattpocock/skills -g -s '*' -a codex -a antigravity-cli -y`) y, si vas a encender el perk `caveman`, Caveman con los comandos del mapa.
 6. Reiniciá Claude Code: los mods se cargan en las sesiones nuevas.
@@ -88,7 +88,7 @@ Además, instalá lo que `global` marque como faltante.
 
 ### Qué hace `global` con el `CLAUDE.md` global
 
-`global` no escribe metodología en `~/.claude/CLAUDE.md`: instala herramientas, skills, mods y wrappers, y nada más. La metodología llega solo por el proyecto (`init`), así que una sesión en un repo sin `.orca-stack.json` no recibe texto del stack; `puente-gentle` tampoco inyecta su instrucción de consulta ni registra `consultar_gentle_shell` ahí. Si una versión anterior dejó en ese archivo el bloque `orca-stack:begin` / `orca-stack:end` (o el viejo `orca-stack:auto`), `global` lo saca, con respaldo, y lo avisa.
+`global` no escribe metodología en `~/.claude/CLAUDE.md`: instala herramientas, skills, mods y wrappers, y nada más. La metodología llega solo por el proyecto (`init`), así que una sesión en un repo sin `.orca-stack.json` no recibe texto del stack. Si una versión anterior dejó en ese archivo el bloque `orca-stack:begin` / `orca-stack:end` (o el viejo `orca-stack:auto`), `global` lo saca, con respaldo, y lo avisa.
 
 **El bloque de gentle-ai.** `~/.claude/CLAUDE.md` trae el bloque `gentle-ai:sdd-orchestrator` (v2/v3) o `gentle-ai:orchestrator` (v4), unos 16 KB que se cargan en cada sesión. `global` lo achica según `gentle.orchestrator` en `~/.orca-stack/config.json`:
 
@@ -135,7 +135,7 @@ gentle-pi guarda perfiles de modelos en `~/.pi/gentle-ai/profiles.json` (cada pe
 - Se niega si el perfil no existe o si el clon ya tiene un pin local (`<git-common-dir>/gentle-ai/profile-pin.json`) con otro perfil, porque ese gana sobre el del worktree.
 - Se niega si el orquestador o algún subagente del perfil usa un modelo que no es `claude-bridge/…`, `anthropic/…` (el login OAuth de Anthropic en pi) ni `openai/…`, y nombra cada agente y modelo. `orca-stack doctor` avisa de cada perfil guardado que rompe esta regla.
 - Imprime `perfil de Pi: <nombre> (fuente: flag | config | pin | global)` y el brief guarda la misma línea.
-- El perfil global activo no cambia, y las consultas a Gentle Shell (`/pi`, `consultar_gentle_shell`) no usan esto.
+- El perfil global activo no cambia.
 
 Perfiles que conviene tener: `opus-sonnet` (Opus 5.5 orquesta; los diez subagentes en Sonnet 5.5, todos por `claude-bridge`) y `OpusFull` (Opus 5.5 orquesta por `claude-bridge` y los subagentes corren en Opus 5.5 por `anthropic`). Un perfil tiene que listar a **todos** los agentes: si omite uno, ese agente usa el modelo de su frontmatter. Para editarlos: `/gentle:profiles` dentro de Pi, o editar `profiles.json` a mano (copiá el archivo antes).
 
@@ -152,7 +152,7 @@ Pasa si el stack se armó a mano antes de que existiera el instalador. El `--dry
 3. **Revisá `~/.claude/CLAUDE.md`.** `global` ya no escribe ahí: la metodología llega por el proyecto, con `init`. Si la instalación vieja dejó una sección "Orca stack integration" sin marcadores, sacala a mano (respaldá el archivo antes); `global` solo saca el bloque que tenga marcadores `orca-stack:begin` / `orca-stack:end`.
 4. Corré `global --dry-run --force` y leé la lista completa. Que corra `pi install` o `npm i -g gentle-pi` es esperable si tus versiones no coinciden con las fijadas.
 5. Corré `global --force`. Todo lo que reemplaza queda respaldado.
-6. **Revisá `CLAUDE_CODE_PLUGIN_DIRS`** en `~/.claude/settings.json`. `global` conserva las entradas que ya había: si un mod viejo vivía en otra carpeta, queda cargado junto al nuevo. Dejá solo los 9 mods de `~/.claude/mods/`.
+6. **Revisá `CLAUDE_CODE_PLUGIN_DIRS`** en `~/.claude/settings.json`. `global` conserva las entradas que ya había: si un mod viejo vivía en otra carpeta, queda cargado junto al nuevo. Dejá solo los 8 mods de `~/.claude/mods/`.
 7. **Revisá si las skills de Matt están duplicadas** (como plugin y sueltas) y dejá una sola vía. `doctor` lo avisa, con el comando `npx skills remove <nombres> -g -a claude-code -y`.
 8. **Borrá los instaladores viejos** (por ejemplo, un script que copiaba los mods a mano): si alguien los corre, vuelven a copiar los mods anteriores encima de los nuevos.
 9. Corré `doctor`.
@@ -378,15 +378,14 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 
 ### Claves
 
-| Clave | Mod | Dónde va |
+| Clave | Mod / comando | Dónde va |
 | --- | --- | --- |
-| `humano` | puente-gentle | Personal |
 | `mensajes.destinatarios` | bandeja-mensajes | `.orca-stack.local.json` del proyecto |
 | `despacho.script`, `despacho.revisar` | guardia-despacho, tablero-despacho | `.orca-stack.json` del proyecto |
 | `guardia.bloquear` | guardia-despacho, despachar, revisar | Tu config personal si es una cuota de tu cuenta; `.orca-stack.json` si es regla del proyecto. Las capas se suman |
 | `guardia.modeloClaude` | guardia-despacho | `.orca-stack.json` del proyecto |
-| `riesgo` | puente-gentle | `.orca-stack.json` del proyecto: globs de las rutas cuyo cambio no se deshace con un revert. Un PR que toca alguna no se mergea sin un review limpio de pi sobre su último commit (`orca-stack revisar <n> pi`). Si lo escribió pi, hacen falta dos reviews de dos familias de modelo distintas que no sean la de pi (Claude); la familia sale del modelo de `agentes.modelos` |
-| `agentes.pi.claudeConfigDir` | puente-gentle | Personal. Carpeta de config de Claude con otra cuenta para pi; el puente lanza pi con `CLAUDE_CONFIG_DIR=<carpeta>`. El login se hace una vez a mano: en PowerShell, `$env:CLAUDE_CONFIG_DIR="<carpeta>"; claude` y después `/login` |
+| `riesgo` | estado | `.orca-stack.json` del proyecto: globs de las rutas cuyo cambio no se deshace con un revert. Un PR que toca alguna no se mergea sin un review limpio de pi sobre su último commit (`orca-stack revisar <n> pi`). Si lo escribió pi, hacen falta dos reviews de dos familias de modelo distintas que no sean la de pi (Claude); la familia sale del modelo de `agentes.modelos` |
+| `agentes.pi.claudeConfigDir` | despachar, revisar, rebote | Personal. Carpeta de config de Claude con otra cuenta para pi; los comandos lanzan pi con `CLAUDE_CONFIG_DIR=<carpeta>`. El login se hace una vez a mano: en PowerShell, `$env:CLAUDE_CONFIG_DIR="<carpeta>"; claude` y después `/login` |
 | `agentes.pi.perfil` | guardia-despacho, despachar, revisar | Personal (recomendado). Nombre de un perfil de `~/.pi/gentle-ai/profiles.json`, o `"preguntar"` (por defecto). Con un nombre, los despachos a pi usan ese perfil sin preguntar; con `"preguntar"` o ausente, `guardia-despacho` abre el diálogo "Perfil Pi" y agrega `--perfil-pi <elegido>` al comando |
 | `verificacion` | contrato | `.orca-stack.json`: `{ "suite": "...", "typecheck": "...", "cuerpoPR": "..." }`. `cuerpoPR` define el comando con placeholder `{file}` para pre-validar localmente el cuerpo del PR antes de crearlo; la columna Test de `## Evidencia` acepta títulos exactos declarados en `test()`/`it()`, describe paths aceptados por su último segmento y patrones de template, con verificaciones sin test como texto plano sin backticks |
 
@@ -402,7 +401,7 @@ En los dos, los comandos de Matt (`/setup-matt-pocock-skills`, `/wayfinder`, etc
 - [ ] `~/.orca-stack/config.json` no tiene nada de este proyecto (solo `humano`, `agentes.modelos`, `agentes.pi.claudeConfigDir` y `agentes.pi.perfil`).
 - [ ] Existen `docs/agents/issue-tracker.md` y `docs/agents/domain.md`, y `triage-labels.md` si usás `/triage`.
 - [ ] Orca crea un worktree y el setup de `orca.yaml` termina sin errores, sin tocar el `node_modules` del checkout principal.
-- [ ] En una sesión nueva de Claude Code aparecen los mods (por ejemplo `/tablero` y `/pi`).
+- [ ] En una sesión nueva de Claude Code aparecen los mods (por ejemplo `/tablero` y `/mensajes`).
 - [ ] `git diff --cached` no tiene secretos, `.env` ni datos reales.
 
 `doctor` avisa si `AGENTS.md` o `CLAUDE.md` todavía tienen el bloque viejo `orca-stack:auto` y si `.orca-stack.json` no tiene `"setup": "completo"` (en ese caso, abrí una sesión de Claude en el checkout principal: ofrece el setup con `orca-setup`). También avisa de la deriva: el plugin de Matt por debajo de 1.3.1, skills duplicadas entre el plugin y `~/.claude/skills`, `pr`, `implement-spec` o `retro` ausentes de `~/.agents/skills` el bloque orca-stack viejo que sigue en `~/.claude/CLAUDE.md` y las secciones de review de gentle-ai que volvieron ahí con RDD apagado. No revisa el resto de `AGENTS.md` ni `orca.yaml`: esos puntos se miran a mano.

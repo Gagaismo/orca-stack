@@ -119,6 +119,7 @@ describe('#393 perk switch, gears first', () => {
     assert.match(fragment, /Al bajar de marcha desde Proactive, `main` responde las preguntas que ya tenga y deja de vigilar; al subir a Proactive, empieza a vigilar los items en curso y no relanza nada/)
     assert.match(fragment, /La marcha actual de main va entre las instrucciones del proyecto/)
     assert.deepEqual([...fragment.matchAll(/^- \*\*(K\d+) /gm)].map(([, knob]) => knob), ['K1', 'K2', 'K3', 'K4', 'K5', 'K6', 'K7', 'K8', 'K9', 'K10', 'K11'])
+    assert.match(fragment, /^- \*\*K4 \u2014 Retired\*\*/m)
   })
 
   test('R7: swarm and arena keep every OK rule and lose only the gear conditions', () => {
