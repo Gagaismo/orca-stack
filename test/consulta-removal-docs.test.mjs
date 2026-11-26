@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
-import { validateAnswerComment } from '../src/avisar.mjs'
+import { validateAnswerComment } from '../src/reanudar.mjs'
 import { renderBrief } from '../src/despacho.mjs'
 import { MARKERS } from '../src/marcas.mjs'
 import { upsertBlock } from '../src/marker.mjs'

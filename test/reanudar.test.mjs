@@ -268,7 +268,7 @@ describe('orca-stack reanudar (#214)', () => {
 
   test('Rule 8: refuses working workers and issues with an open PR; dry-run reports action without writes', async () => {
     const working = harness({ state: 'working', screen: ['\u{2722} Churning\u{2026} (1m 2s \u{b7} \u{2193} 3k tokens)'] })
-    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, working.io), /avisar/)
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, working.io), /reglas cambiadas/)
     assert.equal(working.sends().length, 0)
     const openPr = harness({ pr: true })
     await assert.rejects(() => reanudarCommand({}, ISSUE, URL, openPr.io), /orca-stack rebote 81/)
@@ -553,7 +553,7 @@ describe('orca-stack reanudar (#214)', () => {
     // Issue 325: steps 5 and Despacho moved to MAIN.md; the AGENTS.md block sends main there.
     const contract = readFileSync(path.join(PACKAGE_ROOT, 'assets', 'stack', 'MAIN.md'), 'utf8')
     assert.ok(contract.includes('worker-detenido #<n> <agente>: terminó sin abrir un PR'))
-    assert.match(contract, /`orca-stack avisar` y `orca-stack reanudar` son las \u00FAnicas formas en que main llega a una terminal de worker/)
+    assert.match(contract, /`orca-stack reanudar` es la \u00FAnica forma en que main llega a una terminal de worker/)
     assert.ok(contract.includes('orca-stack reanudar <issue> <url-del-comentario>'))
     const dir = tempDir('init-rule10')
     const initHome = path.join(dir, 'home')

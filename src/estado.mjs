@@ -1,4 +1,4 @@
-import { repoWorktrees } from './avisar.mjs'
+import { repoWorktrees } from './worker-terminals.mjs'
 import { isPending, isStatus, latestChecks } from './checks.mjs'
 import { FAMILIES, WORKER_AGENTS, crossFamilyReviewers, defaultIo, familyOf, loadConfig, rddFallbackFor, rosterOf } from './despacho.mjs'
 import { commitOf, markerLines, markerValue, namesCommit, normalizeBody } from './marcas.mjs'

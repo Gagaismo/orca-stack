@@ -6,6 +6,8 @@ Los encabezados `## Evidencia`, `## Desvíos del ticket`, `## BLOQUEA`, `## SUGE
 
 Un comentario `Diagnóstico: <agente>` incluye las líneas `Causa:`, `Probado:` y `Siguiente hipótesis:` (puede ser `ninguna`).
 
+Un cambio de reglas publicado después del despacho (`Respuesta de main:` o `Respuesta del humano:`) le llega al worker supervisado por el buzón del Run: `orca orchestration send --to dispatch:<id> --subject "<issue>: reglas cambiadas" --body "<url-del-comentario>"`.
+
 ### Configuración del proyecto
 
 La configuración sale de tres capas que se fusionan en este orden, y las posteriores pisan a las anteriores: `~/.orca-stack/config.json` (personal, por máquina, no se commitea), `.orca-stack.json` en la raíz del repo (reglas del proyecto, se commitea) y `.orca-stack.local.json` (local, ignorado por git). Las claves de objeto se fusionan una por una; una lista de una capa reemplaza a la de la anterior. Leé las tres antes de decidir algo que dependa de ellas. Cuando este contrato dice "lo que fijó el setup", se refiere a estas claves y a la capa donde suele vivir cada una:

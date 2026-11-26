@@ -31,12 +31,6 @@
     },
     {
       "rule": "shallow-module",
-      "file": "src/avisar.mjs",
-      "location": "module",
-      "fingerprint": "sha256:7115c5f01b34dfc1"
-    },
-    {
-      "rule": "shallow-module",
       "file": "src/gentle.mjs",
       "location": "module",
       "fingerprint": "sha256:cdc68e2bf8a34bb9"
