@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { INSTALL_HINTS, PINNED, PI_MIN_VERSION, PI_NPM_PACKAGE, PI_PACKAGES } from './constants.mjs'
 import { compareVersions } from './drift.mjs'
@@ -77,6 +78,34 @@ export const describeCheckout = (pkg, checkout) => {
     older,
     note: older ? `anterior a ${pkg.version}: actualizá tu checkout` : null,
   }
+}
+
+// The package-local Gentle AI binary of a local gentle-pi checkout (#364): a clone or a pull skips the postinstall that
+// downloads it, and without it pi can neither push nor run an RDD review. Its path and install command come from
+// gentle-pi's own runtime/gentle-ai-binary.mjs, so an upstream layout change does not break the check. null when Pi
+// loads no local gentle-pi checkout; else { status: 'ok' | 'warn' | 'fail', detail }.
+export const gentleAiBinaryCheck = async L => {
+  const checkout = localPiPackages(L).get('gentle-pi')
+  if (!checkout) {
+    return null
+  }
+  let binary
+  let command
+  try {
+    const binaryModule = await import(pathToFileURL(path.join(checkout.dir, 'runtime', 'gentle-ai-binary.mjs')).href)
+    binary = binaryModule.gentleAiBinaryPath(checkout.dir)
+    command = binaryModule.GENTLE_AI_INSTALL_RECOVERY_COMMAND
+  } catch (error) {
+    return { status: 'warn', detail: `no pude preguntarle a ${checkout.dir} dónde va su binario (${error.message.split('\n')[0]})` }
+  }
+  if (typeof binary !== 'string' || typeof command !== 'string') {
+    return { status: 'warn', detail: `${checkout.dir} no dice dónde va su binario (runtime/gentle-ai-binary.mjs sin gentleAiBinaryPath o GENTLE_AI_INSTALL_RECOVERY_COMMAND)` }
+  }
+  if (isFile(binary)) {
+    return { status: 'ok', detail: binary }
+  }
+
+  return { status: 'fail', detail: `falta ${binary}: sin él pi no puede pushear ni correr el review RDD; instalalo con \`cd ${checkout.dir} && ${command}\`` }
 }
 
 // Folder of gentle-shell's self-contained install (gentle-shell 4.8.0 docs/bundled-install.md): %LOCALAPPDATA%\gentle-shell on

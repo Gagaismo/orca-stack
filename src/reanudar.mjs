@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, shellPrompt, supervisedTask, writePin, writeRddConsent } from './despacho.mjs'
+import { AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, refuseMissingGentleAi, shellPrompt, supervisedTask, writePin, writeRddConsent } from './despacho.mjs'
 import { identityOf, isDialog, paneAgents, stackAgent, piIdle, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { pendingAfterSwitch } from './orca.mjs'
 import { samePath } from './util.mjs'
@@ -242,6 +242,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   // so the subagents the paused pi launches next follow it.
   const pin = agent === 'pi' ? readPin(io, row.path) : undefined
   if (agent === 'pi') refuseGlobalOverStalePin(io, pin, flags.perfilPi)
+  if (agent === 'pi') await refuseMissingGentleAi(io)
   const resolveProfile = () => {
     try {
       return piProfileFor({ flag: flags.perfilPi, pin, config, home: io.home, commonDir, io })

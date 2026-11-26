@@ -124,6 +124,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = 
     },
     rename: renameSync,
     gentleSkills: () => 'C:\\pi\\gentle-pi\\skills',
+    gentleAiBinary: async () => null,
     sh: (cmd, args) => {
       calls.push([cmd, ...args])
       const found = over[`${cmd} ${args[0]} ${args[1] ?? ''}`.trim()] ?? over[`${cmd} ${args[0]}`]
@@ -4810,5 +4811,69 @@ describe('issue #476: agy waitForTui requires prompt or splash', () => {
     })
     assert.equal(await revisarCommand({}, '9', 'codex', codexReview.io), 0)
     assert.ok(codexReview.out.some(line => line.includes('\u2714 codex despachado')))
+  })
+})
+
+describe('issue #364: pi launches refuse a local gentle-pi checkout without its Gentle AI binary', () => {
+  const MISSING = { status: 'fail', detail: 'falta C:\\gs\\.gentle-ai\\v4.6.0\\gentle-ai.exe: sin \u00E9l pi no puede pushear ni correr el review RDD; instalalo con `cd C:\\gs && node scripts/install-gentle-ai.mjs`' }
+  const REFUSAL = `No lanzo a pi, binario Gentle AI de gentle-pi: ${MISSING.detail}.`
+  const piPr = () => ({
+    state: 'OPEN', headRefName: 'feat/fix', headRefOid: 'abc123', body: 'Implementador: pi\nCloses #7', statusCheckRollup: [], comments: [],
+    reviews: [{ body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, test, implementaci\u00F3n): fix it.\n\n## SUGERENCIAS\n(none)', url: 'https://example.test/review/1' }],
+  })
+  const bounceIo = (config = PROJECT) => {
+    const env = fakeIo({
+      'gh pr': json(piPr()),
+      'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`),
+      'git status': okRes(''),
+    }, { config })
+    const original = env.io.sh
+    env.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('abc123\n') : original(cmd, args, opts)
+    env.io.now = () => 100
+    env.io.modifiedAt = () => 101
+    return env
+  }
+  const posted = env => env.calls.some(call => call[0] === 'gh' && call[1] === 'pr' && call[2] === 'comment')
+
+  test('issue 364 rule 3: despachar <n> pi refuses with the doctor message before any side effect', async () => {
+    const env = fakeIo()
+    env.io.gentleAiBinary = async () => MISSING
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), { message: REFUSAL })
+    assert.deepEqual(env.writes(), [])
+    assert.deepEqual(env.written, [])
+  })
+
+  test('issue 364 rule 3: rebote, rebote --rdd and rebote --continuar to pi refuse with the doctor message before posting a marker or writing a brief', async () => {
+    const RDD_PROJECT = { ...PROJECT, agentes: { ...PROJECT.agentes, pi: { ...PROJECT.agentes.pi, review: 'rdd' } } }
+    for (const [flags, config] of [[{}, PROJECT], [{ rdd: 'risk' }, RDD_PROJECT], [{ continuar: true }, PROJECT]]) {
+      const env = bounceIo(config)
+      env.io.gentleAiBinary = async () => MISSING
+      await assert.rejects(reboteCommand(flags, '12', env.io), { message: REFUSAL }, JSON.stringify(flags))
+      assert.ok(!posted(env), JSON.stringify(flags))
+      assert.deepEqual(env.writes(), [], JSON.stringify(flags))
+      assert.deepEqual(env.written, [], JSON.stringify(flags))
+    }
+  })
+
+  test('issue 364 rule 3: with the binary present, or one doctor cannot locate, despachar and rebote launch pi as today', async () => {
+    for (const binary of [{ status: 'ok', detail: 'C:\\gs\\.gentle-ai\\v4.6.0\\gentle-ai.exe' }, { status: 'warn', detail: 'no pude preguntarle' }, null]) {
+      const env = fakeIo()
+      env.io.gentleAiBinary = async () => binary
+      await run('ticket', { n: '7', agent: 'pi' }, env)
+      assert.ok(env.out.some(line => line.includes('\u2714 pi despachado')), JSON.stringify(binary))
+      const bounce = bounceIo()
+      bounce.io.gentleAiBinary = async () => binary
+      await reboteCommand({}, '12', bounce.io)
+      assert.ok(posted(bounce), JSON.stringify(binary))
+    }
+  })
+
+  test('issue 364 rule 3: agents other than pi and a pi reviewer are not checked', async () => {
+    const env = fakeIo()
+    env.io.gentleAiBinary = async () => { throw new Error('checked') }
+    await run('ticket', { n: '7', agent: 'codex' }, env)
+    const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) })
+    review.io.gentleAiBinary = async () => { throw new Error('checked') }
+    await run('review', { n: '9', agent: 'pi', dryRun: true }, review)
   })
 })
