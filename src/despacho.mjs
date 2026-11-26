@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync,
 import path from 'node:path'
 
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
-import { ensureCandidateWorktreesExclude } from './candidate-worktrees.mjs'
 import { analyzeChecks, isHigherRunId, isPending, latestChecks } from './checks.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { setCard, switchAccount } from './orca.mjs'
@@ -27,7 +26,10 @@ export const FAMILIES = {
 }
 // END FAMILIES
 export const AGENTS = FAMILIES.agents
+// ADR 0006 (#488): claude is no longer a worker agent; only agy, codex and pi run tickets and reviews.
+export const WORKER_AGENTS = FAMILIES.agents.filter(agent => agent !== 'claude')
 const CODEX_CC_REMOVED = 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00F3 el 2026-10-24); us\u00E1 codex.'
+const CLAUDE_WORKER_REMOVED = 'claude ya no es un agente worker (ADR 0006): despach\u00E1 a pi, agy o codex.'
 
 // Stack markers cleared when launching pi: Orca's managed pi extension (orca-agent-status.ts) reports pi's card state
 // through the Orca pane variables, so a worker keeps those while clearing ORCA_STACK_* (#277, #391).
@@ -122,6 +124,39 @@ export const blockOf = (config, agent, now) => {
   }
 
   return undefined
+}
+
+// ADR 0006 (#488): active worker roster is agentes.usa minus claude and minus agents with an active guardia.bloquear rule.
+export const rosterOf = (config, now) => {
+  const usa = Array.isArray(config.agentes?.usa) ? config.agentes.usa : []
+  const seen = new Set()
+  const roster = []
+  for (const raw of usa) {
+    const agent = String(raw).trim().toLowerCase()
+    if (!WORKER_AGENTS.includes(agent) || seen.has(agent)) continue
+    if (blockOf(config, agent, now) !== undefined) continue
+    seen.add(agent)
+    roster.push(agent)
+  }
+
+  return roster
+}
+
+// ADR 0006 (#488): cross-family reviewers available in the roster for `implementer`, non-preguntarAntes first.
+export const crossFamilyReviewers = (config, implementer, roster) => {
+  const own = familyOf(config, implementer, 'ticket').family
+  const ask = Array.isArray(config.agentes?.preguntarAntes) ? config.agentes.preguntarAntes.map(a => String(a).toLowerCase()) : []
+  const byFamily = new Map()
+  for (const agent of WORKER_AGENTS) {
+    if (!roster.includes(agent) || agent === implementer) continue
+    const { family } = familyOf(config, agent, 'review')
+    if (family === undefined || (own !== undefined && family === own)) continue
+    const current = byFamily.get(family)
+    if (current === undefined || (ask.includes(current) && !ask.includes(agent))) byFamily.set(family, agent)
+  }
+  const all = [...byFamily.values()]
+
+  return [...all.filter(agent => !ask.includes(agent)), ...all.filter(agent => ask.includes(agent))]
 }
 
 const AGY_DEFAULT_MODEL = 'gemini-4-neon-high'
@@ -1003,7 +1038,8 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const say = io.out
   if (!/^\d+$/.test(String(n ?? ''))) throw new Error(`Falta el número de ${review ? 'PR' : 'issue'}. Uso: orca-stack ${review ? 'revisar <pr>' : 'despachar <issue>'} <agente>.`)
   if (agent === 'codex-cc') throw new Error(CODEX_CC_REMOVED)
-  if (!AGENTS.includes(agent)) throw new Error(`Agente desconocido: ${agent ?? '(ninguno)'}. Los agentes son: ${AGENTS.join(', ')}.`)
+  if (agent === 'claude') throw new Error(CLAUDE_WORKER_REMOVED)
+  if (!WORKER_AGENTS.includes(agent)) throw new Error(`Agente desconocido: ${agent ?? '(ninguno)'}. Los agentes son: ${WORKER_AGENTS.join(', ')}.`)
   const paths = reviewPaths(rutas, review)
 
   const git = io.sh('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir', '--show-toplevel'], { cwd: io.cwd })
@@ -1173,9 +1209,6 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   let worktree = existingPath ?? '<worktree>'
   let branch = name
   try {
-    if (agent === 'claude' && !existing) {
-      ensureCandidateWorktreesExclude({ root, commonDir, io, dryRun, say })
-    }
     if (existing) {
       if (ps.status === 0) closeIdleTerminals(io, worktree, { dryRun, refusal: `Orca ya tiene un worktree para ${name} con un agente vivo: ${worktree}.` })
       say(`${dryRun ? '[simulación] ' : ''}Reutilizo ${worktree} desde ${previousHead} para revisar ${sha}.`)
@@ -1531,7 +1564,8 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   }
   if (perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
   if (rdd && agent !== 'pi') throw new Error(`--rdd solo vale para un PR de pi (Implementador: ${agent}).`)
-  if (rdd && !rddMode(config, agent)) throw new Error('--rdd necesita agentes.pi.review: "rdd" en la config del repo.')
+  const rddFallback = agent === 'pi' && Array.isArray(config.agentes?.usa) && crossFamilyReviewers(config, 'pi', rosterOf(config, (io.now ?? Date.now)())).length === 0
+  if (rdd && !rddMode(config, agent) && !rddFallback) throw new Error('--rdd necesita agentes.pi.review: "rdd" en la config del repo.')
   const consent = rddConsentPolicy(config, agent)
 
   const sha = pr.headRefOid

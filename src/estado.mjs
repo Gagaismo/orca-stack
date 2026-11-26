@@ -1,6 +1,6 @@
 import { repoWorktrees } from './avisar.mjs'
 import { isPending, isStatus, latestChecks } from './checks.mjs'
-import { FAMILIES, blockOf, defaultIo, familyOf, loadConfig } from './despacho.mjs'
+import { FAMILIES, WORKER_AGENTS, crossFamilyReviewers, defaultIo, familyOf, loadConfig, rosterOf } from './despacho.mjs'
 import { commitOf, markerLines, markerValue, namesCommit, normalizeBody } from './marcas.mjs'
 import { baseMigrations, migrationSpec, openReservations, orderBlockers, rawNumberOf } from './migraciones.mjs'
 import { setCard } from './orca.mjs'
@@ -118,7 +118,7 @@ const budgetStopOf = (body, head) => {
 const rddBudgetStopped = (bodies, head) => bodies.some((body, at) => budgetStopOf(body, head) && rddRequestsOf(bodies.slice(0, at), head).length > 0)
 const rddMissing = (n, sha) =>
   `falta un review RDD limpio de pi con la lente risk sobre el commit ${sha} ` +
-  'o, si el RDD no entró en el presupuesto, dos reviews limpios de dos familias distintas de la de pi; eso último cuenta solo con un comentario cuya primera línea es ' +
+  'o, si el RDD no entró en el presupuesto, un review limpio de un agente del roster de otra familia distinta de la de pi; eso último cuenta solo con un comentario cuya primera línea es ' +
   `"RDD fuera de presupuesto: ${sha} (<motivo>)", publicado después de tu pedido RDD: sobre ese commit, y sin él los reviews de otras familias no lo reemplazan. ` +
   `Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).`
 const sameLenses = (a, b) => [...(a ?? [])].sort().join(',') === [...(b ?? [])].sort().join(',')
@@ -162,10 +162,14 @@ const riskDeny = (n, file, facts, config, now) => {
       `sin ella no sé quién puede revisarlo. Agregala con \`gh pr edit ${n} --body-file <archivo>\`.`
     )
   }
+  const roster = rosterOf(config, now)
+  const candidates = crossFamilyReviewers(config, facts.implementer, roster)
   const rdd = facts.implementer === 'pi' && config.agentes?.pi?.review === 'rdd'
+  const rddFallback = facts.implementer === 'pi' && candidates.length === 0
+  const rddAllowed = rdd || rddFallback
   const requested = one => one.reviewer === 'pi' && rddRequestsOf(facts.bodies.slice(0, one.at), facts.head).some(lenses => sameLenses(lenses, one.lenses))
   const posted = facts.posted.filter(one => namesCommit(one.commit, facts.head))
-  const reviews = posted.filter(one => one.lenses === undefined || (rdd && requested(one)))
+  const reviews = posted.filter(one => one.lenses === undefined || (rddAllowed && requested(one)))
   const blocked = reviews.find(review => !review.clean)
   if (blocked !== undefined) {
     return (
@@ -197,39 +201,37 @@ const riskDeny = (n, file, facts, config, now) => {
   const skipped = []
   for (const reviewer of reviewers) {
     const { family, model } = familyOf(config, reviewer, 'review')
-    if (!agents.includes(reviewer)) skipped.push(`${reviewer}: no es un agente del stack`)
+    if (!WORKER_AGENTS.includes(reviewer)) skipped.push(`${reviewer}: no es un agente worker del stack`)
     else if (family === undefined && model === undefined) skipped.push(`${reviewer}: no tiene modelo para revisar en agentes.modelos, así que no sé su familia`)
     else if (family === undefined) skipped.push(`${reviewer}: su modelo ${model} no tiene una familia reconocida (agregá su patrón en FAMILIES)`)
     else if (family !== own) covered.add(family)
   }
-  if (covered.size >= 2) return undefined
+  if (covered.size >= 1) return undefined
 
-  const usa = config.agentes?.usa ?? []
-  const ask = config.agentes?.preguntarAntes ?? []
-  const options = new Map()
-  for (const agent of agents) {
-    const { family } = familyOf(config, agent, 'review')
-    if (usa.includes(agent) && blockOf(config, agent, now) === undefined && family !== undefined && family !== own && !covered.has(family)) {
-      const current = options.get(family)
-      if (current === undefined || (ask.includes(current) && !ask.includes(agent))) options.set(family, agent)
-    }
-  }
-  const have = covered.size === 0 ? 'Hay 0' : `Hay 1 (${[...covered].join(', ')})`
   const notCounted = skipped.length === 0 ? '' : ` No cuento ${skipped.join('; ')}.`
-  const missing = 2 - covered.size
-  const picks = [...options.values()].slice(0, missing)
-  const codexBlocked = usa.includes('codex') && blockOf(config, 'codex', now) !== undefined
-  const next =
-    picks.length < missing
-      ? codexBlocked
-        ? ' Esperá a que codex vuelva.'
-        : ' Con los agentes disponibles (agentes.usa, sin bloqueos) no alcanzan las familias: decidilo con el humano.'
-      : ` Corré ${picks.map(agent => `\`orca-stack revisar ${n} ${agent}\``).join(' y ')}.` +
-        picks.filter(agent => ask.includes(agent)).map(agent => ` ${agent} está en preguntarAntes: pedile el OK al humano y agregá --confirmado.`).join('')
+  if (candidates.length > 0) {
+    const ask = Array.isArray(config.agentes?.preguntarAntes) ? config.agentes.preguntarAntes.map(a => String(a).toLowerCase()) : []
+    const pick = candidates[0]
+    const askNote = ask.includes(pick) ? ` ${pick} está en preguntarAntes: pedile el OK al humano y agregá --confirmado.` : ''
+
+    return (
+      `${prefix} y lo escribió pi: falta un review limpio sobre el commit ${sha} de un agente del roster ` +
+      `de otra familia de modelo distinta de la de pi (${own ?? '?'}).${notCounted} ` +
+      `Corré \`orca-stack revisar ${n} ${pick}\`.${askNote}`
+    )
+  }
+  if (rdd && rddBudgetStopped(facts.bodies, facts.head)) {
+    return `${prefix} y lo escribió pi: el review RDD se detuvo por presupuesto y no hay otro agente de otra familia disponible en el roster (${own ?? '?'}): decidilo con el humano.${notCounted}`
+  }
+  const unrequested = posted.some(one => one.reviewer === 'pi' && one.lenses !== undefined && !requested(one))
+    ? ' Un review RDD de pi que main no pidió antes, con esas lentes y sobre ese commit (el comentario `RDD: <sha> (<lentes>)` que publica `orca-stack rebote --rdd`), no cuenta.'
+    : ''
+  const noRisk = rddReviews.length > 0 ? ' El review RDD de pi sobre ese commit no cuenta: no tiene la lente risk.' : ''
 
   return (
-    `${prefix} y lo escribió pi: faltan reviews limpios sobre el commit ${sha} de dos familias de modelo distintas ` +
-    `que no sean la de pi (${own ?? '?'}). ${have}.${notCounted}${next}`
+    `${prefix} y lo escribió pi: no hay otro agente de otra familia disponible en el roster; ` +
+    `falta un review RDD limpio de pi con la lente risk sobre el commit ${sha}.${notCounted} ` +
+    `Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).${noRisk}${unrequested}`
   )
 }
 
@@ -360,7 +362,12 @@ const evaluate = (pr, config, root, io, now, ctx) => {
   else if (String(pr.mergeable ?? '').toUpperCase() === 'CONFLICTING') falta.push('el PR está en conflicto con la base')
 
   const implementer = implementerOf(pr.body)
+  const hasUsa = Array.isArray(config.agentes?.usa)
+  const roster = rosterOf(config, now)
+  const candidates = implementer ? crossFamilyReviewers(config, implementer, roster) : []
   const rdd = implementer === 'pi' && config.agentes?.pi?.review === 'rdd'
+  const rddFallback = implementer === 'pi' && hasUsa && candidates.length === 0
+  const rddAllowed = rdd || rddFallback
   // #377: the waiver and, while it applies, the committed riesgo come from the base branch on GitHub (an agent can empty
   // riesgo in its checkout, not on the protected base).
   const committed = baseConfigOf(pr, pr.baseRefName || config.ramaBase || 'main', root, io)
@@ -375,7 +382,7 @@ const evaluate = (pr, config, root, io, now, ctx) => {
   })
   const requested = one => one.reviewer === 'pi' && rddRequestsOf(bodies.slice(0, one.at), head).some(lenses => sameLenses(lenses, one.lenses))
   // An RDD review main did not ask for on this head is not a review at all (#391): it neither counts nor blocks.
-  const reviews = posted.filter(one => one.lenses === undefined || (rdd && requested(one)))
+  const reviews = posted.filter(one => one.lenses === undefined || (rddAllowed && requested(one)))
   const onHead = reviews.filter(one => namesCommit(one.commit, head))
   const marks = (marker, enabled = true) => (enabled ? bodies.flatMap((body, at) => (markerValue(body, marker) === undefined ? [] : [{ at, commit: commitOf(body) }])) : [])
   const mainMarks = [...marks('Verificado por main'), ...marks('Decidido por main')]
@@ -405,8 +412,16 @@ const evaluate = (pr, config, root, io, now, ctx) => {
       } else if (latest.size > 0 || staleSin) {
         for (const [reviewer, commit] of latest) falta.push(`(b) el review de ${reviewer} nombra el commit ${commit.slice(0, 7)}, no el head ${sha7}`)
         if (staleSin) falta.push(`(b) el Sin review: nombra el commit ${staleSin.commit.slice(0, 7)}, no el head ${sha7}`)
+      } else if (rddFallback && !rdd) {
+        falta.push(`(a) falta un review RDD limpio de pi sobre ${sha7} (no hay otro agente de otra familia disponible en el roster). Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).`)
       } else {
-        falta.push(`(a) falta un review sin bloqueos sobre ${sha7} de alguien que no sea ${implementer}${rdd ? ' (o un review RDD pedido con RDD:, o un Sin review:)' : ''}`)
+        let next = ''
+        if (!rdd && hasUsa && candidates.length > 0) {
+          const ask = Array.isArray(config.agentes?.preguntarAntes) ? config.agentes.preguntarAntes.map(a => String(a).toLowerCase()) : []
+          const pick = candidates[0]
+          next = `. Corré \`orca-stack revisar ${n} ${pick}\`.` + (ask.includes(pick) ? ` ${pick} está en preguntarAntes: pedile el OK al humano y agregá --confirmado.` : '')
+        }
+        falta.push(`(a) falta un review sin bloqueos sobre ${sha7} de alguien que no sea ${implementer}${rdd ? ' (o un review RDD pedido con RDD:, o un Sin review:)' : ''}${next}`)
         for (const one of counted) falta.push(`(a) el review de ${one.reviewer} ${coverageOf(one.body, riesgo).why}: no cuenta`)
       }
     }
@@ -429,7 +444,7 @@ const evaluate = (pr, config, root, io, now, ctx) => {
   const shown = onHead.map(one => `${one.lenses ? `${one.reviewer}(RDD:${[...one.lenses].sort().join(',')})` : one.reviewer}@${sha7}${one.clean ? '' : ':bloquea'}`)
   if (mainOnHead.length > 0) shown.push(`main@${sha7}`)
   if (sinOnHead.length > 0) shown.push(`sin-review@${sha7}`)
-  if (rdd) {
+  if (rddAllowed) {
     const asked = bodies.flatMap((body, at) => {
       const lenses = rddRequestOf(body, head)
       return lenses && !onHead.some(one => one.lenses && one.at > at && sameLenses(one.lenses, lenses)) ? [`rdd-pedido(${lenses.join(',')})@${sha7}`] : []

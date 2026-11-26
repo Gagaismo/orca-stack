@@ -109,8 +109,8 @@ const briefPath = () => path.join(home, 'orca', 'briefs', 'proj-7.md')
 const workerStart = (agent, run = 'run_main') => ['worker-start', '--run', run, '--terminal', 'term_1', '--spec-file', briefPath(), '--task-title', `#7 ${agent}`, '--json']
 
 describe('#397 despachar: supervised start', () => {
-  test('S2: despachar starts claude, codex, agy and pi with worker-start in the Run bound to main, after the lock, the worktree and the brief', async () => {
-    for (const agent of ['claude', 'codex', 'agy', 'pi']) {
+  test('S2: despachar starts codex, agy and pi with worker-start in the Run bound to main, after the lock, the worktree and the brief', async () => {
+    for (const agent of ['codex', 'agy', 'pi']) {
       const env = fakeIo()
       assert.equal(await dispatch('ticket', { n: '7', agent }, env.io), 0, agent)
       assert.deepEqual(env.orchestration(), [['run-current', '--json'], workerStart(agent)], agent)
@@ -154,7 +154,7 @@ describe('#397 despachar: supervised start', () => {
     ]
     for (const [verb, orch, message] of cases) {
       const env = fakeIo(orch)
-      await assert.rejects(dispatch('ticket', { n: '7', agent: 'claude' }, env.io), error => {
+      await assert.rejects(dispatch('ticket', { n: '7', agent: 'codex' }, env.io), error => {
         assert.equal(error.message, message, verb)
         return true
       })
@@ -175,8 +175,8 @@ describe('#397 despachar: supervised start', () => {
   test('S3: a worker-start whose outcome is unknown keeps the assignee and says how to check whether the worker is running', async () => {
     const unknown = { status: 1, stdout: JSON.stringify({ ok: false, error: { code: 'outcome_unknown', message: 'worker start outcome unknown after delivering the spec' }, result: { status: 'outcome_unknown', stage: 'deliver', requestId: 'req_9', dispatchId: 'ctx_9' } }), stderr: '' }
     const env = fakeIo({ 'worker-start': unknown })
-    await assert.rejects(dispatch('ticket', { n: '7', agent: 'claude' }, env.io), error => {
-      assert.equal(error.message, 'orca orchestration worker-start falló: worker start outcome unknown after delivering the spec\nEl resultado de worker-start es desconocido (outcome_unknown): el worker de #7 claude puede estar corriendo, así que el issue sigue asignado. Comprobalo con `orca orchestration request-show --request req_9 --json`.')
+    await assert.rejects(dispatch('ticket', { n: '7', agent: 'codex' }, env.io), error => {
+      assert.equal(error.message, 'orca orchestration worker-start falló: worker start outcome unknown after delivering the spec\nEl resultado de worker-start es desconocido (outcome_unknown): el worker de #7 codex puede estar corriendo, así que el issue sigue asignado. Comprobalo con `orca orchestration request-show --request req_9 --json`.')
       return true
     })
     assert.ok(!env.calls.some(c => c.join(' ').includes('--remove-assignee')))
@@ -202,7 +202,7 @@ describe('#430 despachar: worktree card', () => {
   const cardSet = agent => ['orca', 'worktree', 'set', '--worktree', `path:${worktree}`, '--comment', `#7 dispatched to ${agent}`, '--workspace-status', 'in-progress', '--json']
 
   test('#430 S1: despachar sets the card comment "#<n> dispatched to <agent>" and in-progress on the new worktree right after creating it; the issue link stays on create', async () => {
-    for (const agent of ['claude', 'codex', 'agy', 'pi']) {
+    for (const agent of ['codex', 'agy', 'pi']) {
       const env = fakeIo()
       assert.equal(await dispatch('ticket', { n: '7', agent }, env.io), 0, agent)
       assert.deepEqual(env.cards(), [cardSet(agent)], agent)
@@ -246,20 +246,20 @@ describe('#431 despachar: out of quota right after the launch', () => {
     let active = 'c1'
     return args => {
       if (args[1] === 'select') active = args[args.indexOf('--account') + 1]
-      return json({ ok: true, result: { claude: { accounts: [{ id: 'c1' }, { id: 'c2' }], activeAccountId: active } } })
+      return json({ ok: true, result: { codex: { accounts: [{ id: 'c1' }, { id: 'c2' }], activeAccountId: active } } })
     }
   }
   const accountCalls = env => env.calls.filter(c => c[0] === 'orca' && c[1] === 'account').map(c => c.join(' '))
 
-  test('S8: a quota stop at launch selects another claude account and relaunches the worker once in the same run; a second quota fails as today', async () => {
+  test('S8: a quota stop at launch selects another codex account and relaunches the worker once in the same run; a second quota fails as today', async () => {
     const env = fakeIo({}, { account: switcher(), quota: 1 })
-    assert.equal(await dispatch('ticket', { n: '7', agent: 'claude' }, env.io), 0)
-    assert.deepEqual(accountCalls(env), ['orca account list --agent claude --json', 'orca account select --agent claude --account c2 --json'])
-    assert.ok(env.out.includes('cuenta cambiada: claude c1 → c2'))
+    assert.equal(await dispatch('ticket', { n: '7', agent: 'codex' }, env.io), 0)
+    assert.deepEqual(accountCalls(env), ['orca account list --agent codex --json', 'orca account select --agent codex --account c2 --json'])
+    assert.ok(env.out.includes('cuenta cambiada: codex c1 → c2'))
     assert.equal(env.orchestration().filter(c => c[0] === 'worker-start').length, 2)
 
     const twice = fakeIo({}, { account: switcher(), quota: 2 })
-    await assert.rejects(() => dispatch('ticket', { n: '7', agent: 'claude' }, twice.io), /term_2\) muestra un límite de cuota/)
+    await assert.rejects(() => dispatch('ticket', { n: '7', agent: 'codex' }, twice.io), /term_2\) muestra un límite de cuota/)
     assert.equal(accountCalls(twice).length, 2)
   })
 })

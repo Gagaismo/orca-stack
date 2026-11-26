@@ -13,16 +13,16 @@ import { mergePluginDirs, removePluginDirs } from '../src/settings.mjs'
 import { cmdWrapper, render, shWrapper } from '../src/templates.mjs'
 import { ROOT } from './helpers.mjs'
 
-test('revisar help describes same-family refusal and the pi/claude exception', () => {
+test('revisar help describes same-family refusal and ADR 0006 worker roster', () => {
   const help = execFileSync(process.execPath, [path.join(ROOT, 'bin', 'orca-stack.mjs'), 'revisar', '--help'], { encoding: 'utf8' })
   assert.match(help, /misma familia/)
-  assert.match(help, /pi y claude pueden revisarse entre s\u00ed/)
+  assert.match(help, /agentes: pi, agy, codex/)
   assert.doesNotMatch(help, /codex-cc/)
 })
 
-test('issue 283 Rule 1: dispatch help lists only supported agents', () => {
+test('issue 283 Rule 1: dispatch help lists only supported worker agents', () => {
   const help = execFileSync(process.execPath, [path.join(ROOT, 'bin', 'orca-stack.mjs'), 'despachar', '--help'], { encoding: 'utf8' })
-  assert.match(help, /agentes: claude, agy, codex, pi/)
+  assert.match(help, /agentes: pi, agy, codex/)
   assert.doesNotMatch(help, /codex-cc/)
 })
 

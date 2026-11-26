@@ -141,7 +141,7 @@ Sirve de entrada para \`/retro\`.
 `,
   despachar: `orca-stack despachar <issue> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--dry-run]
 
-Desde el checkout principal del repo (agentes: claude, agy, codex, pi). Se niega si el setup está pendiente, si el
+Desde el checkout principal del repo (agentes: pi, agy, codex; claude ya no es un agente worker, ADR 0006). Se niega si el setup está pendiente, si el
 agente no está en agentes.usa, si está en agentes.preguntarAntes sin --confirmado, si el issue está cerrado o asignado, o si ya hay
 un worktree o un agente vivo para ese ticket. Asigna el issue, crea el worktree con \`orca worktree create\`, escribe el brief en
 ~/orca/briefs, comprueba que cada ruta que cita exista en el worktree, lanza el agente en una terminal de Orca y lo arranca con
@@ -175,8 +175,8 @@ pin | global)" y el brief guarda la misma línea.
 `,
   revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--rutas <a,b>] [--dry-run]
 
-Igual que despachar, para un review: worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
-(línea \`Implementador:\`) o si el agente usa un modelo de la misma familia (según \`agentes.modelos\`; pi y claude pueden revisarse entre sí).
+Igual que despachar, para un review (agentes: pi, agy, codex; claude ya no es un agente worker, ADR 0006): worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
+(línea \`Implementador:\`) o si el agente usa un modelo de la misma familia (según \`agentes.modelos\`).
 Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, sin un agente trabajando, y su HEAD anterior alcanza el nuevo head del PR; rechaza el mismo head (salvo con --rutas), los commits locales y los perfiles de Pi distintos.
 Las terminales en done y las shells vacías de ese worktree las cierra sola antes de reutilizarlo, y dice cuáles cerró.
 Con --rutas <a,b> (rutas separadas por coma) el review lee solo esas rutas y lista en ## Cobertura lo que leyó (Leído:) y lo que no (Sin leer:);
@@ -211,7 +211,7 @@ Con pi usa el perfil que fija el worktree (.pi/gentle-ai/profile.json; --perfil-
 lo eligen y se escribe el pin; sin ninguno se niega como despachar, antes de mover el worktree.
 Con --continuar retoma al autor que se cortó antes de pushear (por ejemplo, sin cuota): exige que el último marcador \`Rebote*\` sea del head, sin agente vivo y con el brief del rebote; acepta el worktree sucio, no publica marcador ni suma a los límites, y solo pi retoma la misma sesión (\`--session-id\`): claude, codex y agy arrancan una sesión nueva con el mismo brief. Si sigue sin cuota, falla con la hora de reset y no reintenta. No acepta --nota.
 Con --rdd <lentes> (de 1 a 4 distintas entre risk, resilience, readability, reliability, separadas por coma) le pide a pi un review RDD de su propio PR:
-solo con \`Implementador: pi\` y agentes.pi.review: "rdd" en la config. No exige review bloqueante ni mira CI o conflictos; el brief (brief-rdd.md)
+solo con \`Implementador: pi\` y agentes.pi.review: "rdd" en la config (o cuando el roster activo no tiene otro agente de otra familia). No exige review bloqueante ni mira CI o conflictos; el brief (brief-rdd.md)
 le pide publicar \`Revisor: pi (RDD: <lentes>)\` y \`Commit: <sha>\`. No publica marcador \`Rebote*\`: publica en el PR \`RDD: <sha> (<lentes>)\`, el pedido sin el que estado no cuenta el review.
 Se niega si ya hay sobre el head un review RDD de pi con ese pedido, y no vale con --continuar (su brief y su sesión van aparte: -rdd).
 Cierra sola las terminales en done y las shells vacías del worktree, y dice cuáles cerró; se niega solo con un agente trabajando.
@@ -602,7 +602,7 @@ export const main = async (argv, io) => {
       case 'sesiones':
         return await sesionesCommand(flags)
       case 'despachar':
-        return await despacharCommand(flags, rest[1], rest[2])
+        return await despacharCommand(flags, rest[1], rest[2], io)
       case 'revisar':
         return await revisarCommand(flags, rest[1], rest[2], io)
       case 'rebote':
