@@ -30,9 +30,9 @@ describe('#338 RDD review mode for pi PRs', () => {
     assert.ok(seven.includes('Salvo un `Sin review:` o un review RDD, que siempre tienen que nombrar el `headRefOid` actual (se repiten en cada head nuevo), los comentarios de (a) siguen contando con el `Commit:` anterior solo si el head nuevo es un merge hecho por GitHub'), seven)
   })
 
-  test('Rules 5 and 6: MAIN.md step 6 says rebote --rdd posts the request puente-gentle needs', () => {
+  test('Rules 5 and 6: MAIN.md step 6 says rebote --rdd posts the request estado needs', () => {
     const six = step(6)
-    assert.ok(six.includes('`rebote --rdd` publica en el PR tu pedido, `RDD: <sha> (<lentes>)`, y `puente-gentle` solo cuenta un review RDD de pi con ese marcador sobre el mismo head y con las mismas lentes.'), six)
+    assert.ok(six.includes('`rebote --rdd` publica en el PR tu pedido, `RDD: <sha> (<lentes>)`, y `estado` solo cuenta un review RDD de pi con ese marcador sobre el mismo head y con las mismas lentes.'), six)
     assert.ok(six.includes('Si la corrección acotada de RDD cambió el head, tu pedido no lo nombra'))
   })
 

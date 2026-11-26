@@ -63,7 +63,6 @@ describe('#429 Remove the Ponytail perk', () => {
       assert.doesNotMatch(shWrapper(agent, { caveman: true }), /ORCA_STACK_PONYTAIL_LEVEL/)
     }
     assert.doesNotMatch(read(path.join(ROOT, 'shared', 'orca-config.ts')), /ponytail/i)
-    assert.doesNotMatch(read(path.join(ROOT, 'mods', 'puente-gentle', 'hooks', 'puente.ts')), /ORCA_STACK_PONYTAIL_LEVEL/)
     assert.doesNotMatch(read(path.join(ROOT, 'src', 'despacho.mjs')), /ORCA_STACK_PONYTAIL_LEVEL|SHORTCUT_EXCUSE/)
     assert.doesNotMatch(read(path.join(ROOT, 'assets', 'stack', 'brief-ticket.md')), /SHORTCUT_EXCUSE/)
 

@@ -695,7 +695,7 @@ describe('#412 re-vendor the three pstack principles from 0.15.43 (2f87c85)', ()
     assert.deepEqual(provenance.skills.arena, {
       adapted: true,
       upstreamSha256: 'd0adeca6c9b19d43d90ed8f0484f0ddd362f05006d628b8f4cc6c9b55fa4d2b3',
-      shippedSha256: '7e4a44eedfaa02ea9333b7b6210074078ba1c938ba7bc03f1a044155afbcaa4c',
+      shippedSha256: '3a99f978487abc6cecd6789e8952564fdb9ef7908b913c0d9f46477b8003f7f7',
     })
     assert.deepEqual(provenance.skills.swarm, {
       adapted: true,

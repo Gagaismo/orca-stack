@@ -117,7 +117,7 @@ describe('gear contract', () => {
 
   test('ticket rule 11: design arena verdict remains a recommendation for the human', () => {
     assert.match(arena, /El veredicto de una arena de dise\u00F1o es una recomendaci\u00F3n y decide el humano/)
-    assert.match(arena, /En una puerta de una v\u00EDa la arena nunca reemplaza el segundo review ni la consulta a Gentle Shell/)
+    assert.match(arena, /En una puerta de una v\u00EDa la arena nunca reemplaza el segundo review\./)
     assert.match(arena, /El veredicto de una arena de dise\u00F1o es una recomendaci\u00F3n y decide el humano/)
   })
 
@@ -198,6 +198,7 @@ describe('gear contract', () => {
       [...gearList.matchAll(/^- \*\*(K\d+) /gm)].map(([, knob]) => knob),
       Array.from({ length: 11 }, (_, index) => `K${index + 1}`),
     )
+    assert.match(gearList, /^- \*\*K4 \u2014 Retired\*\*/m)
   })
 
   test('rule 11: init writes the gear contract and fixed markers into AGENTS.md', () => {

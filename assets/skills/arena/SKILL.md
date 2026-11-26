@@ -41,8 +41,6 @@ Four compensations:
 3. A judge with a clean context that does not know which candidate the owner prefers;
 4. Executed checks, such as tests or the suite, where possible.
 
-A Gentle Shell consult may add a second opinion, but adds no new family.
-
 The judge sees the rubric and the candidates by path label, scores each criterion, and recommends a base with rationale. It runs in parallel with the owner's reading in Phase D. Don't spawn it while candidates are still writing.
 
 ## Phase D: Pick a base

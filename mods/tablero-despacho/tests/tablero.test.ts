@@ -189,12 +189,11 @@ test('loads PRs, draws the band and the pane, and the buttons send prompts', asy
   )
   await ui.press({ key: 'review:612' })
   await ui.press({ key: 'status:613' })
-  await ui.press({ key: 'gentle:613' })
+  expect(await ui.find({ type: 'Button', key: 'gentle:613' })).toBeUndefined()
   await ui.press({ key: 'merge:612' })
   expect(h.sent).toEqual([
     'Lanzá el review del PR #612 con agy',
     'Fijate el PR #613 y decime cómo está',
-    'Consultá a Gentle Shell sobre el PR #613',
     'Si no hay bloqueos, mergeá el PR #612',
   ])
 

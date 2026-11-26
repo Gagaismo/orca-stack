@@ -12,7 +12,7 @@ import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from '.
 
 // Source of truth: shared/orca-config.ts (FAMILIES, familyOf, blockOf), which explains the rules. Duplicated because
 // the mods cannot import src/ and Node 20 cannot import TypeScript; test/units.test.mjs compares the literal and runs
-// shared/familias.json against both sides.
+// shared/familias.json against it.
 // BEGIN FAMILIES
 export const FAMILIES = {
   "agents": ["claude", "agy", "codex", "pi"],
@@ -29,10 +29,8 @@ export const FAMILIES = {
 export const AGENTS = FAMILIES.agents
 const CODEX_CC_REMOVED = 'codex-cc ya no existe en orca-stack (Command Code se elimin\u00F3 el 2026-10-24); us\u00E1 codex.'
 
-// Source of truth: mods/puente-gentle/hooks/puente.ts (ORCA_VARS_CLEARED). Duplicated because the mod is TypeScript
-// that can only import its own folder. The launcher clears only the stack markers of that list: Orca's managed pi
-// extension (orca-agent-status.ts) reports pi's card state through the Orca pane variables, so a worker keeps them,
-// while the consult clears them too because it runs inside claude's pane (#277).
+// Stack markers cleared when launching pi: Orca's managed pi extension (orca-agent-status.ts) reports pi's card state
+// through the Orca pane variables, so a worker keeps those while clearing ORCA_STACK_* (#277, #391).
 const STACK_VARS_CLEARED = [
   'ORCA_STACK_AGENT', 'ORCA_STACK_MODE', 'ORCA_STACK_POLICY_PATH',
   'ORCA_STACK_CAVEMAN_LEVEL',
@@ -1542,7 +1540,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (continuar && nota !== undefined) throw new Error('--nota no vale con --continuar: el autor sigue con el brief del rebote.')
   if (continuar) return await continueBounce({ n, pr, agent, root, repo, config, commonDir, perfilPi, dryRun }, io)
   const allReviews = [...(pr.reviews ?? []), ...(pr.comments ?? [])]
-  // As puente-gentle's prFacts, reviewsOf and rddRequestOf: comments and reviews in the order they were posted, the
+  // Same rules as src/estado.mjs (the source of truth, #391): comments and reviews in the order they were posted, the
   // first five lines, a sha abbreviated to 7+ characters still names the head, and an RDD review counts only after
   // main's request with the same lenses: a comment of its own whose first non-empty line is `RDD: <sha> (<lentes>)`
   // and that is not a review (no `Revisor:` line, no `## BLOQUEA`).
@@ -1765,7 +1763,7 @@ export const reboteCommand = async (flags, n, io = defaultIo()) => {
   if (rdd) say(`${dryRun ? '[simulación] ' : ''}RDD: ${sha} (${lenses.join(', ')})`)
   if (!dryRun) {
     const markerPath = path.join(io.home, 'orca', 'briefs', `${stem}-comment.md`)
-    // The RDD marker is main's request, the only one puente-gentle accepts an RDD review of pi's own PR for (#338).
+    // The RDD marker is main's request, the only one estado accepts an RDD review of pi's own PR for (#338, #391).
     const markersToPost = rdd ? [`RDD: ${sha} (${lenses.join(', ')})`] : [reviewBlockers.length > 0 ? `Rebote: ${sha}` : null, reviewBlockers.length > 0 ? `Ronda: ${round}` : null, failedChecks.length > 0 ? `Rebote CI: ${sha}` : null, conflict ? `Rebote conflicto: ${sha}` : null].filter(Boolean)
     io.writeFile(markerPath, `${markersToPost.join('\n')}\n`)
     // The author is already running: a lost marker would let the next rebote bounce again, so retry and then fail loud.

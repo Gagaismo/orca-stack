@@ -17,13 +17,15 @@ export const PI_MIN_VERSION = '1.2.0'
 // Oldest global Engram server with which Gentle Shell (gentle-pi PINNED.gentlePi) keeps its memory on.
 export const ENGRAM_MIN_VERSION = '3.4.0'
 
-// Pi packages installed with `pi install npm:<name>@<version>`. gentle-engram gives pi workers and the consult the
+// Pi packages installed with `pi install npm:<name>@<version>`. gentle-engram gives pi workers the
 // memory tools on the human's global Engram server (~/.engram), shared with claude.
 export const PI_PACKAGES = [
   { name: 'gentle-pi', version: PINNED.gentlePi },
   { name: 'pi-claude-bridge', version: PINNED.claudeBridge },
   { name: 'gentle-engram', version: PINNED.gentleEngram },
 ]
+
+export const RETIRED_MODS = ['puente-gentle']
 
 // Provider wrappers. Their names never match the real binary, so they cannot call themselves.
 export const WRAPPERS = {

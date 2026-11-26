@@ -159,11 +159,6 @@ export const register: Register = on => {
                   onPress={() => send(prompts.status(pr.number))}
                 />
                 <Button
-                  key={`gentle:${pr.number}`}
-                  label="Consultar a Gentle Shell"
-                  onPress={() => send(prompts.gentle(pr.number))}
-                />
-                <Button
                   key={`merge:${pr.number}`}
                   label="Mergear"
                   onPress={() => send(prompts.merge(pr.number))}
