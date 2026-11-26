@@ -122,8 +122,6 @@ export const npmGlobalRoot = () => {
   return result.status === 0 ? result.stdout.trim().split(/\r?\n/)[0] || null : null
 }
 
-// Where the gentle-pi skills live, resolved the same way the puente-gentle mod does at runtime:
-// Pi's own package dir first, then the npm-global install.
 export const resolveGentleSkills = L => {
   const inPi = path.join(piModulesDir(L), 'gentle-pi', 'skills')
   if (existsSync(inPi)) {
