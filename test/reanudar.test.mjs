@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { describe, test } from 'node:test'
+import { after, describe, test } from 'node:test'
 
 import { main } from '../src/cli.mjs'
 import { defaultIo } from '../src/despacho.mjs'
@@ -11,19 +10,31 @@ import { upsertBlock } from '../src/marker.mjs'
 import { reanudarCommand } from '../src/reanudar.mjs'
 import { policyBlock } from '../src/templates.mjs'
 import { PACKAGE_ROOT } from '../src/util.mjs'
+import { cleanup, cli, git, tempDir } from './helpers.mjs'
 
 const ISSUE = '212'
 const URL = 'https://github.com/Gagaismo/orca-stack/issues/212#issuecomment-6205678817'
-const BRIEF_PATH = path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')
+const FIXTURE = tempDir('reanudar')
+const ROOT = path.join(FIXTURE, 'orca-stack')
+const HOME = path.join(FIXTURE, 'home')
+mkdirSync(ROOT)
+mkdirSync(HOME)
+writeFileSync(path.join(ROOT, '.orca-stack.json'), JSON.stringify({
+  setup: 'completo',
+  modo: 'multiagente',
+  ramaBase: 'main',
+  agentes: { usa: ['agy', 'codex', 'pi'], preguntarAntes: [] },
+}))
+after(() => cleanup(FIXTURE))
+const BRIEF_PATH = path.join(HOME, 'orca', 'briefs', 'orca-stack-212.md')
 const LINE = `Message from main: ${URL} . Continue the ticket per your brief: ${BRIEF_PATH}.`
-const ROOT = process.cwd()
 const WT = path.join(path.dirname(ROOT), 'orca-stack-212')
 const sendReceipt = { status: 0, stdout: JSON.stringify({ ok: true, result: { send: { accepted: true, prompt: { requestId: 'request-1', stages: ['input_accepted'], observation: 'supported' } } } }), stderr: '' }
 const json = value => ({ status: 0, stdout: JSON.stringify(value), stderr: '' })
 const ok = stdout => ({ status: 0, stdout, stderr: '' })
 const fail = stderr => ({ status: 1, stdout: '', stderr })
 
-const STORE = path.join('/home', '.pi', 'gentle-ai', 'profiles.json')
+const STORE = path.join(HOME, '.pi', 'gentle-ai', 'profiles.json')
 const PIN = path.join(WT, '.pi', 'gentle-ai', 'profile.json')
 const PROFILES = { active: 'OpusFull', profiles: {
   'opus-sonnet': { orchestrator: { model: 'claude-bridge/claude-opus-5-5', thinking: 'high' } },
@@ -43,14 +54,14 @@ const orchestrationDefault = args => {
   if (args[1] === 'worker-start') return json({ ok: true, result: { taskId: 'task_new', dispatchId: 'ctx_new', status: 'dispatched' } })
   return fail(`unexpected call: orca ${args.join(' ')}`)
 }
-const harness = ({ root = ROOT, home = '/home', state = 'done', agent = 'codex', screen = ['\u{273b} Baked for 2m 5s'], dirty = '', pr = false, comment = {}, send = sendReceipt, psDown = false, dryRun = false, agents, terminals, brief, now = () => 1760616000000 } = {}) => {
+const harness = ({ root = ROOT, home = HOME, state = 'done', agent = 'codex', screen = ['\u{273b} Baked for 2m 5s'], dirty = '', pr = false, comment = {}, send = sendReceipt, psDown = false, dryRun = false, agents, terminals, brief, now = () => 1760616000000 } = {}) => {
   const outputs = []
   const calls = []
   let createdAgent
   const files = {
-    [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')]: brief ?? 'Original ticket brief\nKeep this unchanged.\n',
+    [path.join(home, 'orca', 'briefs', 'orca-stack-212.md')]: brief ?? 'Original ticket brief\nKeep this unchanged.\n',
   }
-  if (brief === false) delete files[path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')]
+  if (brief === false) delete files[path.join(home, 'orca', 'briefs', 'orca-stack-212.md')]
   const io = {
     cwd: root, home, win: false, now, exists: file => file in files,
     readFile: file => { if (!(file in files)) throw new Error(`ENOENT ${file}`); return files[file] },
@@ -265,18 +276,18 @@ describe('orca-stack reanudar (#214)', () => {
     const dry = harness({ dryRun: true })
     assert.equal(await reanudarCommand({ dryRun: true }, ISSUE, URL, dry.io), 0)
     assert.equal(dry.sends().length, 0)
-    assert.deepEqual(Object.keys(dry.files), [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')])
+    assert.deepEqual(Object.keys(dry.files), [path.join(HOME, 'orca', 'briefs', 'orca-stack-212.md')])
     assert.ok(dry.outputs.some(line => line.includes(LINE)))
   })
 
   test('Rule 7: relaunches from the existing worktree with the original brief and answer URL; refuses dirty or restricted relaunches', async () => {
     const dry = harness({ state: null, screen: ['PS C:\\wt\\orca-stack-212>'], dryRun: true })
     assert.equal(await reanudarCommand({ dryRun: true }, ISSUE, URL, dry.io), 0)
-    const briefPath = path.join('/home', 'orca', 'briefs', 'orca-stack-212-reanudar.md')
+    const briefPath = path.join(HOME, 'orca', 'briefs', 'orca-stack-212-reanudar.md')
     assert.ok(dry.outputs.some(line => line.includes(`--worktree path:${WT}`)))
     assert.ok(dry.outputs.some(line => line.startsWith('[simulación] orca orchestration worker-start') && line.includes('orca-stack-212-reanudar.md')), dry.outputs.join('\n'))
     assert.ok(dry.outputs.some(line => line.includes(`Message from main: ${URL}`)))
-    assert.equal(dry.files[path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')], 'Original ticket brief\nKeep this unchanged.\n')
+    assert.equal(dry.files[path.join(HOME, 'orca', 'briefs', 'orca-stack-212.md')], 'Original ticket brief\nKeep this unchanged.\n')
     const dirty = harness({ state: null, screen: ['PS C:\\wt\\orca-stack-212>'], dirty: ' M file.js\n' })
     await assert.rejects(() => reanudarCommand({}, ISSUE, URL, dirty.io), /sucio/)
     assert.equal(dirty.sends().length, 0)
@@ -287,7 +298,7 @@ describe('orca-stack reanudar (#214)', () => {
     assert.equal(await reanudarCommand({}, ISSUE, URL, launch.io), 0)
     assert.equal(launch.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create').length, 1)
     assert.ok(launch.calls.some(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create' && call.args.includes(`path:${WT}`)))
-    const relaunchedBrief = launch.files[path.join('/home', 'orca', 'briefs', 'orca-stack-212-reanudar.md')]
+    const relaunchedBrief = launch.files[path.join(HOME, 'orca', 'briefs', 'orca-stack-212-reanudar.md')]
     assert.equal(relaunchedBrief, `Message from main: ${URL}\n\nOriginal ticket brief\nKeep this unchanged.\n`)
   })
 
@@ -295,7 +306,7 @@ describe('orca-stack reanudar (#214)', () => {
     const unknown = harness({ agents: [{ state: 'idle', agentType: 'codex' }, { state: 'done', agentType: 'codex' }] })
     await assert.rejects(() => reanudarCommand({}, ISSUE, URL, unknown.io), /estado que no conozco \(idle\)/)
     assert.equal(unknown.sends().length, 0)
-    assert.deepEqual(Object.keys(unknown.files), [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')])
+    assert.deepEqual(Object.keys(unknown.files), [path.join(HOME, 'orca', 'briefs', 'orca-stack-212.md')])
     const noState = harness({ agents: [{ agentType: 'codex' }], terminals: [] })
     await assert.rejects(() => reanudarCommand({}, ISSUE, URL, noState.io), /estado que no conozco \(sin estado\)/)
     assert.equal(noState.sends().length, 0)
@@ -331,7 +342,7 @@ describe('orca-stack reanudar (#214)', () => {
       .replaceAll('{{BRANCH}}', 'Gagaismo/orca-stack-212').replaceAll('{{BASE}}', 'main')
     const exited = harness({ agents: [], terminals: [], brief, dryRun: true })
     assert.equal(await reanudarCommand({ dryRun: true }, ISSUE, URL, exited.io), 0)
-    assert.ok(exited.outputs.includes('Lanzador (codex): "/home/orca/stack/scripts/codex-orca-stack.sh" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"'))
+    assert.ok(exited.outputs.includes(`Lanzador (codex): "${path.posix.join(HOME, 'orca', 'stack', 'scripts', 'codex-orca-stack.sh')}" -c features.fast_mode=false -c approval_policy="never" -c sandbox_mode="danger-full-access"`))
   })
 
   test('issue #277 Rule 4: a done pi TUI showing its idle prompt frame gets the resume line', async () => {
@@ -386,7 +397,7 @@ describe('orca-stack reanudar (#214)', () => {
   })
 
   test('#444 Rule 5: relaunching an exited pi worker sends one Enter when the brief is stuck in its input, and none when the input is empty', async () => {
-    const sessionDir = path.join('/home', '.pi', 'agent', 'sessions', 'wt')
+    const sessionDir = path.join(HOME, '.pi', 'agent', 'sessions', 'wt')
     const session = path.join(sessionDir, '2026-11-24T00-00-00-000Z_s.jsonl')
     const relaunch = input => {
       const h = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
@@ -419,7 +430,7 @@ describe('orca-stack reanudar (#214)', () => {
     for (const [reply, okLaunch] of [[{ role: 'assistant', content: [{ type: 'toolCall' }], stopReason: 'toolUse' }, true], [{ role: 'assistant', content: [{ type: 'text', text: AUTH }], stopReason: 'error', errorMessage: AUTH }, false]]) {
       const h = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
       h.io.gentleSkills = () => '/pi/skills'
-      const sessionDir = path.join('/home', '.pi', 'agent', 'sessions', 'wt')
+      const sessionDir = path.join(HOME, '.pi', 'agent', 'sessions', 'wt')
       const session = path.join(sessionDir, '2026-11-09T00-00-00-000Z_s.jsonl')
       h.io.listFiles = dir => (dir === path.dirname(sessionDir) ? [sessionDir] : dir === sessionDir ? [session] : [])
       h.io.modifiedAt = () => Number.MAX_SAFE_INTEGER
@@ -446,7 +457,7 @@ describe('orca-stack reanudar (#214)', () => {
     await assert.rejects(() => reanudarCommand({ dryRun: true }, ISSUE, URL, active.io), /no muestra un shell prompt y Orca no lista su agente/)
     assert.equal(active.sends().length, 0)
     assert.equal(active.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create').length, 0)
-    assert.deepEqual(Object.keys(active.files), [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')])
+    assert.deepEqual(Object.keys(active.files), [path.join(HOME, 'orca', 'briefs', 'orca-stack-212.md')])
     const idle = harness({ agents: [], screen: ['PS C:\\wt\\orca-stack-212>'], dryRun: true })
     assert.equal(await reanudarCommand({ dryRun: true }, ISSUE, URL, idle.io), 0)
   })
@@ -464,7 +475,7 @@ describe('orca-stack reanudar (#214)', () => {
       const blocked = harness({ root, home, state: null, screen: ['PS C:\\wt\\orca-stack-212>'] })
       await assert.rejects(() => reanudarCommand({}, ISSUE, URL, blocked.io), /blocked for test/)
       assert.equal(blocked.sends().length, 0)
-      assert.deepEqual(Object.keys(blocked.files), [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')])
+      assert.deepEqual(Object.keys(blocked.files), [path.join(home, 'orca', 'briefs', 'orca-stack-212.md')])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -487,7 +498,7 @@ describe('orca-stack reanudar (#214)', () => {
     try {
       const gone = harness({ root, agents: [{ paneKey: 'tab-9:leaf-9', state: 'done', agentType: 'antigravity' }], terminals: [] })
       assert.equal(await reanudarCommand({}, ISSUE, URL, gone.io), 0)
-      assert.ok(gone.outputs.includes('Lanzador (agy): "/home/orca/stack/scripts/agy-orca-stack.sh" --dangerously-skip-permissions --model gemini-4-neon-high'), gone.outputs.join('\n'))
+      assert.ok(gone.outputs.includes(`Lanzador (agy): "${path.posix.join(HOME, 'orca', 'stack', 'scripts', 'agy-orca-stack.sh')}" --dangerously-skip-permissions --model gemini-4-neon-high`), gone.outputs.join('\n'))
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -544,16 +555,26 @@ describe('orca-stack reanudar (#214)', () => {
     assert.ok(contract.includes('worker-detenido #<n> <agente>: terminó sin abrir un PR'))
     assert.match(contract, /`orca-stack avisar` y `orca-stack reanudar` son las \u00FAnicas formas en que main llega a una terminal de worker/)
     assert.ok(contract.includes('orca-stack reanudar <issue> <url-del-comentario>'))
-    const init = spawnSync(process.execPath, [path.join(PACKAGE_ROOT, 'bin', 'orca-stack.mjs'), 'init'], { cwd: PACKAGE_ROOT, encoding: 'utf8' })
-    assert.equal(init.status, 0, init.stderr)
-    const agents = readFileSync(path.join(PACKAGE_ROOT, 'AGENTS.md'), 'utf8')
-    assert.ok(agents.includes('leé `~/orca/stack/MAIN.md` entero antes de actuar'))
-    const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
-    assert.equal(upsertBlock(agents, block), agents, 'init rendered the current managed contract block')
+    const dir = tempDir('init-rule10')
+    const initHome = path.join(dir, 'home')
+    const initRepo = path.join(dir, 'repo')
+    mkdirSync(initHome)
+    mkdirSync(initRepo)
+    try {
+      assert.equal(git(initRepo, 'init').status, 0)
+      const init = cli(initHome, ['init'], { cwd: initRepo })
+      assert.equal(init.status, 0, init.out)
+      const agents = readFileSync(path.join(initRepo, 'AGENTS.md'), 'utf8')
+      assert.ok(agents.includes('leé `~/orca/stack/MAIN.md` entero antes de actuar'))
+      const block = policyBlock({ policyPath: '~/orca/stack/ORCA-STACK.md', briefsPath: '~/orca/stack/ROLE-BRIEFS.md' })
+      assert.equal(upsertBlock(agents, block), agents, 'init rendered the current managed contract block')
+    } finally {
+      cleanup(dir)
+    }
   })
 
   test('Rule 1: reanudar sends line naming the absolute brief path to a paused worker', async () => {
-    const briefPath = path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')
+    const briefPath = path.join(HOME, 'orca', 'briefs', 'orca-stack-212.md')
     const expectedLine = `Message from main: ${URL} . Continue the ticket per your brief: ${briefPath}.`
     const h = harness()
     assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
@@ -565,7 +586,7 @@ describe('orca-stack reanudar (#214)', () => {
 
     const trasladoIssue = '11'
     const trasladoUrl = 'https://github.com/Gagaismo/traslado-programado-sys/issues/11#issuecomment-9999999999'
-    const trasladoBriefPath = path.join('/home', 'orca', 'briefs', 'traslado-programado-sys-11.md')
+    const trasladoBriefPath = path.join(HOME, 'orca', 'briefs', 'traslado-programado-sys-11.md')
     const trasladoExpectedLine = `Message from main: ${trasladoUrl} . Continue the ticket per your brief: ${trasladoBriefPath}.`
     const trasladoWt = path.join(path.dirname(ROOT), 'traslado-programado-sys-11')
     const trasladoH = harness({ brief: 'Original brief for traslado #11\n' })
@@ -586,7 +607,7 @@ describe('orca-stack reanudar (#214)', () => {
   })
 
   test('Rule 2: reanudar refuses before sending anything if the brief file does not exist', async () => {
-    const briefPath = path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')
+    const briefPath = path.join(HOME, 'orca', 'briefs', 'orca-stack-212.md')
     const h = harness({ brief: false })
     await assert.rejects(() => reanudarCommand({}, ISSUE, URL, h.io), error => {
       assert.match(error.message, /No encuentro el brief original/)
@@ -646,7 +667,7 @@ describe('orca-stack reanudar (#214)', () => {
       : base(cmd, args, opts))(exited.io.sh)
     assert.equal(await reanudarCommand({}, ISSUE, prUrl, exited.io), 0)
     assert.equal(exited.calls.filter(call => call.cmd === 'orca' && call.args[0] === 'terminal' && call.args[1] === 'create').length, 1)
-    const relaunchedBrief = exited.files[path.join('/home', 'orca', 'briefs', 'orca-stack-212-reanudar.md')]
+    const relaunchedBrief = exited.files[path.join(HOME, 'orca', 'briefs', 'orca-stack-212-reanudar.md')]
     assert.equal(relaunchedBrief, `Message from main: ${prUrl}\n\nOriginal ticket brief\nKeep this unchanged.\n`)
 
     // Refuses comment by another user
@@ -820,10 +841,10 @@ describe('reanudar: an open PR whose bounce stopped (#292)', () => {
 
 describe('main-autonomo T1: reanudar picks the worker and trusts what orca-stack recorded', () => {
   const PI_IDLE = ['● PR opened.', '╭─ ✿ ────────────────────────────╮', '│ type, or / for commands        │', '╰────────────────────────────────╯']
-  const briefLine = name => `Read and follow the brief in ${path.join('/home', 'orca', 'briefs', `${name}.md`)}`
+  const briefLine = name => `Read and follow the brief in ${path.join(HOME, 'orca', 'briefs', `${name}.md`)}`
   const term = (n, title, agentIdentity = title) => ({ handle: `term-${n}`, tabId: `tab-${n}`, leafId: `leaf-${n}`, title, agentIdentity, worktreePath: WT })
   const THREE = [term(1, 'codex'), term(2, 'claude'), term(3, 'codex')]
-  const BRIEF_ONLY = [path.join('/home', 'orca', 'briefs', 'orca-stack-212.md')]
+  const BRIEF_ONLY = [path.join(HOME, 'orca', 'briefs', 'orca-stack-212.md')]
   const sentTo = h => h.sends().map(({ args }) => args[args.indexOf('--terminal') + 1])
   const textOf = h => h.sends().map(({ args }) => args[args.indexOf('--text') + 1])
   const withRoot = (config, run) => async () => {
@@ -1022,7 +1043,7 @@ describe('#454 reanudar: the relaunch rebinds the Run task', () => {
   const exitedPi = () => {
     const h = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
     h.io.gentleSkills = () => '/pi/skills'
-    const sessionDir = path.join('/home', '.pi', 'agent', 'sessions', 'wt')
+    const sessionDir = path.join(HOME, '.pi', 'agent', 'sessions', 'wt')
     const session = path.join(sessionDir, '2026-11-25T00-00-00-000Z_s.jsonl')
     h.io.listFiles = dir => (dir === path.dirname(sessionDir) ? [sessionDir] : dir === sessionDir ? [session] : [])
     h.io.modifiedAt = () => Number.MAX_SAFE_INTEGER
@@ -1110,7 +1131,7 @@ describe('#454 reanudar: the relaunch rebinds the Run task', () => {
     }
   })
 
-  const BRIEF = path.join('/home', 'orca', 'briefs', 'orca-stack-212-reanudar.md')
+  const BRIEF = path.join(HOME, 'orca', 'briefs', 'orca-stack-212-reanudar.md')
   const OBJECTIVE = `orca-stack ${path.basename(ROOT)}: tickets despachados por main`
   const create = (title, run = RUN, terminal = 'term-new') => ['orchestration', 'worker-start', '--run', run, '--terminal', terminal, '--spec-file', BRIEF, '--task-title', title, '--json']
   const LISTED = [['orchestration', 'run-current', '--json'], ['orchestration', 'task-list', '--run', RUN, '--json']]
