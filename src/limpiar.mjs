@@ -1,4 +1,4 @@
-import { repoWorktrees, stackAgent } from './avisar.mjs'
+import { repoWorktrees, stackAgent } from './worker-terminals.mjs'
 import { defaultIo } from './despacho.mjs'
 import { setCard } from './orca.mjs'
 import { getCommonDir } from './repo.mjs'

@@ -1,9 +1,50 @@
 import path from 'node:path'
 
 import { AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, refuseMissingGentleAi, shellPrompt, supervisedTask, writePin, writeRddConsent } from './despacho.mjs'
-import { identityOf, isDialog, paneAgents, stackAgent, piIdle, readScreen, repoWorktrees, rowAt, validateAnswerComment, workerTerminals, worktreeRows } from './avisar.mjs'
 import { pendingAfterSwitch } from './orca.mjs'
+import { getStackAccount } from './repo.mjs'
 import { samePath } from './util.mjs'
+import { identityOf, paneAgents, readScreen, repoWorktrees, stackAgent, workerTerminals, worktreeRows } from './worker-terminals.mjs'
+
+const SPINNER_LINES = 25
+const DIALOG_LINES = 15
+const PI_FRAME = /^\s*╭?─ [✿❀❁✾] /u
+const PI_IDLE = /^\s*(?:╭─ ✿ ─+╮\s*$|─ ✿ waiting for input ─)/u
+const DIALOG = /trust this folder\?|Do you want to proceed\?/i
+const ESC_TO_CANCEL = /Esc to cancel/i
+const QUESTION = /\?\s*$/m
+const piFrame = screen => screen.slice(-SPINNER_LINES).findLast(line => PI_FRAME.test(line)) ?? ''
+const piIdle = screen => PI_IDLE.test(piFrame(screen))
+const isDialog = screen => {
+  const text = screen.slice(-DIALOG_LINES).join('\n')
+
+  return DIALOG.test(text) || (ESC_TO_CANCEL.test(text) && QUESTION.test(text))
+}
+const rowAt = (rows, worktree) => rows.find(row => row.path && samePath(row.path, worktree))
+
+// #128: every session shares one gh account, so a comment by any other account is not main's; only Respuesta de main: or Respuesta del humano: counts.
+export const validateAnswerComment = (item, url, root, remote, io) => {
+  const match = COMMENT_URL.exec(url)
+  if (!match || match[1].toLowerCase() !== remote.ownerRepo.toLowerCase()) {
+    throw new Error(`La URL tiene que ser la de un comentario de ${remote.ownerRepo} (\u2026/issues/<n>#issuecomment-<id> o \u2026/pull/<n>#issuecomment-<id>): ${url}`)
+  }
+  if (match[3] !== item) throw new Error(`La URL apunta a #${match[3]}, no a #${item}: el aviso apunta a la respuesta donde preguntó el worker.`)
+
+  const res = io.sh('gh', ['api', `repos/${remote.ownerRepo}/issues/comments/${match[4]}`], { cwd: root })
+  const comment = res.status === 0 ? parse(res) : undefined
+  if (!comment) throw new Error(`No pude leer el comentario ${url}: ${detail(res)}`)
+  const author = String(comment.user?.login ?? '').trim().toLowerCase()
+  const stack = getStackAccount(io)
+  if (author !== stack) throw new Error(`El comentario es de ${author || '(cuenta desconocida)'}, no de la cuenta del stack (${stack}).`)
+  if (!/^(?:Respuesta de main:|Respuesta del humano:)/.test(String(comment.body ?? '').trimStart())) {
+    throw new Error('El comentario no empieza con `Respuesta de main:` ni `Respuesta del humano:`: no es una respuesta para el worker.')
+  }
+  if (String(comment.html_url ?? '').toLowerCase() !== url.toLowerCase()) {
+    throw new Error(`El comentario ${match[4]} está en ${comment.html_url ?? '(sin URL)'}: la URL no apunta a donde dice.`)
+  }
+
+  return match
+}
 
 const LIVE = ['working', 'running', 'active', 'blocked', 'waiting']
 const ATTEMPTS_REL = ['orca-stack', 'reanudar.json']
@@ -180,7 +221,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (live.length === 1) {
     const state = String(live[0].state ?? live[0].status ?? '').toLowerCase()
     if (state === 'blocked' || state === 'waiting') throw new Error(`La terminal del agente de #${n} muestra un di\u{e1}logo (${state}): no reanudo encima.`)
-    throw new Error(`El agente de #${n} est\u{e1} working: us\u{e1} \`orca-stack avisar ${n} <url-del-comentario>\`.`)
+    throw new Error(`El agente de #${n} est\u{e1} working: mandale el cambio por el buz\u{f3}n del Run con \`orca orchestration send --to dispatch:<id> --subject "${n}: reglas cambiadas" --body "<url-del-comentario>"\`.`)
   }
 
   const done = agentRecords.filter(agent => stateOf(agent) === 'done')

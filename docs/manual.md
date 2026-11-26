@@ -96,7 +96,6 @@ Reglas que sostienen todo lo demás:
 | `revisar` | Despacha el review de un PR a otro agente | Checkout principal |
 | `rebote` | Relanza al autor de un PR bloqueado, con CI roja o en conflicto con la base | Checkout principal |
 | `brief-revision` | Worktree y brief de review para un subagente (modo `un-agente`) | Checkout principal |
-| `avisar` | Le toca el timbre a un worker con el turno en curso | Checkout principal |
 | `vigilar` | Monitor de una tanda de PRs | Checkout principal |
 | `estado` | Qué le falta a cada PR para el paso 7, de solo lectura (con `--json`, la atestación) | Checkout principal |
 | `limpiar` | Cierra terminales y saca worktrees de PRs mergeados o cerrados | Checkout principal |
@@ -105,7 +104,7 @@ Reglas que sostienen todo lo demás:
 | `planificar` | Abre una sesión de planificación interactiva en su propio worktree `docs/<slug>` | Checkout principal |
 | `sesiones` | Lista sesiones recientes de Claude, Pi y agy (entrada de `/retro`) | Cualquier carpeta |
 
-**Opciones generales.** `--dry-run` muestra cada acción sin escribir nada (vale en `global`, `init`, `remove`, `despachar`, `revisar`, `rebote`, `brief-revision`, `avisar`, `reanudar`, `vigilar` y `limpiar`). `--help` por comando da el detalle.
+**Opciones generales.** `--dry-run` muestra cada acción sin escribir nada (vale en `global`, `init`, `remove`, `despachar`, `revisar`, `rebote`, `brief-revision`, `reanudar`, `vigilar` y `limpiar`). `--help` por comando da el detalle.
 
 #### `global`
 
@@ -231,14 +230,6 @@ orca-stack brief-revision 15 --modelo claude-sonnet-5-5
 ```
 
 Solo para el modo `un-agente`: crea un worktree detached en el head del PR y un brief UTF-8; imprime además la ruta donde el subagente escribe el review (`~/orca/briefs/<repo>-revision-<pr>-subagente.review.md`). `--modelo` es obligatorio.
-
-#### `avisar`
-
-```bash
-orca-stack avisar 42 https://github.com/Gagaismo/orca-stack/issues/42#issuecomment-123 --dry-run
-```
-
-El timbre: le escribe al worker una sola línea fija, `Message from main: <url>`, mientras su turno sigue en curso. Avisa a `claude` y a `pi` (reconoce el turno en curso por el spinner de Claude o por el marco del prompt de Gentle Shell con su fase, como `╭─ ❀ implementing…`); se niega con codex y agy, si el turno ya terminó, si la terminal muestra un shell o un diálogo, si hay más de un agente vivo, o si el comentario no es de la cuenta del stack o no empieza con `Respuesta de main:` o `Respuesta del humano:`. Nunca reintenta: sin recibo de entrega informa la falla. No es la forma de responder la pregunta de un worker supervisado: esa va por `orca orchestration reply`.
 
 #### `reanudar`
 
@@ -678,7 +669,6 @@ Tomados del código, los tests y el contrato. Cada fila dice qué pasa y qué ha
 | Monitor rearmado | Si el anterior sigue vivo, le roba los eventos al nuevo | Matá el anterior antes de rearmar. Con `vigilar`, rearmar con los mismos argumentos retoma sin repetir eventos |
 | `main` mergea y el Monitor devuelve su propio merge | Un merge de `main` se ve igual que uno del humano | Correr `vigilar --merge-de-main <n>` antes de cada `gh pr merge` y de nuevo tras `update-branch`; vale 30 minutos |
 | `vigilar` no puede leer GitHub | Emite `vigilar-ciego: <error>` tras tres vueltas fallidas, una vez por corte | Revisá `gh auth status` y la red; sigue vigilando solo. Un issue ilegible o un cursor que no se puede escribir no lo detienen |
-| `avisar` con un worker que ya terminó, con codex o agy | Se niega; no hay timbre | La respuesta queda como comentario: el worker relee los comentarios antes de su PR |
 | Cuerpo de PR o review con acentos desde la consola de Windows | La consola rompe los acentos si el texto viaja por tubería | Mandalo siempre con `--body-file`, nunca por tubería |
 | Codex en Windows escribe cada letra acentuada como dos caracteres raros | PowerShell 5.1 lee UTF-8 sin BOM como cp1252 | `global` agrega la regla ASCII a `~/.codex/AGENTS.md`; sumá a mano la línea de `$PROFILE` (ver la [guía de setup](guia-setup.md#codex-en-windows-acentos-rotos)) |
 | `gentle-ai sync` reescribió el bloque de `~/.claude/CLAUDE.md` | El bloque vuelve completo y `doctor` lo avisa | Volvé a correr `orca-stack global` |
@@ -753,6 +743,6 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 
 Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.25.0`, todavía no publicado en un release.
 
-(nada por ahora)
+- Se sacó `orca-stack avisar` (#384, ADR 0004): un cambio de reglas publicado después del despacho (`Respuesta de main:` o `Respuesta del humano:`) le llega ahora al worker supervisado por el buzón del Run con `orca orchestration send --to dispatch:<id> --subject "<issue>: reglas cambiadas" --body "<url-del-comentario>"`.
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.

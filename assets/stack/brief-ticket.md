@@ -1,6 +1,6 @@
 # Ticket brief: issue #{{ISSUE}} ({{REPO}})
 
-You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked. A question, including a deviation that needs a decision, always goes through `orca orchestration ask`. A message from main may arrive while you work. It points at a comment: read it, adjust, and keep going. It never asks you to wait. The answer to an `ask` is different: it arrives as Orca mail, not as a comment.
+You are the implementer ({{AGENT}}) of issue #{{ISSUE}}. You work alone in this worktree and unattended: nobody answers questions live, so never wait for user input. If you are blocked, ask main with `orca orchestration ask` (see `## Questions to main`), then continue with whatever is not blocked. A question, including a deviation that needs a decision, always goes through `orca orchestration ask`. A rule change published after dispatch (`Respuesta de main:` or `Respuesta del humano:`) arrives through the Run mailbox as Orca mail with subject `"{{ISSUE}}: reglas cambiadas"` and the comment URL in its body: read the comment, adjust, and keep going. It never asks you to wait. The answer to an `ask` also arrives as Orca mail, not as a comment.
 
 ## Setup
 

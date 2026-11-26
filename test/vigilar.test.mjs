@@ -577,7 +577,7 @@ describe('orca-stack vigilar (#195)', () => {
       for (const flag of ['--cada <segundos>', '--una-vez', '--merge-de-main <pr>']) {
         assert.ok(output.split('\n').some(line => line.trimStart().startsWith(flag) && line.includes('(vigilar)')), flag)
       }
-      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, avisar, reanudar, vigilar, planificar, limpiar)'))
+      assert.ok(output.includes('(global, init, remove, despachar, revisar, rebote, brief-revision, reanudar, vigilar, planificar, limpiar)'))
       output = ''
       assert.equal(await main(['vigilar', '--help']), 0)
       assert.ok(output.includes('review-publicado #<pr> <agente> <sha> bloquea=<n>'))

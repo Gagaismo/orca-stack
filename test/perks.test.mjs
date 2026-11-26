@@ -141,13 +141,12 @@ describe('#393 perk switch, gears first', () => {
     assert.match(supervised, /`despachar` arranca cada worker con `orca orchestration worker-start` como worker supervisado del Run de Orca ligado a la sesión de `main`/)
     assert.match(supervised, /Reglas de colaboración: `main` responde preguntas de ejecución/)
     assert.doesNotMatch(supervised, /Proactive|marcha/)
-    assert.match(despacho, /le toca el timbre con `orca-stack avisar <issue\|pr> <url-del-comentario>`/)
+    assert.match(despacho, /orca orchestration send --to dispatch:<id> --subject "<issue>: reglas cambiadas" --body "<url-del-comentario>"/)
     const home = tempDir('perks-help')
     try {
       const help = cli(home, ['vigilar', '--help'])
       assert.doesNotMatch(help.out, /--consultas/)
       assert.doesNotMatch(help.out, /Proactive/)
-      assert.doesNotMatch(cli(home, ['avisar', '--help']).out, /Proactive/)
     } finally {
       cleanup(home)
     }

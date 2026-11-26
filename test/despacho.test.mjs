@@ -2287,7 +2287,7 @@ describe('rebote', () => {
 
     test('issue #292 Rule 5: rebote --continuar refuses while an agent is live in the worktree', async () => {
       write(bounceBrief(), 'bounce brief\n')
-      // blocked and waiting are live too: the agent waits on a dialog (src/avisar.mjs LIVE).
+      // blocked and waiting are live too: the agent waits on a dialog (src/reanudar.mjs LIVE).
       for (const state of ['working', 'blocked', 'waiting']) {
         const env = bounceEnv(pr({ comments: [{ body: 'Rebote: abc123' }] }), { ...dirty, 'orca worktree ps': json({ result: { worktrees: [{ path: worktree, agents: [{ state }] }] } }) })
         await assert.rejects(reboteCommand({ continuar: true }, '12', env.io), /Hay un agente vivo en .*; cerralo antes de rebotar\./, state)

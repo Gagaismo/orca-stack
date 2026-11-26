@@ -23,7 +23,7 @@ describe('issue 397: supervised dispatch in MAIN.md and the manual', () => {
       '`main` nunca lee terminales de workers',
       'Los reviews no cambian: `orca-stack revisar`',
       'Reglas de colaboración:',
-      '`orca-stack avisar` y `orca-stack reanudar` son las únicas formas en que main llega a una terminal de worker'
+      '`orca-stack reanudar` es la única forma en que main llega a una terminal de worker'
     ]) assert.ok(despacho.includes(kept), kept)
   })
 

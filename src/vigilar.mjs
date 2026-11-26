@@ -1,7 +1,7 @@
 import { renameSync } from 'node:fs'
 import path from 'node:path'
 
-import { identityOf, paneAgents, paneKey, readScreen, repoWorktrees, stackAgent, turnRunning, workerTerminals } from './avisar.mjs'
+import { identityOf, paneAgents, readScreen, repoWorktrees, stackAgent, workerTerminals } from './worker-terminals.mjs'
 import { analyzeChecks, checkRunId, isHigherRunId, isStatus, latestChecks } from './checks.mjs'
 import { defaultIo, quotaLine, shellPrompt } from './despacho.mjs'
 import { commitOf, markerValue } from './marcas.mjs'
@@ -9,6 +9,24 @@ import { switchAccount } from './orca.mjs'
 import { watchParent } from './parent-watch.mjs'
 import { getCommonDir } from './repo.mjs'
 import { sha256 } from './util.mjs'
+
+const SPINNER_LINES = 25
+const SPINNER = /^\s*[·✢✳✶✻✽]\s+\S[^\n]*…\s*\(\d+[smh]/mu
+const CODEX_WORKING = /^\s*•\s+\S[^\n]*\(\d+[smh][^\n]*esc to interrupt\)/mu
+const PI_FRAME = /^\s*╭?─ [✿❀❁✾] /u
+const PI_BUSY = /^\s*╭?─ [✿❀❁✾] [a-z]+… /u
+const piFrame = screen => screen.slice(-SPINNER_LINES).findLast(line => PI_FRAME.test(line)) ?? ''
+const spinning = screen => SPINNER.test(screen.slice(-SPINNER_LINES).join('\n'))
+const working = screen => spinning(screen) || CODEX_WORKING.test(screen.slice(-SPINNER_LINES).join('\n'))
+const TURN_RUNNING = {
+  claude: spinning,
+  pi: screen => PI_BUSY.test(piFrame(screen)),
+  codex: working,
+  agy: working,
+  antigravity: working,
+}
+const turnRunning = (agent, screen) => Boolean(TURN_RUNNING[agent]?.(screen))
+const paneKey = terminal => `${terminal.tabId}:${terminal.leafId}`
 
 export const CURSOR_REL = ['orca-stack', 'vigilar.json']
 export const MERGES_REL = ['orca-stack', 'vigilar-merges.json']

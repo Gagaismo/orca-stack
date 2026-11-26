@@ -43,7 +43,7 @@ describe('orca-stack CLI flags of main-autonomo (S1, S5, S12, S13)', () => {
 
   test('PRESERVE: the new options stay unknown to the commands that do not take them', () => {
     assert.throws(() => parseArgs(['vigilar', '7', '--json']), /^Error: Opción desconocida: --json$/)
-    assert.throws(() => parseArgs(['avisar', '7', '--json']), /^Error: Opción desconocida: --json$/)
+    assert.throws(() => parseArgs(['reanudar', '7', '--json']), /^Error: Opción desconocida: --json$/)
     assert.throws(() => parseArgs(['despachar', '5', 'codex', '--terminal', 't1']), /^Error: Opción desconocida: --terminal$/)
     assert.throws(() => parseArgs(['rebote', '70', '--rutas', 'a,b']), /^Error: Opción desconocida: --rutas$/)
   })

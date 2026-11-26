@@ -1,4 +1,3 @@
-import { avisarCommand } from './avisar.mjs'
 import { PINNED, PI_MIN_VERSION } from './constants.mjs'
 import { briefRevisionCommand, despacharCommand, reboteCommand, revisarCommand } from './despacho.mjs'
 import { doctorCommand } from './doctor.mjs'
@@ -31,7 +30,6 @@ Comandos:
   revisar   Despacha el review de un PR a un agente que no sea su autor.
   brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
-  avisar    Le toca el timbre a un worker con el turno en curso: una línea con la URL de la respuesta de main.
   reanudar  Reanuda un worker detenido con una respuesta de main o relanza su trabajo en el mismo worktree.
   vigilar   Vigila los PRs de una tanda para el Monitor: solo emite eventos, retoma donde quedó e ignora los merges de main.
   planificar Abre la sesión de planificación de un issue paraguas: worktree de Orca en docs/<slug> y pi con el brief de planificación.
@@ -41,7 +39,7 @@ Comandos:
   lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y en JS/TS, Go, Python y Shell: comentarios, module-cycle y diseño: tangle, field-leak y shallow-module) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
@@ -222,18 +220,6 @@ declined sin él. Con "humano" no lo escribe.
 
 Solo desde el checkout principal, con setup completo y en modo "un-agente". Crea un worktree detached en el head del PR y escribe en UTF-8 el brief de review compartido con \`revisar\`. El subagente escribe el cuerpo del review en un archivo; main lo publica.
 Con --dry-run muestra las acciones y las rutas, sin crear worktree ni brief.
-`,
-  avisar: `orca-stack avisar <issue|pr> <url-del-comentario> [--dry-run]
-
-El timbre: cuando main responde la pregunta de un worker, le escribe en su terminal una sola línea fija
-("Message from main: <url>") con la URL del comentario y nada de su texto, para que la lea sin esperar a su PR.
-Encuentra la terminal por el worktree de este repo enlazado a <n> (con un PR, el de su rama), buscado solo entre los de
-\`git worktree list\` porque los selectores de Orca abarcan todos los repos, y, si un rebote dejó dos, elige la del agente vivo. Manda solo mientras el turno del worker está en curso: se niega si ya terminó, si la
-terminal muestra un shell o un diálogo, o si hay más de un agente vivo. Avisa a claude, pi, codex y agy.
-Se niega si el comentario no es de la cuenta del stack (\`gh api user\`), no está en <issue|pr> o no empieza con
-\`Respuesta de main:\` o \`Respuesta del humano:\`. Envía con \`--wait-submit\` y nunca reintenta: sin recibo de entrega
-informa la falla y no reenvía.
-Con --dry-run muestra la línea y la terminal elegida, sin enviar nada.
 `,
   reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--terminal <handle>] [--dry-run]
 
@@ -609,8 +595,6 @@ export const main = async (argv, io) => {
         return await reboteCommand(flags, rest[1], io)
       case 'brief-revision':
         return await briefRevisionCommand({ ...flags, n: rest[1] })
-      case 'avisar':
-        return await avisarCommand(flags, rest[1], rest[2])
       case 'reanudar':
         return await reanudarCommand(flags, rest[1], rest[2])
       case 'vigilar':
