@@ -3,7 +3,6 @@ import path from 'node:path'
 
 import { identityOf, paneAgents, paneKey, readScreen, repoWorktrees, stackAgent, turnRunning, workerTerminals } from './avisar.mjs'
 import { analyzeChecks, checkRunId, isHigherRunId, isStatus, latestChecks } from './checks.mjs'
-import { checkConsultas } from './consultas.mjs'
 import { defaultIo, quotaLine, shellPrompt } from './despacho.mjs'
 import { commitOf, markerValue } from './marcas.mjs'
 import { switchAccount } from './orca.mjs'
@@ -14,8 +13,7 @@ import { sha256 } from './util.mjs'
 export const CURSOR_REL = ['orca-stack', 'vigilar.json']
 export const MERGES_REL = ['orca-stack', 'vigilar-merges.json']
 
-const USAGE = 'Uso: orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas], o orca-stack vigilar --merge-de-main <pr>.'
-export const VIGILAR_CONSULTAS_DEPRECATION = '⚠ vigilar --consultas está deprecado (ADR 0004): los workers le preguntan a main por el buzón del Run. Se saca en la próxima release.'
+const USAGE = 'Uso: orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run], o orca-stack vigilar --merge-de-main <pr>.'
 const PR_FIELDS = 'number,state,headRefName,headRefOid,mergedAt,body,closingIssuesReferences,statusCheckRollup,mergeable'
 // A record by --merge-de-main covers a merge of its head commit made within this window after the record.
 const MERGE_WINDOW_MS = 30 * 60 * 1000
@@ -565,7 +563,7 @@ export const markUmbrellaBaseline = (n, io, warn) => {
 
 const watchUmbrella = async (flags, items, io, warn) => {
   const raw = String(flags.paraguas ?? '').trim().replace(/^#/, '')
-  if (!/^\d+$/.test(raw) || (items ?? []).length > 0 || flags.consultas) throw new Error(PARAGUAS_USAGE)
+  if (!/^\d+$/.test(raw) || (items ?? []).length > 0) throw new Error(PARAGUAS_USAGE)
   const n = String(Number(raw))
   const every = flags.cada === undefined ? 60 : Number(flags.cada)
   if (!Number.isInteger(every) || every < 1) throw new Error(`--cada necesita un número entero de segundos, 1 o más: ${flags.cada}`)
@@ -702,7 +700,6 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
   const targets = [...new Set(raw.map(item => String(Number(item))))]
   const every = flags.cada === undefined ? 60 : Number(flags.cada)
   if (!Number.isInteger(every) || every < 1) throw new Error(`--cada necesita un número entero de segundos, 1 o más: ${flags.cada}`)
-  if (flags.consultas) warn(VIGILAR_CONSULTAS_DEPRECATION)
 
   const { commonDir, root } = getCommonDir(io)
   const cursorPath = path.join(commonDir, ...CURSOR_REL)
@@ -710,8 +707,6 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
   let cursor = readJson(cursorPath, io, warn)
   let failures = 0
   const batch = [...targets].sort((a, b) => Number(a) - Number(b)).join(',')
-  // The PRs of the items, as last read: --consultas reads their comments too, since a worker with a PR asks there.
-  let linkedPrs = []
 
   // Returns true when every item has ended.
   const poll = () => {
@@ -727,7 +722,6 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
       return false
     }
     failures = 0
-    linkedPrs = targets.map(issue => world[issue].pr?.number).filter(Boolean).map(String)
     const merges = readJson(mergesPath, io, warn)
     const now = (io.now ?? Date.now)()
     const next = { ...cursor }
@@ -804,14 +798,6 @@ export const vigilarCommand = async (flags = {}, items = [], io = vigilarIo()) =
   for (;;) {
     const done = poll()
     pollMailbox()
-    // One Monitor: the consultas check runs on every poll, unchanged, and its failure never stops the poll.
-    if (flags.consultas) {
-      try {
-        await checkConsultas({ dryRun: flags.dryRun }, [...new Set([...targets, ...linkedPrs])], io)
-      } catch (error) {
-        warn(`vigilar: el chequeo de consultas falló: ${error.message}`)
-      }
-    }
     if (done || flags.unaVez || flags.dryRun) return 0
     await io.sleep(every * 1000)
   }

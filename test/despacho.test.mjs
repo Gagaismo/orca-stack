@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief, revisarCommand } from '../src/despacho.mjs'
 import { main, parseArgs } from '../src/cli.mjs'
-import { isConsultaComment } from '../src/consultas.mjs'
 import { layout } from '../src/util.mjs'
 import { ROOT, cleanup, cli, read, tempDir, write } from './helpers.mjs'
 
@@ -3898,14 +3897,6 @@ describe('rebote', () => {
       assert.ok(brief.includes(askRule), 'the rendered rebote brief must carry the ask rule')
       assert.ok(brief.includes('`agentes.pi.rddConsentimiento`'), 'reboteCommand must replace {{AGENT}} with the author (pi)')
       assert.ok(!brief.includes('{{AGENT}}'), 'rendered rebote brief must have no unrendered {{AGENT}}')
-    })
-
-    test('Rule 4: Negative: orca-stack consultas keeps matching only the literal Consulta: prefix', () => {
-      const stackAccount = 'stack-account'
-      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Consulta: pi — diff is 1673 lines against ~1000' }, stackAccount), true)
-      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Warning: diff is 1673 lines against ~1000 without Consulta prefix' }, stackAccount), false)
-      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'pi: I exceeded the 700 lines limit' }, stackAccount), false)
-      assert.equal(isConsultaComment({ author: { login: stackAccount }, body: 'Note: 700 lines cap exceeded' }, stackAccount), false)
     })
 
     test('Rule 5: rendered ticket brief carries neither the 700-line rule nor Consulta: (#466)', () => {

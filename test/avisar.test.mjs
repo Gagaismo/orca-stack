@@ -371,8 +371,8 @@ describe('avisar', () => {
     console.log = value => { output += `${value}\n` }
     console.error = value => { output += `${value}\n` }
     try {
-      assert.equal(await main(['consultas', '--help']), 0)
-      assert.match(output, /orca-stack consultas <n\.\.\.>/)
+      assert.equal(await main(['vigilar', '--help']), 0)
+      assert.match(output, /orca-stack vigilar <n\.\.\.>/)
       output = ''
       assert.equal(await main(['nope']), 2)
       assert.match(output, /Comando desconocido: nope/)

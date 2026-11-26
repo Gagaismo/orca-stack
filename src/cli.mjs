@@ -1,6 +1,5 @@
 import { avisarCommand } from './avisar.mjs'
 import { PINNED, PI_MIN_VERSION } from './constants.mjs'
-import { consultasCommand } from './consultas.mjs'
 import { briefRevisionCommand, despacharCommand, reboteCommand, revisarCommand } from './despacho.mjs'
 import { doctorCommand } from './doctor.mjs'
 import { estadoCommand } from './estado.mjs'
@@ -32,7 +31,6 @@ Comandos:
   revisar   Despacha el review de un PR a un agente que no sea su autor.
   brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
-  consultas Filtra y avisa comentarios Consulta: nuevos en issues y PRs en curso (deprecado, ADR 0004: se saca en la próxima release).
   avisar    Le toca el timbre a un worker con el turno en curso: una línea con la URL de la respuesta de main.
   reanudar  Reanuda un worker detenido con una respuesta de main o relanza su trabajo en el mismo worktree.
   vigilar   Vigila los PRs de una tanda para el Monitor: solo emite eventos, retoma donde quedó e ignora los merges de main.
@@ -43,7 +41,7 @@ Comandos:
   lint      Revisa el repo (long-file: archivos de más de 2000 líneas; wide-directory: directorios de más de 15 entradas; y en JS/TS, Go, Python y Shell: comentarios, module-cycle y diseño: tangle, field-leak y shallow-module) contra su Baseline y sale con 1 si hay violaciones nuevas o entradas vencidas.
 
 Opciones:
-  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, consultas, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
+  --dry-run        (global, init, remove, despachar, revisar, rebote, brief-revision, avisar, reanudar, vigilar, planificar, limpiar) Muestra cada acci\u00F3n sin escribir nada.
   --force          (global) Reemplaza archivos existentes que no son de orca-stack (con respaldo en ~/.orca-stack/backups).
   --skip-pi        (global, doctor) No toca ni verifica Pi, gentle-pi ni pi-claude-bridge.
   --offline        (doctor) Sin sondeos de red: omite el login de Pi y \`gh auth status\`.
@@ -60,7 +58,6 @@ Opciones:
   --limpiar-sdd    (global) Respaldar y mover solo los restos SDD conocidos a ~/.orca-stack/backups.
   --cada <segundos> (vigilar) Cada cuánto consulta GitHub (por defecto: 60).
   --una-vez        (vigilar) Consulta una sola vez y sale.
-  --consultas      (vigilar) [deprecado, ADR 0004] En cada vuelta corre también el chequeo de \`consultas\` para los mismos items (se saca en la próxima release).
   --merge-de-main <pr> (vigilar) Registra que main está por mergear <pr> y sale, sin imprimir nada.
   --paraguas <n>   (vigilar) Vigila los sub-issues del issue paraguas <n>: un evento por cada tanda nueva de tickets publicada.
   --json           (estado) Imprime un objeto JSON por PR (un arreglo si son varios) y sale con 0 solo si están listos.
@@ -226,13 +223,6 @@ declined sin él. Con "humano" no lo escribe.
 Solo desde el checkout principal, con setup completo y en modo "un-agente". Crea un worktree detached en el head del PR y escribe en UTF-8 el brief de review compartido con \`revisar\`. El subagente escribe el cuerpo del review en un archivo; main lo publica.
 Con --dry-run muestra las acciones y las rutas, sin crear worktree ni brief.
 `,
-  consultas: `orca-stack consultas <n...> [--dry-run]
-
-DEPRECADO (ADR 0004): los workers le preguntan a main por el buzón del Run. Se saca en la próxima release.
-
-Para los issues y PRs en curso indicados, busca comentarios nuevos que comiencen con "Consulta:" hechos por la cuenta de GitHub del stack (leída con \`gh api user\`).
-Emite una sola línea "consulta nueva en #<n>" por cada comentario nuevo y recuerda lo reportado en .git/orca-stack/consultas-reportadas.json para ser idempotente.
-`,
   avisar: `orca-stack avisar <issue|pr> <url-del-comentario> [--dry-run]
 
 El timbre: cuando main responde la pregunta de un worker, le escribe en su terminal una sola línea fija
@@ -294,7 +284,7 @@ su nombre revision-<pr>-<agente>: cierra sus terminales (orca terminal close --w
 commitear o con un agente trabajando; nunca borra ramas remotas. Es idempotente: una segunda corrida no saca nada.
 Con --dry-run muestra qué sacaría sin tocar nada.
 `,
-  vigilar: `orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run] [--consultas]
+  vigilar: `orca-stack vigilar <n...> [--cada <segundos>] [--una-vez] [--dry-run]
 orca-stack vigilar --merge-de-main <pr>
 orca-stack vigilar --paraguas <n> [--cada <segundos>] [--una-vez] [--dry-run]
 
@@ -338,9 +328,7 @@ Un PR es del issue por su referencia de cierre, por la rama del worktree de este
 \`Closes #<n>\` en su cuerpo; nunca por adivinar el nombre de la rama. Un issue cerrado sin PR cuenta como terminado.
 Guarda lo emitido en <git-common-dir>/orca-stack/vigilar.json: rearmado con los mismos argumentos, retoma sin repetir.
 Si el proceso que lo lanzó desaparece (el Monitor venció o se paró), sale en menos de 5 segundos con su gh u orca.
---una-vez consulta una vez y sale; --dry-run consulta una vez y no escribe nada; --consultas corre en cada vuelta el
-chequeo de \`orca-stack consultas\` para los mismos items (deprecado, ADR 0004: los workers le preguntan a main por el
-buzón del Run; se saca en la próxima release).
+--una-vez consulta una vez y sale; --dry-run consulta una vez y no escribe nada.
 
 --merge-de-main <pr> registra el head del PR en <git-common-dir>/orca-stack/vigilar-merges.json y sale sin imprimir
 nada en stdout. main lo corre justo antes de cada intento de \`gh pr merge <pr>\`, también después de
@@ -353,7 +341,7 @@ del issue paraguas con \`gh api repos/{owner}/{repo}/issues/<n>/sub_issues\` y e
                                              seguidas (to-tickets los crea de a uno)
 Nada por comentarios, ediciones ni issues que no son sub-issues del paraguas. Guarda lo avisado en vigilar.json (clave
 paraguas:<n>): rearmado, no repite; los sub-issues que el paraguas ya tenía al correr planificar no cuentan como nuevos.
-Sale con 0 cuando el paraguas se cierra. No acepta otros items ni --consultas.
+Sale con 0 cuando el paraguas se cierra. No acepta otros items.
 `,
   planificar: `orca-stack planificar <issue-paraguas> [--perfil-pi <nombre>] [--dry-run]
 
@@ -514,7 +502,6 @@ export const parseArgs = argv => {
     else if (arg === '--offline') flags.offline = true
     else if (arg === '--with-pi') flags.withPi = true
     else if (arg === '--una-vez') flags.unaVez = true
-    else if (arg === '--consultas') flags.consultas = true
     else if (arg === '--json') flags.json = true
     else if (arg === '--sembrar') flags.sembrar = true
     else if (arg === '--activar-hook') flags.activarHook = true
@@ -622,8 +609,6 @@ export const main = async (argv, io) => {
         return await reboteCommand(flags, rest[1], io)
       case 'brief-revision':
         return await briefRevisionCommand({ ...flags, n: rest[1] })
-      case 'consultas':
-        return await consultasCommand(flags, rest.slice(1))
       case 'avisar':
         return await avisarCommand(flags, rest[1], rest[2])
       case 'reanudar':

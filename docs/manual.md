@@ -96,7 +96,6 @@ Reglas que sostienen todo lo demás:
 | `revisar` | Despacha el review de un PR a otro agente | Checkout principal |
 | `rebote` | Relanza al autor de un PR bloqueado, con CI roja o en conflicto con la base | Checkout principal |
 | `brief-revision` | Worktree y brief de review para un subagente (modo `un-agente`) | Checkout principal |
-| `consultas` | *(Deprecado, ADR 0004)* Avisa comentarios `Consulta:` nuevos de sesiones no supervisadas; se saca en la próxima release | Checkout principal |
 | `avisar` | Le toca el timbre a un worker con el turno en curso | Checkout principal |
 | `vigilar` | Monitor de una tanda de PRs | Checkout principal |
 | `estado` | Qué le falta a cada PR para el paso 7, de solo lectura (con `--json`, la atestación) | Checkout principal |
@@ -106,7 +105,7 @@ Reglas que sostienen todo lo demás:
 | `planificar` | Abre una sesión de planificación interactiva en su propio worktree `docs/<slug>` | Checkout principal |
 | `sesiones` | Lista sesiones recientes de Claude, Pi y agy (entrada de `/retro`) | Cualquier carpeta |
 
-**Opciones generales.** `--dry-run` muestra cada acción sin escribir nada (vale en `global`, `init`, `remove`, `despachar`, `revisar`, `rebote`, `brief-revision`, `consultas`, `avisar`, `reanudar`, `vigilar` y `limpiar`). `--help` por comando da el detalle.
+**Opciones generales.** `--dry-run` muestra cada acción sin escribir nada (vale en `global`, `init`, `remove`, `despachar`, `revisar`, `rebote`, `brief-revision`, `avisar`, `reanudar`, `vigilar` y `limpiar`). `--help` por comando da el detalle.
 
 #### `global`
 
@@ -233,16 +232,6 @@ orca-stack brief-revision 15 --modelo claude-sonnet-5-5
 
 Solo para el modo `un-agente`: crea un worktree detached en el head del PR y un brief UTF-8; imprime además la ruta donde el subagente escribe el review (`~/orca/briefs/<repo>-revision-<pr>-subagente.review.md`). `--modelo` es obligatorio.
 
-#### `consultas`
-
-> **Deprecado ([ADR 0004](adr/0004-workers-ask-through-the-run-mailbox.md)):** los workers le preguntan a `main` por el buzón del Run. Este comando se saca en la próxima release.
-
-```bash
-orca-stack consultas 42 57
-```
-
-Busca comentarios que empiecen con `Consulta:` hechos por la cuenta de GitHub del stack (`gh api user`) en esos issues o PRs, e imprime `consulta nueva en #<n>` una sola vez por comentario. Lo reportado queda en `.git/orca-stack/consultas-reportadas.json`, así que repetirlo no duplica avisos. Es el camino de las sesiones no supervisadas (reviews y rebotes): un worker supervisado pregunta con `orca orchestration ask` y `main` le contesta por el buzón del Run (ver el evento `consulta` de [`vigilar`](#vigilar)).
-
 #### `avisar`
 
 ```bash
@@ -265,7 +254,6 @@ Si Orca todavía muestra el turno en `done`, reanuda el TUI con una sola línea 
 orca-stack vigilar 41 42 43                 # el Monitor de la tanda
 orca-stack vigilar 41 42 43 --una-vez       # una consulta y sale
 orca-stack vigilar 41 42 --cada 30          # cada 30 segundos (por defecto 60)
-orca-stack vigilar 41 42 --consultas        # deprecado (ADR 0004): corre el chequeo de consultas
 orca-stack vigilar --merge-de-main 57       # registra que main está por mergear #57
 ```
 
@@ -299,8 +287,6 @@ Un PR es del issue por su referencia de cierre, por la rama del worktree de este
 Cuando el Monitor vence o lo parás, `vigilar` sale solo en menos de 5 segundos, con el `gh` o el `orca` que estuviera corriendo, y lo dice en stderr: vigila el proceso que lo lanzó (en Git Bash, el `bash` del Monitor, no el stub de `sh` que sobrevive). Un poll lento nunca lo hace salir.
 
 `--merge-de-main <pr>` existe porque todas las sesiones comparten la cuenta de `gh`: un merge de `main` se ve igual que uno del humano. `main` lo corre justo antes de cada `gh pr merge <pr>` (y otra vez tras `gh pr update-branch`); registra el head en `<git-common-dir>/orca-stack/vigilar-merges.json` y un merge de ese head visto dentro de los 30 minutos no emite `pr-mergeado`. Sale sin imprimir nada.
-
-`--consultas` está deprecado ([ADR 0004](adr/0004-workers-ask-through-the-run-mailbox.md)): los workers le preguntan a `main` por el buzón del Run, y la opción se saca en la próxima release.
 
 #### Cuentas de Orca ante la cuota
 
@@ -439,7 +425,7 @@ Resumen del "Ciclo de `main`" (en `~/orca/stack/MAIN.md`), con el comando de cad
 | 2 | Cada ticket con criterios y `## Reglas` | Reglas numeradas con ejemplos, bordes y errores; cada valor esperado va como `cliente` o `inferido` |
 | 3 | Elegir la frontera | Issues abiertos, sin bloqueantes, sin assignee, sin `needs-info`, sin sub-issues. Leer con `gh issue view <n> --json title,body,comments` |
 | 4 | Despachar la tanda | `orca-stack despachar <n> <agente>`, un ticket por comando |
-| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>`, y `orca-stack estado` en cada evento y al empezar cada turno; atiende `consulta` con `orca orchestration reply` por id o un gate para el humano, `worker-detenido` / `worker-trabado` (con una sesión no supervisada, por ejemplo respondiendo la `Consulta:` donde apareció y corriendo `orca-stack reanudar <issue> <url-del-comentario>`), y `pr-en-conflicto` con `orca-stack rebote <pr>` cuando el worker se detuvo. En Proactive, con `--consultas`. Matá el Monitor anterior antes de rearmarlo |
+| 5 | Vigilar con un solo Monitor | `orca-stack vigilar <n...>`, y `orca-stack estado` en cada evento y al empezar cada turno; atiende `consulta` con `orca orchestration reply` por id o un gate para el humano, `worker-detenido` / `worker-trabado`, y `pr-en-conflicto` con `orca-stack rebote <pr>` cuando el worker se detuvo. Matá el Monitor anterior antes de rearmarlo |
 | 6 | Review de cada PR nuevo | `orca-stack revisar <pr> <agente>`; segundo review de pi si toca `riesgo` |
 | 7 | Mergear si se cumple la condición | Ver [4.8](#48-review-rebote-y-merge); `orca-stack estado <n>` y, con `ok`, `gh pr merge <n> --merge --match-head-commit <head>`; antes de cada `gh pr merge`, `orca-stack vigilar --merge-de-main <n>` |
 | 8 | Rebote | `orca-stack rebote <pr>`; una sola vez por review; `--continuar` si el autor se cortó antes de pushear; `--rdd <lentes>` para el review RDD de un PR de pi |
@@ -556,7 +542,7 @@ Un perk es una parte opcional del stack que se enciende en la config, en cualqui
 { "perks": { "marchas": true } }
 ```
 
-y volvé a correr `orca-stack init`: el contrato suma la sección `Marchas`, que apunta a `~/orca/stack/MARCHAS.md` (el fragmento del perk, que `global` instala siempre junto a `MAIN.md`), y las marcas `Marcha:` y `Esperando marcha:`. `MAIN.md`, `ORCA-STACK.md` y `ROLE-BRIEFS.md` no traen reglas de marchas en ningún caso. Sin marchas, `main` arma `vigilar` siempre con `--consultas`, colabora con los workers según las reglas del Despacho y el modo autónomo trata `Esperando marcha:` como cualquier otro cierre. Caveman es un perk opcional, apagado por defecto:
+y volvé a correr `orca-stack init`: el contrato suma la sección `Marchas`, que apunta a `~/orca/stack/MARCHAS.md` (el fragmento del perk, que `global` instala siempre junto a `MAIN.md`), y las marcas `Marcha:` y `Esperando marcha:`. `MAIN.md`, `ORCA-STACK.md` y `ROLE-BRIEFS.md` no traen reglas de marchas en ningún caso. Sin marchas, `main` colabora con los workers según las reglas del Despacho y el modo autónomo trata `Esperando marcha:` como cualquier otro cierre. Caveman es un perk opcional, apagado por defecto:
 
 - `{ "perks": { "caveman": true } }`: el contrato suma la viñeta de Caveman con un puntero a `~/orca/stack/CAVEMAN.md` y los wrappers escriben `ORCA_STACK_MODE=auto` y `ORCA_STACK_CAVEMAN_LEVEL=caveman`, que disparan la skill. Apagado, escriben `off` en las dos.
 
@@ -735,7 +721,6 @@ orca-stack sesiones                  # para /retro
 | Briefs de despacho y review | `~/orca/briefs/` |
 | Mods | `~/.claude/mods/` y `env.CLAUDE_CODE_PLUGIN_DIRS` en `~/.claude/settings.json` |
 | Skills | `~/.claude/skills/` y `~/.agents/skills/` |
-| Consultas ya reportadas | `<repo>/.git/orca-stack/consultas-reportadas.json` |
 | Cursor de `vigilar` | `<git-common-dir>/orca-stack/vigilar.json` |
 | Merges registrados por `main` | `<git-common-dir>/orca-stack/vigilar-merges.json` |
 | Última corrida de cada precheck `novedades` | `<git-common-dir>/orca-stack/novedades.json` |
@@ -767,6 +752,6 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 
 Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.24.0`, todavía no publicado en un release.
 
-(nada por ahora)
+- **Retiro del canal `Consulta:` de GitHub** (#467, [ADR 0004](adr/0004-workers-ask-through-the-run-mailbox.md)): se eliminaron el subcomando y la opción de `vigilar` deprecados en `v0.24.0`; las sesiones en otros repos que todavía publiquen `Consulta:` ya no se vigilan.
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.
