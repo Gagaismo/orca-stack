@@ -373,7 +373,9 @@ describe('issue #488: claude leaves the worker roster and one record review from
 
     const docHome = temp('r488-pres-home')
     const prev = process.env.ORCA_STACK_HOME
+    const prevCwd = process.cwd()
     process.env.ORCA_STACK_HOME = docHome
+    process.chdir(docHome)
     const logs = []
     const origLog = console.log
     console.log = (...args) => logs.push(args.join(' '))
@@ -383,6 +385,7 @@ describe('issue #488: claude leaves the worker roster and one record review from
       assert.ok(logs.some(line => line.includes('Config')))
     } finally {
       console.log = origLog
+      process.chdir(prevCwd)
       if (prev === undefined) delete process.env.ORCA_STACK_HOME
       else process.env.ORCA_STACK_HOME = prev
     }
