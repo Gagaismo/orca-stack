@@ -212,7 +212,7 @@ lo eligen y se escribe el pin; sin ninguno se niega como despachar, antes de mov
 Con --continuar retoma al autor que se cortó antes de pushear (por ejemplo, sin cuota): exige que el último marcador \`Rebote*\` sea del head, sin agente vivo y con el brief del rebote; acepta el worktree sucio, no publica marcador ni suma a los límites, y solo pi retoma la misma sesión (\`--session-id\`): claude, codex y agy arrancan una sesión nueva con el mismo brief. Si sigue sin cuota, falla con la hora de reset y no reintenta. No acepta --nota.
 Con --rdd <lentes> (de 1 a 4 distintas entre risk, resilience, readability, reliability, separadas por coma) le pide a pi un review RDD de su propio PR:
 solo con \`Implementador: pi\` y agentes.pi.review: "rdd" en la config. No exige review bloqueante ni mira CI o conflictos; el brief (brief-rdd.md)
-le pide publicar \`Revisor: pi (RDD: <lentes>)\` y \`Commit: <sha>\`. No publica marcador \`Rebote*\`: publica en el PR \`RDD: <sha> (<lentes>)\`, el pedido sin el que puente-gentle no cuenta el review.
+le pide publicar \`Revisor: pi (RDD: <lentes>)\` y \`Commit: <sha>\`. No publica marcador \`Rebote*\`: publica en el PR \`RDD: <sha> (<lentes>)\`, el pedido sin el que estado no cuenta el review.
 Se niega si ya hay sobre el head un review RDD de pi con ese pedido, y no vale con --continuar (su brief y su sesión van aparte: -rdd).
 Cierra sola las terminales en done y las shells vacías del worktree, y dice cuáles cerró; se niega solo con un agente trabajando.
 Con agentes.<agente>.rddConsentimiento "politica" (por defecto) escribe el consentimiento RDD del worktree: granted para el head con --rdd,
@@ -266,11 +266,9 @@ y dice qué le falta para el paso 7 de MAIN.md sobre su head actual:
       agentes.pi.review "rdd" y un PR de pi, un review RDD de pi pedido con RDD: o un Sin review: (con ## Evidencia);
   (b) que esos comentarios lleven Commit: igual al head (el sha puede ir entre backticks);
   (c) que cada check termine en SUCCESS, SKIPPED o NEUTRAL y ninguno siga pendiente;
-  (d) en una ruta de riesgo, el segundo review que exige puente-gentle.
+  (d) en una ruta de riesgo, los reviews que exige el paso 6 de MAIN.md.
 Un review con ## Cobertura cuenta solo si ninguna ruta de Sin leer: es de riesgo; uno que se declara parcial sin
-## Cobertura no cuenta. Una consulta que main publicó (Revisor: pi (consulta <tema>, publicada por main)) con Commit:
-igual al head y ## BLOQUEA distinto de nada queda en falta hasta un Verificado por main: o Decidido por main: posterior
-sobre ese head. Con migraciones {"glob","numero"} en la config, cada migración que agrega el PR tiene que tener un
+## Cobertura no cuenta. Con migraciones {"glob","numero"} en la config, cada migración que agrega el PR tiene que tener un
 número mayor que la más alta de origin/<base> (hace git fetch origin <base>); si no, imprime el comentario de review que
 main publica para rebotarlo.
 Sin --json imprime una línea por PR:

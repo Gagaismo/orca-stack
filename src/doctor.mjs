@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { hasRetiredPonytailPerk, mergedPerks, perkProblems, perksOf } from './perks.mjs'
-import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
+import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, RETIRED_MODS, WRAPPERS } from './constants.mjs'
 import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { CODEX_DOC_DEFAULT, readCodexDocBytes } from './codex-doc-bytes.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
@@ -17,7 +17,7 @@ import { knownSddLeftovers } from './sdd-cleanup.mjs'
 import { removeAnyBlock } from './marker.mjs'
 import { checkPathCommand } from './path-command.mjs'
 import { orcaDataDir, orcaInstalled, readOrcaOverrides } from './orca.mjs'
-import { describeCheckout, installedPackageVersion, localPiPackages, npmGlobalRoot, piBinary, piModulesDir, piTooOld, readBundledShell, resolveGentleSkills } from './pi.mjs'
+import { describeCheckout, installedPackageVersion, localPiPackages, npmGlobalRoot, piBinary, piModulesDir, piTooOld, readBundledShell } from './pi.mjs'
 import { codexCodemodeStatus, piCodemodeStatus } from './codemode.mjs'
 import { parseSettings } from './settings.mjs'
 import { assetPath, listDirs, stackMarkers, wrapperFile } from './templates.mjs'
@@ -381,6 +381,12 @@ export const doctorCommand = async flags => {
       add('ok', name)
     }
   }
+  for (const name of RETIRED_MODS) {
+    const retiredDir = path.join(L.modsDir, name)
+    if (existsSync(retiredDir) || (settingsOk && pluginDirs.some(entry => samePath(entry, retiredDir)))) {
+      add('warn', `mod ${name} retirado`, 'quedó una copia instalada de una versión anterior: corré `orca-stack global` para sacarla')
+    }
+  }
   // The methodology now arrives through the project; an old global block keeps loading it in every session.
   if (existsSync(L.claudeMd)) {
     let leftover = false
@@ -442,12 +448,6 @@ export const doctorCommand = async flags => {
         add('warn', 'gentle-shell autocontenido', `no pude leer la versión de ${bundled.file}`)
       }
       add(which('gentle-shell') ? 'ok' : 'warn', 'comando gentle-shell', which('gentle-shell') ? '' : 'falta `npm i -g gentle-pi@' + PINNED.gentlePi + '`')
-    }
-    const skills = resolveGentleSkills(L)
-    if (skills) {
-      add('ok', 'skills de gentle-pi (como las resuelve puente-gentle)', `${tilde(skills.dir, home)} [${skills.source}]`)
-    } else {
-      add('fail', 'skills de gentle-pi', 'no se encuentran ni en Pi ni en `npm root -g`: puente-gentle consultaría sin skills')
     }
     if (flags.offline) {
       add('warn', 'login de Pi', 'no se sondeó (--offline)')
@@ -550,8 +550,6 @@ export const doctorCommand = async flags => {
   const personal = checkJson(L.config, '~/.orca-stack/config.json')
   if (personal === null && !existsSync(L.config)) {
     add('warn', '~/.orca-stack/config.json', 'no existe (corré `global`)')
-  } else if (personal && !personal.humano) {
-    add('warn', 'humano', 'vacío en config.json: puente-gentle dirá "el usuario"')
   }
   const root = projectRootOf(process.cwd())
   let committed = null

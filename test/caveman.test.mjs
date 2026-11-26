@@ -52,14 +52,10 @@ describe('caveman 3.2.0', () => {
     const pi = launcherFor({ ...base, agent: 'pi' })
     assert.match(pi, /^unset [^;]*\bORCA_STACK_CAVEMAN_LEVEL\b/)
     assert.match(pi, /; pi --no-skills /)
-    // The consult clears the same markers before its own `pi -p`.
-    const puente = read('mods', 'puente-gentle', 'hooks', 'puente.ts')
-    assert.match(/export const ORCA_VARS_CLEARED = \[([\s\S]*?)\] as const/.exec(puente)[1], /'ORCA_STACK_CAVEMAN_LEVEL'/)
-    assert.match(puente, /export const buildArgs = [^\n]*\n {2}'-p',/)
     // ORCA-STACK.md already says so: Gentle Shell gets none of the stack markers.
     const policy = read('assets', 'stack', 'ORCA-STACK.md').replace(/\s+/g, ' ')
     assert.match(policy, /pi \(Gentle Shell\): an interactive TUI/)
-    assert.match(policy, /clears the `ORCA_STACK_\*` variables \(the stack markers the pi consult bridge also clears\)/)
+    assert.match(policy, /clears the `ORCA_STACK_\*` variables and keeps Orca's/)
   })
 
   test('rule 4: the policy files keep Auto/Off and communication-only, and name no caveman level 3.2.0 dropped', () => {

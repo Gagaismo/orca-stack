@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 
-import { GRILL_SKILLS, INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
+import { GRILL_SKILLS, INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, RETIRED_MODS, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
 import { PERKS, perksOf } from './perks.mjs'
 import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestratorMode, rddMode, readPersonalConfig, refreshLazyPointer, restoreBlock, sddBlock, trimReviewSections } from './gentle.mjs'
@@ -14,7 +14,7 @@ import { orcaInstalled } from './orca.mjs'
 import { ensureCodexCodemode, ensurePiCodemode } from './codemode.mjs'
 import { CODEX_DOC_DEFAULT, codexDocBytesFor, readCodexDocBytes, withCodexDocBytes } from './codex-doc-bytes.mjs'
 import { setupPi } from './pi.mjs'
-import { mergePluginDirs, parseSettings, stringifySettings } from './settings.mjs'
+import { mergePluginDirs, parseSettings, removePluginDirs, stringifySettings } from './settings.mjs'
 import {
   assetPath,
   listDirs,
@@ -131,6 +131,33 @@ const pruneEmptyDir = (dir, dryRun) => {
   return empty
 }
 
+const removeRetiredFiles = (ctx, trackedKeys, diskFiles, reason, skipUntracked = () => false) => {
+  for (const key of trackedKeys) {
+    const entry = ctx.state.files[key]
+    if (!existsSync(key)) {
+      if (!ctx.dryRun) {
+        delete ctx.state.files[key]
+      }
+      continue
+    }
+    if (sha256(readFileSync(key)) !== entry.sha256) {
+      ctx.say(`  ⚠ ${ctx.show(key)} fue modificado después de instalarlo: lo dejo como está`)
+      continue
+    }
+    ctx.act(`borro ${ctx.show(key)} (${reason})`)
+    if (!ctx.dryRun) {
+      unlinkSync(key)
+      delete ctx.state.files[key]
+    }
+  }
+  for (const file of diskFiles) {
+    if (trackedKeys.some(key => samePath(key, file)) || skipUntracked(file)) {
+      continue
+    }
+    ctx.say(`  ⚠ ${ctx.show(file)} no lo instaló orca-stack: lo dejo como está`)
+  }
+}
+
 // #429: remove Ponytail files that an earlier `global` installed, leaving any user file with the same name alone.
 const removeRetiredPonytail = ctx => {
   const stackFile = path.join(ctx.L.stackDir, 'PONYTAIL.md')
@@ -150,32 +177,40 @@ const removeRetiredPonytail = ctx => {
     return
   }
   ctx.say('\nLimpieza de Ponytail retirado')
-  for (const key of trackedKeys) {
-    const entry = ctx.state.files[key]
-    if (!existsSync(key)) {
-      if (!ctx.dryRun) {
-        delete ctx.state.files[key]
-      }
-      continue
-    }
-    if (sha256(readFileSync(key)) !== entry.sha256) {
-      ctx.say(`  ⚠ ${ctx.show(key)} fue modificado después de instalarlo: lo dejo como está`)
-      continue
-    }
-    ctx.act(`borro ${ctx.show(key)} (perk ponytail retirado)`)
-    if (!ctx.dryRun) {
-      unlinkSync(key)
-      delete ctx.state.files[key]
-    }
-  }
-  for (const file of diskFiles) {
-    if (trackedKeys.some(key => samePath(key, file))) {
-      continue
-    }
-    ctx.say(`  ⚠ ${ctx.show(file)} no lo instaló orca-stack: lo dejo como está`)
-  }
+  removeRetiredFiles(ctx, trackedKeys, diskFiles, 'perk ponytail retirado')
   for (const dir of skillDirs) {
     pruneEmptyDir(dir, ctx.dryRun)
+  }
+}
+
+// #391: remove retired mods that an earlier `global` installed, leaving any user-modified or untracked file alone.
+const removeRetiredMods = ctx => {
+  let announced = false
+  for (const name of RETIRED_MODS) {
+    const modDir = path.join(ctx.L.modsDir, name)
+    const generatedDir = path.join(modDir, '.claude-plugin', 'types')
+    const trackedKeys = Object.keys(ctx.state.files).filter(file => isUnderDir(file, modDir))
+    const dirExists = existsSync(modDir) && statSync(modDir).isDirectory()
+    const diskFiles = dirExists ? listFiles(modDir).map(rel => path.join(modDir, ...rel.split('/'))) : []
+    if (trackedKeys.length === 0 && !dirExists) {
+      continue
+    }
+    if (!announced) {
+      ctx.say('\nLimpieza de mods retirados')
+      announced = true
+    }
+    const removeGenerated = existsSync(generatedDir) && (trackedKeys.length > 0 || diskFiles.every(file => isUnderDir(file, generatedDir)))
+    removeRetiredFiles(ctx, trackedKeys, diskFiles, `mod ${name} retirado`, file => removeGenerated && isUnderDir(file, generatedDir))
+    if (removeGenerated) {
+      ctx.act(`borro ${ctx.show(generatedDir)} (lo genera Claude Code al cargar el mod ${name} retirado)`)
+      if (!ctx.dryRun) {
+        rmSync(generatedDir, { recursive: true, force: true })
+      }
+    }
+    if (dirExists && trackedKeys.length === 0 && !removeGenerated && diskFiles.length === 0) {
+      ctx.act(`borro ${ctx.show(modDir)} (mod ${name} retirado)`)
+    }
+    pruneEmptyDir(modDir, ctx.dryRun)
   }
 }
 
@@ -190,12 +225,12 @@ const installMods = ctx => {
   }
   ctx.state.mods = names
 
-  // Merge the mod folders into env.CLAUDE_CODE_PLUGIN_DIRS of ~/.claude/settings.json.
   const file = ctx.L.settings
   const original = readTextIfExists(file)
   const data = parseSettings(original ?? '', file)
   const next = structuredClone(data)
   const dirs = names.map(name => path.join(ctx.L.modsDir, name))
+  const retiredDirs = RETIRED_MODS.map(name => path.join(ctx.L.modsDir, name))
   const createdEnv = next.env === undefined
   if (next.env === undefined || next.env === null || typeof next.env !== 'object' || Array.isArray(next.env)) {
     if (next.env !== undefined) {
@@ -204,21 +239,24 @@ const installMods = ctx => {
     next.env = {}
   }
   const createdKey = next.env.CLAUDE_CODE_PLUGIN_DIRS === undefined
-  const merged = mergePluginDirs(next.env.CLAUDE_CODE_PLUGIN_DIRS, dirs)
+  const stripped = removePluginDirs(next.env.CLAUDE_CODE_PLUGIN_DIRS, retiredDirs)
+  const merged = mergePluginDirs(stripped.value, dirs)
   next.env.CLAUDE_CODE_PLUGIN_DIRS = merged.value
   const unchanged = original !== null && deepEqual(data, next)
   let created = false
   if (unchanged) {
     ctx.say(`  CLAUDE_CODE_PLUGIN_DIRS ya incluye los ${names.length} mods`)
   } else {
-    created = ctx.writeShared(file, stringifySettings(next, original), `${ctx.show(file)} (CLAUDE_CODE_PLUGIN_DIRS +${merged.added.length})`).created
+    const diff = `+${merged.added.length}${stripped.removed > 0 ? ` -${stripped.removed}` : ''}`
+    created = ctx.writeShared(file, stringifySettings(next, original), `${ctx.show(file)} (CLAUDE_CODE_PLUGIN_DIRS ${diff})`).created
   }
   if (!ctx.dryRun) {
     // Claim every mod dir this install owns, also the ones that were already listed (orphans of an aborted run).
     const prev = ctx.state.settings
+    const keptPrev = (prev?.pluginDirsAdded ?? []).filter(entry => !retiredDirs.some(dir => samePath(entry, dir)))
     ctx.state.settings = {
       file,
-      pluginDirsAdded: [...new Set([...(prev?.pluginDirsAdded ?? []), ...dirs])],
+      pluginDirsAdded: [...new Set([...keptPrev, ...dirs])],
       createdFile: prev ? prev.createdFile : created,
       createdEnv: prev ? prev.createdEnv : !unchanged && createdEnv,
       createdKey: prev ? prev.createdKey : !unchanged && createdKey,
@@ -535,7 +573,7 @@ const printManualSteps = (ctx, { skipPi }) => {
   if (!skipPi) {
     step('Pi: abrí `pi` y corré /login para conectar tu cuenta (sin eso Gentle Shell no responde)')
   }
-  step('GitHub CLI: `gh auth login` (el tablero de PRs y el puente lo necesitan)')
+  step('GitHub CLI: `gh auth login` (el tablero de PRs y los comandos de despacho lo necesitan)')
   step('Después de cada `gentle-ai sync`, volvé a correr `orca-stack global` (la sync reescribe el bloque de gentle-ai que `global` achicó)')
   for (const [bin, title] of [['engram', 'engram'], ['gentle-ai', 'gentle-ai']]) {
     if (!which(bin)) {
@@ -610,6 +648,7 @@ export const globalCommand = async flags => {
     installWrappers(ctx)
     installSkills(ctx)
     removeRetiredPonytail(ctx)
+    removeRetiredMods(ctx)
     installMods(ctx)
     removeClaudeMdBlock(ctx)
     homeAgentsPointer(ctx)

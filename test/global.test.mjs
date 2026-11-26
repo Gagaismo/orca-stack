@@ -9,7 +9,7 @@ import { packageVersion, samePath } from '../src/util.mjs'
 import { sddConfig, withPath } from './gentle-fixture.mjs'
 import { ROOT, backups, cleanup, cli, git, isolatePath, pathKey, read, snapshot, tempDir, write } from './helpers.mjs'
 
-const MODS = ['bandeja-mensajes', 'grilling-ok', 'guardia-despacho', 'main-md', 'marchas', 'modo-autonomo', 'puente-gentle', 'reloj-cache', 'tablero-despacho']
+const MODS = ['bandeja-mensajes', 'grilling-ok', 'guardia-despacho', 'main-md', 'marchas', 'modo-autonomo', 'reloj-cache', 'tablero-despacho']
 
 let home
 beforeEach(() => {
@@ -334,7 +334,7 @@ describe('global', () => {
       assert.ok(existsSync(path.join(home, '.claude', 'mods', mod, '.claude-plugin', 'plugin.json')), mod)
       assert.ok(existsSync(path.join(home, '.claude', 'mods', mod, 'hooks', 'hooks.json')), mod)
     }
-    assert.equal(existsSync(path.join(home, '.claude', 'mods', 'puente-gentle', 'tests')), false)
+    assert.equal(existsSync(path.join(home, '.claude', 'mods', 'guardia-despacho', 'tests')), false)
     const dirs = JSON.parse(read(settingsPath())).env.CLAUDE_CODE_PLUGIN_DIRS.split(path.delimiter)
     assert.deepEqual(dirs, MODS.map(m => path.join(home, '.claude', 'mods', m)))
     assert.equal(existsSync(claudeMdPath()), false, 'global leaves the methodology to the project')

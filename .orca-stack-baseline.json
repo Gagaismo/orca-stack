@@ -2,12 +2,6 @@
   "version": 1,
   "entries": [
     {
-      "rule": "comment-excuse",
-      "file": "src/estado.mjs",
-      "location": "globToRegExp()",
-      "fingerprint": "sha256:8da6ae7f868bbadb"
-    },
-    {
       "rule": "long-file",
       "file": "test/despacho.test.mjs",
       "location": "file",
@@ -28,12 +22,6 @@
       "file": "assets/skills/statechart/scripts/ir.ts",
       "location": "module",
       "fingerprint": "sha256:9d09600b510d644a"
-    },
-    {
-      "rule": "shallow-module",
-      "file": "mods/puente-gentle/hooks/puente.ts",
-      "location": "module",
-      "fingerprint": "sha256:0e159fc2b56ec383"
     },
     {
       "rule": "shallow-module",
