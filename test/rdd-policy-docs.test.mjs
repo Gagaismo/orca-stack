@@ -33,15 +33,15 @@ describe('main-autonomo: policy and briefs', () => {
     assert.ok(six.includes('Con `"humano"`'), six)
   })
 
-  test('S2: step 6 switches a PR whose requested RDD ran out of context budget to two reviews of two families', () => {
+  test('S2: step 6 switches a PR whose requested RDD ran out of context budget to one review of another family from the roster', () => {
     const six = step(6)
     for (const reason of ['`lens_context_budget_exceeded`', '`correction_context_budget_exceeded`']) assert.ok(six.includes(reason), reason)
-    assert.ok(six.includes('pasás ese PR a dos reviews limpios de dos familias de modelo distintas que no sean la de pi'), six)
+    assert.ok(six.includes('pasás ese PR a un review limpio de un agente del roster de otra familia distinta de la de pi'), six)
     assert.ok(six.includes('sin preguntarle al humano'), six)
     assert.ok(six.includes('cuya primera línea es `RDD fuera de presupuesto: <sha> (<motivo>)`'), six)
     assert.ok(six.includes('Vale también en un PR que toca `riesgo`'), six)
     assert.ok(six.includes('el comentario se publicó después de tu pedido `RDD: <head> (<lentes>)`'), six)
-    assert.ok(six.includes('ese marcador sobre otro head, anterior a tu pedido, sin pedido o dentro de un review no cuenta, y una sola familia tampoco'), six)
+    assert.ok(six.includes('ese marcador sobre otro head, anterior a tu pedido, sin pedido o dentro de un review no cuenta'), six)
     assert.ok(!six.includes('ese merge se lo pasás al humano'), six)
   })
 

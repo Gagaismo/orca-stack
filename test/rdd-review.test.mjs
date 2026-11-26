@@ -44,7 +44,7 @@ describe('#338 RDD review mode for pi PRs', () => {
       'lo cerrás con `orca orchestration gate-resolve`',
       'le respondés a pi por id con `orca orchestration reply --id <message_id>`; Orca lo despierta con la respuesta.',
       'pi publica en el PR un comentario cuya primera línea es `RDD fuera de presupuesto: <sha> (<motivo>)` y termina con `worker_done` partial',
-      '`estado` cuenta esos dos reviews sobre el head',
+      '`estado` cuenta ese review sobre el head',
     ]) assert.ok(six.includes(text), text)
     for (const gone of ['terminal de pi', 'retomás a pi con `orca-stack reanudar', '<url-del-comentario>', 'Consulta: pi', '`puente-gentle` cuentan esos dos reviews']) assert.ok(!six.includes(gone), gone)
   })

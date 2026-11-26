@@ -38,12 +38,12 @@ describe('global', () => {
     assert.deepEqual(config.agentes.preguntarAntes, [])
   })
 
-  test('issue 283 Rule 5: AGENTS and contract share the codex reviewer fallback', () => {
+  test('issue 283 Rule 5: AGENTS and contract share the worker roster and reviewer rules', () => {
     const contract = read(path.join(ROOT, 'assets/stack/CONTRATO.md'))
     const agents = read(path.join(ROOT, 'AGENTS.md'))
-    const fallback = text => text.split(/\r?\n/).find(line => line.startsWith('Revisa agy,'))
-    assert.ok(fallback(contract)?.includes('Si codex est\u00E1 bloqueado o no tiene cuota, el PR espera a que codex vuelva.'))
-    assert.equal(fallback(agents), fallback(contract))
+    const roster = text => text.split(/\r?\n/).find(line => line.startsWith('`claude` ya no es un agente worker'))
+    assert.ok(roster(contract)?.includes('El roster activo es `agentes.usa` menos `claude`'))
+    assert.equal(roster(agents), roster(contract))
   })
 
   test('installs an offline command that reports the version global ran', () => {
