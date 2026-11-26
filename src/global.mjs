@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import path from 'node:path'
 
-import { GRILL_SKILLS, INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, WRAPPERS } from './constants.mjs'
+import { GRILL_SKILLS, INSTALL_HINTS, LEGACY_BEGIN, LEGACY_END, MARKER_BEGIN, PROJECT_CONFIG, RETIRED_MODS, WRAPPERS } from './constants.mjs'
 import { createCtx } from './ctx.mjs'
 import { PERKS, perksOf } from './perks.mjs'
 import { NO_BLOCK, isLazyBlock, lazyifyBlock, migrateOrchestratorCopy, orchestratorMode, rddMode, readPersonalConfig, refreshLazyPointer, restoreBlock, sddBlock, trimReviewSections } from './gentle.mjs'
@@ -131,6 +131,33 @@ const pruneEmptyDir = (dir, dryRun) => {
   return empty
 }
 
+const removeRetiredFiles = (ctx, trackedKeys, diskFiles, reason, skipUntracked = () => false) => {
+  for (const key of trackedKeys) {
+    const entry = ctx.state.files[key]
+    if (!existsSync(key)) {
+      if (!ctx.dryRun) {
+        delete ctx.state.files[key]
+      }
+      continue
+    }
+    if (sha256(readFileSync(key)) !== entry.sha256) {
+      ctx.say(`  ⚠ ${ctx.show(key)} fue modificado después de instalarlo: lo dejo como está`)
+      continue
+    }
+    ctx.act(`borro ${ctx.show(key)} (${reason})`)
+    if (!ctx.dryRun) {
+      unlinkSync(key)
+      delete ctx.state.files[key]
+    }
+  }
+  for (const file of diskFiles) {
+    if (trackedKeys.some(key => samePath(key, file)) || skipUntracked(file)) {
+      continue
+    }
+    ctx.say(`  ⚠ ${ctx.show(file)} no lo instaló orca-stack: lo dejo como está`)
+  }
+}
+
 // #429: remove Ponytail files that an earlier `global` installed, leaving any user file with the same name alone.
 const removeRetiredPonytail = ctx => {
   const stackFile = path.join(ctx.L.stackDir, 'PONYTAIL.md')
@@ -150,36 +177,11 @@ const removeRetiredPonytail = ctx => {
     return
   }
   ctx.say('\nLimpieza de Ponytail retirado')
-  for (const key of trackedKeys) {
-    const entry = ctx.state.files[key]
-    if (!existsSync(key)) {
-      if (!ctx.dryRun) {
-        delete ctx.state.files[key]
-      }
-      continue
-    }
-    if (sha256(readFileSync(key)) !== entry.sha256) {
-      ctx.say(`  ⚠ ${ctx.show(key)} fue modificado después de instalarlo: lo dejo como está`)
-      continue
-    }
-    ctx.act(`borro ${ctx.show(key)} (perk ponytail retirado)`)
-    if (!ctx.dryRun) {
-      unlinkSync(key)
-      delete ctx.state.files[key]
-    }
-  }
-  for (const file of diskFiles) {
-    if (trackedKeys.some(key => samePath(key, file))) {
-      continue
-    }
-    ctx.say(`  ⚠ ${ctx.show(file)} no lo instaló orca-stack: lo dejo como está`)
-  }
+  removeRetiredFiles(ctx, trackedKeys, diskFiles, 'perk ponytail retirado')
   for (const dir of skillDirs) {
     pruneEmptyDir(dir, ctx.dryRun)
   }
 }
-
-const RETIRED_MODS = ['puente-gentle']
 
 // #391: remove retired mods that an earlier `global` installed, leaving any user-modified or untracked file alone.
 const removeRetiredMods = ctx => {
@@ -188,45 +190,25 @@ const removeRetiredMods = ctx => {
     const modDir = path.join(ctx.L.modsDir, name)
     const generatedDir = path.join(modDir, '.claude-plugin', 'types')
     const trackedKeys = Object.keys(ctx.state.files).filter(file => isUnderDir(file, modDir))
-    const diskFiles = existsSync(modDir) && statSync(modDir).isDirectory()
-      ? listFiles(modDir).map(rel => path.join(modDir, ...rel.split('/')))
-      : []
-    if (trackedKeys.length === 0 && diskFiles.length === 0) {
+    const dirExists = existsSync(modDir) && statSync(modDir).isDirectory()
+    const diskFiles = dirExists ? listFiles(modDir).map(rel => path.join(modDir, ...rel.split('/'))) : []
+    if (trackedKeys.length === 0 && !dirExists) {
       continue
     }
     if (!announced) {
       ctx.say('\nLimpieza de mods retirados')
       announced = true
     }
-    for (const key of trackedKeys) {
-      const entry = ctx.state.files[key]
-      if (!existsSync(key)) {
-        if (!ctx.dryRun) {
-          delete ctx.state.files[key]
-        }
-        continue
-      }
-      if (sha256(readFileSync(key)) !== entry.sha256) {
-        ctx.say(`  ⚠ ${ctx.show(key)} fue modificado después de instalarlo: lo dejo como está`)
-        continue
-      }
-      ctx.act(`borro ${ctx.show(key)} (mod ${name} retirado)`)
-      if (!ctx.dryRun) {
-        unlinkSync(key)
-        delete ctx.state.files[key]
-      }
-    }
-    if (existsSync(generatedDir) && (trackedKeys.length > 0 || diskFiles.every(file => isUnderDir(file, generatedDir)))) {
+    const removeGenerated = existsSync(generatedDir) && (trackedKeys.length > 0 || diskFiles.every(file => isUnderDir(file, generatedDir)))
+    removeRetiredFiles(ctx, trackedKeys, diskFiles, `mod ${name} retirado`, file => removeGenerated && isUnderDir(file, generatedDir))
+    if (removeGenerated) {
       ctx.act(`borro ${ctx.show(generatedDir)} (lo genera Claude Code al cargar el mod ${name} retirado)`)
       if (!ctx.dryRun) {
         rmSync(generatedDir, { recursive: true, force: true })
       }
     }
-    for (const file of diskFiles) {
-      if (trackedKeys.some(key => samePath(key, file)) || isUnderDir(file, generatedDir)) {
-        continue
-      }
-      ctx.say(`  ⚠ ${ctx.show(file)} no lo instaló orca-stack: lo dejo como está`)
+    if (dirExists && trackedKeys.length === 0 && !removeGenerated && diskFiles.length === 0) {
+      ctx.act(`borro ${ctx.show(modDir)} (mod ${name} retirado)`)
     }
     pruneEmptyDir(modDir, ctx.dryRun)
   }

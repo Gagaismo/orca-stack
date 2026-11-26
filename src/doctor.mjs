@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 
 import { hasRetiredPonytailPerk, mergedPerks, perkProblems, perksOf } from './perks.mjs'
-import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, WRAPPERS } from './constants.mjs'
+import { ENGRAM_MIN_VERSION, INSTALL_HINTS, LEGACY_BEGIN, PINNED, PI_PACKAGES, PROJECT_CONFIG, PROJECT_LOCAL_CONFIG, RETIRED_MODS, WRAPPERS } from './constants.mjs'
 import { candidateWorktreesStatus } from './candidate-worktrees.mjs'
 import { CODEX_DOC_DEFAULT, readCodexDocBytes } from './codex-doc-bytes.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
@@ -381,9 +381,11 @@ export const doctorCommand = async flags => {
       add('ok', name)
     }
   }
-  const retiredPuente = path.join(L.modsDir, 'puente-gentle')
-  if (existsSync(retiredPuente) || (settingsOk && pluginDirs.some(entry => samePath(entry, retiredPuente)))) {
-    add('warn', 'mod puente-gentle retirado', 'quedó una copia instalada de una versión anterior: corré `orca-stack global` para sacarla')
+  for (const name of RETIRED_MODS) {
+    const retiredDir = path.join(L.modsDir, name)
+    if (existsSync(retiredDir) || (settingsOk && pluginDirs.some(entry => samePath(entry, retiredDir)))) {
+      add('warn', `mod ${name} retirado`, 'quedó una copia instalada de una versión anterior: corré `orca-stack global` para sacarla')
+    }
   }
   // The methodology now arrives through the project; an old global block keeps loading it in every session.
   if (existsSync(L.claudeMd)) {

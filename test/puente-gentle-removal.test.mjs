@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 
@@ -7,8 +7,8 @@ import { estadoCommand } from '../src/estado.mjs'
 import { upsertBlock } from '../src/marker.mjs'
 import { policyBlock } from '../src/templates.mjs'
 import { sha256 } from '../src/util.mjs'
-import { SHARED_USERS, FIXTURE_USERS } from '../scripts/sync-shared.mjs'
-import { cleanup, cli, read, ROOT, tempDir, write } from './helpers.mjs'
+import { SHARED_USERS } from '../scripts/sync-shared.mjs'
+import { cleanup, cli, isolatePath, read, ROOT, tempDir, write } from './helpers.mjs'
 
 const ACTIVE_MODS = [
   'bandeja-mensajes',
@@ -126,7 +126,7 @@ describe('#391 Remove puente-gentle mod and Gentle Shell consult', () => {
   test('S1: puente-gentle mod is deleted, sync-shared drops it, and global no longer installs it or consultar_gentle_shell', () => {
     assert.equal(existsSync(path.join(ROOT, 'mods', 'puente-gentle')), false, 'mods/puente-gentle must be removed')
     assert.equal(SHARED_USERS.includes('puente-gentle'), false, 'SHARED_USERS must not include puente-gentle')
-    assert.equal(FIXTURE_USERS.includes('puente-gentle'), false, 'FIXTURE_USERS must not include puente-gentle')
+    assert.doesNotMatch(read(path.join(ROOT, 'scripts', 'sync-shared.mjs')), /puente-gentle|FIXTURE_USERS/)
 
     const home = tempDir('rm391-s1-home')
     try {
@@ -182,13 +182,38 @@ describe('#391 Remove puente-gentle mod and Gentle Shell consult', () => {
     } finally {
       cleanup(userHome)
     }
+    const emptyHome = tempDir('rm391-s2a-empty')
+    try {
+      const emptyMod = path.join(emptyHome, '.claude', 'mods', 'puente-gentle', '.claude-plugin')
+      mkdirSync(emptyMod, { recursive: true })
+      const before = cli(emptyHome, ['doctor', '--offline', '--skip-pi'])
+      assert.match(before.out, /⚠ mod puente-gentle retirado.*orca-stack global/)
+      const res = cli(emptyHome, ['global', '--skip-pi'])
+      assert.equal(res.status, 0, res.out)
+      assert.equal(existsSync(path.join(emptyHome, '.claude', 'mods', 'puente-gentle')), false)
+      const after = cli(emptyHome, ['doctor', '--offline', '--skip-pi'])
+      assert.doesNotMatch(after.out, /puente-gentle/i)
+    } finally {
+      cleanup(emptyHome)
+    }
   })
 
   test('S2b: doctor stops checking gentle-pi skills as puente-gentle resolves them and warns naming orca-stack global when an old puente-gentle copy remains', () => {
     const home = tempDir('rm391-s2b-home')
     try {
+      const bin = path.join(home, 'fake-bin')
+      const win = process.platform === 'win32'
+      const piExe = path.join(bin, win ? 'pi.cmd' : 'pi')
+      write(piExe, win ? '@echo off\r\necho 1.5.2\r\n' : '#!/bin/sh\necho 1.5.2\n')
+      if (!win) chmodSync(piExe, 0o755)
+      const env = isolatePath(bin)
+
       const install = cli(home, ['global', '--skip-pi'])
       assert.equal(install.status, 0, install.out)
+      const cleanWithPi = cli(home, ['doctor', '--offline'], { env })
+      assert.match(cleanWithPi.out, /✔ pi 1\.5\.2/)
+      assert.doesNotMatch(cleanWithPi.out, /puente-gentle|skills de gentle-pi/i)
+
       const clean = cli(home, ['doctor', '--offline', '--skip-pi'])
       assert.doesNotMatch(clean.out, /puente-gentle|skills de gentle-pi/i)
 
@@ -224,10 +249,12 @@ describe('#391 Remove puente-gentle mod and Gentle Shell consult', () => {
   })
 
   test('S3: src/estado.mjs and src/despacho.mjs comments name estado as the source and stop referencing puente.ts or puente-gentle', () => {
-    for (const file of ['src/estado.mjs', 'src/despacho.mjs']) {
-      const text = read(path.join(ROOT, file))
-      assert.doesNotMatch(text, /puente-gentle|puente\.ts|mirrors\s+mods\/puente/i, file)
-    }
+    const estadoText = read(path.join(ROOT, 'src', 'estado.mjs'))
+    const despachoText = read(path.join(ROOT, 'src', 'despacho.mjs'))
+    assert.doesNotMatch(estadoText, /puente-gentle|puente\.ts|mirrors\s+mods\/puente/i, 'src/estado.mjs')
+    assert.doesNotMatch(despachoText, /puente-gentle|puente\.ts|mirrors\s+mods\/puente/i, 'src/despacho.mjs')
+    assert.match(estadoText, /Source of truth|estado is the single source/)
+    assert.match(despachoText, /src\/estado\.mjs \(the source of truth/)
   })
 
   test('S4: estado no longer blocks a PR on a published Gentle Shell consult comment (#446 removed)', async () => {
@@ -317,6 +344,11 @@ describe('#391 Remove puente-gentle mod and Gentle Shell consult', () => {
   })
 
   test('S5 & S8: AGENTS.md, CONTRATO.md, MAIN.md, ORCA-STACK.md, docs/, README.md and briefs do not mention puente-gentle, consultar_gentle_shell or Gentle Shell consults', () => {
+    const walkDocs = dir => readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+      if (entry.name === 'adr') return []
+      const full = path.join(dir, entry.name)
+      return entry.isDirectory() ? walkDocs(full) : entry.name.endsWith('.md') ? [path.relative(ROOT, full).split(path.sep)] : []
+    })
     const briefs = readdirSync(path.join(ROOT, 'assets', 'stack'))
       .filter(name => name.startsWith('brief-') && name.endsWith('.md'))
       .map(name => ['assets', 'stack', name])
@@ -327,9 +359,9 @@ describe('#391 Remove puente-gentle mod and Gentle Shell consult', () => {
       ['assets', 'stack', 'MAIN.md'],
       ['assets', 'stack', 'MARCHAS.md'],
       ['assets', 'stack', 'ORCA-STACK.md'],
+      ['assets', 'stack', 'ROLE-BRIEFS.md'],
       ['assets', 'skills', 'arena', 'SKILL.md'],
-      ['docs', 'manual.md'],
-      ['docs', 'guia-setup.md'],
+      ...walkDocs(path.join(ROOT, 'docs')),
       ...briefs,
     ]
     const FORBIDDEN = /puente-gentle|consultar_gentle_shell|consultas?\s+a\s+Gentle\s+Shell|Gentle\s+Shell\s+consult|consult\s+bridge|consulted\s+as\s+a\s+peer|consulta\s+<tema>,\s*publicada\s+por\s+main|consulta\s+confirmada|el\s+puente/i

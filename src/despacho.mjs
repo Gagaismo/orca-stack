@@ -12,7 +12,7 @@ import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from '.
 
 // Source of truth: shared/orca-config.ts (FAMILIES, familyOf, blockOf), which explains the rules. Duplicated because
 // the mods cannot import src/ and Node 20 cannot import TypeScript; test/units.test.mjs compares the literal and runs
-// shared/familias.json against both sides.
+// shared/familias.json against it.
 // BEGIN FAMILIES
 export const FAMILIES = {
   "agents": ["claude", "agy", "codex", "pi"],
