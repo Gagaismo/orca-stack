@@ -2,7 +2,7 @@
 
 Este manual cuenta cómo se usa orca-stack día a día: qué hace cada comando, mod y skill, cuándo conviene usarlo y cuándo no, qué pasa en los bordes y cómo se opera y se arregla. No repite el setup: para instalar y configurar un proyecto, seguí la [guía de setup](guia-setup.md). Para el detalle de cada instalación y de cada clave de configuración, el [README](../README.md).
 
-Versión de referencia: `orca-stack v0.24.0`. Lo que se mergee después de ese tag lleva la marca **`[solo en main]`** y se lista en la [sección 7](#7-qué-hay-solo-en-main): todavía no está publicado en un release, así que con `npx github:Gagaismo/orca-stack#v0.24.0` no lo vas a tener. Para usarlo, corré el CLI desde un checkout de `main` (`node bin/orca-stack.mjs <comando>`) o esperá al próximo release.
+Versión de referencia: `orca-stack v0.25.0`. Lo que se mergee después de ese tag lleva la marca **`[solo en main]`** y se lista en la [sección 7](#7-qué-hay-solo-en-main): todavía no está publicado en un release, así que con `npx github:Gagaismo/orca-stack#v0.25.0` no lo vas a tener. Para usarlo, corré el CLI desde un checkout de `main` (`node bin/orca-stack.mjs <comando>`) o esperá al próximo release.
 
 ## Contenido
 
@@ -750,8 +750,8 @@ La tabla completa está en la [guía de setup](guia-setup.md#parte-6-problemas-c
 
 ## 7. Qué hay solo en `main`
 
-Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.24.0`, todavía no publicado en un release.
+Marca usada en todo el manual: **`[solo en main]`** = mergeado después del tag `v0.25.0`, todavía no publicado en un release.
 
-- **Retiro del canal `Consulta:` de GitHub** (#467, [ADR 0004](adr/0004-workers-ask-through-the-run-mailbox.md)): se eliminaron el subcomando y la opción de `vigilar` deprecados en `v0.24.0`; las sesiones en otros repos que todavía publiquen `Consulta:` ya no se vigilan.
+(nada por ahora)
 
 Cuando salga el próximo release, esta sección se vacía y las marcas se sacan.
