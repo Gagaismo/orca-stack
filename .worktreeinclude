@@ -1,3 +1,2 @@
-# Gitignored local files Orca copies into each new worktree.
-# Literal paths only (Orca skips globs and negations); never list secrets such as .env files.
+# Gagaismo/orca-stack#432: literal paths only (Orca skips globs and negations); never list secrets such as .env files.
 .orca-stack.local.json

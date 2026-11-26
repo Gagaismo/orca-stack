@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
+import { WORKTREE_INCLUDE, orcaYaml } from '../src/init.mjs'
 import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
 let home
@@ -273,9 +274,10 @@ describe('orca-setup: riesgo globs for single files and match listing (issue #28
   })
 })
 
+const entries = text => text.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'))
+
 describe('#432 orca.yaml and .worktreeinclude', () => {
   const own = name => read(path.join(ROOT, name))
-  const entries = text => text.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'))
 
   test('R1: orca-stack commits an orca.yaml whose scripts.setup runs npm install, the same text init generates for a repo with package-lock.json', () => {
     assert.match(own('orca.yaml'), /^scripts:\n {2}setup: \|\n {4}npm install\n$/m)
@@ -316,7 +318,7 @@ describe('#432 orca.yaml and .worktreeinclude', () => {
     assert.match(none.out, /^creo \.worktreeinclude$/m)
     const bare = read(path.join(repo, 'orca.yaml'))
     assert.equal(entries(bare).length, 0, 'no setup script without a detected install step')
-    assert.match(bare, /no install step \(no package-lock\.json\)/)
+    assert.match(bare, /package-lock\.json.*pnpm-lock\.yaml.*yarn\.lock/)
     cleanup(path.join(repo, 'orca.yaml'))
     write(path.join(repo, 'package-lock.json'), '{}\n')
     run()
@@ -350,6 +352,139 @@ describe('#432 orca.yaml and .worktreeinclude', () => {
     assert.match(manual, /`\.worktreeinclude`.*rutas literales/)
     assert.match(manual, /`worktree\.sharedDirectories`/)
     assert.match(manual, /Command source & orca\.yaml/)
+  })
+})
+
+describe('#487 init comment rule and lockfile detection', () => {
+  const FULL_CITATION = /(?:\bGagaismo\/orca-stack#\d+\b|\bADR[ -]?\d{4}\b|docs\/adr\/\d{4}-)/
+  const BARE_ISSUE = /(?<![\w&])#\d+\b/
+  const EXCUSE = /(?<![\p{L}\p{N}_])(?:TODO|FIXME|HACK|XXX)(?![\p{L}\p{N}_])|\b(?:hack|workarounds?|for now|upgrade when)\b|\bshortcut:/iu
+
+  const commentLinesOf = (rel, text) => {
+    const ext = path.extname(rel).toLowerCase()
+    if (ext === '.md' || ext === '.json') return []
+    const found = []
+    for (const [index, raw] of text.split(/\r?\n/).entries()) {
+      const number = index + 1
+      if (number === 1 && raw.startsWith('#!')) continue
+      const match = raw.match(/(?:^|\s)(#.*)$/)
+      if (match) found.push({ line: match[1].trim(), number })
+    }
+    return found
+  }
+
+  const assertDecisionRecordComments = (rel, text) => {
+    for (const { line, number } of commentLinesOf(rel, text)) {
+      assert.match(line, FULL_CITATION, `${rel}:${number} lacks a full Gagaismo/orca-stack#<n> or ADR citation: ${line}`)
+      const withoutFull = line.replace(/\bGagaismo\/orca-stack#\d+\b/g, '')
+      assert.doesNotMatch(withoutFull, BARE_ISSUE, `${rel}:${number} has a bare #<n> reference: ${line}`)
+      assert.doesNotMatch(line, EXCUSE, `${rel}:${number} contains an Excuse marker: ${line}`)
+    }
+  }
+
+  const freshRepo = name => {
+    const dir = path.join(tempDir('repo'), name)
+    write(path.join(dir, 'README.md'), `# ${name}\n`)
+    git(dir, 'init', '-q', '-b', 'main')
+    return dir
+  }
+
+  test('R1, R5: every comment init writes in generated files is a Decision Record citing Gagaismo/orca-stack#<n> or an ADR, never a bare #<n>', () => {
+    const before = snapshot(repo)
+    const result = run()
+    assert.equal(result.status, 0, result.out)
+    const after = snapshot(repo)
+    const written = Object.keys(after).filter(rel => !(rel in before) && !rel.endsWith('/')).sort()
+    for (const expected of ['orca.yaml', '.worktreeinclude', '.githooks/pre-push', '.github/workflows/orca-stack-lint.yml']) {
+      assert.ok(written.includes(expected), `expected init to write ${expected}, got: ${written.join(', ')}`)
+    }
+    for (const rel of written) assertDecisionRecordComments(rel, read(path.join(repo, rel)))
+    assert.match(read(path.join(repo, '.githooks/pre-push')), /Gagaismo\/orca-stack#424/)
+    assert.match(read(path.join(repo, '.github/workflows/orca-stack-lint.yml')), /Gagaismo\/orca-stack#424/)
+
+    const npmRepo = freshRepo('npm-repo')
+    try {
+      write(path.join(npmRepo, 'package-lock.json'), '{}\n')
+      assert.equal(cli(home, ['init'], { cwd: npmRepo }).status, 0)
+      assertDecisionRecordComments('orca.yaml', read(path.join(npmRepo, 'orca.yaml')))
+    } finally {
+      cleanup(path.dirname(npmRepo))
+    }
+  })
+
+  test('R2, R5: init writes no descriptive tautology comments in generated files such as the old .worktreeinclude and orca.yaml headers', () => {
+    const result = run()
+    assert.equal(result.status, 0, result.out)
+    const worktreeInclude = read(path.join(repo, '.worktreeinclude'))
+    assert.ok(!worktreeInclude.includes('# Gitignored local files Orca copies into each new worktree.'))
+    const yaml = read(path.join(repo, 'orca.yaml'))
+    assert.ok(!yaml.includes('# Orca runs scripts.setup in each new worktree right after creating it.'))
+    for (const [rel, text] of [['.worktreeinclude', worktreeInclude], ['orca.yaml', yaml]]) {
+      assertDecisionRecordComments(rel, text)
+    }
+  })
+
+  test('R3, R5: orca.yaml detects package-lock.json, pnpm-lock.yaml and yarn.lock in priority order, and names all three lockfiles when none exists', () => {
+    const cases = [
+      { name: 'npm', lockfiles: ['package-lock.json'], expected: 'npm install' },
+      { name: 'pnpm', lockfiles: ['pnpm-lock.yaml'], expected: 'pnpm install --frozen-lockfile' },
+      { name: 'yarn', lockfiles: ['yarn.lock'], expected: 'yarn install --frozen-lockfile' },
+      { name: 'npm-over-pnpm-yarn', lockfiles: ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'], expected: 'npm install' },
+      { name: 'pnpm-over-yarn', lockfiles: ['pnpm-lock.yaml', 'yarn.lock'], expected: 'pnpm install --frozen-lockfile' },
+    ]
+    for (const { name, lockfiles, expected } of cases) {
+      const dir = freshRepo(name)
+      try {
+        for (const lock of lockfiles) write(path.join(dir, lock), '{}\n')
+        const res = cli(home, ['init'], { cwd: dir })
+        assert.equal(res.status, 0, res.out)
+        assert.deepEqual(entries(read(path.join(dir, 'orca.yaml'))), ['scripts:', 'setup: |', expected], name)
+      } finally {
+        cleanup(path.dirname(dir))
+      }
+    }
+
+    const none = run()
+    assert.equal(none.status, 0, none.out)
+    const bare = read(path.join(repo, 'orca.yaml'))
+    assert.deepEqual(entries(bare), [])
+    assert.doesNotMatch(bare, /\(no package-lock\.json\)/)
+    for (const lock of ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']) {
+      assert.ok(bare.includes(lock), `missing ${lock} in:\n${bare}`)
+    }
+  })
+
+  test('R4: init never rewrites an existing orca.yaml, .worktreeinclude, pre-push or lint workflow even when their comments are old or a pnpm lockfile is present', () => {
+    const existing = {
+      'orca.yaml': '# Orca runs scripts.setup in each new worktree right after creating it.\n# orca-stack init found no install step (no package-lock.json): add one.\n',
+      '.worktreeinclude': '# Gitignored local files Orca copies into each new worktree.\n.orca-stack.local.json\n',
+      '.githooks/pre-push': '#!/bin/sh\n# Early warning only (#424)\nexec orca-stack lint\n',
+      '.github/workflows/orca-stack-lint.yml': '# Written by orca-stack init (#424)\nname: orca-stack lint\n',
+    }
+    write(path.join(repo, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n')
+    for (const [rel, content] of Object.entries(existing)) write(path.join(repo, rel), content)
+
+    const result = run()
+    assert.equal(result.status, 0, result.out)
+    for (const [rel, content] of Object.entries(existing)) {
+      assert.equal(read(path.join(repo, rel)), content, rel)
+      assert.ok(result.out.split(/\r?\n/).includes(`${rel}: ya existe, no se toca`), `missing skip line for ${rel}`)
+    }
+    assert.deepEqual(backups(home), [])
+  })
+
+  test('PRESERVE: exported orcaYaml and WORKTREE_INCLUDE match what init writes, and init preserves existing files and idempotency', () => {
+    write(path.join(repo, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0\n')
+    assert.equal(run().status, 0)
+    assert.equal(read(path.join(repo, 'orca.yaml')), orcaYaml(repo))
+    assert.equal(read(path.join(repo, '.worktreeinclude')), WORKTREE_INCLUDE)
+    assert.deepEqual(entries(WORKTREE_INCLUDE), ['.orca-stack.local.json'])
+
+    const before = snapshot(repo)
+    const second = run()
+    assert.equal(second.status, 0, second.out)
+    assert.deepEqual(snapshot(repo), before)
+    assert.deepEqual(backups(home), [])
   })
 })
 
