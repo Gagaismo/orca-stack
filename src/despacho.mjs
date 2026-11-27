@@ -460,47 +460,41 @@ const AGY_EMPTY_PROMPT = /^[\s│┃|]*>[\s│┃|]*$/
 const AGY_DIALOG = /trust this folder\?|Do you want to proceed\?/i
 const SCREEN_LINES = 15
 const firstLine = value => String(value ?? '').trim().split(/\r?\n/)[0] ?? ''
+const tailLines = tail => (Array.isArray(tail) ? tail : typeof tail === 'string' ? [tail] : [])
+  .flatMap(entry => String(entry).split(/\r?\n/))
 const screenTailBlock = (io, handle) => {
   if (!handle) return 'No se pudo leer la pantalla de la terminal: no se obtuvo el handle.'
+  const unreadable = reason => {
+    const line = firstLine(reason)
+    return `No se pudo leer la pantalla de ${handle}${line ? `: ${line}` : '.'}`
+  }
   let res
   try {
     res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])
   } catch (error) {
-    const reason = firstLine(error?.message ?? error)
-    return `No se pudo leer la pantalla de ${handle}${reason ? `: ${reason}` : '.'}`
+    return unreadable(error?.message ?? error)
   }
-  if (!res || res.status !== 0) {
-    const reason = firstLine(res?.stderr || res?.stdout || res?.error)
-    return `No se pudo leer la pantalla de ${handle}${reason ? `: ${reason}` : '.'}`
-  }
+  if (!res || res.status !== 0) return unreadable(res?.stderr || res?.stdout || res?.error)
   let body
   try {
     body = JSON.parse(res.stdout)
   } catch {
     const reason = firstLine(res.stderr || res.stdout)
-    return `No se pudo leer la pantalla de ${handle}: orca terminal read no devolvi\u00F3 JSON${reason ? ` (${reason})` : ''}.`
+    return unreadable(`orca terminal read no devolvi\u00F3 JSON${reason ? ` (${reason})` : ''}.`)
   }
-  if (body?.ok === false) {
-    const reason = firstLine(body.error?.message ?? (typeof body.error === 'string' ? body.error : ''))
-    return `No se pudo leer la pantalla de ${handle}${reason ? `: ${reason}` : '.'}`
-  }
+  if (body?.ok === false) return unreadable(body.error?.message ?? (typeof body.error === 'string' ? body.error : ''))
   const tail = body?.result?.terminal?.tail
-  if (!Array.isArray(tail) && typeof tail !== 'string') {
-    return `No se pudo leer la pantalla de ${handle}: respuesta sin contenido de pantalla.`
-  }
-  const lines = (Array.isArray(tail) ? tail : [tail])
-    .flatMap(entry => String(entry).split(/\r?\n/))
-    .filter(line => line.trim() !== '')
-    .slice(-SCREEN_LINES)
+  if (!Array.isArray(tail) && typeof tail !== 'string') return unreadable('respuesta sin contenido de pantalla.')
+  const lines = tailLines(tail).filter(line => line.trim() !== '').slice(-SCREEN_LINES)
   if (lines.length === 0) return `Pantalla (${handle}): (vac\u00EDa)`
   return `Pantalla (${handle}):\n${lines.join('\n')}`
 }
 const withScreenTail = (io, handle, message) => `${message}\n${screenTailBlock(io, handle)}`
 const screenLines = res => {
-  if (res.status !== 0) return []
+  if (!res || res.status !== 0) return []
   let tail
   try { tail = JSON.parse(res.stdout)?.result?.terminal?.tail } catch { return [] }
-  return Array.isArray(tail) ? tail.map(String) : typeof tail === 'string' ? tail.split(/\r?\n/) : []
+  return tailLines(tail)
 }
 const bottomOf = lines => lines.slice(-SCREEN_LINES).join('\n')
 const showsSplash = lines => AGY_DISMISS.test(bottomOf(lines))
