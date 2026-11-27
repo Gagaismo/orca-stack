@@ -459,11 +459,42 @@ const AGY_DISMISS_TRIES = 3
 const AGY_EMPTY_PROMPT = /^[\s│┃|]*>[\s│┃|]*$/
 const AGY_DIALOG = /trust this folder\?|Do you want to proceed\?/i
 const SCREEN_LINES = 15
+const firstLine = value => String(value ?? '').trim().split(/\r?\n/)[0] ?? ''
+const tailLines = tail => (Array.isArray(tail) ? tail : typeof tail === 'string' ? [tail] : [])
+  .flatMap(entry => String(entry).split(/\r?\n/))
+const screenTailBlock = (io, handle) => {
+  if (!handle) return 'No se pudo leer la pantalla de la terminal: no se obtuvo el handle.'
+  const unreadable = reason => {
+    const line = firstLine(reason)
+    return `No se pudo leer la pantalla de ${handle}${line ? `: ${line}` : '.'}`
+  }
+  let res
+  try {
+    res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])
+  } catch (error) {
+    return unreadable(error?.message ?? error)
+  }
+  if (!res || res.status !== 0) return unreadable(res?.stderr || res?.stdout || res?.error)
+  let body
+  try {
+    body = JSON.parse(res.stdout)
+  } catch {
+    const reason = firstLine(res.stderr || res.stdout)
+    return unreadable(`orca terminal read no devolvi\u00F3 JSON${reason ? ` (${reason})` : ''}.`)
+  }
+  if (body?.ok === false) return unreadable(body.error?.message ?? (typeof body.error === 'string' ? body.error : ''))
+  const tail = body?.result?.terminal?.tail
+  if (!Array.isArray(tail) && typeof tail !== 'string') return unreadable('respuesta sin contenido de pantalla.')
+  const lines = tailLines(tail).filter(line => line.trim() !== '').slice(-SCREEN_LINES)
+  if (lines.length === 0) return `Pantalla (${handle}): (vac\u00EDa)`
+  return `Pantalla (${handle}):\n${lines.join('\n')}`
+}
+const withScreenTail = (io, handle, message) => `${message}\n${screenTailBlock(io, handle)}`
 const screenLines = res => {
-  if (res.status !== 0) return []
+  if (!res || res.status !== 0) return []
   let tail
   try { tail = JSON.parse(res.stdout)?.result?.terminal?.tail } catch { return [] }
-  return Array.isArray(tail) ? tail.map(String) : typeof tail === 'string' ? tail.split(/\r?\n/) : []
+  return tailLines(tail)
 }
 const bottomOf = lines => lines.slice(-SCREEN_LINES).join('\n')
 const showsSplash = lines => AGY_DISMISS.test(bottomOf(lines))
@@ -495,9 +526,14 @@ const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45) =>
   let enters = 0
   for (let i = 0; i < tries; i += 1) {
     await io.sleep(2000)
-    const res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])
-    // Only the screen: the rest of the reply (the request id, the cursors) changes on every read.
-    const tail = res.status === 0 ? parseJson(res, 'orca terminal read').result?.terminal?.tail : undefined
+    let tail
+    try {
+      const res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json'])
+      // Only the screen: the rest of the reply (the request id, the cursors) changes on every read.
+      tail = res?.status === 0 ? JSON.parse(res.stdout)?.result?.terminal?.tail : undefined
+    } catch {
+      tail = undefined
+    }
     const text = Array.isArray(tail) ? tail.join('\n') : typeof tail === 'string' ? tail : ''
     if (/update available/i.test(text) && /update now/i.test(text) && /\bskip\b/i.test(text)) {
       throw new Error(`Codex muestra su men\u00FA de actualizaci\u00F3n y no recibi\u00F3 el brief. Eleg\u00ED una opci\u00F3n en la terminal ${handle} y relanzalo con orca-stack reanudar <issue> <url-del-comentario>. Pantalla: ${text}`)
@@ -600,7 +636,9 @@ const PI_BRIEF_LINE_MIN = 20
 const PI_FRAME_LINE = /^\s*╭?─ [✿❀❁✾] /u
 const PI_WAITING = /^\s*─ ✿ waiting for input ─/u
 const piInputOf = (io, handle, brief) => {
-  const lines = screenLines(io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json']))
+  let res
+  try { res = io.sh('orca', ['terminal', 'read', '--terminal', handle, '--screen', '--json']) } catch { return undefined }
+  const lines = screenLines(res)
   const last = [...lines].reverse().find(line => line.trim() !== '')
   if (last === undefined || shellPrompt(last)) return undefined
   const typed = lines.some(line => {
@@ -773,7 +811,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     if (!handle) throw new Error('orca terminal create no devolvi\u00f3 el handle de la terminal.')
     const prompt = `Read and follow the brief in ${briefPath}`
     let before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
-    if (!before) throw new Error(`La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`)
+    if (!before) throw new Error(withScreenTail(io, handle, `La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`))
     if (agent === 'agy') before = (await dismissAgySplash(io, handle, before.split('\n'), briefPath)).join('\n')
     if (supervised || rebind) {
       await startWorker(io, say, { agent, handle, briefPath, supervised, rebind })
@@ -830,6 +868,11 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     await checkPostLaunchScreen(io, handle, agent)
   } else {
     const handleOf = () => deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
+    const piNoSession = targetHandle => new Error(withScreenTail(
+      io,
+      targetHandle,
+      `No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.${targetHandle ? ` Terminal: ${targetHandle}.` : ''}`,
+    ))
     let started
     if (supervised || rebind) {
       const handle = handleOf()
@@ -871,16 +914,16 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
       }
       ;({ tools, file } = await waitForPiSession(io, home, worktree, after))
       input = tools === undefined && handle ? piInputOf(io, handle, brief) : undefined
-      if (tools === undefined && input !== 'brief') throw new Error(`No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: ${handle}.`)
+      if (tools === undefined && input !== 'brief') throw piNoSession(handle)
     }
     if (input === 'brief') {
       say(`El brief quedó escrito en la entrada de pi sin enviar: mando un Enter a ${handle}.`)
       io.sh('orca', ['terminal', 'send', '--terminal', handle, '--enter'])
       ;({ tools, file } = await waitForPiSession(io, home, worktree, after))
-      if (tools === undefined) throw new Error(`No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: ${handle}.`)
+      if (tools === undefined) throw piNoSession(handle)
     }
     if (tools === 'none') throw new Error(`La nueva sesi\u00f3n de Pi no tiene herramientas (<tools>\\n(none)); no despacho el brief. Revis\u00e1 la configuraci\u00f3n de herramientas de Pi para el worktree ${worktree}.`)
-    if (piSessionAfter > 0 && tools === undefined) throw new Error(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.${rebind ? ` Terminal: ${handleOf()}.` : ''}`)
+    if (piSessionAfter > 0 && tools === undefined) throw piNoSession(handle)
     if (file) await checkPiAuth(io, file, config.piClaudeConfigDir, after)
     if (rebind) await rebind.deliver(handleOf())
   }

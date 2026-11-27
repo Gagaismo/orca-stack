@@ -421,7 +421,8 @@ describe('orca-stack reanudar (#214)', () => {
     assert.equal(enters(stuck).length, 1)
     assert.ok(stuck.outputs.some(line => line.startsWith('\u2714 pi despachado')), stuck.outputs.join('\n'))
     const empty = relaunch('')
-    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, empty.io), error => error.message === `No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${WT}; no doy el lanzamiento por iniciado.`)
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, empty.io), error =>
+      error.message.startsWith(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${WT}; no doy el lanzamiento por iniciado. Terminal: term-new.\nPantalla (term-new):\n`))
     assert.equal(enters(empty).length, 0)
   })
 
@@ -1107,7 +1108,7 @@ describe('#454 reanudar: the relaunch rebinds the Run task', () => {
     const noSession = withRun(exitedPi())
     noSession.io.listFiles = () => []
     await assert.rejects(() => reanudarCommand({}, ISSUE, URL, noSession.io), error =>
-      error.message.startsWith('No observé una sesión nueva de Pi después del lanzamiento') && error.message.endsWith('; no doy el lanzamiento por iniciado. Terminal: term-new.'))
+      error.message.startsWith(`No observé una sesión nueva de Pi después del lanzamiento en ${WT}; no doy el lanzamiento por iniciado. Terminal: term-new.\nPantalla (term-new):\n`))
     assert.equal(orchestration(noSession).filter(args => args[1] === 'worker-start').length, 1)
     assert.equal(noSession.sends().length, 0)
   })
@@ -1284,5 +1285,28 @@ describe('#364 reanudar: a pi whose local gentle-pi checkout lacks its Gentle AI
       assert.equal(h.calls.some(({ cmd, args }) => cmd === 'orca' && ['create', 'send', 'worker-start', 'close'].includes(args[1])), false, String(state))
       assert.equal(JSON.stringify(h.files), before, String(state))
     }
+  })
+
+  test('issue #371 PRESERVE: reanudarCommand keeps passing relaunch output unchanged and includes handle and screen tail when pi session never appears', async () => {
+    const pass = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
+    pass.io.gentleSkills = () => '/pi/skills'
+    const sessionDir = path.join(HOME, '.pi', 'agent', 'sessions', 'wt')
+    const session = path.join(sessionDir, '2026-11-26T00-00-00-000Z_s.jsonl')
+    pass.io.listFiles = dir => (dir === path.dirname(sessionDir) ? [sessionDir] : dir === sessionDir ? [session] : [])
+    pass.io.modifiedAt = () => Number.MAX_SAFE_INTEGER
+    pass.files[session] = [JSON.stringify({ type: 'session', cwd: WT }), '{}', '{}', '{}', JSON.stringify({ type: 'message', message: { role: 'system', content: '<tools>\n- read' } }), JSON.stringify({ type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall' }], stopReason: 'toolUse' } })].join('\n')
+    assert.equal(await reanudarCommand({}, ISSUE, URL, pass.io), 0)
+    assert.equal(pass.outputs.at(-1), `\u2714 pi despachado en ${WT}. Brief: ${path.join(HOME, 'orca', 'briefs', 'orca-stack-212-reanudar.md')}`)
+    assert.ok(!pass.outputs.some(line => /Pantalla \(|No se pudo leer la pantalla/.test(line)))
+
+    const fail = pinned(harness({ agent: 'pi', state: null, screen: ['PS C:\\wt\\orca-stack-212>'] }))
+    fail.io.gentleSkills = () => '/pi/skills'
+    fail.io.listFiles = () => []
+    const sh = fail.io.sh
+    fail.io.sh = (cmd, args, opts) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read' && args.includes('term-new')
+      ? json({ result: { terminal: { tail: ['reanudar-picker-line'] } } })
+      : sh(cmd, args, opts)
+    await assert.rejects(() => reanudarCommand({}, ISSUE, URL, fail.io), error =>
+      error.message.includes('No observ\u00E9 una sesi\u00F3n nueva de Pi') && error.message.includes('term-new') && error.message.includes('reanudar-picker-line'))
   })
 })
