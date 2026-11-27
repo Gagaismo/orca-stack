@@ -141,7 +141,7 @@ No se queda en "el archivo existe":
 - compara la versión de Pi y de sus paquetes con las fijadas (Pi `1.5.2`, gentle-pi `4.8.0`, pi-claude-bridge `0.12.0`, gentle-engram `0.7.0`) y avisa si no coinciden; un paquete que falta es una falla, y un Pi anterior a `1.2.0` también, porque gentle-pi 4.8.0 no arranca con él;
 - da por bueno el comando `gentle-shell` autocontenido `4.8.0` o más nuevo aunque su `bin` todavía no esté en el PATH, avisa con `gentle-shell upgrade` si es anterior, y avisa si además hay un `gentle-pi` global de npm que lo puede tapar (`npm uninstall -g gentle-pi`);
 - sondea con un `pi -p` corto (con tiempo máximo) si falta el `/login` (se omite con `--offline`);
-- comprueba que cada mod esté en `CLAUDE_CODE_PLUGIN_DIRS` y avisa si quedó instalado un mod retirado (con `orca-stack global` para sacarlo);
+- comprueba que cada mod esté en `CLAUDE_CODE_PLUGIN_DIRS` y avisa si quedó instalado un mod retirado (con `orca-stack global` para sacarlo, o que se puede borrar a mano si solo quedan archivos que orca-stack no instaló); no exige las skills ni los mods retirados aunque una copia vieja del paquete todavía los traiga;
 - avisa si el plugin `caveman` de Claude Code está instalado y activo, con el comando que lo desactiva;
 - combina las tres capas de configuración igual que los mods, avisa si un script de `despacho` no existe y avisa (`warn`) si `agentes.usa` todavía incluye `claude` (se ignora porque ya no es un agente worker);
 - en un repo que usa `codex`, avisa con los dos números si `project_doc_max_bytes` (o los 32768 por defecto, si falta) es menor que el `AGENTS.md` del repo: codex cortaría el contrato;

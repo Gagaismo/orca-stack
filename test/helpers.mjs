@@ -135,7 +135,7 @@ export const isolatePath = (rawPath, { ambientOnly = false, home, exclude = [], 
 }
 
 // Runs the CLI against a throwaway home. Every home variable points at it, so nothing real can be touched.
-export const cli = (home, args, { cwd = home, env = {} } = {}) => {
+export const cli = (home, args, { cwd = home, env = {}, bin = BIN } = {}) => {
   const merged = {
     ...process.env,
     HOME: home,
@@ -156,7 +156,7 @@ export const cli = (home, args, { cwd = home, env = {} } = {}) => {
   }
   merged[envKey] = isolatedPath
 
-  const result = spawnSync(process.execPath, [BIN, ...args], {
+  const result = spawnSync(process.execPath, [bin, ...args], {
     cwd,
     encoding: 'utf8',
     env: merged,

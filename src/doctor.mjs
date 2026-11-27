@@ -11,7 +11,7 @@ import { codexAgentsMd, codexWindowsChecks } from './codex-windows.mjs'
 import { loadState } from './ctx.mjs'
 import { PI_PROVIDERS, disallowedModels } from './despacho.mjs'
 import { compareVersions, driftWarnings } from './drift.mjs'
-import { stackVars } from './global.mjs'
+import { RETIRED_PONYTAIL_SKILLS, retiredModRemovable, stackVars } from './global.mjs'
 import { readPersonalConfig } from './gentle.mjs'
 import { knownSddLeftovers } from './sdd-cleanup.mjs'
 import { removeAnyBlock } from './marker.mjs'
@@ -334,10 +334,11 @@ export const doctorCommand = async flags => {
 
   // Skills
   section('Skills')
+  const skills = listDirs(assetPath('skills')).filter(name => !RETIRED_PONYTAIL_SKILLS.includes(name))
   for (const root of [L.claudeSkills, L.agentsSkills]) {
-    const missing = listDirs(assetPath('skills')).filter(name => !existsSync(path.join(root, name, 'SKILL.md')))
+    const missing = skills.filter(name => !existsSync(path.join(root, name, 'SKILL.md')))
     if (missing.length === 0) {
-      add('ok', tilde(root, home), `${listDirs(assetPath('skills')).length} skills`)
+      add('ok', tilde(root, home), `${skills.length} skills`)
     } else {
       add('fail', tilde(root, home), `faltan: ${missing.join(', ')}`)
     }
@@ -373,7 +374,7 @@ export const doctorCommand = async flags => {
     add('fail', 'settings.json', `falta ${tilde(L.settings, home)}`)
     settingsOk = false
   }
-  for (const name of listDirs(path.join(PACKAGE_ROOT, 'mods'))) {
+  for (const name of listDirs(path.join(PACKAGE_ROOT, 'mods')).filter(mod => !RETIRED_MODS.includes(mod))) {
     const dir = path.join(L.modsDir, name)
     const files = existsSync(path.join(dir, '.claude-plugin', 'plugin.json')) && existsSync(path.join(dir, 'hooks', 'hooks.json'))
     if (!files) {
@@ -386,8 +387,11 @@ export const doctorCommand = async flags => {
   }
   for (const name of RETIRED_MODS) {
     const retiredDir = path.join(L.modsDir, name)
-    if (existsSync(retiredDir) || (settingsOk && pluginDirs.some(entry => samePath(entry, retiredDir)))) {
+    const inSettings = settingsOk && pluginDirs.some(entry => samePath(entry, retiredDir))
+    if (inSettings || (existsSync(retiredDir) && retiredModRemovable(L.modsDir, state?.files ?? {}, name))) {
       add('warn', `mod ${name} retirado`, 'quedó una copia instalada de una versión anterior: corré `orca-stack global` para sacarla')
+    } else if (existsSync(retiredDir)) {
+      add('warn', `mod ${name} retirado`, `${tilde(retiredDir, home)} solo tiene archivos que orca-stack no instaló o que cambiaron después de instalarlos: se puede borrar a mano`)
     }
   }
   // The methodology now arrives through the project; an old global block keeps loading it in every session.

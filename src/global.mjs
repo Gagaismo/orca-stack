@@ -104,7 +104,7 @@ const installSkills = ctx => {
   ctx.state.skills = names
 }
 
-const RETIRED_PONYTAIL_SKILLS = ['ponytail', 'ponytail-audit', 'ponytail-debt', 'ponytail-help', 'ponytail-review']
+export const RETIRED_PONYTAIL_SKILLS = ['ponytail', 'ponytail-audit', 'ponytail-debt', 'ponytail-help', 'ponytail-review']
 
 const isUnderDir = (file, dir) => {
   const rel = path.relative(path.resolve(dir), path.resolve(file))
@@ -183,15 +183,31 @@ const removeRetiredPonytail = ctx => {
   }
 }
 
+const retiredModLeftovers = (modsDir, files, name) => {
+  const modDir = path.join(modsDir, name)
+  const generatedDir = path.join(modDir, '.claude-plugin', 'types')
+  const trackedKeys = Object.keys(files).filter(file => isUnderDir(file, modDir))
+  const dirExists = existsSync(modDir) && statSync(modDir).isDirectory()
+  const diskFiles = dirExists ? listFiles(modDir).map(rel => path.join(modDir, ...rel.split('/'))) : []
+  const removeGenerated = existsSync(generatedDir) && (trackedKeys.length > 0 || diskFiles.every(file => isUnderDir(file, generatedDir)))
+
+  return { modDir, generatedDir, trackedKeys, dirExists, diskFiles, removeGenerated }
+}
+
+// #497: whether `global` would still delete something of a retired mod, so doctor only sends there when it helps.
+export const retiredModRemovable = (modsDir, files, name) => {
+  const { trackedKeys, dirExists, diskFiles, removeGenerated } = retiredModLeftovers(modsDir, files, name)
+
+  return removeGenerated
+    || (dirExists && diskFiles.length === 0)
+    || trackedKeys.some(key => existsSync(key) && sha256(readFileSync(key)) === files[key].sha256)
+}
+
 // #391: remove retired mods that an earlier `global` installed, leaving any user-modified or untracked file alone.
 const removeRetiredMods = ctx => {
   let announced = false
   for (const name of RETIRED_MODS) {
-    const modDir = path.join(ctx.L.modsDir, name)
-    const generatedDir = path.join(modDir, '.claude-plugin', 'types')
-    const trackedKeys = Object.keys(ctx.state.files).filter(file => isUnderDir(file, modDir))
-    const dirExists = existsSync(modDir) && statSync(modDir).isDirectory()
-    const diskFiles = dirExists ? listFiles(modDir).map(rel => path.join(modDir, ...rel.split('/'))) : []
+    const { modDir, generatedDir, trackedKeys, dirExists, diskFiles, removeGenerated } = retiredModLeftovers(ctx.L.modsDir, ctx.state.files, name)
     if (trackedKeys.length === 0 && !dirExists) {
       continue
     }
@@ -199,7 +215,6 @@ const removeRetiredMods = ctx => {
       ctx.say('\nLimpieza de mods retirados')
       announced = true
     }
-    const removeGenerated = existsSync(generatedDir) && (trackedKeys.length > 0 || diskFiles.every(file => isUnderDir(file, generatedDir)))
     removeRetiredFiles(ctx, trackedKeys, diskFiles, `mod ${name} retirado`, file => removeGenerated && isUnderDir(file, generatedDir))
     if (removeGenerated) {
       ctx.act(`borro ${ctx.show(generatedDir)} (lo genera Claude Code al cargar el mod ${name} retirado)`)
