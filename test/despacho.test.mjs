@@ -525,7 +525,11 @@ describe('revisar: one worktree per reviewer', () => {
   })
 
   test('Rule 4: the same PR head cannot be reviewed twice by one reviewer', async () => {
-    const { env } = reusable({ head: 'bbb222', prHead: 'bbb222' })
+    const { env } = reusable({
+      head: 'bbb222',
+      prHead: 'bbb222',
+      over: { 'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9, reviews: [{ body: 'Revisor: agy\nCommit: bbb222\n\n## BLOQUEA\nnada' }], comments: [] }) },
+    })
     await assert.rejects(run('review', { n: '9', agent: 'agy' }, env), /Ya revisaste bbb222 con agy\./)
     assert.ok(!env.calls.some(call => call[0] === 'git' && call[1] === 'checkout'))
   })
@@ -645,6 +649,7 @@ describe('revisar: one worktree per reviewer', () => {
 
   test('a second reviewer of the same PR gets its own worktree, brief and session', async () => {
     const taken = {
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9, reviews: [{ body: 'Revisor: agy\nCommit: abc123\n\n## BLOQUEA\nnada' }], comments: [] }),
       'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree C:/x/revision-9-agy\nHEAD abc123\nbranch refs/heads/revision-9-agy\n`),
       'git status': okRes(''),
       'orca worktree ps': json({ result: { worktrees: [{ path: 'C:/x/revision-9-agy', agents: [] }] } }),
@@ -5110,5 +5115,99 @@ describe('issue #371: show terminal handle and screen tail when launch does not 
     await assert.rejects(reboteCommand({}, '12', fail.io), error =>
       error.message.includes('No observ\u00E9 una sesi\u00F3n nueva de Pi') && error.message.includes('term_1') && error.message.includes('rebote-picker'))
     assert.equal(fail.calls.some(c => c[0] === 'gh' && c[1] === 'pr' && c[2] === 'comment'), false)
+  })
+})
+
+describe('#502 revisar: retry undelivered review and published-review block', () => {
+  const HEAD_502 = 'd67c051700000000000000000000000000000000'
+  const OLD_HEAD = 'aaa1111000000000000000000000000000000000'
+  const reviewEnv = ({ reviews = [], comments = [], withWorktree = true, agents = [], terminals = [] } = {}) => {
+    const wt = path.join(path.dirname(root), 'revision-61-agy')
+    return {
+      wt,
+      env: fakeIo({
+        'gh pr': json({ headRefName: 'feat', headRefOid: HEAD_502, body: 'Implementador: codex', number: 61, reviews, comments }),
+        ...(withWorktree ? {
+          'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${wt}\nHEAD ${HEAD_502}\nbranch refs/heads/revision-61-agy\n`),
+          'git status': okRes(''),
+          'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+          'orca worktree ps': json({ result: { worktrees: [{ path: wt, agents }] } }),
+          'orca terminal list': json({ result: { terminals } }),
+        } : {}),
+      }),
+    }
+  }
+
+  test('Rule 1: revisar relaunches an undelivered existing revision worktree in place when no review for that commit is published', async () => {
+    const baseComments = [
+      { body: `> Revisor: agy\n> Commit: ${HEAD_502}\n\nQuoted example only.` },
+    ]
+    const baseReviews = [
+      { body: `Revisor: codex\nCommit: ${HEAD_502}\n\n## BLOQUEA\nnada` },
+      { body: `Revisor: agy\nCommit: ${OLD_HEAD}\n\n## BLOQUEA\nnada` },
+    ]
+    for (const [agents, terminals] of [
+      [[], []],
+      [[{ state: 'done', paneKey: 'tab-d:leaf-d' }], [{ handle: 'term_done', tabId: 'tab-d', leafId: 'leaf-d', worktreePath: path.join(path.dirname(root), 'revision-61-agy') }]],
+    ]) {
+      const { wt, env } = reviewEnv({ reviews: baseReviews, comments: baseComments, agents, terminals })
+      assert.equal(await revisarCommand({}, '61', 'agy', env.io), 0)
+      const prViews = env.calls.filter(c => c[0] === 'gh' && c[1] === 'pr' && c[2] === 'view')
+      assert.equal(prViews.length, 1)
+      assert.ok(prViews[0].includes('headRefName,headRefOid,body,number,comments,reviews'), prViews[0].join(' '))
+      assert.ok(env.calls.some(c => c.join(' ') === `git checkout --detach ${HEAD_502}`))
+      assert.ok(!env.calls.some(c => c[0] === 'orca' && c[1] === 'worktree' && c[2] === 'create'))
+      if (terminals.length > 0) assert.ok(env.calls.some(c => c.join(' ') === 'orca terminal close --terminal term_done --json'))
+      const briefPath = path.join(home, 'orca', 'briefs', 'proj-revision-61-agy.md')
+      const writtenBrief = env.written.find(([file]) => file === briefPath)?.[1]
+      assert.ok(writtenBrief, wt)
+      assert.ok(writtenBrief.includes('This is the first review round; review the full PR.'), writtenBrief)
+      assert.ok(!writtenBrief.includes('You already reviewed commit'), writtenBrief)
+      assert.ok(!writtenBrief.includes('Partial review by design'), writtenBrief)
+      assert.equal(env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'create').length, 1)
+      const sends = env.calls.filter(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'send')
+      assert.equal(sends.length, 1)
+      assert.ok(sends[0].includes(`Read and follow the brief in ${briefPath}`))
+    }
+  })
+
+  test('Rule 2: revisar still blocks when a review or comment for that commit is already published and preserves --rutas', async () => {
+    for (const [reviews, comments] of [
+      [[{ body: `Revisor: agy\nCommit: ${HEAD_502}\n\n## BLOQUEA\nnada` }], []],
+      [[], [{ body: 'Revisor: agy\nCommit: d67c0517\n\n## BLOQUEA\nnada' }]],
+      [[{ body: 'Revisor: agy\nCommit: `d67c0517`\n\n## BLOQUEA\nnada' }], []],
+    ]) {
+      for (const withWorktree of [true, false]) {
+        const { env } = reviewEnv({ reviews, comments, withWorktree })
+        await assert.rejects(() => revisarCommand({}, '61', 'agy', env.io), error => error.message === `Ya revisaste ${HEAD_502} con agy.`)
+        assert.deepEqual(env.writes(), [])
+        assert.deepEqual(env.written, [])
+        assert.ok(!env.calls.some(c => c[0] === 'git' && c[1] === 'checkout'))
+      }
+    }
+
+    const { env: rutasEnv } = reviewEnv({ reviews: [{ body: `Revisor: agy\nCommit: ${HEAD_502}\n\n## BLOQUEA\nnada` }], withWorktree: true })
+    assert.equal(await revisarCommand({ rutas: 'src/app.ts' }, '61', 'agy', rutasEnv.io), 0)
+    const briefPath = path.join(home, 'orca', 'briefs', 'proj-revision-61-agy.md')
+    const brief = rutasEnv.written.find(([file]) => file === briefPath)?.[1]
+    assert.match(brief, /## Partial review by design[\s\S]*- `src\/app\.ts`/)
+  })
+
+  test('PRESERVE: despacharCommand and second-round delta revisar keep existing behavior', async () => {
+    const ticketEnv = fakeIo()
+    assert.equal(await despacharCommand({}, '7', 'codex', ticketEnv.io), 0)
+    assert.ok(ticketEnv.calls.some(c => c[0] === 'orca' && c[1] === 'worktree' && c[2] === 'create' && c.includes('--issue')))
+    assert.ok(ticketEnv.calls.some(c => c[0] === 'orca' && c[1] === 'orchestration' && c[2] === 'worker-start'))
+
+    const wt = path.join(path.dirname(root), 'revision-9-agy')
+    const deltaEnv = fakeIo({
+      'gh pr': json({ headRefName: 'feat', headRefOid: 'bbb222', body: 'Implementador: codex', number: 9, reviews: [{ body: 'Revisor: agy\nCommit: aaa111\n\n## BLOQUEA\nnada' }], comments: [] }),
+      'git worktree list': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${wt}\nHEAD aaa111\nbranch refs/heads/revision-9-agy\n`),
+      'git status': okRes(''),
+      'git for-each-ref --contains=HEAD': okRes('refs/remotes/origin/feat\n'),
+      'orca worktree ps': json({ result: { worktrees: [{ path: wt, agents: [] }] } }),
+    })
+    assert.equal(await revisarCommand({}, '9', 'agy', deltaEnv.io), 0)
+    assert.ok(deltaEnv.written.some(([, text]) => text.includes('git diff aaa111..bbb222')))
   })
 })

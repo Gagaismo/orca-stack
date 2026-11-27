@@ -1310,3 +1310,190 @@ describe('#364 reanudar: a pi whose local gentle-pi checkout lacks its Gentle AI
       error.message.includes('No observ\u00E9 una sesi\u00F3n nueva de Pi') && error.message.includes('term-new') && error.message.includes('reanudar-picker-line'))
   })
 })
+
+describe('#502 reanudar: review worktrees', () => {
+  const PR_61 = '61'
+  const PR_URL = 'https://github.com/Gagaismo/orca-stack/pull/61#issuecomment-777'
+  const ISSUE_URL = 'https://github.com/Gagaismo/orca-stack/issues/61#issuecomment-778'
+  const REV_AGY = path.join(path.dirname(ROOT), 'revision-61-agy')
+  const REV_CODEX = path.join(path.dirname(ROOT), 'revision-61-codex')
+  const REV_CLAUDE = path.join(path.dirname(ROOT), 'revision-61-claude')
+  const ISSUE_WT = path.join(path.dirname(ROOT), 'orca-stack-61')
+
+  const reviewHarness = ({
+    worktrees = [{ path: REV_AGY, branch: null, linkedIssue: null, agents: [] }],
+    terminals = [],
+    briefs = { 'orca-stack-revision-61-agy.md': '# Review brief: PR #61 (orca-stack)\n\nYou are the reviewer (agy) of PR #61.\n' },
+    prs = [],
+    screen = ['PS C:\\wt\\revision-61-agy>'],
+  } = {}) => {
+    const outputs = []
+    const calls = []
+    const files = {}
+    for (const [name, content] of Object.entries(briefs)) {
+      files[path.join(HOME, 'orca', 'briefs', name)] = content
+    }
+    const io = {
+      cwd: ROOT, home: HOME, win: false, now: () => 1760616000000,
+      exists: file => file in files,
+      readFile: file => { if (!(file in files)) throw new Error(`ENOENT ${file}`); return files[file] },
+      writeFile: (file, content) => { files[file] = content },
+      rename: (from, to) => { files[to] = files[from]; delete files[from] },
+      mkdirp: () => {}, sleep: async () => {}, out: line => outputs.push(line),
+      gentleAiBinary: async () => null,
+      sh: (cmd, args, opts = {}) => {
+        calls.push({ cmd, args, cwd: opts.cwd })
+        if (cmd === 'git' && args[0] === 'rev-parse') return ok(`${path.join(ROOT, '.git')}\n${path.join(ROOT, '.git')}\n${ROOT}\n`)
+        if (cmd === 'git' && args[0] === 'remote') return ok('https://github.com/Gagaismo/orca-stack.git\n')
+        if (cmd === 'git' && args[0] === 'worktree' && args[1] === 'list') {
+          const entries = [
+            `worktree ${ROOT}\nHEAD 1\nbranch refs/heads/main`,
+            ...worktrees.map(wt => `worktree ${wt.path}\nHEAD 2\n${wt.branch ? `branch refs/heads/${wt.branch}` : 'detached'}`),
+          ]
+          return ok(`${entries.join('\n\n')}\n`)
+        }
+        if (cmd === 'git' && args[0] === 'status') return ok('')
+        if (cmd === 'gh' && args[0] === 'api' && args[1] === 'user') return json({ login: 'stack-bot' })
+        if (cmd === 'gh' && args[0] === 'api') {
+          const id = args[1].split('/').pop()
+          const targetUrl = id === '778' ? ISSUE_URL : id === '779' ? 'https://github.com/Gagaismo/orca-stack/pull/99#issuecomment-779' : PR_URL
+          return json({ user: { login: 'stack-bot' }, body: 'Respuesta de main: continue.', html_url: targetUrl })
+        }
+        if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'list') return json(prs)
+        if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'ps') {
+          return json({ result: { worktrees: worktrees.map(wt => ({ path: wt.path, repo: 'orca-stack', linkedIssue: wt.linkedIssue ?? null, agents: wt.agents ?? [] })) } })
+        }
+        if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals } })
+        if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') {
+          const handle = args[args.indexOf('--terminal') + 1]
+          return json({ result: { terminal: { tail: handle === 'term-new' ? ['agy ready', '>'] : screen } } })
+        }
+        if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') return json({ result: { handle: 'term-new' } })
+        if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send') {
+          const line = args[args.indexOf('--text') + 1]
+          return line?.startsWith('Read and follow the brief in')
+            ? json({ result: { send: { turnStarted: true } } })
+            : sendReceipt
+        }
+        if (cmd === 'orca' && args[0] === 'orchestration') return orchestrationDefault(args)
+        return fail(`unexpected call: ${cmd} ${args.join(' ')}`)
+      },
+    }
+    const sends = () => calls.filter(({ cmd, args }) => cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send')
+    const orchestration = () => calls.filter(({ cmd, args }) => cmd === 'orca' && args[0] === 'orchestration')
+    return { io, files, outputs, calls, sends, orchestration }
+  }
+
+  test('Rule 3: reanudar relaunches an exited reviewer in its single revision worktree without supervision', async () => {
+    const h = reviewHarness()
+    assert.equal(await reanudarCommand({}, PR_61, PR_URL, h.io), 0)
+    const relaunchedPath = path.join(HOME, 'orca', 'briefs', 'orca-stack-revision-61-agy-reanudar.md')
+    assert.equal(h.files[relaunchedPath], `Message from main: ${PR_URL}\n\n# Review brief: PR #61 (orca-stack)\n\nYou are the reviewer (agy) of PR #61.\n`)
+    assert.equal(h.calls.filter(c => c.cmd === 'orca' && c.args[0] === 'terminal' && c.args[1] === 'create' && c.args.includes(`path:${REV_AGY}`)).length, 1)
+    assert.equal(h.sends().length, 1)
+    assert.ok(h.sends()[0].args.includes(`Read and follow the brief in ${relaunchedPath}`))
+    assert.deepEqual(h.orchestration(), [])
+    assert.ok(h.outputs.some(line => line.startsWith('\u2714 agy despachado')), h.outputs.join('\n'))
+
+    const dry = reviewHarness()
+    assert.equal(await reanudarCommand({ dryRun: true }, PR_61, PR_URL, dry.io), 0)
+    assert.equal(dry.sends().length, 0)
+    assert.deepEqual(dry.orchestration(), [])
+    assert.equal(dry.files[relaunchedPath], undefined)
+    assert.ok(dry.outputs.some(line => line.startsWith('[simulaci\u00F3n] orca terminal create')))
+    assert.ok(dry.outputs.some(line => line.includes(`Read and follow the brief in ${relaunchedPath}`)))
+
+    const multiDone = reviewHarness({
+      terminals: [
+        { handle: 'term-sub', tabId: 'tab-1', leafId: 'leaf-1', title: 'agy', agentIdentity: 'agy', worktreePath: REV_AGY },
+        { handle: 'term-rev', tabId: 'tab-2', leafId: 'leaf-2', title: 'agy', agentIdentity: 'agy', worktreePath: REV_AGY },
+      ],
+      worktrees: [{
+        path: REV_AGY, branch: null, linkedIssue: null,
+        agents: [
+          { paneKey: 'tab-1:leaf-1', parentPaneKey: 'tab-2:leaf-2', state: 'done', agentType: 'agy', prompt: `Read and follow the brief in ${path.join(HOME, 'orca', 'briefs', 'orca-stack-revision-61-agy.md')}`, updatedAt: 400 },
+          { paneKey: 'tab-2:leaf-2', state: 'done', agentType: 'agy', prompt: `Read and follow the brief in ${path.join(HOME, 'orca', 'briefs', 'orca-stack-revision-61-agy.md')}`, updatedAt: 200 },
+        ],
+      }],
+      screen: ['agy ready', '>'],
+    })
+    assert.equal(await reanudarCommand({}, PR_61, PR_URL, multiDone.io), 0)
+    assert.equal(multiDone.sends().length, 1)
+    assert.equal(multiDone.sends()[0].args[multiDone.sends()[0].args.indexOf('--terminal') + 1], 'term-rev')
+    assert.ok(multiDone.sends()[0].args.includes(`Message from main: ${PR_URL} . Continue the review per your brief: ${path.join(HOME, 'orca', 'briefs', 'orca-stack-revision-61-agy.md')}.`))
+
+    const wrongPr = reviewHarness()
+    await assert.rejects(() => reanudarCommand({}, PR_61, 'https://github.com/Gagaismo/orca-stack/pull/99#issuecomment-779', wrongPr.io), /apunta a #99/)
+    assert.equal(wrongPr.sends().length, 0)
+
+    const retiredClaude = reviewHarness({
+      worktrees: [{ path: REV_CLAUDE, branch: null, linkedIssue: null, agents: [] }],
+      briefs: { 'orca-stack-revision-61-claude.md': 'review brief' },
+    })
+    await assert.rejects(() => reanudarCommand({}, PR_61, PR_URL, retiredClaude.io), /claude ya no es un agente worker/)
+    assert.equal(retiredClaude.sends().length, 0)
+  })
+
+  test('Rule 4: reanudar refuses when two review worktrees exist for the same PR and names both', async () => {
+    const h = reviewHarness({
+      worktrees: [
+        { path: REV_AGY, branch: null, linkedIssue: null, agents: [] },
+        { path: REV_CODEX, branch: null, linkedIssue: null, agents: [] },
+      ],
+    })
+    await assert.rejects(() => reanudarCommand({}, PR_61, PR_URL, h.io), error =>
+      error.message.includes('revision-61-agy') && error.message.includes('revision-61-codex'))
+    assert.equal(h.calls.filter(c => c.cmd === 'orca' && c.args[0] === 'terminal' && c.args[1] === 'create').length, 0)
+    assert.equal(h.sends().length, 0)
+    assert.equal(Object.keys(h.files).some(file => file.endsWith('-reanudar.md') || file.endsWith('reanudar.json')), false)
+  })
+
+  test('Rule 4 PRESERVE: issue worktrees keep supervised reanudar behavior unchanged even alongside review worktrees', async () => {
+    const h = reviewHarness({
+      worktrees: [
+        { path: ISSUE_WT, branch: 'Gagaismo/orca-stack-61', linkedIssue: 61, agents: [] },
+        { path: REV_AGY, branch: null, linkedIssue: null, agents: [] },
+      ],
+      briefs: { 'orca-stack-61.md': 'You are the implementer (codex) of issue #61.\n' },
+      screen: ['PS C:\\wt\\orca-stack-61>'],
+    })
+    assert.equal(await reanudarCommand({}, PR_61, ISSUE_URL, h.io), 0)
+    assert.equal(h.calls.filter(c => c.cmd === 'orca' && c.args[0] === 'terminal' && c.args[1] === 'create' && c.args.includes(`path:${ISSUE_WT}`)).length, 1)
+    assert.ok(h.orchestration().some(c => c.args[1] === 'worker-start'))
+
+    const withOpenPr = reviewHarness({
+      worktrees: [
+        { path: ISSUE_WT, branch: 'Gagaismo/orca-stack-61', linkedIssue: 61, agents: [] },
+        { path: REV_AGY, branch: null, linkedIssue: null, agents: [] },
+      ],
+      briefs: { 'orca-stack-61.md': 'You are the implementer (codex) of issue #61.\n' },
+      prs: [{ number: 61, headRefName: 'Gagaismo/orca-stack-61', body: 'Closes #61', closingIssuesReferences: [{ number: 61 }] }],
+    })
+    await assert.rejects(() => reanudarCommand({}, PR_61, ISSUE_URL, withOpenPr.io), /orca-stack rebote 61/)
+  })
+
+  test('T3: revisar and reanudar --help and docs describe undelivered review retry and review worktrees', async () => {
+    const oldLog = console.log
+    const capture = async argv => {
+      let out = ''
+      console.log = value => { out += `${value}\n` }
+      try {
+        await main(argv)
+      } finally {
+        console.log = oldLog
+      }
+      return out
+    }
+    const revisarHelp = await capture(['revisar', '--help'])
+    const reanudarHelp = await capture(['reanudar', '--help'])
+    const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs', 'manual.md'), 'utf8')
+    const readme = readFileSync(path.join(PACKAGE_ROOT, 'README.md'), 'utf8')
+    assert.match(revisarHelp, /Revisor: <agente>.*Commit: <sha>/)
+    assert.match(revisarHelp, /sin review publicado.*primera ronda/)
+    assert.match(reanudarHelp, /revision-<pr>-<agente>/)
+    assert.match(reanudarHelp, /sin supervisión en el Run/)
+    assert.match(manual, /Si no hay review publicado sobre el mismo head, relanza en el lugar como primera ronda/)
+    assert.match(manual, /reanudar <pr> <url>.*sin supervisión en el Run/)
+    assert.match(readme, /revision-<pr>-<agente>/)
+  })
+})
