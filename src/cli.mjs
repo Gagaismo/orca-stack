@@ -30,7 +30,7 @@ Comandos:
   revisar   Despacha el review de un PR a un agente que no sea su autor.
   brief-revision  Prepara un worktree y brief de review para un subagente en modo un-agente.
   sesiones  Lista las sesiones recientes de Claude, Pi y agy (entrada de \`/retro\`).
-  reanudar  Reanuda un worker detenido con una respuesta de main o relanza su trabajo en el mismo worktree.
+  reanudar  Reanuda un worker o revisor detenido con una respuesta de main o relanza su trabajo en el mismo worktree.
   vigilar   Vigila los PRs de una tanda para el Monitor: solo emite eventos, retoma donde quedó e ignora los merges de main.
   planificar Abre la sesión de planificación de un issue paraguas: worktree de Orca en docs/<slug> y pi con el brief de planificación.
   estado    Muestra, de solo lectura, qué le falta a cada PR para el paso 7 de MAIN.md sobre su head (con --json, la atestación).
@@ -174,8 +174,8 @@ pin | global)" y el brief guarda la misma línea.
   revisar: `orca-stack revisar <pr> <agente> [--nota "<texto>"] [--confirmado] [--perfil-pi <nombre>] [--rutas <a,b>] [--dry-run]
 
 Igual que despachar, para un review (agentes: pi, agy, codex; claude ya no es un agente worker, ADR 0006): worktree revision-<pr>-<agente> parado en la rama del PR. Se niega si el agente es el implementador del PR
-(línea \`Implementador:\`) o si el agente usa un modelo de la misma familia (según \`agentes.modelos\`).
-Si el worktree ya existe, una segunda ronda lo reutiliza solo si está limpio, sin un agente trabajando, y su HEAD anterior alcanza el nuevo head del PR; rechaza el mismo head (salvo con --rutas), los commits locales y los perfiles de Pi distintos.
+(línea \`Implementador:\`), si el agente usa un modelo de la misma familia (según \`agentes.modelos\`) o si el PR ya tiene un review o comentario con \`Revisor: <agente>\` y \`Commit: <sha>\` sobre el head (salvo con --rutas).
+Si el worktree ya existe, lo reutiliza solo si está limpio, sin un agente trabajando, y su HEAD anterior alcanza el head del PR (una segunda ronda sobre un head nuevo lee solo el delta, y si quedó en el mismo head sin review publicado lo relanza en el lugar como primera ronda); rechaza los commits locales y los perfiles de Pi distintos.
 Las terminales en done y las shells vacías de ese worktree las cierra sola antes de reutilizarlo, y dice cuáles cerró.
 Con --rutas <a,b> (rutas separadas por coma) el review lee solo esas rutas y lista en ## Cobertura lo que leyó (Leído:) y lo que no (Sin leer:);
 ese review cuenta para el paso 7 solo si ninguna ruta de Sin leer: es de riesgo.
@@ -241,6 +241,7 @@ Un worker de pi se relanza con el modelo y el thinking del orquestador del perfi
 Sin pin y sin agentes.pi.perfil se niega como despachar. Si el pin nombra un perfil que ya no existe, repetí con --perfil-pi <nombre>:
 el flag elige el perfil y reescribe el pin.
 Con --terminal <handle> reanuda el agente de esa terminal de Orca cuando el worktree tiene varios agentes en done.
+Si no hay ningún worktree ligado a #<issue> y existe exactamente un worktree revision-<pr>-<agente>, reanuda o relanza a <agente> ahí con la URL del comentario, sin supervisión en el Run (como revisar). Si hay más de un worktree de review para el mismo PR, sale con 1 nombrando todos y no relanza nada.
 Con --dry-run muestra qué enviaría o lanzaría sin escribir el brief ni tocar la terminal.
 `,
   estado: `orca-stack estado [<pr>...] [--json]

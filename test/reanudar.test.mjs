@@ -1447,4 +1447,29 @@ describe('#502 reanudar: review worktrees', () => {
     })
     await assert.rejects(() => reanudarCommand({}, PR_61, ISSUE_URL, withOpenPr.io), /orca-stack rebote 61/)
   })
+
+  test('T3: revisar and reanudar --help and docs describe undelivered review retry and review worktrees', async () => {
+    const oldLog = console.log
+    const capture = async argv => {
+      let out = ''
+      console.log = value => { out += `${value}\n` }
+      try {
+        await main(argv)
+      } finally {
+        console.log = oldLog
+      }
+      return out
+    }
+    const revisarHelp = await capture(['revisar', '--help'])
+    const reanudarHelp = await capture(['reanudar', '--help'])
+    const manual = readFileSync(path.join(PACKAGE_ROOT, 'docs', 'manual.md'), 'utf8')
+    const readme = readFileSync(path.join(PACKAGE_ROOT, 'README.md'), 'utf8')
+    assert.match(revisarHelp, /Revisor: <agente>.*Commit: <sha>/)
+    assert.match(revisarHelp, /sin review publicado.*primera ronda/)
+    assert.match(reanudarHelp, /revision-<pr>-<agente>/)
+    assert.match(reanudarHelp, /sin supervisión en el Run/)
+    assert.match(manual, /Si no hay review publicado sobre el mismo head, relanza en el lugar como primera ronda/)
+    assert.match(manual, /reanudar <pr> <url>.*sin supervisión en el Run/)
+    assert.match(readme, /revision-<pr>-<agente>/)
+  })
 })
