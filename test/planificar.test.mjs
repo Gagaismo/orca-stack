@@ -189,4 +189,18 @@ describe('orca-stack planificar <umbrella> (S3, #370)', () => {
     await vigilarCommand({ paraguas: '29', unaVez: true }, [], env.io)
     assert.deepEqual(env.out, ['planificacion-publicada #29 #63'])
   })
+
+  test('issue #371 PRESERVE: planificarCommand keeps passing output unchanged and includes handle and screen tail when pi session never appears', async () => {
+    const pass = fakeIo()
+    assert.equal(await planificarCommand({}, '29', pass.io), 0)
+    assert.ok(!pass.out.some(line => /Pantalla \(|No se pudo leer la pantalla/.test(line)))
+    assert.ok(pass.out.includes(`\u2714 pi despachado en ${worktree}. Brief: ${BRIEF()}`))
+
+    const fail = fakeIo({
+      'orca terminal create': () => json({ result: { terminal: { handle: 'term_plan' } } }),
+      'orca terminal read': () => json({ result: { terminal: { tail: ['orca-stack in this project?', 'plan-picker-tail'] } } }),
+    })
+    await assert.rejects(() => planificarCommand({}, '29', fail.io), error =>
+      error.message.includes('No observ\u00E9 una sesi\u00F3n nueva de Pi') && error.message.includes('term_plan') && error.message.includes('plan-picker-tail'))
+  })
 })
