@@ -5,7 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
-import { AGENTS, WORKER_AGENTS, briefRevisionCommand, citedPaths, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief, revisarCommand } from '../src/despacho.mjs'
+import { AGENTS, WORKER_AGENTS, briefRevisionCommand, citedPaths, despacharCommand, dispatch, launchInWorktree, launcherFor, missingPaths, quotaLine, reboteCommand, renderBrief, revisarCommand } from '../src/despacho.mjs'
 import { main, parseArgs } from '../src/cli.mjs'
 import { layout } from '../src/util.mjs'
 import { ROOT, cleanup, cli, read, tempDir, write } from './helpers.mjs'
@@ -1461,7 +1461,8 @@ describe('issue #277: pi workers run as an interactive TUI', () => {
 
   test('#444 Rule 2: still no session after that Enter fails as today, naming the terminal, and never sends a second Enter', async () => {
     const env = fakeIo({ 'orca terminal read': STUCK }, { piTools: 'missing' })
-    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), error => error.message === `${noSession()} Terminal: term_1.`)
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), error =>
+      error.message.startsWith(`${noSession()} Terminal: term_1.\nPantalla (term_1):\n`) && error.message.includes('[paste #1 +180 lines]'))
     assert.equal(enters(env).length, 1)
     assert.ok(!env.out.some(line => line.includes('pi despachado')))
   })
@@ -1475,13 +1476,15 @@ describe('issue #277: pi workers run as an interactive TUI', () => {
 
   test('#444 Rule 4: with pi\'s input empty no Enter is sent and the error is the same as today', async () => {
     const env = fakeIo({ 'orca terminal read': EMPTY }, { piTools: 'missing' })
-    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), error => error.message === noSession())
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), error =>
+      error.message.startsWith(`${noSession()} Terminal: term_1.\nPantalla (term_1):\n`) && error.message.includes('pi v1.5.2'))
     assert.equal(enters(env).length, 0)
     // #444: pi gone back to the shell: a brief line left on screen is no input of pi's.
     const briefFile = path.join(home, 'orca', 'briefs', 'proj-7.md')
     const shell = () => json({ ok: true, result: { terminal: { tail: [readFileSync(briefFile, 'utf8').split('\n')[0], 'PS C:\\wt\\proj-7>'] } } })
     const gone = fakeIo({ 'orca terminal read': shell }, { piTools: 'missing' })
-    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, gone), error => error.message === noSession())
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, gone), error =>
+      error.message.startsWith(`${noSession()} Terminal: term_1.\nPantalla (term_1):\n`) && error.message.includes('PS C:\\wt\\proj-7>'))
     assert.equal(enters(gone).length, 0)
   })
 
@@ -2650,7 +2653,8 @@ describe('rebote', () => {
     assert.equal(enters(stuck).length, 1)
     assert.ok(stuck.out.some(line => line.startsWith('\u2714 pi despachado')))
     const empty = piEnv('', 'missing')
-    await assert.rejects(reboteCommand({}, '12', empty.io), error => error.message === `No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
+    await assert.rejects(reboteCommand({}, '12', empty.io), error =>
+      error.message.startsWith(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: term_1.\nPantalla (term_1):\n`))
     assert.equal(enters(empty).length, 0)
   })
 
@@ -2699,7 +2703,8 @@ describe('rebote', () => {
 
   test('#454 Rule 6: a second empty input fails naming the second terminal, posts no marker and leaves only that terminal open', async () => {
     const env = waitingPi('')
-    await assert.rejects(reboteCommand({}, '12', env.io), error => error.message === `No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: term_2.`)
+    await assert.rejects(reboteCommand({}, '12', env.io), error =>
+      error.message.startsWith(`No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: term_2.\nPantalla (term_2):\n`))
     assert.equal(creates(env).length, 2)
     assert.deepEqual(closes(env), [])
     assert.deepEqual(stops(env), [STOP])
@@ -2748,7 +2753,8 @@ describe('rebote', () => {
       return env
     }
     const late = relaunched(150)
-    await assert.rejects(reboteCommand({}, '12', late.io), error => error.message === `No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: term_2.`)
+    await assert.rejects(reboteCommand({}, '12', late.io), error =>
+      error.message.startsWith(`No observé una sesión nueva de Pi después del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: term_2.\nPantalla (term_2):\n`))
     assert.equal(creates(late).length, 2)
     assert.equal(markers(late).length, 0)
     const own = relaunched(250)
@@ -4874,5 +4880,235 @@ describe('issue #364: pi launches refuse a local gentle-pi checkout without its 
     const review = fakeIo({ 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: codex', number: 9 }) })
     review.io.gentleAiBinary = async () => { throw new Error('checked') }
     await run('review', { n: '9', agent: 'pi', dryRun: true }, review)
+  })
+})
+
+describe('issue #371: show terminal handle and screen tail when launch does not start', () => {
+  test('issue #371 Rule 1: pi launch exiting with No observé una sesión nueva de Pi prints handle, last 15 non-empty lines and exits non-zero', async () => {
+    const picker = [
+      'orca-stack in this project?',
+      '',
+      '\u2192 on \u00B7 use orca-stack with Gentle Shell',
+      '   ',
+      'off \u00B7 plain Gentle Shell (hide the orca-stack contract)',
+    ]
+    const cliEnv = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: picker } } }) }, { piTools: 'missing' })
+    const oldErr = console.error
+    let stderr = ''
+    console.error = value => { stderr += `${value}\n` }
+    let code
+    try {
+      code = await main(['despachar', '7', 'pi'], cliEnv.io)
+    } finally {
+      console.error = oldErr
+    }
+    assert.equal(code, 1)
+    assert.match(stderr, /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+    assert.ok(stderr.includes('term_1'), stderr)
+    assert.ok(stderr.includes('orca-stack in this project?'), stderr)
+    assert.ok(stderr.includes('\u2192 on \u00B7 use orca-stack with Gentle Shell'), stderr)
+    assert.ok(stderr.includes('off \u00B7 plain Gentle Shell (hide the orca-stack contract)'), stderr)
+
+    const longScreen = Array.from({ length: 20 }, (_, idx) => [`line-${String(idx + 1).padStart(2, '0')}`, idx % 2 === 0 ? '' : '   ']).flat()
+    const directEnv = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: longScreen } } }) }, { piTools: 'missing' })
+    await assert.rejects(() => launchInWorktree({
+      agent: 'pi', mode: 'ticket', worktree, briefPath: path.join(home, 'orca', 'briefs', 'existing.md'),
+      brief: 'brief', session: 'existing', config: PROJECT, win: true, home, skills: 'C:\\pi\\skills',
+      repositoryRoot: root, io: directEnv.io, piSessionAfter: 100, issue: '7',
+    }), error => {
+      assert.match(error.message, /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+      assert.ok(error.message.includes('term_1'), error.message)
+      for (let i = 6; i <= 20; i += 1) assert.ok(error.message.includes(`line-${String(i).padStart(2, '0')}`), error.message)
+      for (let i = 1; i <= 5; i += 1) assert.ok(!error.message.includes(`line-${String(i).padStart(2, '0')}`), error.message)
+      return true
+    })
+
+    const briefStuck = ['pi v1.5.2', '[paste #1 +180 lines]', 'stuck-bottom']
+    const briefEnv = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: briefStuck } } }) }, { piTools: 'missing' })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, briefEnv), error => {
+      assert.match(error.message, /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+      assert.ok(error.message.includes('term_1'), error.message)
+      assert.ok(error.message.includes('stuck-bottom'), error.message)
+      return true
+    })
+
+    let creates = 0
+    const emptyEnv = fakeIo({
+      'orca terminal create': () => {
+        creates += 1
+        return json({ result: { terminal: { handle: `term_${creates}` } } })
+      },
+      'orca terminal read': args => {
+        const handle = args[args.indexOf('--terminal') + 1]
+        const tail = handle === 'term_1'
+          ? ['pi v1.5.2', '\u2500 \u273F waiting for input \u2500\u2500\u2500 INSERT \u2500', '', '\u2500'.repeat(40)]
+          : ['pi v1.5.2', 'second-launch-line']
+        return json({ result: { terminal: { tail } } })
+      },
+    }, { piTools: 'missing' })
+    await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, emptyEnv), error => {
+      assert.match(error.message, /No observ\u00E9 una sesi\u00F3n nueva de Pi/)
+      assert.ok(error.message.includes('term_2'), error.message)
+      assert.ok(error.message.includes('second-launch-line'), error.message)
+      return true
+    })
+  })
+
+  test('issue #371 Rule 3: unreadable screen appends a one-line notice and keeps the original failure', async () => {
+    const basePi = `No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado. Terminal: term_1.`
+    const piFailures = [
+      { status: 1, stdout: '', stderr: 'terminal closed\nsecond line' },
+      { status: 0, stdout: 'not-json\nmore', stderr: '' },
+      json({ ok: false, error: { message: 'session vanished\ndetails' } }),
+      () => { throw new Error('orca crashed\nstack') },
+    ]
+    for (const failure of piFailures) {
+      const env = fakeIo({ 'orca terminal read': failure }, { piTools: 'missing' })
+      await assert.rejects(run('ticket', { n: '7', agent: 'pi' }, env), error => {
+        const lines = error.message.split('\n')
+        assert.equal(lines.length, 2, error.message)
+        assert.equal(lines[0], basePi)
+        assert.match(lines[1], /^No se pudo leer la pantalla de term_1/)
+        return true
+      })
+    }
+
+    const noHandleEnv = fakeIo({ 'orca terminal create': () => json({ result: {} }) }, { piTools: 'missing' })
+    await assert.rejects(() => launchInWorktree({
+      agent: 'pi', mode: 'ticket', worktree, briefPath: path.join(home, 'orca', 'briefs', 'existing.md'),
+      brief: 'brief', session: 'existing', config: PROJECT, win: true, home, skills: 'C:\\pi\\skills',
+      repositoryRoot: root, io: noHandleEnv.io, piSessionAfter: 100, issue: '7',
+    }), error => {
+      const lines = error.message.split('\n')
+      assert.equal(lines.length, 2, error.message)
+      assert.equal(lines[0], `No observ\u00E9 una sesi\u00F3n nueva de Pi despu\u00E9s del lanzamiento en ${worktree}; no doy el lanzamiento por iniciado.`)
+      assert.match(lines[1], /^No se pudo leer la pantalla de la terminal: no se obtuvo el handle\./)
+      return true
+    })
+
+    for (const agent of ['codex', 'agy']) {
+      let reads = 0
+      const tuiUnreadable = fakeIo({
+        'orca terminal read': () => {
+          reads += 1
+          if (reads <= 45) return { status: 0, stdout: 'not-json\nmore', stderr: '' }
+          return { status: 1, stdout: '', stderr: 'terminal closed\nsecond line' }
+        },
+      })
+      await assert.rejects(run('ticket', { n: '7', agent }, tuiUnreadable), error => {
+        const lines = error.message.split('\n')
+        assert.equal(lines.length, 2, error.message)
+        assert.ok(lines[0].startsWith(`La TUI de ${agent} no apareci\u00F3 a tiempo.`), lines[0])
+        assert.match(lines[1], /^No se pudo leer la pantalla de term_1: terminal closed$/)
+        return true
+      })
+    }
+  })
+
+  test('issue #371 Rule 2: TUI timeout for codex and agy prints terminal handle and last 15 non-empty lines', async () => {
+    let codexReads = 0
+    const codexTail = Array.from({ length: 18 }, (_, idx) => [`codex-line-${String(idx + 1).padStart(2, '0')}`, idx % 2 === 0 ? '' : '  ']).flat()
+    const codexEnv = fakeIo({
+      'orca terminal read': () => {
+        codexReads += 1
+        const tail = codexReads <= 45 ? [`tick-${codexReads}`, ...codexTail] : codexTail
+        return json({ result: { terminal: { tail } } })
+      },
+    })
+    await assert.rejects(run('ticket', { n: '7', agent: 'codex' }, codexEnv), error => {
+      assert.ok(error.message.startsWith('La TUI de codex no apareci\u00F3 a tiempo.'), error.message)
+      assert.ok(error.message.includes('term_1'), error.message)
+      for (let i = 4; i <= 18; i += 1) assert.ok(error.message.includes(`codex-line-${String(i).padStart(2, '0')}`), error.message)
+      for (let i = 1; i <= 3; i += 1) assert.ok(!error.message.includes(`codex-line-${String(i).padStart(2, '0')}`), error.message)
+      return true
+    })
+
+    const agyTail = Array.from({ length: 17 }, (_, idx) => [`agy-line-${String(idx + 1).padStart(2, '0')}`, '']).flat()
+    const agyEnv = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: agyTail } } }) })
+    await assert.rejects(run('ticket', { n: '7', agent: 'agy' }, agyEnv), error => {
+      assert.ok(error.message.startsWith('La TUI de agy no apareci\u00F3 a tiempo.'), error.message)
+      assert.ok(error.message.includes('term_1'), error.message)
+      for (let i = 3; i <= 17; i += 1) assert.ok(error.message.includes(`agy-line-${String(i).padStart(2, '0')}`), error.message)
+      for (let i = 1; i <= 2; i += 1) assert.ok(!error.message.includes(`agy-line-${String(i).padStart(2, '0')}`), error.message)
+      return true
+    })
+  })
+
+  test('issue #371 Rule 4: passing launches for pi, codex and agy print no screen tail and keep output unchanged', async () => {
+    const briefPath = path.join(home, 'orca', 'briefs', 'existing.md')
+    for (const agent of ['pi', 'codex', 'agy']) {
+      const env = fakeIo()
+      const code = await launchInWorktree({
+        agent, mode: 'ticket', worktree, briefPath, brief: 'brief', session: 'existing',
+        config: PROJECT, win: true, home, skills: 'C:\\pi\\skills', repositoryRoot: root,
+        io: env.io, piSessionAfter: agent === 'pi' ? 100 : 0, issue: '7',
+      })
+      assert.equal(code, 0)
+      assert.equal(env.out.at(-1), `\u2714 ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
+      assert.ok(!env.out.some(line => /Pantalla \(|No se pudo leer la pantalla/.test(line)), env.out.join('\n'))
+      if (agent === 'pi') {
+        assert.equal(env.calls.some(c => c[0] === 'orca' && c[1] === 'terminal' && c[2] === 'read'), false)
+      }
+    }
+  })
+
+  test('issue #371 PRESERVE: despacharCommand and dispatch keep passing output unchanged and propagate screen tail on failure', async () => {
+    const pass = fakeIo()
+    assert.equal(await despacharCommand({}, '7', 'pi', pass.io), 0)
+    assert.equal(pass.out.at(-1), `\u2714 pi despachado en ${worktree}. Brief: ${path.join(home, 'orca', 'briefs', 'proj-7.md')}`)
+    assert.ok(!pass.out.some(line => /Pantalla \(|No se pudo leer la pantalla/.test(line)))
+
+    const fail = fakeIo({ 'orca terminal read': () => json({ result: { terminal: { tail: ['picker-line-1', 'picker-line-2'] } } }) }, { piTools: 'missing' })
+    await assert.rejects(dispatch('ticket', { n: '7', agent: 'pi' }, fail.io), error =>
+      error.message.includes('No observ\u00E9 una sesi\u00F3n nueva de Pi') && error.message.includes('term_1') && error.message.includes('picker-line-2'))
+  })
+
+  test('issue #371 PRESERVE: revisarCommand keeps passing output unchanged and propagates screen tail on failure', async () => {
+    const pr = { 'gh pr': json({ headRefName: 'feat', headRefOid: 'abc123', body: 'Implementador: agy', number: 9 }) }
+    const pass = fakeIo({ ...pr, 'orca terminal read': () => json({ result: { terminal: { tail: ['Codex ready'] } } }) })
+    assert.equal(await revisarCommand({}, '9', 'codex', pass.io), 0)
+    assert.equal(pass.out.at(-1), `\u2714 codex despachado en ${worktree}. Brief: ${path.join(home, 'orca', 'briefs', 'proj-revision-9-codex.md')}`)
+    assert.ok(!pass.out.some(line => /Pantalla \(|No se pudo leer la pantalla/.test(line)))
+
+    let reads = 0
+    const fail = fakeIo({
+      ...pr,
+      'orca terminal read': () => {
+        reads += 1
+        return json({ result: { terminal: { tail: [`codex-boot-${reads}`, 'codex-review-screen'] } } })
+      },
+    })
+    await assert.rejects(revisarCommand({}, '9', 'codex', fail.io), error =>
+      error.message.startsWith('La TUI de codex no apareci\u00F3 a tiempo.') && error.message.includes('term_1') && error.message.includes('codex-review-screen'))
+  })
+
+  test('issue #371 PRESERVE: reboteCommand keeps passing output unchanged and propagates screen tail without posting marker on failure', async () => {
+    const prBody = {
+      state: 'OPEN', headRefName: 'feat/fix', headRefOid: 'abc123', body: 'Implementador: pi', statusCheckRollup: [], comments: [],
+      reviews: [{ body: 'Revisor: codex\nCommit: abc123\n\n## BLOQUEA\n1. `src/app.mjs:1` (introducido, test, implementaci\u00F3n): fix it.\n\n## SUGERENCIAS\n(none)', url: 'https://example.test/review/1' }],
+    }
+    const bounceIo = (over = {}, piTools = 'available') => {
+      const env = fakeIo({
+        'gh pr': json(prBody),
+        'git worktree': okRes(`worktree ${root}\nbranch refs/heads/main\n\nworktree ${worktree}\nHEAD abc123\nbranch refs/heads/feat/fix\n`),
+        'git status': okRes(''),
+        ...over,
+      }, { piTools })
+      const original = env.io.sh
+      env.io.sh = (cmd, args, opts) => cmd === 'git' && args[0] === 'rev-parse' && args[1] === 'HEAD' ? okRes('abc123\n') : original(cmd, args, opts)
+      env.io.now = () => 100
+      env.io.modifiedAt = () => 101
+      return env
+    }
+
+    const pass = bounceIo()
+    assert.equal(await reboteCommand({}, '12', pass.io), 0)
+    assert.ok(pass.out.some(line => line.startsWith('\u2714 pi despachado')), pass.out.join('\n'))
+    assert.ok(!pass.out.some(line => /Pantalla \(|No se pudo leer la pantalla/.test(line)))
+
+    const fail = bounceIo({ 'orca terminal read': () => json({ result: { terminal: { tail: ['rebote-picker'] } } }) }, 'missing')
+    await assert.rejects(reboteCommand({}, '12', fail.io), error =>
+      error.message.includes('No observ\u00E9 una sesi\u00F3n nueva de Pi') && error.message.includes('term_1') && error.message.includes('rebote-picker'))
+    assert.equal(fail.calls.some(c => c[0] === 'gh' && c[1] === 'pr' && c[2] === 'comment'), false)
   })
 })
