@@ -5,17 +5,17 @@ Instala de una vez el stack de agentes que uso para trabajar con [Orca](https://
 **¿Cómo se usa día a día?** Leé el [manual de uso](docs/manual.md): comandos, mods, perks, cuándo conviene usarlo y cuándo no, casos borde y manejo. Marca lo que está solo en `main` y todavía no salió en un release.
 
 ```bash
-npx github:Gagaismo/orca-stack#v0.26.0 global     # instalación a nivel usuario
-npx github:Gagaismo/orca-stack#v0.26.0 init       # cablea el proyecto actual
-npx github:Gagaismo/orca-stack#v0.26.0 doctor     # verifica que todo funcione de verdad
-npx github:Gagaismo/orca-stack#v0.26.0 remove     # deshace lo que instaló global
-npx github:Gagaismo/orca-stack#v0.26.0 sesiones   # lista las sesiones recientes de Claude, Pi y agy (para `/retro`)
-npx github:Gagaismo/orca-stack#v0.26.0 despachar 12 agy   # desde el checkout principal: despacha el ticket #12 al agente
-npx github:Gagaismo/orca-stack#v0.26.0 revisar 15 pi      # despacha el review del PR #15
-npx github:Gagaismo/orca-stack#v0.26.0 brief-revision 15 --modelo <modelo>   # modo un-agente: worktree y brief de review para un subagente
-npx github:Gagaismo/orca-stack#v0.26.0 vigilar 42 57      # el Monitor de la tanda: solo eventos de sus PRs, hasta tanda-cerrada
-npx github:Gagaismo/orca-stack#v0.26.0 estado             # qué le falta a cada PR abierto para el paso 7 (con --json, la atestación)
-npx github:Gagaismo/orca-stack#v0.26.0 limpiar            # cierra terminales y saca worktrees de PRs mergeados o cerrados
+npx github:Gagaismo/orca-stack#v0.27.0 global     # instalación a nivel usuario
+npx github:Gagaismo/orca-stack#v0.27.0 init       # cablea el proyecto actual
+npx github:Gagaismo/orca-stack#v0.27.0 doctor     # verifica que todo funcione de verdad
+npx github:Gagaismo/orca-stack#v0.27.0 remove     # deshace lo que instaló global
+npx github:Gagaismo/orca-stack#v0.27.0 sesiones   # lista las sesiones recientes de Claude, Pi y agy (para `/retro`)
+npx github:Gagaismo/orca-stack#v0.27.0 despachar 12 agy   # desde el checkout principal: despacha el ticket #12 al agente
+npx github:Gagaismo/orca-stack#v0.27.0 revisar 15 pi      # despacha el review del PR #15
+npx github:Gagaismo/orca-stack#v0.27.0 brief-revision 15 --modelo <modelo>   # modo un-agente: worktree y brief de review para un subagente
+npx github:Gagaismo/orca-stack#v0.27.0 vigilar 42 57      # el Monitor de la tanda: solo eventos de sus PRs, hasta tanda-cerrada
+npx github:Gagaismo/orca-stack#v0.27.0 estado             # qué le falta a cada PR abierto para el paso 7 (con --json, la atestación)
+npx github:Gagaismo/orca-stack#v0.27.0 limpiar            # cierra terminales y saca worktrees de PRs mergeados o cerrados
 ```
 
 ¿Primera vez, o un proyecto nuevo o ya empezado? Seguí la [guía de setup](docs/guia-setup.md): tiene un cuestionario que dice qué configurar en cada caso.
