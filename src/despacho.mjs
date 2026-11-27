@@ -4,6 +4,7 @@ import path from 'node:path'
 import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { analyzeChecks, isHigherRunId, isPending, latestChecks } from './checks.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
+import { commitOf, markerLines, markerValue, namesCommit } from './marcas.mjs'
 import { setCard, switchAccount } from './orca.mjs'
 import { gentleAiBinaryCheck, resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
@@ -1081,7 +1082,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   let branchOfPr
   let sha
   if (review) {
-    const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'headRefName,headRefOid,body,number'], { cwd: root }), 'gh pr view'), 'gh pr view')
+    const pr = parseJson(ok(io.sh('gh', ['pr', 'view', String(n), '--json', 'headRefName,headRefOid,body,number,comments,reviews'], { cwd: root }), 'gh pr view'), 'gh pr view')
     implementer = /^\s*Implementador:\s*(\S+)/mi.exec(pr.body ?? '')?.[1]?.trim().toLowerCase()
     if (!implementer) throw new Error(`El PR #${n} no tiene la línea "Implementador: <agente>" (la llevan los PRs de ticket y los de orquestación): sin ella no puedo comprobar que el revisor sea otro.`)
     if (implementer === agent.trim().toLowerCase()) throw new Error(`${agent} implementó el PR #${n}: nadie revisa su propio PR.`)
@@ -1093,6 +1094,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     }
     branchOfPr = pr.headRefName
     sha = pr.headRefOid
+    if (!paths && hasPublishedReview(pr, agent, sha)) throw new Error(`Ya revisaste ${sha} con ${agent}.`)
   } else {
     const issue = parseJson(ok(io.sh('gh', ['issue', 'view', String(n), '--json', 'state,assignees,title'], { cwd: root }), 'gh issue view'), 'gh issue view')
     if (String(issue.state).toUpperCase() !== 'OPEN') throw new Error(`El issue #${n} está cerrado.`)
@@ -1162,7 +1164,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     PERKS: config.perks,
     ...(review ? { PR: String(n), SHA: sha, IMPLEMENTER: implementer } : { ISSUE: String(n), MIGRACION: migration?.texto }),
     ...(review ? {
-      DELTA_INSTRUCTIONS: !previousHead ? 'This is the first review round; review the full PR.'
+      DELTA_INSTRUCTIONS: !previousHead || (previousHead === sha && !paths) ? 'This is the first review round; review the full PR.'
         : previousHead === sha ? `You already reviewed commit \`${sha}\`; this round reviews only the paths under \`## Partial review by design\`.`
           : `This is a second review round. Previous review commit is \`${previousHead}\`. Read only the delta with \`git diff ${previousHead}..${sha}\`.`,
       PUBLISH_INSTRUCTIONS: `Write the review in a UTF-8 file at ${reviewPath}. Publish it with the command below, never through a pipe:`,
@@ -1184,7 +1186,6 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     const status = io.sh('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: existingPath })
     if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${existingPath}: ${(status.stderr || status.stdout).trim()}`)
     if (status.stdout.trim() !== '') throw new Error(`El worktree ${existingPath} est\u00E1 sucio; guard\u00E1 o descart\u00E1 sus cambios antes de revisar de nuevo.`)
-    if (previousHead === sha && !paths) throw new Error(`Ya revisaste ${sha} con ${agent}.`)
     if (agent === 'pi') {
       const pinned = readPin(io, existingPath)
       // "global" writes no pin, so it matches a worktree without one.
@@ -1302,6 +1303,18 @@ export const despacharCommand = command('ticket')
 export const revisarCommand = command('review')
 
 const reviewBody = review => typeof review?.body === 'string' ? review.body : ''
+// #502: block revisar only when this reviewer already published a review/comment for this commit.
+const hasPublishedReview = (pr, agent, sha) => {
+  const targetAgent = agent.trim().toLowerCase()
+  const targetSha = String(sha ?? '').toLowerCase()
+  return [...(pr.reviews ?? []), ...(pr.comments ?? [])].some(item => {
+    const body = reviewBody(item)
+    const reviewer = markerLines(body).slice(0, 5).map(line => /^Revisor:\s*(\S+)$/i.exec(line)?.[1]?.toLowerCase()).find(Boolean)
+    if (reviewer !== targetAgent) return false
+    const rawCommit = /^(`?)([^\s`]+)\1$/.exec(markerValue(body, 'Commit', { within: 5 }) ?? '')?.[2]?.toLowerCase()
+    return rawCommit === targetSha || namesCommit(commitOf(body, { within: 5 }), sha)
+  })
+}
 const blockingSection = body => /(?:^|\r?\n)##\s+BLOQUEA\s*(?:\r?\n|$)([\s\S]*?)(?=\r?\n##\s|$)/i.exec(body)?.[1]?.trim() ?? ''
 const blockingBody = body => {
   const section = blockingSection(body)
