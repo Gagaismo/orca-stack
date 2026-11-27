@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, refuseMissingGentleAi, shellPrompt, supervisedTask, writePin, writeRddConsent } from './despacho.mjs'
+import { AGENTS, WORKER_AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, refuseMissingGentleAi, shellPrompt, supervisedTask, writePin, writeRddConsent } from './despacho.mjs'
 import { pendingAfterSwitch } from './orca.mjs'
 import { getStackAccount } from './repo.mjs'
 import { samePath } from './util.mjs'
@@ -64,6 +64,12 @@ const isWorkerRecord = record => {
   const brief = BRIEF_IN_PROMPT.exec(String(record?.prompt ?? ''))?.[1]
   return !record?.parentPaneKey && brief !== undefined && !/(?:^|-)revision-/.test(brief)
 }
+const REVIEW_WORKTREE = /^revision-(\d+)-([^/\\]+)$/
+const worktreeBaseName = file => String(file ?? '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
+const isReviewRecord = record => {
+  const brief = BRIEF_IN_PROMPT.exec(String(record?.prompt ?? ''))?.[1]
+  return !record?.parentPaneKey && brief !== undefined && /(?:^|-)revision-/.test(brief)
+}
 // #454: a relaunched worker's worker_done is accepted only from the terminal that owns the dispatch, so the Task "#<n>
 // <agente>" of main's Run, when its dispatch closed, gets a new one on the new terminal. #463: any other case relaunches
 // supervised too, on a new Task: "#<n> <agente> reanudado" while that Task is still dispatched, else "#<n> <agente>".
@@ -85,7 +91,7 @@ const prMatchesIssue = (pr, issue, branches) =>
   branches.includes(pr.headRefName) ||
   new RegExp(`^\\s*Closes\\s+#${issue}\\b`, 'im').test(pr.body ?? '')
 
-const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, beforeSend) => {
+const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, beforeSend, isReview = false) => {
   const { handle } = target.terminal
   const screen = readScreen(io, handle)
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
@@ -99,7 +105,7 @@ const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, b
   const state = String(current?.state ?? current?.status ?? '').toLowerCase()
   if (state !== 'done') throw new Error(`El agente de ${handle} cambi\u{f3} a ${state || 'sin estado'} mientras lo revisaba: no reanudo.`)
 
-  const line = answerLine(url, briefPath)
+  const line = answerLine(url, briefPath, isReview)
   const argv = lineArgv(handle, line)
   if (flags.dryRun) {
     if (target.identity === 'agy' && /esc to dismiss/i.test(screen.join('\n'))) io.out(`[simulaci\u{f3}n] cerrar el aviso de agy con Esc en ${handle} antes de enviar la l\u{ed}nea`)
@@ -117,7 +123,7 @@ const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, b
   return true
 }
 
-const answerLine = (url, briefPath) => `Message from main: ${url} . Continue the ticket per your brief: ${briefPath}.`
+const answerLine = (url, briefPath, isReview = false) => `Message from main: ${url} . Continue the ${isReview ? 'review' : 'ticket'} per your brief: ${briefPath}.`
 const lineArgv = (handle, line) => ['terminal', 'send', '--terminal', handle, '--text', line, '--enter', '--wait-submit', '10', '--json']
 const sendLine = (io, n, handle, identity, line, briefPath) => {
   const sent = io.sh('orca', lineArgv(handle, line))
@@ -187,28 +193,47 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     attempts = next
   }
 
-  const prs = io.sh('gh', ['pr', 'list', '--state', 'open', '--json', 'number,closingIssuesReferences,headRefName,body'], { cwd: root })
-  const pullRequests = prs.status === 0 ? parse(prs) : undefined
-  if (!Array.isArray(pullRequests)) throw new Error(`No pude leer los PRs abiertos de #${n}: ${detail(prs)}`)
-
-  const ours = repoWorktrees(root, io).filter(({ row }) => String(row.linkedIssue) === n)
-  if (ours.length === 0) throw new Error(`No encuentro un worktree de este repo para #${n}: no reanudo.`)
+  const allWorktrees = repoWorktrees(root, io)
+  const ours = allWorktrees.filter(({ row }) => String(row.linkedIssue) === n)
   if (ours.length > 1) throw new Error(`Hay ${ours.length} worktrees de este repo para #${n}: no adivino cuál reanudar.`)
-  const { row, branch } = ours[0]
-  const pr = pullRequests.find(candidate => prMatchesIssue(candidate, n, [branch].filter(Boolean)))
-  if (isPr) {
-    if (!pr) {
-      throw new Error(`El issue #${n} no tiene un PR abierto: la URL tiene que apuntar a un comentario de #${n} o de su PR abierto.`)
+
+  let isReview = false
+  let reviewName
+  let reviewAgent
+  let row
+  let branch
+  if (ours.length === 1) {
+    const prs = io.sh('gh', ['pr', 'list', '--state', 'open', '--json', 'number,closingIssuesReferences,headRefName,body'], { cwd: root })
+    const pullRequests = prs.status === 0 ? parse(prs) : undefined
+    if (!Array.isArray(pullRequests)) throw new Error(`No pude leer los PRs abiertos de #${n}: ${detail(prs)}`)
+
+    ;({ row, branch } = ours[0])
+    const pr = pullRequests.find(candidate => prMatchesIssue(candidate, n, [branch].filter(Boolean)))
+    if (isPr) {
+      if (!pr) {
+        throw new Error(`El issue #${n} no tiene un PR abierto: la URL tiene que apuntar a un comentario de #${n} o de su PR abierto.`)
+      }
+      if (String(pr.number) !== targetItem) {
+        throw new Error(`La URL tiene que apuntar a un comentario del PR abierto de #${n} (#${pr.number}): ${url}`)
+      }
+    } else if (pr) {
+      // A bounce marked on the current head whose author stopped is resumed by `rebote --continuar` (#292).
+      const view = io.sh('gh', ['pr', 'view', String(pr.number), '--json', 'headRefOid,comments,reviews'], { cwd: root })
+      const bounce = view.status === 0 ? parse(view) : undefined
+      const bounced = Boolean(bounce?.headRefOid) && lastBounceMark([...(bounce.reviews ?? []), ...(bounce.comments ?? [])]) === bounce.headRefOid
+      throw new Error(`El issue #${n} ya tiene un PR abierto (#${pr.number}); usá \`orca-stack rebote ${pr.number}\`.${bounced ? ` Si el autor del rebote se cortó, usá orca-stack rebote ${pr.number} --continuar.` : ''}`)
     }
-    if (String(pr.number) !== targetItem) {
-      throw new Error(`La URL tiene que apuntar a un comentario del PR abierto de #${n} (#${pr.number}): ${url}`)
-    }
-  } else if (pr) {
-    // A bounce marked on the current head whose author stopped is resumed by `rebote --continuar` (#292).
-    const view = io.sh('gh', ['pr', 'view', String(pr.number), '--json', 'headRefOid,comments,reviews'], { cwd: root })
-    const bounce = view.status === 0 ? parse(view) : undefined
-    const bounced = Boolean(bounce?.headRefOid) && lastBounceMark([...(bounce.reviews ?? []), ...(bounce.comments ?? [])]) === bounce.headRefOid
-    throw new Error(`El issue #${n} ya tiene un PR abierto (#${pr.number}); usá \`orca-stack rebote ${pr.number}\`.${bounced ? ` Si el autor del rebote se cortó, usá orca-stack rebote ${pr.number} --continuar.` : ''}`)
+  } else {
+    const reviews = allWorktrees.flatMap(entry => {
+      const name = worktreeBaseName(entry.row.path)
+      const match = REVIEW_WORKTREE.exec(name)
+      return match?.[1] === n ? [{ ...entry, name, reviewAgent: match[2] }] : []
+    })
+    if (reviews.length === 0) throw new Error(`No encuentro un worktree de este repo para #${n}: no reanudo.`)
+    if (reviews.length > 1) throw new Error(`Hay ${reviews.length} worktrees de review de este repo para #${n} (${reviews.map(entry => entry.name).join(', ')}): no adivino cuál reanudar.`)
+    isReview = true
+    ;({ row, branch, name: reviewName, reviewAgent } = reviews[0])
+    if (targetItem !== n) throw new Error(`La URL apunta a #${targetItem}, no a #${n}: el aviso apunta a la respuesta donde preguntó el revisor.`)
   }
 
   const terminals = workerTerminals(row.path, n, io)
@@ -221,7 +246,9 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (live.length === 1) {
     const state = String(live[0].state ?? live[0].status ?? '').toLowerCase()
     if (state === 'blocked' || state === 'waiting') throw new Error(`La terminal del agente de #${n} muestra un di\u{e1}logo (${state}): no reanudo encima.`)
-    throw new Error(`El agente de #${n} est\u{e1} working: mandale el cambio por el buz\u{f3}n del Run con \`orca orchestration send --to dispatch:<id> --subject "${n}: reglas cambiadas" --body "<url-del-comentario>"\`.`)
+    throw new Error(isReview
+      ? `El revisor de #${n} está working: no reanudo encima.`
+      : `El agente de #${n} est\u{e1} working: mandale el cambio por el buz\u{f3}n del Run con \`orca orchestration send --to dispatch:<id> --subject "${n}: reglas cambiadas" --body "<url-del-comentario>"\`.`)
   }
 
   const done = agentRecords.filter(agent => stateOf(agent) === 'done')
@@ -237,7 +264,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     if (stateOf(picked.record) !== 'done') throw new Error(`La terminal ${handle} de #${n} no tiene un agente en done (${stateOf(picked.record) || 'sin agente'}): no reanudo.`)
     chosen = picked.record
   } else if (done.length > 1) {
-    const newest = done.filter(isWorkerRecord).sort((a, b) => recordTime(b) - recordTime(a))[0]
+    const newest = done.filter(isReview ? isReviewRecord : isWorkerRecord).sort((a, b) => recordTime(b) - recordTime(a))[0]
     if (!newest || !workers.some(worker => worker.record?.paneKey === newest.paneKey)) {
       const handles = workers.filter(worker => stateOf(worker.record) === 'done').map(worker => worker.terminal.handle)
       throw new Error(`Hay ${done.length} agentes done en el worktree de #${n}: no adivino a cu\u{e1}l reanudar. Eleg\u{ed} uno con --terminal <handle> (${handles.join(', ') || 'ninguna terminal listada'}).`)
@@ -257,16 +284,18 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     ? workers.find(worker => worker.record?.paneKey === chosen.paneKey) ?? { record: chosen, identity: stackAgent(chosen.agentType) }
     : identifiedWorkers.length === 1 ? identifiedWorkers[0] : undefined
   let agent = target?.identity ?? stackAgent(target?.record?.agentType)
-  const originalPath = path.join(io.home, 'orca', 'briefs', `${repo}-${n}.md`)
+  const originalPath = path.join(io.home, 'orca', 'briefs', isReview ? `${repo}-${reviewName}.md` : `${repo}-${n}.md`)
   let originalBrief
   if (!agent && agentRecords.length === 0 && identifiedWorkers.length === 0) {
-    if (io.exists(originalPath)) {
+    if (isReview) agent = reviewAgent
+    else if (io.exists(originalPath)) {
       originalBrief = io.readFile(originalPath)
       const match = /^You are the implementer \((\S+)\) of issue #(\d+)\./m.exec(originalBrief)
       if (match?.[2] === n) agent = match[1]
     }
   }
-  if (!agent || !AGENTS.includes(agent)) throw new Error(`No puedo identificar un agente conocido para #${n}; no reanudo ni relanzo.`)
+  if (isReview && agent === 'claude') throw new Error('claude ya no es un agente worker (ADR 0006): despachá a pi, agy o codex.')
+  if (!agent || !(isReview ? WORKER_AGENTS : AGENTS).includes(agent)) throw new Error(`No puedo identificar un agente conocido para #${n}; no reanudo ni relanzo.`)
   if (!config.agentes?.usa?.includes(agent)) throw new Error(`${agent} no est\u{e1} en agentes.usa de este repo (${(config.agentes?.usa ?? []).join(', ') || 'vac\u{ed}o'}).`)
   const blocked = blockOf(config, agent, (io.now ?? Date.now)())
   if (blocked) throw new Error(`No relanzo a ${agent}: ${blocked}`)
@@ -274,7 +303,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
     throw new Error(`${agent} figura en agentes.preguntarAntes: main tiene que preguntarle al humano antes de relanzarlo. Si dijo que s\u{ed}, repet\u{ed} el comando con --confirmado.`)
   }
   if (flags.perfilPi !== undefined && agent !== 'pi') throw new Error('--perfil-pi solo vale para el agente pi.')
-  const consent = rddConsentPolicy(config, agent)
+  const consent = isReview ? undefined : rddConsentPolicy(config, agent)
   // main-autonomo S3: the worker's own candidate is declined; written just before the line or the relaunch reaches it.
   const writeConsent = () => { if (consent === 'politica') writeRddConsent(io, row.path, [], { keepExisting: true }) }
   // Like rebote: the worktree pin decides, so the orchestrator follows the same profile as the subagents. --perfil-pi
@@ -283,7 +312,7 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   // so the subagents the paused pi launches next follow it.
   const pin = agent === 'pi' ? readPin(io, row.path) : undefined
   if (agent === 'pi') refuseGlobalOverStalePin(io, pin, flags.perfilPi)
-  if (agent === 'pi') await refuseMissingGentleAi(io)
+  if (agent === 'pi' && !isReview) await refuseMissingGentleAi(io)
   const resolveProfile = () => {
     try {
       return piProfileFor({ flag: flags.perfilPi, pin, config, home: io.home, commonDir, io })
@@ -298,13 +327,13 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
 
   // #431: a worker an account switch left pending is relaunched, work in progress included: its paused session would keep
   // the old account.
-  const afterSwitch = pendingAfterSwitch(io, commonDir, agent, n)
+  const afterSwitch = isReview ? false : pendingAfterSwitch(io, commonDir, agent, n)
   if (!afterSwitch && target?.terminal && stateOf(target.record) === 'done') {
     target.worktree = row.path
     const handled = await sendToPaused(flags, n, url, originalPath, target, io, markAttempt, () => {
       if (needsPin(profile)) writePin(io, row.path, commonDir, profile.name)
       writeConsent()
-    })
+    }, isReview)
     if (handled) return 0
   }
   if (agent === 'pi') profile ??= resolveProfile()
@@ -313,23 +342,24 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (status.status !== 0) throw new Error(`No pude comprobar el worktree ${row.path}: ${detail(status)}`)
   if (status.stdout.trim() !== '' && !afterSwitch) throw new Error(`El worktree ${row.path} est\u{e1} sucio; guard\u{e1} o descart\u{e1} sus cambios antes de relanzar.`)
 
-  const task = closedRunTask(io, root, n, agent)
+  const task = isReview ? undefined : closedRunTask(io, root, n, agent)
   // #454: with a ready Task, Orca's worker-start delivers the brief once (#397), and the answer goes as its own line.
   const rebind = task?.task && { ...task, deliver: handle => sendLine(io, n, handle, agent, answerLine(url, originalPath), originalPath) }
-  const supervised = rebind ? undefined : supervisedTask(path.basename(root), `#${n} ${agent}${task?.dispatched ? ' reanudado' : ''}`)
+  const supervised = isReview || rebind ? undefined : supervisedTask(path.basename(root), `#${n} ${agent}${task?.dispatched ? ' reanudado' : ''}`)
   originalBrief ??= io.readFile(originalPath)
   if (profile) for (const line of piProfileLines(profile)) io.out(`${flags.dryRun ? '[simulaci\u{f3}n] ' : ''}${line}`)
   if (needsPin(profile) && !flags.dryRun) writePin(io, row.path, commonDir, profile.name)
   const brief = `Message from main: ${url}\n\n${originalBrief}${profile ? `\n${piProfileLines(profile).join('\n')}\n` : ''}`
-  const briefPath = path.join(io.home, 'orca', 'briefs', `${repo}-${n}-reanudar.md`)
+  const briefStem = isReview ? `${repo}-${reviewName}` : `${repo}-${n}`
+  const briefPath = path.join(io.home, 'orca', 'briefs', `${briefStem}-reanudar.md`)
   if (!flags.dryRun) {
     io.mkdirp(path.dirname(briefPath))
     io.writeFile(briefPath, brief)
     markAttempt()
     writeConsent()
   }
-  const session = `${repo}-${n}-reanudar-${(io.now ?? Date.now)()}`
-  await launchInWorktree({ agent, mode: 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: n, rebind, supervised })
+  const session = `${briefStem}-reanudar-${(io.now ?? Date.now)()}`
+  await launchInWorktree({ agent, mode: isReview ? 'review' : 'ticket', worktree: row.path, briefPath, brief, session, config, win: io.win, home: io.home, skills: agent === 'pi' ? io.gentleSkills(io.home) : null, piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun: flags.dryRun, piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: isReview ? undefined : n, rebind, supervised })
   if (rebind && flags.dryRun) io.out(`[simulaci\u{f3}n] orca ${lineArgv('<terminal>', answerLine(url, originalPath)).map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
   if (afterSwitch && !flags.dryRun) pendingAfterSwitch(io, commonDir, agent, n, true)
 
