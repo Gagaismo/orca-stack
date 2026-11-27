@@ -198,7 +198,7 @@ describe('#391 Remove puente-gentle mod and Gentle Shell consult', () => {
     }
   })
 
-  test('S2b: doctor stops checking gentle-pi skills as puente-gentle resolves them and warns naming orca-stack global when an old puente-gentle copy remains', () => {
+  test('S2b: doctor stops checking gentle-pi skills as puente-gentle resolves them and warns when an old puente-gentle copy remains', () => {
     const home = tempDir('rm391-s2b-home')
     try {
       const bin = path.join(home, 'fake-bin')
@@ -224,7 +224,7 @@ describe('#391 Remove puente-gentle mod and Gentle Shell consult', () => {
       const warnLine = withDir.out.split(/\r?\n/).find(l => l.includes('puente-gentle'))
       assert.ok(warnLine, `expected puente-gentle warn in:\n${withDir.out}`)
       assert.match(warnLine, /^\s*⚠ /)
-      assert.match(warnLine, /orca-stack global/)
+      assert.match(warnLine, /a mano/)
     } finally {
       cleanup(home)
     }
