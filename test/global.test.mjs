@@ -34,7 +34,7 @@ describe('global', () => {
 
   test('issue 283 Rule 4: this repo config uses only supported agents', () => {
     const config = JSON.parse(read(path.join(ROOT, '.orca-stack.json')))
-    assert.deepEqual(config.agentes.usa, ['claude', 'agy', 'codex', 'pi'])
+    assert.deepEqual(config.agentes.usa, ['agy', 'codex', 'pi'])
     assert.deepEqual(config.agentes.preguntarAntes, [])
   })
 
