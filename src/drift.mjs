@@ -155,7 +155,7 @@ export const driftWarnings = L => {
   if (rdd.mode === 'on' && rdd.source === 'default') {
     found.push({
       label: 'RDD de gentle-ai',
-      detail: 'está prendido solo por defecto en gentle-ai v4: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`',
+      detail: 'está prendido solo por defecto en gentle-ai: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`',
     })
   }
 
