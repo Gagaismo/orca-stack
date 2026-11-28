@@ -255,7 +255,7 @@ lee una vez \`gh pr view <n> --json number,headRefOid,body,comments,reviews,file
 y dice qué le falta para el paso 7 de MAIN.md sobre su head actual:
   (a) un review sin bloqueos de alguien que no sea el Implementador:, o Verificado por main: / Decidido por main:, o, con
       agentes.pi.review "rdd" y un PR de pi, un review RDD de pi pedido con RDD: o un Sin review: (con ## Evidencia);
-  (b) que esos comentarios lleven Commit: igual al head (el sha puede ir entre backticks);
+  (b) que esos comentarios lleven Commit: igual al head (el sha puede ir entre backticks); salvo en rutas de riesgo, un Sin review: o un review RDD, un comentario de (a) sobre su primer padre cuenta en un solo nivel si gh api repos/<owner>/<repo>/commits/<head> muestra que el head es un merge verificado de web-flow (por ejemplo tras gh pr update-branch; si gh api falla, no aplica y lo informa en falta);
   (c) que cada check termine en SUCCESS, SKIPPED o NEUTRAL y ninguno siga pendiente;
   (d) en una ruta de riesgo, los reviews que exige el paso 6 de MAIN.md.
 Un review con ## Cobertura cuenta solo si ninguna ruta de Sin leer: es de riesgo; uno que se declara parcial sin
