@@ -90,11 +90,11 @@ describe('global and doctor against a gentle-ai v5.1.0 sync', () => {
     assert.deepEqual(gentleRows(doctor().out), [])
   })
 
-  test('rule 4: an instructions file without any orchestrator block gets no gentle-ai block row from doctor', () => {
+  test('rule 4: without any orchestrator block doctor shows no gentle-ai block row and global names no major version', () => {
     const plain = SYNCED.slice(0, SYNCED.indexOf('<!-- gentle-ai:orchestrator -->'))
     write(claudeMd(), plain)
     assert.equal(sddBlock(plain).status, 'none')
     assert.deepEqual(gentleRows(doctor().out), [])
-    assert.match(global().out, /se omite y no toco nada: no hay bloque gentle-ai/)
+    assert.match(global().out, /se omite y no toco nada: no hay bloque gentle-ai:orchestrator ni gentle-ai:sdd-orchestrator \(lo escribe `gentle-ai sync`\)/)
   })
 })

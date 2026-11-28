@@ -169,7 +169,7 @@ export const sddBlock = text => {
   return { status: 'ok', generation, from, end, inner: text.slice(from, end) }
 }
 
-export const NO_BLOCK = 'no hay bloque gentle-ai:orchestrator (v4) ni gentle-ai:sdd-orchestrator (v2/v3)'
+export const NO_BLOCK = 'no hay bloque gentle-ai:orchestrator ni gentle-ai:sdd-orchestrator'
 
 export const isLazyBlock = block => block.status === 'ok' && block.inner.includes(LAZY_SENTINEL)
 
