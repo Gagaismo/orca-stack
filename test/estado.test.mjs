@@ -76,6 +76,18 @@ const harness = (world = {}, config = {}) => {
           if (typeof entry === 'string') return okRes(entry)
           return entry
         }
+        const commitArg = args.find(arg => /\/commits\/([0-9a-f]+)$/i.test(arg))
+        if (commitArg) {
+          const sha = /\/commits\/([0-9a-f]+)$/i.exec(commitArg)[1]
+          world.commitCalls = [...(world.commitCalls ?? []), args.join(' ')]
+          if (world.commits && Object.hasOwn(world.commits, sha)) {
+            const entry = world.commits[sha]
+            if (typeof entry === 'function') return entry(args)
+            if (typeof entry === 'string') return okRes(entry)
+            return entry
+          }
+          return json({ sha, committer: { login: 'Gagaismo' }, commit: { verification: { verified: false } }, parents: [] })
+        }
         if (world.baseConfig === undefined) return fail('gh: Not Found (HTTP 404)')
         world.apiCalls = [...(world.apiCalls ?? []), args.join(' ')]
         return okRes(world.baseConfig)
@@ -850,5 +862,265 @@ describe('orca-stack estado: failed tests from finished CI jobs (#508)', () => {
     assert.match(estadoSection, /failedTests/)
     assert.match(estadoSection, /10/)
     assert.match(estadoSection, /no se pudo leer el log del job/)
+  })
+})
+
+describe('orca-stack estado: web-flow update-branch exception (#520)', () => {
+  before(() => {
+    root = tempDir('estado-520-root')
+    home = tempDir('estado-520-home')
+  })
+  after(() => {
+    cleanup(root)
+    cleanup(home)
+  })
+
+  const HEAD_520 = `952f1e1${'a'.repeat(33)}`
+  const REVIEWED_520 = `42b57d3${'b'.repeat(33)}`
+  const BASE_520 = `1112223${'c'.repeat(33)}`
+  const MID_520 = `7778889${'d'.repeat(33)}`
+  const ghCommit = ({ committer = 'web-flow', verified = true, parents = [REVIEWED_520, BASE_520] } = {}) =>
+    json({
+      sha: HEAD_520,
+      committer: committer === null ? null : { login: committer },
+      commit: { verification: { verified } },
+      parents: parents.map(sha => ({ sha })),
+    })
+  const pr16 = (opts = {}) => ({
+    ...prData(16, { head: HEAD_520, ...opts }),
+    url: 'https://github.com/Gagaismo/orca-stack/pull/16',
+  })
+
+  test('issue 520 Rule 1: verified web-flow merge whose first parent matches review, Verificado por main or Decidido por main passes (b) in text and --json', async () => {
+    const world = {
+      prs: [pr16({ reviews: [review('agy', REVIEWED_520)] })],
+      commits: { [HEAD_520]: ghCommit() },
+    }
+    const hJson = harness(world)
+    assert.equal(await estado(hJson, ['16'], { json: true }), 0)
+    assert.deepEqual(one(hJson), { pr: 16, head: HEAD_520, ok: true, falta: [], merge: MERGE })
+    assert.deepEqual(world.commitCalls, [`api repos/Gagaismo/orca-stack/commits/${HEAD_520}`])
+
+    const hText = harness({ prs: world.prs, commits: world.commits })
+    assert.equal(await estado(hText, ['16']), 0)
+    assert.deepEqual(hText.out, ['#16 #7 codex head=952f1e1 ci=green review=agy@42b57d3 riesgo=no falta='])
+    assert.ok(!hText.out[0].includes('el review de agy nombra el commit 42b57d3, no el head 952f1e1'))
+
+    for (const marker of [`Verificado por main: hallazgos 1 corregidos en ${REVIEWED_520}`, 'Decidido por main: hallazgo 1 — falso positivo']) {
+      const mWorld = {
+        prs: [
+          pr16({
+            reviews: [review('agy', REVIEWED_520, { verdict: '1. Falta test', at: T(1) })],
+            comments: [comment(`${BOM}${marker}\nCommit: ${REVIEWED_520}`, T(9))],
+          }),
+        ],
+        commits: { [HEAD_520]: ghCommit() },
+      }
+      const mJson = harness(mWorld)
+      assert.equal(await estado(mJson, ['16'], { json: true }), 0, marker)
+      assert.deepEqual(one(mJson), { pr: 16, head: HEAD_520, ok: true, falta: [], merge: MERGE })
+
+      const mText = harness({ prs: mWorld.prs, commits: mWorld.commits })
+      assert.equal(await estado(mText, ['16']), 0, marker)
+      assert.deepEqual(mText.out, ['#16 #7 codex head=952f1e1 ci=green review=agy@42b57d3:bloquea,main@42b57d3 riesgo=no falta='])
+    }
+  })
+
+  test('issue 520 Rule 2: manually pushed head or null committer with first parent reviewed still fails (b) with the current message', async () => {
+    for (const committer of ['Gagaismo', null]) {
+      const world = {
+        prs: [pr16({ reviews: [review('agy', REVIEWED_520)] })],
+        commits: { [HEAD_520]: ghCommit({ committer }) },
+      }
+      const hJson = harness(world)
+      assert.equal(await estado(hJson, ['16'], { json: true }), 1, String(committer))
+      assert.deepEqual(one(hJson), {
+        pr: 16,
+        head: HEAD_520,
+        ok: false,
+        falta: ['(b) el review de agy nombra el commit 42b57d3, no el head 952f1e1'],
+        merge: MERGE,
+      })
+
+      const hText = harness({ prs: world.prs, commits: world.commits })
+      assert.equal(await estado(hText, ['16']), 1, String(committer))
+      assert.deepEqual(hText.out, ['#16 #7 codex head=952f1e1 ci=green review=stale riesgo=no falta=(b) el review de agy nombra el commit 42b57d3, no el head 952f1e1'])
+    }
+  })
+
+  test('issue 520 Rule 3: verified web-flow commit where reviewed commit is the second parent or single parent fails (b)', async () => {
+    for (const parents of [[BASE_520, REVIEWED_520], [REVIEWED_520]]) {
+      const world = {
+        prs: [pr16({ reviews: [review('agy', REVIEWED_520)] })],
+        commits: { [HEAD_520]: ghCommit({ parents }) },
+      }
+      const hJson = harness(world)
+      assert.equal(await estado(hJson, ['16'], { json: true }), 1, parents.join(','))
+      assert.deepEqual(one(hJson).falta, ['(b) el review de agy nombra el commit 42b57d3, no el head 952f1e1'])
+
+      const hText = harness({ prs: world.prs, commits: world.commits })
+      assert.equal(await estado(hText, ['16']), 1, parents.join(','))
+      assert.deepEqual(hText.out, ['#16 #7 codex head=952f1e1 ci=green review=stale riesgo=no falta=(b) el review de agy nombra el commit 42b57d3, no el head 952f1e1'])
+    }
+  })
+
+  test('issue 520 Rule 4: web-flow merge with verified false fails (b)', async () => {
+    const world = {
+      prs: [pr16({ reviews: [review('agy', REVIEWED_520)] })],
+      commits: { [HEAD_520]: ghCommit({ verified: false }) },
+    }
+    const hJson = harness(world)
+    assert.equal(await estado(hJson, ['16'], { json: true }), 1)
+    assert.deepEqual(one(hJson).falta, ['(b) el review de agy nombra el commit 42b57d3, no el head 952f1e1'])
+
+    const hText = harness({ prs: world.prs, commits: world.commits })
+    assert.equal(await estado(hText, ['16']), 1)
+    assert.deepEqual(hText.out, ['#16 #7 codex head=952f1e1 ci=green review=stale riesgo=no falta=(b) el review de agy nombra el commit 42b57d3, no el head 952f1e1'])
+  })
+
+  test('issue 520 Rule 5: Sin review and RDD reviews never use the web-flow exception and must name headRefOid', async () => {
+    const config = { agentes: { usa: ['agy', 'codex', 'pi'], pi: { review: 'rdd' } } }
+    const piBody = 'Implementador: pi\n\nCloses #7\n\n## Evidencia\n| Regla | Test |'
+
+    const sinWorld = {
+      prs: [pr16({ body: piBody, comments: [comment(`Sin review: doc\nCommit: ${REVIEWED_520}`)] })],
+      commits: { [HEAD_520]: ghCommit() },
+    }
+    const sinJson = harness(sinWorld, config)
+    assert.equal(await estado(sinJson, ['16'], { json: true }), 1)
+    assert.deepEqual(one(sinJson).falta, ['(b) el Sin review: nombra el commit 42b57d3, no el head 952f1e1'])
+    assert.equal(sinWorld.commitCalls, undefined)
+
+    const sinText = harness({ prs: sinWorld.prs, commits: sinWorld.commits }, config)
+    assert.equal(await estado(sinText, ['16']), 1)
+    assert.deepEqual(sinText.out, ['#16 #7 pi head=952f1e1 ci=green review=stale riesgo=no falta=(b) el Sin review: nombra el commit 42b57d3, no el head 952f1e1'])
+
+    for (const reqSha of [REVIEWED_520.slice(0, 7), HEAD_520.slice(0, 7)]) {
+      const rddWorld = {
+        prs: [
+          pr16({
+            body: piBody,
+            comments: [comment(`RDD: ${reqSha} (risk)`, T(4))],
+            reviews: [{ body: `Revisor: pi (RDD: risk)\nCommit: ${REVIEWED_520}\n\n## BLOQUEA\nnada`, submittedAt: T(6) }],
+          }),
+        ],
+        commits: { [HEAD_520]: ghCommit() },
+      }
+      const rddJson = harness(rddWorld, config)
+      assert.equal(await estado(rddJson, ['16'], { json: true }), 1, reqSha)
+      assert.deepEqual(one(rddJson).falta, ['(a) falta un review sin bloqueos sobre 952f1e1 de alguien que no sea pi (o un review RDD pedido con RDD:, o un Sin review:)'])
+      assert.equal(rddWorld.commitCalls, undefined)
+
+      const rddText = harness({ prs: rddWorld.prs, commits: rddWorld.commits }, config)
+      assert.equal(await estado(rddText, ['16']), 1, reqSha)
+      const expectedReview = reqSha === HEAD_520.slice(0, 7) ? 'rdd-pedido(risk)@952f1e1' : 'missing'
+      assert.deepEqual(rddText.out, [`#16 #7 pi head=952f1e1 ci=green review=${expectedReview} riesgo=no falta=(a) falta un review sin bloqueos sobre 952f1e1 de alguien que no sea pi (o un review RDD pedido con RDD:, o un Sin review:)`])
+    }
+  })
+
+  test('issue 520 Rule 6: PR touching a riesgo glob does not apply the web-flow exception', async () => {
+    const config = { riesgo: ['src/auth/**'] }
+    const world = {
+      prs: [pr16({ files: ['src/auth/login.mjs'], reviews: [review('agy', REVIEWED_520), review('pi', REVIEWED_520)] })],
+      commits: { [HEAD_520]: ghCommit() },
+    }
+    const expectedFalta = [
+      '(b) el review de agy nombra el commit 42b57d3, no el head 952f1e1',
+      '(b) el review de pi nombra el commit 42b57d3, no el head 952f1e1',
+      '(d) PR #16 toca una ruta de riesgo (src/auth/login.mjs): falta un review de pi sobre el commit 952f1e1. Corré `orca-stack revisar 16 pi` y mergeá cuando el review esté limpio.',
+    ]
+    const hJson = harness(world, config)
+    assert.equal(await estado(hJson, ['16'], { json: true }), 1)
+    assert.deepEqual(one(hJson).falta, expectedFalta)
+    assert.equal(world.commitCalls, undefined)
+
+    const hText = harness({ prs: world.prs, commits: world.commits }, config)
+    assert.equal(await estado(hText, ['16']), 1)
+    assert.deepEqual(hText.out, [`#16 #7 codex head=952f1e1 ci=green review=stale riesgo=yes falta=${expectedFalta.join('; ')}`])
+  })
+
+  test('issue 520 Rule 7: failed, timed out or unreadable gh api commit lookup rejects the exception, reports origin check failure in falta, and is never called on the normal path', async () => {
+    const cases = [
+      ['failure', fail('gh: HTTP 502'), '(b) no se pudo verificar el origen de 952f1e1: gh: HTTP 502'],
+      ['timeout', { status: null, stdout: '', stderr: '', timedOut: true }, '(b) no se pudo verificar el origen de 952f1e1: timeout'],
+      ['html', '<html>502</html>', '(b) no se pudo verificar el origen de 952f1e1: respuesta ilegible de gh api'],
+      ['unexpected json', json({ message: 'unexpected' }), '(b) no se pudo verificar el origen de 952f1e1: respuesta ilegible de gh api'],
+    ]
+    for (const [label, commitRes, originMsg] of cases) {
+      const world = {
+        prs: [pr16({ reviews: [review('agy', REVIEWED_520)] })],
+        commits: { [HEAD_520]: commitRes },
+      }
+      const expectedFalta = ['(b) el review de agy nombra el commit 42b57d3, no el head 952f1e1', originMsg]
+      const hJson = harness(world)
+      assert.equal(await estado(hJson, ['16'], { json: true }), 1, label)
+      assert.deepEqual(one(hJson).falta, expectedFalta, label)
+
+      const hText = harness({ prs: world.prs, commits: world.commits })
+      assert.equal(await estado(hText, ['16']), 1, label)
+      assert.deepEqual(hText.out, [`#16 #7 codex head=952f1e1 ci=green review=stale riesgo=no falta=${expectedFalta.join('; ')}`], label)
+    }
+
+    const normalWorld = { prs: [pr16({ reviews: [review('agy', HEAD_520)] })] }
+    const normal = harness(normalWorld)
+    assert.equal(await estado(normal, ['16'], { json: true }), 0)
+    assert.deepEqual(one(normal), { pr: 16, head: HEAD_520, ok: true, falta: [], merge: MERGE })
+    assert.equal(normalWorld.commitCalls, undefined)
+  })
+
+  test('issue 520 Rule 8: two consecutive web-flow update-branch merges do not chain across two levels', async () => {
+    const world = {
+      prs: [pr16({ reviews: [review('agy', REVIEWED_520)] })],
+      commits: {
+        [HEAD_520]: ghCommit({ parents: [MID_520, BASE_520] }),
+        [MID_520]: json({ sha: MID_520, committer: { login: 'web-flow' }, commit: { verification: { verified: true } }, parents: [{ sha: REVIEWED_520 }, { sha: BASE_520 }] }),
+      },
+    }
+    const hJson = harness(world)
+    assert.equal(await estado(hJson, ['16'], { json: true }), 1)
+    assert.deepEqual(one(hJson).falta, ['(b) el review de agy nombra el commit 42b57d3, no el head 952f1e1'])
+    assert.deepEqual(world.commitCalls, [`api repos/Gagaismo/orca-stack/commits/${HEAD_520}`])
+
+    const hText = harness({ prs: world.prs, commits: world.commits })
+    assert.equal(await estado(hText, ['16']), 1)
+    assert.deepEqual(hText.out, ['#16 #7 codex head=952f1e1 ci=green review=stale riesgo=no falta=(b) el review de agy nombra el commit 42b57d3, no el head 952f1e1'])
+  })
+
+  test('issue 520 Docs: estado --help, docs/manual.md and README.md document the web-flow exception on check (b)', () => {
+    const res = spawnSync(process.execPath, [path.join(process.cwd(), 'bin', 'orca-stack.mjs'), 'estado', '--help'], { encoding: 'utf8' })
+    assert.equal(res.status, 0, res.stderr)
+    const manual = readFileSync(path.join(process.cwd(), 'docs', 'manual.md'), 'utf8')
+    const manualSection = manual.slice(manual.indexOf('#### `estado`'), manual.indexOf('#### `limpiar`'))
+    const readme = readFileSync(path.join(process.cwd(), 'README.md'), 'utf8')
+    const readmeLine = readme.split(/\r?\n/).find(line => line.startsWith('- `estado [<pr>...]`')) ?? ''
+
+    for (const [label, text] of [['estado --help', res.stdout], ['docs/manual.md', manualSection], ['README.md', readmeLine]]) {
+      assert.match(text, /web-flow/, label)
+      assert.match(text, /update-branch/, label)
+      assert.match(text, /riesgo/, label)
+      assert.match(text, /Sin review:/, label)
+      assert.match(text, /RDD/, label)
+    }
+  })
+
+  test('issue 520 Preserve: estadoCommand and CLI main keep normal head-matching review, waived reviewParaMerge and help behavior', async () => {
+    const directWorld = { prs: [pr16({ reviews: [review('agy', HEAD_520)] })] }
+    const cliEnv = harness(directWorld)
+    assert.equal(await main(['estado', '16', '--json'], cliEnv.io), 0)
+    assert.deepEqual(one(cliEnv), { pr: 16, head: HEAD_520, ok: true, falta: [], merge: MERGE })
+    assert.equal(directWorld.commitCalls, undefined)
+
+    const textEnv = harness({ prs: directWorld.prs })
+    assert.equal(await estado(textEnv, ['16']), 0)
+    assert.deepEqual(textEnv.out, ['#16 #7 codex head=952f1e1 ci=green review=agy@952f1e1 riesgo=no falta='])
+
+    const waivedWorld = {
+      prs: [pr16({ body: 'Implementador: codex\n\n## Evidencia\n| R | T |\n|---|---|\n| 1 | `x` |' })],
+      baseConfig: JSON.stringify({ ramaBase: 'main', reviewParaMerge: false }),
+    }
+    const waivedEnv = harness(waivedWorld)
+    assert.equal(await estado(waivedEnv, ['16'], { json: true }), 0)
+    assert.deepEqual(one(waivedEnv), { pr: 16, head: HEAD_520, ok: true, falta: [], merge: MERGE })
+    assert.equal(waivedWorld.commitCalls, undefined)
   })
 })
