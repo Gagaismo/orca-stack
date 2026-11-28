@@ -47,10 +47,16 @@ const withRepo = run => {
     timeout,
     env: { ...process.env, HOME: home, USERPROFILE: home, ORCA_STACK_HOME: home, GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig-none'), ORCA_STACK_AST_GREP: '' },
   })
+  let pending = false
   try {
-    run({ dir, repo, home, put, add, remove, commit, lint, lintWithin, baseline })
+    const out = run({ dir, repo, home, put, add, remove, commit, lint, lintWithin, baseline })
+    if (out && typeof out.then === 'function') {
+      pending = true
+      return out.finally(() => cleanup(dir))
+    }
+    return out
   } finally {
-    cleanup(dir)
+    if (!pending) cleanup(dir)
   }
 }
 
@@ -710,13 +716,17 @@ describe('owner/repo#n Decision Record citations (#517)', () => {
     assert.match(manual, /Un comentario que cita un issue \(`#123` o `owner\/repo#123`\), un ADR \(`ADR 0002`\) o un link a `docs\/adr\/0002-…` es un Decision Record y pasa/)
   })
 
+  const CITED_OWNER_REPO_FN = [
+    'export function cited() {',
+    '  // temporary workaround, see Gagaismo/orca-stack#432',
+    '  return 1',
+    '}',
+  ]
+
   test('PRESERVE: commentViolations reports Excuse, Tautology and Stale while exempting owner/repo#n Decision Records', () => {
     withRepo(({ repo, add }) => {
       add('src/preserve.mjs', [
-        'export function cited() {',
-        '  // temporary workaround, see Gagaismo/orca-stack#432',
-        '  return 1',
-        '}',
+        ...CITED_OWNER_REPO_FN,
         'export function excuse(i) {',
         '  // TODO: drop hack',
         '  let x = i',
@@ -740,33 +750,29 @@ describe('owner/repo#n Decision Record citations (#517)', () => {
   })
 
   test('PRESERVE: seedBaseline and lintCommand seed uncited comment violations and skip owner/repo#n Decision Records', async t => {
-    let result
-    await new Promise(resolve => {
-      withRepo(async ({ repo, home, add, baseline }) => {
-        add('src/preserve.mjs', [
-          'export function cited() {',
-          '  // temporary workaround, see Gagaismo/orca-stack#432',
-          '  return 1',
-          '}',
-          'export function uncited() {',
-          '  // temporary workaround',
-          '  return 2',
-          '}',
-          '',
-        ].join('\n'))
-        const seeded = seedBaseline(repo, { home })
-        assert.equal(seeded.added, 1)
-        const entries = JSON.parse(baseline()).entries
-        assert.deepEqual(entries.map(({ rule, file, location }) => ({ rule, file, location })), [
-          { rule: 'comment-excuse', file: 'src/preserve.mjs', location: 'uncited()' },
-        ])
-        const out = []
-        t.mock.method(console, 'log', (...args) => out.push(args.join(' ')))
+    const result = await withRepo(async ({ repo, home, add, baseline }) => {
+      add('src/preserve.mjs', [
+        ...CITED_OWNER_REPO_FN,
+        'export function uncited() {',
+        '  // temporary workaround',
+        '  return 2',
+        '}',
+        '',
+      ].join('\n'))
+      const seeded = seedBaseline(repo, { home })
+      assert.equal(seeded.added, 1)
+      const entries = JSON.parse(baseline()).entries
+      assert.deepEqual(entries.map(({ rule, file, location }) => ({ rule, file, location })), [
+        { rule: 'comment-excuse', file: 'src/preserve.mjs', location: 'uncited()' },
+      ])
+      const out = []
+      t.mock.method(console, 'log', (...args) => out.push(args.join(' ')))
+      try {
         const status = await lintCommand({}, { cwd: repo, home })
+        return { status, out: out.join('\n') }
+      } finally {
         t.mock.restoreAll()
-        result = { status, out: out.join('\n') }
-        resolve()
-      })
+      }
     })
     assert.equal(result.status, 0, result.out)
     assert.equal(result.out, OK(1).trimEnd())

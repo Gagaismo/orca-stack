@@ -30,9 +30,9 @@ afterEach(() => {
 
 const run = (...args) => cli(home, ['init', ...args], { cwd: repo })
 const file = rel => path.join(repo, rel)
-const commitAll = () => {
-  git(repo, 'add', '-A')
-  const result = git(repo, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '-q', '-m', 'init')
+const commitAll = (target = repo) => {
+  assert.equal(git(target, 'add', '-A').status, 0)
+  const result = git(target, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '-q', '-m', 'init')
   assert.equal(result.status, 0, result.stderr)
 }
 const hooksPath = () => git(repo, 'config', '--get', 'core.hooksPath')
@@ -524,6 +524,8 @@ describe('lint.enabled (#424)', () => {
 })
 
 describe('init comments pass lint (#517)', () => {
+  const LINT_OK_ZERO = 'lint OK: ninguna violación nueva ni entrada vencida (0 en la Baseline)\n'
+
   test('R5: init on an empty repo followed by lint reports no comments from init files, makes skipped files explicit, and all generated comments pass when scanned as shell', () => {
     const emptyRoot = tempDir('empty-init-lint')
     const emptyHome = tempDir('empty-init-home')
@@ -535,14 +537,11 @@ describe('init comments pass lint (#517)', () => {
       assert.equal(initResult.status, 0, initResult.out)
       assert.deepEqual(JSON.parse(read(path.join(emptyRepo, BASELINE))), { version: 1, entries: [] })
 
-      const add = git(emptyRepo, 'add', '-A')
-      assert.equal(add.status, 0, add.stderr)
-      const commit = git(emptyRepo, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '-q', '-m', 'init')
-      assert.equal(commit.status, 0, commit.stderr)
+      commitAll(emptyRepo)
 
       const lintResult = cli(emptyHome, ['lint'], { cwd: emptyRepo })
       assert.equal(lintResult.status, 0, lintResult.out)
-      assert.equal(lintResult.stdout, 'lint OK: ninguna violación nueva ni entrada vencida (0 en la Baseline)\n')
+      assert.equal(lintResult.stdout, LINT_OK_ZERO)
 
       const commentedFiles = ['orca.yaml', '.worktreeinclude', HOOK, WORKFLOW]
       for (const rel of commentedFiles) {
@@ -563,7 +562,7 @@ describe('init comments pass lint (#517)', () => {
       assert.equal(git(emptyRepo, 'add', 'scripts/init-comments.sh').status, 0)
       const shellLint = cli(emptyHome, ['lint'], { cwd: emptyRepo })
       assert.equal(shellLint.status, 0, shellLint.out)
-      assert.equal(shellLint.stdout, 'lint OK: ninguna violación nueva ni entrada vencida (0 en la Baseline)\n')
+      assert.equal(shellLint.stdout, LINT_OK_ZERO)
     } finally {
       cleanup(emptyHome)
       cleanup(emptyRoot)
