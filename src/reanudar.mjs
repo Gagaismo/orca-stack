@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-import { AGENTS, WORKER_AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, refuseMissingGentleAi, shellPrompt, supervisedTask, writePin, writeRddConsent } from './despacho.mjs'
+import { AGENTS, WORKER_AGENTS, agyNotDelivered, blockOf, defaultIo, dismissAgySplash, getRemoteOrigin, lastBounceMark, launchInWorktree, loadConfig, needsPin, piProfileFor, piProfileLines, piProfileStored, rddConsentPolicy, readPin, refuseGlobalOverStalePin, refuseMissingGentleAi, shellPrompt, startWorker, supervisedTask, writePin, writeRddConsent } from './despacho.mjs'
 import { pendingAfterSwitch } from './orca.mjs'
 import { getStackAccount } from './repo.mjs'
 import { samePath } from './util.mjs'
@@ -85,13 +85,32 @@ const closedRunTask = (io, root, n, agent) => {
   if (task.status === 'ready') return { run, task: task.id }
   return task.status === 'dispatched' ? { dispatched: true } : undefined
 }
+const CLOSED_DISPATCH = new Set(['failed', 'stopped', 'succeeded', 'fenced', 'cancelled'])
+// #521: Orca permanently revokes a dispatch capability on worker_done failed; sending a raw line triggers consumer_fenced.
+const closedTerminalDispatch = (io, root, handle) => {
+  const current = io.sh('orca', ['orchestration', 'run-current', '--json'], { cwd: root })
+  const currentBody = current.status === 0 ? parse(current) : undefined
+  if (!currentBody || currentBody.ok === false) {
+    throw new Error(`No pude comprobar el Run actual en Orca (orca orchestration run-current): ${detail(current)}. No envío una línea a la terminal para evitar consumer_fenced.`)
+  }
+  const runId = currentBody?.result?.runId ?? currentBody?.result?.run?.id
+  if (typeof runId !== 'string' || runId === '') return undefined
+  const listed = io.sh('orca', ['orchestration', 'worker-list', '--run', runId, '--json'], { cwd: root })
+  const workers = listed.status === 0 ? parse(listed)?.result?.workers : undefined
+  if (!Array.isArray(workers)) {
+    throw new Error(`No pude comprobar si el dispatch de ${handle} en el Run ${runId} está cerrado (orca orchestration worker-list): ${detail(listed)}. No envío una línea a la terminal para evitar consumer_fenced.`)
+  }
+  const row = workers.find(w => (w?.terminal ?? w?.agentTerminalHandle) === handle)
+  const state = String(row?.state ?? '').toLowerCase()
+  return row && CLOSED_DISPATCH.has(state) ? { runId, dispatchId: row.dispatchId, taskId: row.taskId, state } : undefined
+}
 const recordTime = record => Number(record?.updatedAt ?? record?.stateStartedAt ?? 0) || 0
 const prMatchesIssue = (pr, issue, branches) =>
   (pr.closingIssuesReferences ?? []).some(ref => String(ref.number) === issue) ||
   branches.includes(pr.headRefName) ||
   new RegExp(`^\\s*Closes\\s+#${issue}\\b`, 'im').test(pr.body ?? '')
 
-const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, beforeSend, isReview = false) => {
+const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, beforeSend, { isReview = false, checkClosed, resumeSpecPath, repo } = {}) => {
   const { handle } = target.terminal
   const screen = readScreen(io, handle)
   const lastLine = screen.filter(line => line.trim() !== '').at(-1) ?? ''
@@ -105,11 +124,18 @@ const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, b
   const state = String(current?.state ?? current?.status ?? '').toLowerCase()
   if (state !== 'done') throw new Error(`El agente de ${handle} cambi\u{f3} a ${state || 'sin estado'} mientras lo revisaba: no reanudo.`)
 
+  const closedDispatch = checkClosed?.()
   const line = answerLine(url, briefPath, isReview)
-  const argv = lineArgv(handle, line)
+  const title = `#${n} ${target.identity} reanudado`
   if (flags.dryRun) {
-    if (target.identity === 'agy' && /esc to dismiss/i.test(screen.join('\n'))) io.out(`[simulaci\u{f3}n] cerrar el aviso de agy con Esc en ${handle} antes de enviar la l\u{ed}nea`)
-    io.out(`[simulaci\u{f3}n] orca ${argv.map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
+    if (target.identity === 'agy' && /esc to dismiss/i.test(screen.join('\n'))) io.out(`[simulaci\u{f3}n] cerrar el aviso de agy con Esc en ${handle} antes de ${closedDispatch ? 'abrir el dispatch' : 'enviar la l\u{ed}nea'}`)
+    if (closedDispatch) {
+      const dryCmd = ['orchestration', 'worker-start', '--run', closedDispatch.runId, '--terminal', handle, '--spec-file', resumeSpecPath, '--task-title', title, '--json']
+      io.out(`[simulaci\u{f3}n] El dispatch ${closedDispatch.dispatchId} de ${handle} est\u{e1} cerrado (${closedDispatch.state}); abrir\u{ed}a un dispatch nuevo en esa terminal.`)
+      io.out(`[simulaci\u{f3}n] orca ${dryCmd.map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
+    } else {
+      io.out(`[simulaci\u{f3}n] orca ${lineArgv(handle, line).map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
+    }
     io.out(`Terminal: ${handle}, worker de #${n} en ${target.worktree}`)
     io.out(`L\u{ed}nea: ${line}`)
     return true
@@ -118,6 +144,21 @@ const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, b
   // agy's "esc to dismiss" banner or splash (#357): dismissed before anything else reaches the terminal.
   if (target.identity === 'agy') await dismissAgySplash(io, handle, screen, briefPath)
   beforeSend()
+  if (closedDispatch) {
+    io.mkdirp(path.dirname(resumeSpecPath))
+    io.writeFile(resumeSpecPath, `${line}\n`)
+    markAttempt()
+    try {
+      await startWorker(io, io.out, { agent: target.identity, handle, briefPath: resumeSpecPath, supervised: { runId: closedDispatch.runId, title, objective: supervisedTask(repo, title).objective } })
+    } catch (error) {
+      if (error.orchestration) {
+        throw new Error(`${error.message}\nEl dispatch ${closedDispatch.dispatchId} de ${handle} est\u{e1} cerrado (${closedDispatch.state}) y no pude abrir uno nuevo; no env\u{ed}o una l\u{ed}nea suelta para evitar consumer_fenced. Cerr\u{e1} la terminal con \`orca terminal close --terminal ${handle} --json\` y volv\u{e9} a correr \`orca-stack reanudar ${n} <url-del-comentario-nuevo>\` con el worktree limpio.`)
+      }
+      throw error
+    }
+    io.out(`Nuevo dispatch abierto en ${handle} (#${n}, anterior ${closedDispatch.dispatchId} cerrado en ${closedDispatch.state}): ${line}`)
+    return true
+  }
   markAttempt()
   sendLine(io, n, handle, target.identity, line, briefPath)
   return true
@@ -328,12 +369,14 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   // #431: a worker an account switch left pending is relaunched, work in progress included: its paused session would keep
   // the old account.
   const afterSwitch = isReview ? false : pendingAfterSwitch(io, commonDir, agent, n)
+  const briefStem = isReview ? `${repo}-${reviewName}` : `${repo}-${n}`
+  const resumeSpecPath = path.join(io.home, 'orca', 'briefs', `${briefStem}-reanudar-msg.md`)
   if (!afterSwitch && target?.terminal && stateOf(target.record) === 'done') {
     target.worktree = row.path
     const handled = await sendToPaused(flags, n, url, originalPath, target, io, markAttempt, () => {
       if (needsPin(profile)) writePin(io, row.path, commonDir, profile.name)
       writeConsent()
-    }, isReview)
+    }, { isReview, checkClosed: () => isReview ? undefined : closedTerminalDispatch(io, root, target.terminal.handle), resumeSpecPath, repo })
     if (handled) return 0
   }
   if (agent === 'pi') profile ??= resolveProfile()
@@ -350,7 +393,6 @@ export const reanudarCommand = async (flags = {}, item, url, io = defaultIo()) =
   if (profile) for (const line of piProfileLines(profile)) io.out(`${flags.dryRun ? '[simulaci\u{f3}n] ' : ''}${line}`)
   if (needsPin(profile) && !flags.dryRun) writePin(io, row.path, commonDir, profile.name)
   const brief = `Message from main: ${url}\n\n${originalBrief}${profile ? `\n${piProfileLines(profile).join('\n')}\n` : ''}`
-  const briefStem = isReview ? `${repo}-${reviewName}` : `${repo}-${n}`
   const briefPath = path.join(io.home, 'orca', 'briefs', `${briefStem}-reanudar.md`)
   if (!flags.dryRun) {
     io.mkdirp(path.dirname(briefPath))

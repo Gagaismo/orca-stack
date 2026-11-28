@@ -146,6 +146,7 @@ const fakeIo = (over = {}, { config = PROJECT, piTools = 'available', piReply = 
       if (piTools === 'enter' && args.join(' ') === 'terminal send --terminal term_1 --enter') startPiSession()
       if (args[0] === 'terminal' && args[1] === 'send' && args.includes('--wait-submit')) return json({ result: { submission: 'submitted', turnStarted: true } })
       if (args[0] === 'terminal' && args[1] === 'read') return json({ id: `req-${calls.length}`, ok: true, result: { terminal: { tail: launchedAgent === 'agy' ? ['ready', '>'] : ['ready'], latestCursor: calls.length } } })
+      if (args[0] === 'terminal' && args[1] === 'show') return json({ ok: true, result: { terminal: { handle: args[args.indexOf('--terminal') + 1], agentIdentity: launchedAgent } } })
       // A worktree Orca lists with no open terminals (main-autonomo S8 lists them before reusing a worktree).
       if (args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: [] } })
       // #397: despachar starts its worker in the Run bound to main.

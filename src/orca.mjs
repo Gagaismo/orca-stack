@@ -163,3 +163,24 @@ export const pendingAfterSwitch = (io, commonDir, agent, issue, done = false) =>
 
   return true
 }
+
+// #521: Orca sets agentIdentity on `orca terminal show` once the wrapper has booted a recognized TUI agent.
+export const terminalRecognized = (io, handle, agent) => {
+  if (!handle) return false
+  let res
+  try {
+    res = io.sh('orca', ['terminal', 'show', '--terminal', handle, '--json'])
+  } catch {
+    return false
+  }
+  if (!res || res.status !== 0) return false
+  let body
+  try {
+    body = JSON.parse(res.stdout)
+  } catch {
+    return false
+  }
+  if (body?.ok === false) return false
+  const identity = body?.result?.terminal?.agentIdentity
+  return typeof identity === 'string' && identity.trim().toLowerCase().split('/')[0] === agent
+}

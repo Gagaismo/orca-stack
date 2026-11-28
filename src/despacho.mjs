@@ -5,7 +5,7 @@ import { PROJECT_CONFIG, PROJECT_LOCAL_CONFIG } from './constants.mjs'
 import { analyzeChecks, isHigherRunId, isPending, latestChecks } from './checks.mjs'
 import { codexTrustHint } from './codex-trust.mjs'
 import { commitOf, markerLines, markerValue, namesCommit } from './marcas.mjs'
-import { setCard, switchAccount } from './orca.mjs'
+import { setCard, switchAccount, terminalRecognized } from './orca.mjs'
 import { gentleAiBinaryCheck, resolveGentleSkills } from './pi.mjs'
 import { readAsset, render, wrapperFile } from './templates.mjs'
 import { SCRIPTS_REL, homeDir, isWindows, layout, run, samePath, which } from './util.mjs'
@@ -521,10 +521,11 @@ export const dismissAgySplash = async (io, handle, lines, briefPath) => {
   throw new Error(agyNotDelivered(handle, briefPath))
 }
 
-const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45) => {
+const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45, { requireRecognized = false } = {}) => {
   let last = null
   let stable = 0
   let enters = 0
+  let sawStable = false
   for (let i = 0; i < tries; i += 1) {
     await io.sleep(2000)
     let tail
@@ -539,10 +540,8 @@ const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45) =>
     if (/update available/i.test(text) && /update now/i.test(text) && /\bskip\b/i.test(text)) {
       throw new Error(`Codex muestra su men\u00FA de actualizaci\u00F3n y no recibi\u00F3 el brief. Eleg\u00ED una opci\u00F3n en la terminal ${handle} y relanzalo con orca-stack reanudar <issue> <url-del-comentario>. Pantalla: ${text}`)
     }
-    if (/trust this folder\?/i.test(text)) {
-      if (agent !== 'agy') {
-        throw new Error(`Codex pide confiar en la carpeta y no recibió el brief. ${codexTrustHint(root)} Pantalla: ${text}`)
-      }
+    if (/trust this folder\?/i.test(text) && agent !== 'agy') {
+      throw new Error(`Codex pide confiar en la carpeta y no recibió el brief. ${codexTrustHint(root)} Pantalla: ${text}`)
     }
     // Enter picks "Yes, I trust this folder", but agy can draw the menu before it takes input: confirm until it clears.
     if (agent === 'agy' && AGY_TRUST.test(text)) {
@@ -562,11 +561,13 @@ const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45) =>
       if (/trust this folder\?/i.test(text)) throw new Error(`La pantalla de confianza sigue abierta; no envío el brief sobre ese menú. Pantalla: ${text}`)
       // #476: agy's sign-in screen can stay stable before the TUI is ready; require its empty prompt or dismissible splash.
       const lines = text.split(/\r?\n/)
-      if (agent !== 'agy' || readyForInput(lines) || showsSplash(lines)) return text
+      if (agent !== 'agy' || readyForInput(lines) || showsSplash(lines)) {
+        if (!requireRecognized || terminalRecognized(io, handle, agent)) return { text }
+        sawStable = true
+      }
     }
   }
-
-  return undefined
+  return { text: undefined, unrecognized: sawStable }
 }
 
 const submittedTurn = value => {
@@ -730,8 +731,8 @@ const boundRun = (io, say, objective) => {
 }
 // #454: `rebind` ({ run, task, deliver }, reanudar only) starts a new dispatch for an existing Task whose dispatch closed;
 // like a supervised start, Orca delivers the Task's stored spec, and `deliver(handle)` sends the answer line afterwards.
-const startWorker = async (io, say, { agent, handle, briefPath, supervised, rebind }) => {
-  const runId = rebind ? rebind.run : boundRun(io, say, supervised.objective)
+export const startWorker = async (io, say, { agent, handle, briefPath, supervised, rebind }) => {
+  const runId = rebind ? rebind.run : supervised.runId ?? boundRun(io, say, supervised.objective)
   const argv = rebind
     ? ['worker-start', '--run', runId, '--task', rebind.task, '--terminal', handle, '--json']
     : ['worker-start', '--run', runId, '--terminal', handle, '--spec-file', briefPath, '--task-title', supervised.title, '--json']
@@ -782,12 +783,11 @@ const requestIdOf = res => {
 // The Run objective is the one despachar uses, so rebote and reanudar join or create the same Run (#462, #463).
 export const supervisedTask = (repo, title) => ({ title, objective: `orca-stack ${repo}: tickets despachados por main` })
 
-export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue, interactive = false, supervised, rebind }) => {
+export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief, session, config, win, home, skills, piModel, piThinking, repositoryRoot, io, dryRun = false, piSessionAfter = 0, issue, interactive = false, supervised, rebind, onTerminal }) => {
   const say = io.out
   const launcher = launcherFor({ agent, mode, config, win, home, briefPath, session, skills, piModel, piThinking, interactive, supervised: Boolean(supervised || rebind) })
   const act = (cmd, argv, opts = {}) => {
     say(`${dryRun ? '[simulaci\u00f3n] ' : ''}${cmd} ${argv.map(a => (/\s|"/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
-
     return dryRun ? { status: 0, stdout: '', stderr: '' } : ok(io.sh(cmd, argv, opts), `${cmd} ${argv[0]}`)
   }
 
@@ -804,22 +804,27 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
       say(`[simulación] orca orchestration worker-start --run ${rebind.run} --task ${rebind.task} --terminal <terminal> --json`)
     } else if (agent !== 'pi') say(`[simulaci\u00f3n] esperar la TUI de ${agent}${agent === 'agy' ? ' (confirmar la carpeta con Enter)' : ''} y enviar: Read and follow the brief in ${briefPath}`)
     say(`\n--- brief ---\n${brief}`)
-
     return 0
   }
   if (agent !== 'pi') {
     const handle = deepFind(parseJson(term, 'orca terminal create').result ?? {}, ['handle', 'terminalHandle'])
     if (!handle) throw new Error('orca terminal create no devolvi\u00f3 el handle de la terminal.')
+    onTerminal?.(handle)
     const prompt = `Read and follow the brief in ${briefPath}`
-    let before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt)
-    if (!before) throw new Error(withScreenTail(io, handle, `La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`))
+    const requireRecognized = agent === 'codex' && Boolean(supervised || rebind)
+    let { text: before, unrecognized } = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt, 45, { requireRecognized })
+    if (!before) {
+      const msg = unrecognized
+        ? `La TUI de ${agent} no apareció a tiempo: la terminal ${handle} no reportó un agente reconocido en Orca (no se ejecutó worker-start). Seguí a mano cuando arranque ("Read and follow the brief in ${briefPath}") o cerrá la terminal y limpiá el worktree.`
+        : `La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`
+      throw Object.assign(new Error(withScreenTail(io, handle, msg)), requireRecognized ? { orchestration: true } : {})
+    }
     if (agent === 'agy') before = (await dismissAgySplash(io, handle, before.split('\n'), briefPath)).join('\n')
     if (supervised || rebind) {
       await startWorker(io, say, { agent, handle, briefPath, supervised, rebind })
       await checkPostLaunchScreen(io, handle, agent)
       if (rebind) await rebind.deliver(handle)
       say(`✔ ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
-
       return 0
     }
     // agy's own failures after the send all mean one thing to the human: the brief did not arrive (#357). Orca's own
@@ -878,6 +883,7 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     if (supervised || rebind) {
       const handle = handleOf()
       if (!handle) throw new Error('orca terminal create no devolvió el handle de la terminal.')
+      onTerminal?.(handle)
       started = await startWorker(io, say, { agent, handle, briefPath, supervised, rebind })
     }
     let after = piSessionAfter
@@ -929,7 +935,6 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     if (rebind) await rebind.deliver(handleOf())
   }
   say(`\u2714 ${agent} despachado en ${worktree}. Brief: ${briefPath}`)
-
   return 0
 }
 
@@ -1159,9 +1164,10 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
   const pathMatchesName = value => worktreeName(value) === name
   const existing = entries.find(entry => [...entry.matchAll(/^worktree (.+)$/gm)].some(([, value]) => pathMatchesName(value)))
   const conflict = entries.find(entry => [...entry.matchAll(/^(?:worktree |branch refs\/heads\/)(.+)$/gm)].some(([, value]) => pathMatchesName(value)))
-  if (conflict && !review) throw new Error(`Ya hay un worktree para ${name}. No despacho dos veces: revisalo con \`orca worktree ps\`.`)
-  if (conflict && review && !existing) throw new Error(`Ya hay un worktree o rama para ${name}, pero no pude identificar su ruta para reutilizarlo.`)
   const existingPath = existing ? [...existing.matchAll(/^worktree (.+)$/gm)].map(([, value]) => value).find(pathMatchesName) : undefined
+  const openTerms = wt => { try { const r = io.sh('orca', ['terminal', 'list', '--worktree', `path:${wt}`, '--json']); return r.status === 0 ? (JSON.parse(r.stdout).result?.terminals ?? []).map(t => t.handle).filter(Boolean).join(', ') : '' } catch { return '' } }
+  if (conflict && !review) { const terms = existingPath ? openTerms(existingPath) : ''; throw new Error(`Ya hay un worktree para ${name}${existingPath ? `: ${existingPath}` : ''}${terms ? ` (terminales: ${terms})` : ''}. No despacho dos veces: revisalo con \`orca worktree ps\`.`) }
+  if (conflict && review && !existing) throw new Error(`Ya hay un worktree o rama para ${name}, pero no pude identificar su ruta para reutilizarlo.`)
   const previousHead = existing ? /^HEAD (.+)$/m.exec(existing)?.[1] : undefined
   if (existing && !previousHead) throw new Error(`No pude leer HEAD del worktree ${existingPath}; no voy a reutilizarlo.`)
   const ps = io.sh('orca', ['worktree', 'ps', '--json'])
@@ -1169,7 +1175,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     const live = (parseJson(ps, 'orca worktree ps').result?.worktrees ?? []).find(
       w => worktreeName(w.path ?? '') === name || (!review && w.repo === repo && w.linkedIssue === Number(n)),
     )
-    if (live && (!review || !existing)) throw new Error(`Orca ya tiene un worktree para ${name}${(live.agents ?? []).length > 0 ? ' con un agente vivo' : ''}: ${live.path}.`)
+    if (live && (!review || !existing)) { const terms = !review && live.path ? openTerms(live.path) : ''; throw new Error(`Orca ya tiene un worktree para ${name}${(live.agents ?? []).length > 0 ? ' con un agente vivo' : ''}: ${live.path}${terms ? ` (terminales: ${terms})` : ''}.`) }
     // A done terminal or an empty shell in the review worktree is closed right before the reuse (main-autonomo S8).
     if (existing && live && (live.agents ?? []).some(item => LIVE_AGENT.test(item.state ?? item.status ?? ''))) {
       throw new Error(`Orca ya tiene un worktree para ${name} con un agente vivo: ${live.path}.`)
@@ -1254,7 +1260,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
     migration = reserve({ issue: n, config, base, commonDir, root, io, dryRun })
     if (migration) say(dryRun ? `[simulación] Migración que reservaría para #${n}: ${migration.texto}` : `Migración ${migration.reused ? 'ya reservada' : 'reservada'} para #${n}: ${migration.texto}`)
   }
-  const left = { assigned: false, worktree: null, brief: null }
+  const left = { assigned: false, worktree: null, brief: null, terminal: null }
   if (!review) {
     act('gh', ['issue', 'edit', String(n), '--add-assignee', '@me'], { cwd: root })
     left.assigned = !dryRun
@@ -1314,6 +1320,7 @@ export const dispatch = async (kind, args, io = defaultIo()) => {
       piModel: profile?.model, piThinking: profile?.thinking, repositoryRoot: root, io, dryRun,
       piSessionAfter: agent === 'pi' ? (io.now ?? Date.now)() : 0, issue: review ? undefined : n,
       supervised: review ? undefined : supervisedTask(repo, `#${n} ${agent}`),
+      onTerminal: handle => { left.terminal = handle },
     })
     try {
       await launch()
@@ -1973,12 +1980,13 @@ export const briefRevisionCommand = async ({ n, modelo, dryRun = false }, io = d
 }
 
 // What a failed dispatch left behind and how to recover: the idempotence lock refuses a retry while the worktree exists.
-export const leftover = ({ assigned, worktree, brief }, n, base) => {
-  if (!assigned && !worktree && !brief) return 'No quedó nada a medias.'
+export const leftover = ({ assigned, worktree, brief, terminal }, n, base) => {
+  if (!assigned && !worktree && !brief && !terminal) return 'No quedó nada a medias.'
   const lines = ['El despacho quedó a medias. Quedó:']
   if (assigned) lines.push(`  - el issue #${n} asignado`)
   if (worktree) lines.push(`  - el worktree ${worktree}`)
   if (brief) lines.push(`  - el brief ${brief}`)
+  if (terminal) lines.push(`  - la terminal ${terminal}`)
   lines.push(worktree ? 'Un reintento va a rechazar el despacho mientras el worktree exista. Para recuperar:' : 'Para recuperar:')
   if (worktree) {
     lines.push('  - seguí a mano: lanzá el agente en ese worktree y mandale el brief; o')

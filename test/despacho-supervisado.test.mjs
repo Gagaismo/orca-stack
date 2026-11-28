@@ -94,6 +94,9 @@ const fakeIo = (orch = {}, { card, account, quota = 0 } = {}) => {
         const ready = launchedAgent === 'agy' ? ['ready', '>'] : ['ready']
         return json({ result: { terminal: { tail: n <= quota ? [...ready, "You've hit your usage limit."] : ready } } })
       }
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'show') {
+        return json({ ok: true, result: { terminal: { handle: args[args.indexOf('--terminal') + 1], agentIdentity: launchedAgent } } })
+      }
       return okRes()
     },
   }

@@ -144,7 +144,9 @@ agente no está en agentes.usa, si está en agentes.preguntarAntes sin --confirm
 un worktree o un agente vivo para ese ticket. Asigna el issue, crea el worktree con \`orca worktree create\`, escribe el brief en
 ~/orca/briefs, comprueba que cada ruta que cita exista en el worktree, lanza el agente en una terminal de Orca y lo arranca con
 \`orca orchestration worker-start\` en el Run ligado a main (\`run-current\`, o \`run-create\` si no hay uno), con el brief como spec:
-el brief le llega una sola vez, también a pi. Si falla un comando de orca orchestration, imprime el error de Orca, lista lo que
+el brief le llega una sola vez, también a pi. Con codex supervisado espera además a que \`orca terminal show\` informe un agente reconocido
+(\`agentIdentity\`) antes de correr \`worker-start\`; si vence el límite, falla sin \`worker-start\`, libera el assignee, lista lo que quedó (incluida la
+terminal) y un segundo \`despachar\` se niega nombrando lo que ya existe. Si falla un comando de orca orchestration, imprime el error de Orca, lista lo que
 quedó y le saca el assignee al issue.
 Con --dry-run muestra el plan y el brief y no escribe nada.
 Imprime \`Rama: <rama>\` con la rama que devolvió Orca; en --dry-run aclara que Orca define la rama al crear el worktree.
@@ -223,8 +225,10 @@ Con --dry-run muestra las acciones y las rutas, sin crear worktree ni brief.
 `,
   reanudar: `orca-stack reanudar <issue> <url-del-comentario> [--confirmado] [--perfil-pi <nombre>] [--terminal <handle>] [--dry-run]
 
-Reanuda un worker detenido: si su TUI sigue abierta en estado done, envía una línea con la URL de la respuesta; si ya salió,
-lo relanza en su worktree existente, siempre como worker supervisado del Run de main, en uno de tres casos:
+Reanuda un worker detenido: si su TUI sigue abierta en estado done y su dispatch sigue abierto, envía una línea con la URL de la respuesta;
+si el dispatch en \`worker-list\` ya se cerró (por ejemplo tras \`worker_done\` failed), no manda una línea suelta para evitar \`consumer_fenced\`:
+abre un dispatch nuevo (\`#<issue> <agente> reanudado\`) sobre esa misma terminal con \`worker-start\`, o se niega nombrando cómo cerrar la terminal y volver a reanudar.
+Si ya salió, lo relanza en su worktree existente, siempre como worker supervisado del Run de main, en uno de tres casos:
 - Con una tarea \`#<issue> <agente>\` en ready, arranca un dispatch nuevo sobre ella con
   \`orca orchestration worker-start --run <run> --task <task_id> --terminal <handle>\`: Orca le entrega el brief una vez y la URL va sola
   en una línea aparte. No crea otra tarea.
