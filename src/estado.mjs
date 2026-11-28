@@ -525,27 +525,28 @@ const evaluate = (pr, config, root, io, now, ctx, readLogs = false) => {
   const evidence = /^##\s*Evidencia\b/im.test(normalizeBody(pr.body))
   // pi's own RDD review counts when main asked for it (only those are in `reviews`); non-RDD reviews on a pi PR must come from a cross-family worker (#488).
   const isCountingReviewer = one => (implementer === 'pi' ? isCrossFamilyPiReview(config, one.reviewer) : one.reviewer !== implementer)
+  const summarizeCommit = (revList, mainList) => {
+    const unsettled = revList.filter(one => !one.clean && !mainList.some(mark => mark.at > one.at))
+    const counted = revList.filter(one => one.clean && (one.lenses !== undefined || isCountingReviewer(one)))
+    const satisfied = counted.some(one => one.covered) || mainList.length > 0 || (sinOnHead.length > 0 && evidence)
+
+    return { unsettled, counted, satisfied }
+  }
 
   let carriedParent
-  let commitCheckFailed = false
-  let commitError = ''
+  let commitError
   if (!waived && implementer !== undefined && FAMILIES.agents.includes(implementer) && risky === undefined) {
-    const directReviews = reviews.filter(one => namesCommit(one.commit, head))
-    const directMain = mainMarks.filter(mark => namesCommit(mark.commit, head))
-    const directUnsettled = directReviews.filter(one => !one.clean && !directMain.some(mark => mark.at > one.at))
-    const directCounted = directReviews.filter(one => one.clean && (one.lenses !== undefined || isCountingReviewer(one)))
-    const directSatisfied = directCounted.some(one => one.covered) || directMain.length > 0 || (sinOnHead.length > 0 && evidence)
+    const direct = summarizeCommit(
+      reviews.filter(one => namesCommit(one.commit, head)),
+      mainMarks.filter(mark => namesCommit(mark.commit, head)),
+    )
     const hasEligibleStale =
       reviews.some(one => one.lenses === undefined && one.clean && one.covered && isCountingReviewer(one) && !namesCommit(one.commit, head)) ||
       mainMarks.some(mark => mark.commit && !namesCommit(mark.commit, head))
-    if (!directSatisfied && directUnsettled.length === 0 && hasEligibleStale) {
-      const origin = readHeadCommit(pr, head, root, io)
-      if (!origin.ok) {
-        commitCheckFailed = true
-        commitError = origin.error
-      } else if (origin.committer === 'web-flow' && origin.verified && origin.firstParent) {
-        carriedParent = origin.firstParent
-      }
+    if (!direct.satisfied && direct.unsettled.length === 0 && hasEligibleStale) {
+      const headCommit = readHeadCommit(pr, head, root, io)
+      if (!headCommit.ok) commitError = headCommit.error
+      else if (headCommit.committer === 'web-flow' && headCommit.verified && headCommit.firstParent) carriedParent = headCommit.firstParent
     }
   }
 
@@ -559,10 +560,8 @@ const evaluate = (pr, config, root, io, now, ctx, readLogs = false) => {
   } else if (implementer === undefined || !FAMILIES.agents.includes(implementer)) {
     falta.push('(a) el body del PR no tiene una línea Implementador: <agente>')
   } else {
-    const unsettled = onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))
+    const { unsettled, counted, satisfied } = summarizeCommit(onHead, mainOnHead)
     for (const one of unsettled) falta.push(`(a) el review de ${one.reviewer} sobre ${one.commit.slice(0, 7)} ${blockerReason(one)}`)
-    const counted = onHead.filter(one => one.clean && (one.lenses !== undefined || isCountingReviewer(one)))
-    const satisfied = counted.some(one => one.covered) || mainOnHead.length > 0 || (sinOnHead.length > 0 && evidence)
     if (!satisfied && unsettled.length === 0) {
       const latest = new Map()
       for (const one of reviews) if (one.reviewer !== implementer && !namesCommit(one.commit, head)) latest.set(one.reviewer, one.commit)
@@ -581,7 +580,7 @@ const evaluate = (pr, config, root, io, now, ctx, readLogs = false) => {
         falta.push(`(a) falta un review sin bloqueos sobre ${sha7} de alguien que no sea ${implementer}${rdd ? ' (o un review RDD pedido con RDD:, o un Sin review:)' : ''}${suggestion ? `. ${suggestion}` : ''}`)
         for (const one of counted) falta.push(`(a) el review de ${one.reviewer} ${coverageOf(one.body, riesgo).why}: no cuenta`)
       }
-      if (commitCheckFailed) falta.push(`(b) no se pudo verificar el origen de ${sha7}${commitError ? `: ${commitError}` : ''}`)
+      if (commitError !== undefined) falta.push(`(b) no se pudo verificar el origen de ${sha7}${commitError ? `: ${commitError}` : ''}`)
     }
   }
 
