@@ -54,7 +54,7 @@ describe('gentle-ai v4 RDD on by default: rules 1-6', () => {
     assert.match(result.out, /RDD de gentle-ai prendido: el bloque queda completo/)
     assert.match(result.out, /gentle-ai review mode disable/)
     assert.match(result.out, /orca-stack global/)
-    assert.match(result.out, /está prendido solo por defecto en gentle-ai v4/)
+    assert.match(result.out, /está prendido solo por defecto en gentle-ai: /)
     assert.equal(read(claudeMd()), fixtureV4('\n'), 'keeps full block')
 
     // Also in full mode
@@ -64,14 +64,14 @@ describe('gentle-ai v4 RDD on by default: rules 1-6', () => {
     assert.match(fullResult.out, /RDD\) está prendido/)
     assert.match(fullResult.out, /gentle-ai review mode disable/)
     assert.match(fullResult.out, /orca-stack global/)
-    assert.match(fullResult.out, /está prendido solo por defecto en gentle-ai v4/)
+    assert.match(fullResult.out, /está prendido solo por defecto en gentle-ai: /)
   })
 
   test('rule 2: status on (decided by default) makes doctor show a warn row with disable and global commands', () => {
     fakeGentleCustom(bin, 'receipt-driven development: on (decided by default)')
     write(claudeMd(), fixtureV4('\n'))
     const result = runDoctor()
-    assert.match(result.out, /⚠ RDD de gentle-ai - está prendido solo por defecto en gentle-ai v4: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`/)
+    assert.match(result.out, /⚠ RDD de gentle-ai - está prendido solo por defecto en gentle-ai: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`/)
   })
 
   test('rule 3: status on (decided by global) or on (decided by clone-local) produces no warning and identical output', () => {
