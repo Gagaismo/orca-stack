@@ -1,0 +1,3 @@
+receipt-driven development: on (decided by default)
+  global:      unset
+  clone-local: unset
