@@ -260,8 +260,14 @@ número mayor que la más alta de origin/<base> (hace git fetch origin <base>); 
 main publica para rebotarlo.
 Sin --json imprime una línea por PR:
   #<pr> <issue> <implementador> head=<sha7> ci=<green|red|pending> review=<quién@sha|missing|stale> riesgo=<yes|no> falta=<...>
+Con uno o más PRs nombrados (\`estado <n>\`), por cada check fallido cuyo job ya terminó lee el log de ese job
+(\`gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs\`) y lista debajo del check hasta 10 nombres de \`Failed tests:\`
+(si hay más, \`… y <k> más\`), aunque otros jobs sigan corriendo; nunca imprime el log, omite los jobs sin \`Failed tests:\` y,
+si el log no se pudo leer, muestra \`(no se pudo leer el log del job <job_id>)\`. Sin PRs nombrados (\`estado\`) no lee logs.
 Con --json imprime {"pr":<n>,"head":"<sha de 40>","ok":<bool>,"falta":[…],"merge":<texto o null>} con un PR pedido, o un
-arreglo con varios; "merge" copia la clave merge de la config sin juzgarla. Sale con 0 solo si todos están ok.
+arreglo con varios; "merge" copia la clave merge de la config sin juzgarla. Cuando algún check fallido nombrado tiene
+\`Failed tests:\` o su log no se pudo leer, suma \`"checks":[{"name":"<check>","failedTests":[...]}]\` (tope 10 y
+\`"failedTestsMore":<k>\` si hay más, o \`"error":"no se pudo leer el log del job <job_id>"\`). Sale con 0 solo si todos están ok.
 `,
   limpiar: `orca-stack limpiar [--dry-run]
 
