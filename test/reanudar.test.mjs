@@ -51,6 +51,7 @@ const RUN_MAIN = 'run_main'
 const orchestrationDefault = args => {
   if (args[1] === 'run-current') return json({ ok: true, result: { runId: RUN_MAIN } })
   if (args[1] === 'task-list') return json({ ok: true, result: { runId: RUN_MAIN, tasks: [] } })
+  if (args[1] === 'worker-list') return json({ ok: true, result: { workers: [] } })
   if (args[1] === 'worker-start') return json({ ok: true, result: { taskId: 'task_new', dispatchId: 'ctx_new', status: 'dispatched' } })
   return fail(`unexpected call: orca ${args.join(' ')}`)
 }
@@ -92,6 +93,7 @@ const harness = ({ root = ROOT, home = HOME, state = 'done', agent = 'codex', sc
         createdAgent = args[args.indexOf('--title') + 1]
         return json({ result: { handle: 'term-new' } })
       }
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'show') return json({ ok: true, result: { terminal: { handle: args[args.indexOf('--terminal') + 1], agentIdentity: createdAgent ?? agent } } })
       // #463: every relaunch is supervised; by default main's Run has no task of this worker, so reanudar creates one.
       if (cmd === 'orca' && args[0] === 'orchestration') return orchestrationDefault(args)
       return fail(`unexpected call: ${cmd} ${args.join(' ')}`)
@@ -150,6 +152,7 @@ describe('orca-stack reanudar (#214)', () => {
       if (cmd === 'orca' && args[0] === 'worktree' && args[1] === 'ps') return json({ result: { worktrees: [{ path: WT, repo: 'orca-stack', linkedIssue: 212, agents: [] }] } })
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'list') return json({ result: { terminals: [] } })
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') return json({ result: { handle: 'term-new' } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'show') return json({ ok: true, result: { terminal: { handle: args[args.indexOf('--terminal') + 1], agentIdentity: 'codex' } } })
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'read') return json({ result: { terminal: { tail: ['ready'] } } })
       if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send') return json({ result: { send: { turnStarted: true } } })
       if (cmd === 'orca' && args[0] === 'orchestration') return orchestrationDefault(args)
@@ -1025,13 +1028,14 @@ describe('#454 reanudar: the relaunch rebinds the Run task', () => {
   const RUN = 'run_084b4726f7fd'
   const TASKS = [{ id: 'task_f887345917b8', status: 'completed', title: '#417 pi' }, { id: 'task_b9ee2b19bb17', status: 'ready', title: '#212 pi' }]
   const START = ['orchestration', 'worker-start', '--run', RUN, '--task', 'task_b9ee2b19bb17', '--terminal', 'term-new', '--json']
-  const withRun = (h, { tasks = TASKS, start = json({ ok: true, result: { taskId: 'task_new', dispatchId: 'ctx_new' } }) } = {}) => {
+  const withRun = (h, { tasks = TASKS, workers = [], start = json({ ok: true, result: { taskId: 'task_new', dispatchId: 'ctx_new' } }) } = {}) => {
     const sh = h.io.sh
     h.io.sh = (cmd, args, opts) => {
       if (cmd === 'orca' && args[0] === 'orchestration') {
         h.calls.push({ cmd, args, cwd: opts?.cwd })
         if (args[1] === 'run-current') return json({ ok: true, result: { runId: RUN } })
         if (args[1] === 'task-list') return json({ ok: true, result: { runId: RUN, tasks } })
+        if (args[1] === 'worker-list') return json({ ok: true, result: { workers } })
         if (args[1] === 'worker-start') return start
       }
       return sh(cmd, args, opts)
@@ -1073,7 +1077,7 @@ describe('#454 reanudar: the relaunch rebinds the Run task', () => {
     const h = withRun(harness(), { tasks: [{ id: 'task_212', status: 'ready', title: '#212 codex' }] })
     assert.equal(await reanudarCommand({}, ISSUE, URL, h.io), 0)
     assert.deepEqual(h.sends().map(send => send.args.slice(2)), [['--terminal', 'term-1', '--text', LINE, '--enter', '--wait-submit', '10', '--json']])
-    assert.deepEqual(orchestration(h), [])
+    assert.equal(orchestration(h).some(args => args[1] === 'worker-start' || args[1] === 'task-list'), false)
     assert.equal(creates(h).length, 0)
   })
 
@@ -1369,6 +1373,7 @@ describe('#502 reanudar: review worktrees', () => {
           return json({ result: { terminal: { tail: handle === 'term-new' ? ['agy ready', '>'] : screen } } })
         }
         if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'create') return json({ result: { handle: 'term-new' } })
+      if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'show') return json({ ok: true, result: { terminal: { handle: args[args.indexOf('--terminal') + 1], agentIdentity: 'codex' } } })
         if (cmd === 'orca' && args[0] === 'terminal' && args[1] === 'send') {
           const line = args[args.indexOf('--text') + 1]
           return line?.startsWith('Read and follow the brief in')
