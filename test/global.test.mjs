@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 
+import { WORKER_AGENTS } from '../src/despacho.mjs'
 import { buildBlock } from '../src/marker.mjs'
 import { packageVersion, samePath } from '../src/util.mjs'
 import { sddConfig, withPath } from './gentle-fixture.mjs'
@@ -20,6 +21,25 @@ afterEach(() => cleanup(home))
 const settingsPath = () => path.join(home, '.claude', 'settings.json')
 const claudeMdPath = () => path.join(home, '.claude', 'CLAUDE.md')
 
+const assertValidRoster = config => {
+  const usa = config?.agentes?.usa
+  assert.ok(Array.isArray(usa) && usa.length > 0, 'agentes.usa must be a non-empty array')
+  const supported = new Set(WORKER_AGENTS)
+  const seen = new Set()
+  for (const agent of usa) {
+    assert.ok(typeof agent === 'string' && supported.has(agent), `unsupported worker agent in agentes.usa: ${agent}`)
+    assert.ok(!seen.has(agent), `duplicate agent in agentes.usa: ${agent}`)
+    seen.add(agent)
+  }
+  const preguntarAntes = config?.agentes?.preguntarAntes
+  if (preguntarAntes !== undefined) {
+    assert.ok(Array.isArray(preguntarAntes), 'agentes.preguntarAntes must be an array when present')
+    for (const agent of preguntarAntes) {
+      assert.ok(seen.has(agent), `agent in agentes.preguntarAntes is not in agentes.usa: ${agent}`)
+    }
+  }
+}
+
 describe('global', () => {
   test('issue 283 Rule 7: setup docs offer only supported agents', () => {
     const documents = ['README.md', 'docs/manual.md', 'docs/guia-setup.md', 'assets/skills/orca-setup/SKILL.md']
@@ -32,10 +52,9 @@ describe('global', () => {
     assert.match(setup, /claude, agy, codex y pi/)
   })
 
-  test('issue 283 Rule 4: this repo config uses only supported agents', () => {
+  test('issue 506 Rule 6: this repo config satisfies the roster rules', () => {
     const config = JSON.parse(read(path.join(ROOT, '.orca-stack.json')))
-    assert.deepEqual(config.agentes.usa, ['agy', 'codex', 'pi'])
-    assert.deepEqual(config.agentes.preguntarAntes, [])
+    assertValidRoster(config)
   })
 
   test('issue 283 Rule 5: AGENTS and contract share the worker roster and reviewer rules', () => {
@@ -787,5 +806,46 @@ describe('issue 300: ~/AGENTS.md carries a pointer, not a second copy of the con
     const second = cli(home, ['global', '--skip-pi'])
     assert.equal(second.status, 0, second.out)
     assert.equal(read(homeAgents()), own)
+  })
+})
+
+describe('issue 506: roster config', () => {
+  test('issue 506 Rule 1: accepts any non-empty subset of supported worker agents in any order', () => {
+    assertValidRoster({ agentes: { usa: ['agy', 'codex', 'pi'] } })
+    assertValidRoster({ agentes: { usa: ['pi'] } })
+    assertValidRoster({ agentes: { usa: ['codex', 'pi'] } })
+    assertValidRoster({ agentes: { usa: ['pi', 'agy', 'codex'] } })
+  })
+
+  test('issue 506 Rule 2: rejects retired or unknown agents and names the offender', () => {
+    assert.throws(() => assertValidRoster({ agentes: { usa: ['pi', 'claude'] } }), /claude/)
+    assert.throws(() => assertValidRoster({ agentes: { usa: ['pi', 'gemini'] } }), /gemini/)
+  })
+
+  test('issue 506 Rule 3: rejects an empty or duplicate agentes.usa list', () => {
+    assert.throws(() => assertValidRoster({ agentes: { usa: [] } }), /non-empty/)
+    assert.throws(() => assertValidRoster({ agentes: { usa: ['pi', 'pi'] } }), /duplicate.*\bpi\b|\bpi\b.*duplicate/i)
+    assert.throws(() => assertValidRoster({ agentes: {} }), /non-empty/)
+  })
+
+  test('issue 506 Rule 4: requires agentes.preguntarAntes to be absent or a subset of agentes.usa', () => {
+    assertValidRoster({ agentes: { usa: ['pi', 'agy'], preguntarAntes: ['agy'] } })
+    assertValidRoster({ agentes: { usa: ['pi', 'agy'], preguntarAntes: [] } })
+    assertValidRoster({ agentes: { usa: ['pi', 'agy'] } })
+    assert.throws(() => assertValidRoster({ agentes: { usa: ['pi', 'agy'], preguntarAntes: ['codex'] } }), /codex/)
+  })
+
+  test('issue 506 Rule 5: reads supported worker agents from WORKER_AGENTS in src/despacho.mjs', () => {
+    assert.ok(Array.isArray(WORKER_AGENTS) && WORKER_AGENTS.length > 0)
+    assert.equal(WORKER_AGENTS.includes('claude'), false)
+    for (const agent of WORKER_AGENTS) {
+      assert.doesNotThrow(() => assertValidRoster({ agentes: { usa: [agent] } }), agent)
+    }
+    assert.doesNotThrow(() => assertValidRoster({ agentes: { usa: [...WORKER_AGENTS] } }))
+    const source = read(path.join(ROOT, 'test', 'global.test.mjs'))
+    assert.match(source, /import\s+\{[^}]*\bWORKER_AGENTS\b[^}]*\}\s+from\s+['"]\.\.\/src\/despacho\.mjs['"]/)
+    const helperSource = assertValidRoster.toString()
+    assert.match(helperSource, /\bWORKER_AGENTS\b/)
+    assert.doesNotMatch(helperSource, /['"](?:agy|codex|pi|claude)['"]/)
   })
 })
