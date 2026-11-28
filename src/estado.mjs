@@ -1,5 +1,5 @@
 import { repoWorktrees } from './worker-terminals.mjs'
-import { isPending, isStatus, latestChecks } from './checks.mjs'
+import { isFailure, isPending, isStatus, latestChecks } from './checks.mjs'
 import { FAMILIES, WORKER_AGENTS, crossFamilyReviewers, defaultIo, familyOf, loadConfig, rddFallbackFor, rosterOf } from './despacho.mjs'
 import { commitOf, markerLines, markerValue, namesCommit, normalizeBody } from './marcas.mjs'
 import { baseMigrations, migrationSpec, openReservations, orderBlockers, rawNumberOf } from './migraciones.mjs'
@@ -12,6 +12,8 @@ import { closedIssues } from './vigilar.mjs'
 const USAGE = 'Uso: orca-stack estado [<pr>...] [--json]'
 export const PR_VIEW_FIELDS = 'number,headRefOid,headRefName,body,comments,reviews,files,statusCheckRollup,baseRefName,mergeable,state,url'
 const CHECK_GREEN = ['SUCCESS', 'SKIPPED', 'NEUTRAL']
+const MAX_FAILED_TESTS = 10
+const ANSI_ESCAPE = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g
 const EMPTY_LIST = new Set(['', '-', 'nada', 'ninguno', 'ninguna'])
 
 const isPlain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -257,14 +259,110 @@ const ciOf = rollup => {
   const checks = latestChecks(rollup).map(entry => entry.check)
   const name = check => (isStatus(check) ? check.context : check.name)
   const green = check => (isStatus(check) ? check.state === 'SUCCESS' : check.status === 'COMPLETED' && CHECK_GREEN.includes(check.conclusion))
-  if (checks.length === 0) return { ci: 'pending', falta: '(c) el head no tiene checks' }
+  if (checks.length === 0) return { ci: 'pending', falta: '(c) el head no tiene checks', red: [] }
   const red = checks.filter(check => !isPending(check) && !green(check))
-  if (red.length > 0) return { ci: 'red', falta: `(c) CI roja: ${red.map(check => `${name(check)}=${isStatus(check) ? check.state : check.conclusion || check.status}`).join(', ')}` }
+  if (red.length > 0) return { ci: 'red', falta: `(c) CI roja: ${red.map(check => `${name(check)}=${isStatus(check) ? check.state : check.conclusion || check.status}`).join(', ')}`, red }
   const pending = checks.filter(isPending)
-  if (pending.length > 0) return { ci: 'pending', falta: `(c) CI pendiente: ${pending.map(name).join(', ')}` }
+  if (pending.length > 0) return { ci: 'pending', falta: `(c) CI pendiente: ${pending.map(name).join(', ')}`, red: [] }
 
-  return { ci: 'green' }
+  return { ci: 'green', red: [] }
 }
+
+const jobIdOf = check => /\/actions\/runs\/\d+\/job\/(\d+)(?:\/|[?#]|$)/i.exec(String(check?.detailsUrl ?? ''))?.[1]
+
+const repoOf = (pr, check) =>
+  /github\.com\/([^/]+\/[^/]+)\/actions\/runs\/\d+\/job\//i.exec(String(check?.detailsUrl ?? ''))?.[1] ??
+  /github\.com\/([^/]+\/[^/]+)\/pull\//i.exec(String(pr?.url ?? ''))?.[1] ??
+  '{owner}/{repo}'
+
+const readJobLog = (repo, jobId, root, io) => {
+  const endpoint = `repos/${repo}/actions/jobs/${jobId}/logs`
+  // #508: gh >= 2.97 rejects logs containing ANSI escape sequences unless --allow-escape-sequences is passed.
+  let res = io.sh('gh', ['api', '--allow-escape-sequences', endpoint], { cwd: root })
+  if (res.status !== 0 && /unknown flag.*--allow-escape-sequences/i.test(res.stderr ?? '')) {
+    res = io.sh('gh', ['api', endpoint], { cwd: root })
+  }
+
+  return res.status === 0 ? { ok: true, log: res.stdout } : { ok: false }
+}
+
+const normalizeLogLine = raw =>
+  raw.replace(/^\ufeff/, '').replace(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z ?/, '').replace(ANSI_ESCAPE, '')
+
+const parseFailedTests = log => {
+  const lines = String(log ?? '').split(/\r?\n/).map(normalizeLogLine)
+  const names = []
+  let inBlock = false
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]
+    if (line.trim() === 'Failed tests:') {
+      inBlock = true
+      continue
+    }
+    if (!inBlock || line.trim() === '' || /^\s/.test(line)) continue
+    const match = /^✖\s+(.+)$/.exec(line)
+    if (!match) {
+      inBlock = false
+      continue
+    }
+    let next = ''
+    for (let j = i + 1; j < lines.length; j += 1) {
+      if (lines[j].trim() !== '') {
+        next = lines[j]
+        break
+      }
+    }
+    if (/^\s+'?\d+\s+subtests?\s+failed'?\s*$/i.test(next)) continue
+    const cleaned = match[1].replace(/\s+\(\d+(?:\.\d+)?m?s\)\s*$/, '').trim()
+    if (cleaned !== '') names.push(cleaned)
+  }
+
+  return names
+}
+
+const failedJobDetails = (pr, redChecks, root, io) => {
+  const details = []
+  for (const check of redChecks) {
+    if (isStatus(check) || check.status !== 'COMPLETED' || !isFailure(check)) continue
+    const jobId = jobIdOf(check)
+    if (!jobId) continue
+    const res = readJobLog(repoOf(pr, check), jobId, root, io)
+    if (!res.ok) {
+      details.push({ name: check.name, jobId, logError: true })
+      continue
+    }
+    const failedTests = parseFailedTests(res.log)
+    if (failedTests.length > 0) details.push({ name: check.name, jobId, failedTests })
+  }
+
+  return details
+}
+
+const formatFailedJobLines = details => {
+  const lines = []
+  for (const item of details) {
+    lines.push(`  ${item.name}:`)
+    if (item.logError) {
+      lines.push(`    (no se pudo leer el log del job ${item.jobId})`)
+      continue
+    }
+    for (const name of item.failedTests.slice(0, MAX_FAILED_TESTS)) lines.push(`    - ${name}`)
+    if (item.failedTests.length > MAX_FAILED_TESTS) lines.push(`    \u2026 y ${item.failedTests.length - MAX_FAILED_TESTS} m\u00E1s`)
+  }
+
+  return lines
+}
+
+const formatFailedJobChecks = details =>
+  details.map(item =>
+    item.logError
+      ? { name: item.name, error: `no se pudo leer el log del job ${item.jobId}` }
+      : {
+          name: item.name,
+          failedTests: item.failedTests.slice(0, MAX_FAILED_TESTS),
+          ...(item.failedTests.length > MAX_FAILED_TESTS ? { failedTestsMore: item.failedTests.length - MAX_FAILED_TESTS } : {}),
+        }
+  )
 
 // S11: every migration the PR adds (matches `migraciones.glob` and is not on origin/<base>) must have a number above the
 // highest one on origin/<base>; goose rejects them by merge order. main-autonomo-2 S2: and it waits for every other open
@@ -370,7 +468,7 @@ export const baseConfigOf = (pr, base, root, io) => {
   }
 }
 
-const evaluate = (pr, config, root, io, now, ctx) => {
+const evaluate = (pr, config, root, io, now, ctx, readLogs = false) => {
   const n = pr.number
   const head = String(pr.headRefOid ?? '').toLowerCase()
   const sha7 = head.slice(0, 7)
@@ -442,6 +540,7 @@ const evaluate = (pr, config, root, io, now, ctx) => {
   // (c)
   const ci = ciOf(pr.statusCheckRollup)
   if (ci.falta) falta.push(ci.falta)
+  const failedJobs = readLogs && ci.red.length > 0 ? failedJobDetails(pr, ci.red, root, io) : []
 
   // (d)
   if (risky !== undefined) {
@@ -467,9 +566,19 @@ const evaluate = (pr, config, root, io, now, ctx) => {
   const review = shown.length > 0 ? shown.join(',') : stale ? 'stale' : 'missing'
   const issue = closedIssues(pr.body)[0]
 
+  const checks = failedJobs.length > 0 ? formatFailedJobChecks(failedJobs) : undefined
+
   return {
-    result: { pr: n, head, ok: falta.length === 0, falta, merge: typeof config.merge === 'string' ? config.merge : null },
+    result: {
+      pr: n,
+      head,
+      ok: falta.length === 0,
+      falta,
+      merge: typeof config.merge === 'string' ? config.merge : null,
+      ...(checks ? { checks } : {}),
+    },
     line: `#${n} ${issue ? `#${issue}` : '-'} ${implementer ?? '-'} head=${sha7} ci=${ci.ci} review=${review} riesgo=${risky === undefined ? 'no' : 'yes'} falta=${falta.join('; ')}`,
+    details: formatFailedJobLines(failedJobs),
     fix: migrations.fixes.length > 0 ? [`Comentario para publicar en el PR #${n} (gh pr comment ${n} --body-file <archivo>), para rebotarlo con orca-stack rebote ${n}:`, reviewBody(head, migrations.fixes)] : [],
   }
 }
@@ -522,7 +631,7 @@ export const estadoCommand = async (flags = {}, items = [], io = defaultIo()) =>
     if (!isPlain(pr) || typeof pr.headRefOid !== 'string') throw new Error(`No pude leer el PR #${n} con gh pr view: ${detail(res)}`)
     read.push(pr)
 
-    return evaluate(pr, config, root, io, now, ctx)
+    return evaluate(pr, config, root, io, now, ctx, raw.length > 0)
   })
   linkCards(read, root, io, warn)
   if (flags.json) {
@@ -530,7 +639,7 @@ export const estadoCommand = async (flags = {}, items = [], io = defaultIo()) =>
     io.out(JSON.stringify(raw.length > 0 && numbers.length === 1 ? states[0].result : states.map(state => state.result)))
     for (const state of states) for (const line of state.fix) warn(line)
   } else {
-    for (const state of states) for (const line of [state.line, ...state.fix]) io.out(line)
+    for (const state of states) for (const line of [state.line, ...state.details, ...state.fix]) io.out(line)
   }
 
   return states.every(state => state.result.ok) ? 0 : 1

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, renameSync } from 'node:fs'
 import path from 'node:path'
 import { after, before, describe, test } from 'node:test'
@@ -65,6 +66,16 @@ const harness = (world = {}, config = {}) => {
         return found ? json(found) : fail(`no pull requests found for branch "${args[2]}"`)
       }
       if (cmd === 'gh' && args[0] === 'api') {
+        const logArg = args.find(arg => /\/actions\/jobs\/(\d+)\/logs/.test(arg))
+        if (logArg) {
+          world.jobLogCalls = [...(world.jobLogCalls ?? []), args.join(' ')]
+          const jobId = /\/actions\/jobs\/(\d+)\/logs/.exec(logArg)[1]
+          const entry = world.jobLogs?.[jobId]
+          if (typeof entry === 'function') return entry(args)
+          if (entry === undefined) return fail('gh: Not Found (HTTP 404)')
+          if (typeof entry === 'string') return okRes(entry)
+          return entry
+        }
         if (world.baseConfig === undefined) return fail('gh: Not Found (HTTP 404)')
         world.apiCalls = [...(world.apiCalls ?? []), args.join(' ')]
         return okRes(world.baseConfig)
@@ -596,5 +607,248 @@ describe('#430 estado: worktree card', () => {
     assert.equal(await estado(human, ['70']), 0)
     assert.deepEqual(human.out, ['#70 #7 codex head=abc1234 ci=green review=agy@abc1234 riesgo=no falta='])
     assert.equal(human.err.length, 1)
+  })
+})
+
+describe('orca-stack estado: failed tests from finished CI jobs (#508)', () => {
+  before(() => {
+    root = tempDir('estado-508-root')
+    home = tempDir('estado-508-home')
+  })
+  after(() => {
+    cleanup(root)
+    cleanup(home)
+  })
+
+  const jobRun = (name, jobId, conclusion, status = 'COMPLETED', { repo = 'Gagaismo/orca-stack', runId = '45913417799' } = {}) => ({
+    ...run(name, conclusion, status),
+    detailsUrl: `https://github.com/${repo}/actions/runs/${runId}/job/${jobId}`,
+  })
+  const ts = line => `2026-11-26T23:56:42.2430019Z ${line}`
+
+  test('issue 508 Rule 1: estado <n> lists failed test names under a finished failing job while another job is still pending', async () => {
+    const log = [
+      ts('...................'),
+      ts(''),
+      ts('Failed tests:'),
+      ts(''),
+      ts('\x1b[31m✖ issue 283 Rule 4: this repo config uses only supported agents (4.0698ms)\x1b[39m'),
+      ts('  AssertionError [ERR_ASSERTION]: ✖ nested failure symbol inside assertion message'),
+      ts('      at TestContext.<anonymous> (file:///D:/a/orca-stack/orca-stack/test/global.test.mjs:37:12)'),
+      ts('✖ global (45298.2624ms)'),
+      ts("  '1 subtest failed'"),
+      ts('Detalle de cada test en npm-test.log'),
+      ts('##[error]Process completed with exit code 1.'),
+    ].join('\n')
+    const world = {
+      prs: [
+        {
+          ...prData(512, {
+            checks: [jobRun('test', '140226870178', 'FAILURE'), jobRun('formal', '140226870199', '', 'IN_PROGRESS')],
+            reviews: [review('agy', HEAD)],
+          }),
+          url: 'https://github.com/Gagaismo/orca-stack/pull/512',
+        },
+      ],
+      jobLogs: { 140226870178: log },
+    }
+    const h = harness(world)
+    assert.equal(await estado(h, ['512']), 1)
+    assert.deepEqual(h.out, [
+      '#512 #7 codex head=abc1234 ci=red review=agy@abc1234 riesgo=no falta=(c) CI roja: test=FAILURE',
+      '  test:',
+      '    - issue 283 Rule 4: this repo config uses only supported agents',
+    ])
+  })
+
+  test('issue 508 Rule 2: reads only the job log endpoint, never prints raw log lines, and caps at 10 with remaining count', async () => {
+    const twelve = Array.from({ length: 12 }, (_, i) => [
+      ts(`✖ failed test number ${i + 1} (${i + 1}.5ms)`),
+      ts(`  Error: secret raw stack line ${i + 1}`),
+    ]).flat()
+    const twelveLog = [ts('RAW PREAMBLE LINE'), ts('Failed tests:'), ...twelve, ts('Detalle de cada test en npm-test.log')].join('\n')
+    const world = {
+      prs: [
+        prData(513, {
+          checks: [jobRun('test', '140226870231', 'FAILURE')],
+          reviews: [review('agy', HEAD)],
+        }),
+      ],
+      jobLogs: { 140226870231: twelveLog },
+    }
+    const h = harness(world)
+    assert.equal(await estado(h, ['513']), 1)
+    assert.deepEqual(world.jobLogCalls, ['api --allow-escape-sequences repos/Gagaismo/orca-stack/actions/jobs/140226870231/logs'])
+    assert.ok(!h.calls.some(call => /\/actions\/runs\/.*\/logs/.test(call)), h.calls.join('\n'))
+    assert.deepEqual(h.out, [
+      '#513 #7 codex head=abc1234 ci=red review=agy@abc1234 riesgo=no falta=(c) CI roja: test=FAILURE',
+      '  test:',
+      ...Array.from({ length: 10 }, (_, i) => `    - failed test number ${i + 1}`),
+      '    … y 2 más',
+    ])
+    assert.ok(!h.out.some(line => line.includes('RAW PREAMBLE') || line.includes('secret raw stack')), h.out.join('\n'))
+
+    const tenLog = [
+      ts('Failed tests:'),
+      ...Array.from({ length: 10 }, (_, i) => ts(`✖ exact ten test ${i + 1} (1ms)`)),
+      ts('Detalle de cada test en npm-test.log'),
+    ].join('\n')
+    const olderGhWorld = {
+      prs: world.prs,
+      jobLogs: {
+        140226870231: args => (args.includes('--allow-escape-sequences') ? fail('unknown flag: --allow-escape-sequences') : okRes(tenLog)),
+      },
+    }
+    const olderGh = harness(olderGhWorld)
+    assert.equal(await estado(olderGh, ['513']), 1)
+    assert.deepEqual(olderGhWorld.jobLogCalls, [
+      'api --allow-escape-sequences repos/Gagaismo/orca-stack/actions/jobs/140226870231/logs',
+      'api repos/Gagaismo/orca-stack/actions/jobs/140226870231/logs',
+    ])
+    assert.equal(olderGh.out.filter(line => line.startsWith('    - ')).length, 10)
+    assert.ok(!olderGh.out.some(line => line.includes('… y ')), olderGh.out.join('\n'))
+  })
+
+  test('issue 508 Rule 3: estado <n> --json includes checks with failedTests, failedTestsMore and log read errors only when applicable', async () => {
+    const twelve = Array.from({ length: 12 }, (_, i) => ts(`✖ failed test ${i + 1} (${i + 1}ms)`))
+    const twelveLog = [ts('Failed tests:'), ...twelve, ts('Detalle de cada test en npm-test.log')].join('\n')
+    const lintLog = [ts('lint failed without summary')].join('\n')
+    const world = {
+      prs: [
+        prData(520, {
+          checks: [
+            jobRun('test-twelve', '140226870211', 'FAILURE'),
+            jobRun('lint', '140226870154', 'FAILURE'),
+            jobRun('test-unreadable', '999888777', 'FAILURE'),
+            jobRun('formal', '140226870199', '', 'IN_PROGRESS'),
+          ],
+          reviews: [review('agy', HEAD)],
+        }),
+      ],
+      jobLogs: {
+        140226870211: twelveLog,
+        140226870154: lintLog,
+      },
+    }
+    const h = harness(world)
+    assert.equal(await estado(h, ['520'], { json: true }), 1)
+    assert.deepEqual(one(h), {
+      pr: 520,
+      head: HEAD,
+      ok: false,
+      falta: ['(c) CI roja: test-twelve=FAILURE, lint=FAILURE, test-unreadable=FAILURE'],
+      merge: MERGE,
+      checks: [
+        {
+          name: 'test-twelve',
+          failedTests: Array.from({ length: 10 }, (_, i) => `failed test ${i + 1}`),
+          failedTestsMore: 2,
+        },
+        {
+          name: 'test-unreadable',
+          error: 'no se pudo leer el log del job 999888777',
+        },
+      ],
+    })
+
+    const noSummaryWorld = {
+      prs: [prData(521, { checks: [jobRun('lint', '140226870154', 'FAILURE')], reviews: [review('agy', HEAD)] })],
+      jobLogs: { 140226870154: lintLog },
+    }
+    const noSummary = harness(noSummaryWorld)
+    assert.equal(await estado(noSummary, ['521'], { json: true }), 1)
+    assert.deepEqual(one(noSummary), {
+      pr: 521,
+      head: HEAD,
+      ok: false,
+      falta: ['(c) CI roja: lint=FAILURE'],
+      merge: MERGE,
+    })
+  })
+
+  test('issue 508 Rule 4: a failed job without Failed tests prints no empty list and no error', async () => {
+    const lintLog = [
+      ts('Running orca-stack lint...'),
+      ts('comment-excuse src/a.mjs:foo() (Excuse) — borralo'),
+      ts('##[error]Process completed with exit code 1.'),
+    ].join('\n')
+    const world = {
+      prs: [prData(514, { checks: [jobRun('lint', '140226870154', 'FAILURE')], reviews: [review('agy', HEAD)] })],
+      jobLogs: { 140226870154: lintLog },
+    }
+    const h = harness(world)
+    assert.equal(await estado(h, ['514']), 1)
+    assert.deepEqual(h.out, ['#514 #7 codex head=abc1234 ci=red review=agy@abc1234 riesgo=no falta=(c) CI roja: lint=FAILURE'])
+    assert.deepEqual(h.err, [])
+  })
+
+  test('issue 508 Rule 5: an unreadable job log prints the fallback notice under the check and keeps the exit code', async () => {
+    const world = {
+      prs: [prData(515, { checks: [jobRun('test', '999888777', 'FAILURE')], reviews: [review('agy', HEAD)] })],
+      jobLogs: {},
+    }
+    const h = harness(world)
+    assert.equal(await estado(h, ['515']), 1)
+    assert.deepEqual(h.out, [
+      '#515 #7 codex head=abc1234 ci=red review=agy@abc1234 riesgo=no falta=(c) CI roja: test=FAILURE',
+      '  test:',
+      '    (no se pudo leer el log del job 999888777)',
+    ])
+  })
+
+  test('issue 508 Rule 6: estado without PR numbers does not read job logs', async () => {
+    const world = {
+      prs: [prData(516, { checks: [jobRun('test', '140226870178', 'FAILURE')], reviews: [review('agy', HEAD)] })],
+      jobLogs: { 140226870178: ts('Failed tests:\n') + ts('✖ should not be read (1ms)') },
+    }
+    const h = harness(world)
+    assert.equal(await estado(h, []), 1)
+    assert.equal(world.jobLogCalls, undefined)
+    assert.deepEqual(h.out, ['#516 #7 codex head=abc1234 ci=red review=agy@abc1234 riesgo=no falta=(c) CI roja: test=FAILURE'])
+
+    const hJson = harness(world)
+    assert.equal(await estado(hJson, [], { json: true }), 1)
+    assert.equal(world.jobLogCalls, undefined)
+  })
+
+  test('issue 508 Preserve: estadoCommand keeps green, pending and non-Actions red PR output and exit codes intact', async () => {
+    const world = {
+      prs: [
+        prData(517, { checks: [jobRun('test', '140226870178', 'SUCCESS')], reviews: [review('agy', HEAD)] }),
+        prData(518, { checks: [jobRun('test', '140226870179', '', 'IN_PROGRESS')], reviews: [review('agy', HEAD)] }),
+        prData(519, { checks: [run('external-ci', 'FAILURE')], reviews: [review('agy', HEAD)] }),
+      ],
+    }
+    const hGreen = harness(world)
+    assert.equal(await estado(hGreen, ['517']), 0)
+    assert.deepEqual(hGreen.out, ['#517 #7 codex head=abc1234 ci=green review=agy@abc1234 riesgo=no falta='])
+    assert.equal(world.jobLogCalls, undefined)
+
+    const hPending = harness(world)
+    assert.equal(await estado(hPending, ['518']), 1)
+    assert.deepEqual(hPending.out, ['#518 #7 codex head=abc1234 ci=pending review=agy@abc1234 riesgo=no falta=(c) CI pendiente: test'])
+    assert.equal(world.jobLogCalls, undefined)
+
+    const hExternal = harness(world)
+    assert.equal(await estado(hExternal, ['519']), 1)
+    assert.deepEqual(hExternal.out, ['#519 #7 codex head=abc1234 ci=red review=agy@abc1234 riesgo=no falta=(c) CI roja: external-ci=FAILURE'])
+    assert.equal(world.jobLogCalls, undefined)
+  })
+
+  test('issue 508 Rule 7: estado --help and docs/manual.md document the failed tests list', async () => {
+    const res = spawnSync(process.execPath, [path.join(process.cwd(), 'bin', 'orca-stack.mjs'), 'estado', '--help'], { encoding: 'utf8' })
+    assert.equal(res.status, 0, res.stderr)
+    const help = res.stdout
+    assert.match(help, /Failed tests:/)
+    assert.match(help, /failedTests/)
+    assert.match(help, /10/)
+    assert.match(help, /no se pudo leer el log del job/)
+
+    const manual = readFileSync(path.join(process.cwd(), 'docs', 'manual.md'), 'utf8')
+    const estadoSection = manual.slice(manual.indexOf('#### `estado`'), manual.indexOf('#### `limpiar`'))
+    assert.match(estadoSection, /Failed tests:/)
+    assert.match(estadoSection, /failedTests/)
+    assert.match(estadoSection, /10/)
+    assert.match(estadoSection, /no se pudo leer el log del job/)
   })
 })
