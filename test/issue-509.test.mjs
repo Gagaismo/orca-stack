@@ -21,6 +21,7 @@ describe('issue 509', () => {
   })
 
   test('R3: AGENTS.md carries the same Implementador line as the contract', () => {
+    assert.ok(orchestrationLine(agents))
     assert.equal(orchestrationLine(agents), orchestrationLine(contract))
   })
 
