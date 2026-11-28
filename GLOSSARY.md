@@ -104,7 +104,7 @@ A code comment that refers to code or implementation details that no longer hold
 _Avoid_: outdated comment
 
 **Decision Record**:
-A code comment that documents an important, non-obvious decision about the code; the only kind allowed, and only when it cites an ADR or an issue `#n`.
+A code comment that documents an important, non-obvious decision about the code; the only kind allowed, and only when it cites an ADR or an issue `#n` (or `owner/repo#n` for another repo).
 _Avoid_: rationale comment, why-comment
 
 **Baseline**:
