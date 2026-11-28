@@ -7,6 +7,7 @@ import { ROOT } from './helpers.mjs'
 
 const ADR = path.join(ROOT, 'docs', 'adr', '0002-deprecate-ponytail-adopt-comment-rule.md')
 const STANDARDS = path.join(ROOT, 'CODING_STANDARDS.md')
+const ASSETS_STANDARDS = path.join(ROOT, 'assets', 'lint', 'CODING_STANDARDS.md')
 const TWEET = 'https://x.com/mattpocockuk/status/2123798388227403983'
 
 const tableRows = text => {
@@ -46,5 +47,17 @@ describe('#419 CODING_STANDARDS.md', () => {
     assert.match(standards, /`TODO`, `FIXME`, `HACK` o `XXX` en mayúsculas/)
     assert.match(standards, /"temporary" seguido de file, directory/)
     assert.match(standards, /de dos a seis palabras/)
+  })
+
+  test('R4: CODING_STANDARDS.md and assets/lint/CODING_STANDARDS.md allow ADR, #n or owner/repo#n while keeping the ADR 0002 table unchanged', () => {
+    const adrRows = tableRows(readFileSync(ADR, 'utf8'))
+    const ruleSentence = 'El único comentario permitido es un Decision Record que cita un ADR o un issue `#n` (o `owner/repo#n` si es de otro repo).'
+    const standards = readFileSync(STANDARDS, 'utf8')
+    const assetsStandards = readFileSync(ASSETS_STANDARDS, 'utf8')
+    for (const text of [standards, assetsStandards]) {
+      assert.ok(text.includes(ruleSentence), 'missing updated Decision Record sentence')
+      assert.deepEqual(tableRows(text), adrRows)
+    }
+    assert.match(standards, /un comentario que cita `#123`, `owner\/repo#123`, `ADR 0002` o un link a `docs\/adr\/0002-…` pasa/)
   })
 })

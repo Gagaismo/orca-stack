@@ -15,13 +15,13 @@ Todo comentario de código cae en uno de cuatro tipos, y cada tipo dice qué hac
 
 Fuente: Matt Pocock, https://x.com/mattpocockuk/status/2123798388227403983.
 
-El único comentario permitido es un Decision Record que cita un ADR o un issue `#n`. La decisión está en [ADR 0002](docs/adr/0002-deprecate-ponytail-adopt-comment-rule.md) y el lint que la aplica, en [ADR 0003](docs/adr/0003-ast-grep-for-lint.md).
+El único comentario permitido es un Decision Record que cita un ADR o un issue `#n` (o `owner/repo#n` si es de otro repo). La decisión está en [ADR 0002](docs/adr/0002-deprecate-ponytail-adopt-comment-rule.md) y el lint que la aplica, en [ADR 0003](docs/adr/0003-ast-grep-for-lint.md).
 
 ## Qué revisa el lint
 
 `orca-stack lint` revisa los comentarios de JavaScript, TypeScript, Go, Python y Shell. Los demás lenguajes no dan hallazgos de comentarios.
 
-- **Decision Record:** un comentario que cita `#123`, `ADR 0002` o un link a `docs/adr/0002-…` pasa. Un "ver el ADR" que no nombra ninguno no es un Decision Record.
+- **Decision Record:** un comentario que cita `#123`, `owner/repo#123`, `ADR 0002` o un link a `docs/adr/0002-…` pasa. Un "ver el ADR" que no nombra ninguno no es un Decision Record.
 - **Excuse:** `TODO`, `FIXME`, `HACK` o `XXX` en mayúsculas, o "hack", "workaround", "temporary", "for now", "shortcut:" o "upgrade when" en cualquier caja, sin una cita. Un `// TODO(#123): …` cita un issue y pasa. Un "todo" en castellano no es una marca, y "temporary" seguido de file, directory, folder, path, home, repo, copy, name o worktree describe un archivo temporal, no una excusa.
 - **Tautology**, solo en los casos claros: un comentario que ocupa sola su línea, de dos a seis palabras, cuyas palabras están todas en la sentencia que sigue, como `// increment i` arriba de `i++` o `// return the result` arriba de `return result`. Las palabras de los strings no cuentan, y una sentencia con más de dos palabras de código de las que tiene el comentario no se marca.
 - **Stale**, solo donde se puede comprobar: un comentario que nombra una llamada `nombre()` a una función que no está definida ni importada en el archivo. Un identificador entre backticks nunca se marca.

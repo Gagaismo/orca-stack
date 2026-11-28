@@ -366,7 +366,7 @@ En los archivos JS/TS (.js, .mjs, .cjs, .jsx, .ts, .tsx, .mts, .cts), Go (.go), 
                      en Go también un doc comment que solo repite el nombre de la función, como "// Foo does foo." sobre func Foo)
   comment-stale      un comentario que nombra una llamada fooBar() que no está definida ni importada en el archivo; un
                      identificador entre backticks nunca se marca
-Un comentario que cita un issue (#123), un ADR (ADR 0002) o docs/adr/0002-… es un Decision Record y pasa.
+Un comentario que cita un issue (#123 o owner/repo#123), un ADR (ADR 0002) o docs/adr/0002-… es un Decision Record y pasa.
 Nunca se marcan los shebangs, los encabezados de licencia, las directivas (eslint-…, @ts-…, prettier-ignore, c8 ignore…,
 //go:build, //go:generate, //nolint, # shellcheck …, # type: ignore, # noqa, # -*- coding: … -*-), el comentario de paquete
 golint ("// Package foo …" sobre package foo), los docstrings de Python, el JSDoc con tags de tipo (@type, @param…) ni un //

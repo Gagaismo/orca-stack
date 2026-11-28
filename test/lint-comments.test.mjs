@@ -5,6 +5,8 @@ import path from 'node:path'
 import { describe, test } from 'node:test'
 
 import { BIN, ROOT, cleanup, cli, tempDir } from './helpers.mjs'
+import { commentViolations } from '../src/lint-comments.mjs'
+import { lintCommand, seedBaseline } from '../src/lint.mjs'
 
 const BASELINE = '.orca-stack-baseline.json'
 const EXCUSE = '(Excuse) — borralo y abrí un issue para arreglar la implementación'
@@ -46,7 +48,7 @@ const withRepo = run => {
     env: { ...process.env, HOME: home, USERPROFILE: home, ORCA_STACK_HOME: home, GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig-none'), ORCA_STACK_AST_GREP: '' },
   })
   try {
-    run({ dir, repo, put, add, remove, commit, lint, lintWithin, baseline })
+    run({ dir, repo, home, put, add, remove, commit, lint, lintWithin, baseline })
   } finally {
     cleanup(dir)
   }
@@ -574,5 +576,199 @@ describe('orca-stack lint comment rules (#419)', () => {
       assert.match(text, /entre backticks nunca se marca/)
       assert.match(text, /comment-excuse src\/x\.mjs:foo\(\) \(Excuse\) — borralo y abrí un issue para arreglar la implementación/)
     }
+  })
+})
+
+describe('owner/repo#n Decision Record citations (#517)', () => {
+  test('R1: owner/repo#n is recognized as a Decision Record citation in # and // comments', () => {
+    withRepo(({ add, lint }) => {
+      add('scripts/worktree.sh', [
+        '#!/usr/bin/env bash',
+        '# Gagaismo/orca-stack#432: literal paths only (Orca skips globs and negations); never list secrets such as .env files.',
+        'run_check() {',
+        '  # Gagaismo/orca-stack#432: temporary workaround — literal paths only (Orca skips globs and negations); never list secrets such as .env files.',
+        '  echo "ok"',
+        '}',
+        '',
+      ].join('\n'))
+      add('src/records.ts', [
+        'export function a(): number {',
+        '  // temporary workaround, see Gagaismo/orca-stack#432',
+        '  return 1',
+        '}',
+        'export function b(): number {',
+        '  // TODO(Gagaismo/orca-stack#487): remove once lockfile setup lands',
+        '  return 2',
+        '}',
+        'export function c(): number {',
+        '  // hack kept per my-org/my.repo_1#9',
+        '  return 3',
+        '}',
+        'export function d(): number {',
+        '  // for now follows a/b#1',
+        '  return 4',
+        '}',
+        '',
+      ].join('\n'))
+      const result = lint()
+      assert.equal(result.status, 0, result.out)
+      assert.equal(result.stdout, OK(0))
+    })
+  })
+
+  test('R2: existing Decision Record forms (#n, ADR 0002, docs/adr/0002-…) still pass', () => {
+    withRepo(({ add, lint }) => {
+      add('src/existing.mjs', [
+        'export function a() {',
+        '  // ver #12',
+        '  // temporary workaround, ver #12',
+        '  return 1',
+        '}',
+        'export function b() {',
+        '  // docs/adr/0002-deprecate-ponytail-adopt-comment-rule.md',
+        '  // for now see docs/adr/0002-deprecate-ponytail-adopt-comment-rule.md',
+        '  return 2',
+        '}',
+        '',
+      ].join('\n'))
+      add('scripts/existing.sh', [
+        '#!/usr/bin/env bash',
+        'run_task() {',
+        '  # ADR 0002: comment rule applies here',
+        '  # hack kept under ADR 0002: comment rule',
+        '  echo "ok"',
+        '}',
+        '',
+      ].join('\n'))
+      const result = lint()
+      assert.equal(result.status, 0, result.out)
+      assert.equal(result.stdout, OK(0))
+    })
+  })
+
+  test('R3: negative: incomplete citations without owner/repo#n are still reported', () => {
+    withRepo(({ add, lint }) => {
+      add('scripts/bad-citations.sh', [
+        '#!/usr/bin/env bash',
+        'f1() {',
+        '  # literal paths only — temporary workaround',
+        '  echo 1',
+        '}',
+        'f2() {',
+        '  # orca-stack#432: temporary workaround',
+        '  echo 2',
+        '}',
+        'f3() {',
+        '  # foo#12 bar temporary workaround',
+        '  echo 3',
+        '}',
+        'f4() {',
+        '  # Gagaismo/#12 temporary workaround',
+        '  echo 4',
+        '}',
+        '',
+      ].join('\n'))
+      const result = lint()
+      assert.equal(result.status, 1, result.out)
+      assert.equal(result.stdout, [
+        `comment-excuse scripts/bad-citations.sh:f1() ${EXCUSE}`,
+        `comment-excuse scripts/bad-citations.sh:f2() ${EXCUSE}`,
+        `comment-excuse scripts/bad-citations.sh:f3() ${EXCUSE}`,
+        `comment-excuse scripts/bad-citations.sh:f4() ${EXCUSE}`,
+        '',
+      ].join('\n') + SUMMARY(4, 0))
+    })
+  })
+
+  test('R6: lint has no --fix flag and rejects --fix without modifying files with owner/repo#n comments', () => {
+    withRepo(({ repo, add, lint }) => {
+      const content = [
+        '#!/usr/bin/env bash',
+        '# Gagaismo/orca-stack#432: literal paths only',
+        'echo "ok"',
+        '',
+      ].join('\n')
+      add('scripts/keep.sh', content)
+      const result = lint(['--fix'])
+      assert.equal(result.status, 2, result.out)
+      assert.match(result.out, /^Opción desconocida: --fix/m)
+      assert.equal(readFileSync(path.join(repo, 'scripts/keep.sh'), 'utf8'), content)
+    })
+  })
+
+  test('R7: lint --help and docs/manual.md mention owner/repo#n in the Decision Record comment rule', () => {
+    const home = tempDir('lint-comments-help-517')
+    let help
+    try {
+      help = cli(home, ['lint', '--help'])
+    } finally {
+      cleanup(home)
+    }
+    assert.equal(help.status, 0, help.out)
+    const manual = readFileSync(path.join(ROOT, 'docs', 'manual.md'), 'utf8')
+    assert.match(help.stdout, /Un comentario que cita un issue \(#123 o owner\/repo#123\), un ADR \(ADR 0002\) o docs\/adr\/0002-… es un Decision Record y pasa\./)
+    assert.match(manual, /Un comentario que cita un issue \(`#123` o `owner\/repo#123`\), un ADR \(`ADR 0002`\) o un link a `docs\/adr\/0002-…` es un Decision Record y pasa/)
+  })
+
+  test('PRESERVE: commentViolations reports Excuse, Tautology and Stale while exempting owner/repo#n Decision Records', () => {
+    withRepo(({ repo, add }) => {
+      add('src/preserve.mjs', [
+        'export function cited() {',
+        '  // temporary workaround, see Gagaismo/orca-stack#432',
+        '  return 1',
+        '}',
+        'export function excuse(i) {',
+        '  // TODO: drop hack',
+        '  let x = i',
+        '  // increment i',
+        '  i++',
+        '  // calls goneFn() here',
+        '  return i + x',
+        '}',
+        '',
+      ].join('\n'))
+      const violations = commentViolations(repo, ['src/preserve.mjs'])
+      assert.deepEqual(
+        violations.map(({ rule, location }) => ({ rule, location })),
+        [
+          { rule: 'comment-excuse', location: 'excuse()' },
+          { rule: 'comment-tautology', location: 'excuse()' },
+          { rule: 'comment-stale', location: 'excuse()' },
+        ],
+      )
+    })
+  })
+
+  test('PRESERVE: seedBaseline and lintCommand seed uncited comment violations and skip owner/repo#n Decision Records', async t => {
+    let result
+    await new Promise(resolve => {
+      withRepo(async ({ repo, home, add, baseline }) => {
+        add('src/preserve.mjs', [
+          'export function cited() {',
+          '  // temporary workaround, see Gagaismo/orca-stack#432',
+          '  return 1',
+          '}',
+          'export function uncited() {',
+          '  // temporary workaround',
+          '  return 2',
+          '}',
+          '',
+        ].join('\n'))
+        const seeded = seedBaseline(repo, { home })
+        assert.equal(seeded.added, 1)
+        const entries = JSON.parse(baseline()).entries
+        assert.deepEqual(entries.map(({ rule, file, location }) => ({ rule, file, location })), [
+          { rule: 'comment-excuse', file: 'src/preserve.mjs', location: 'uncited()' },
+        ])
+        const out = []
+        t.mock.method(console, 'log', (...args) => out.push(args.join(' ')))
+        const status = await lintCommand({}, { cwd: repo, home })
+        t.mock.restoreAll()
+        result = { status, out: out.join('\n') }
+        resolve()
+      })
+    })
+    assert.equal(result.status, 0, result.out)
+    assert.equal(result.out, OK(1).trimEnd())
   })
 })
