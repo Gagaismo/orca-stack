@@ -91,22 +91,22 @@ Además, instalá lo que `global` marque como faltante.
 
 `global` no escribe metodología en `~/.claude/CLAUDE.md`: instala herramientas, skills, mods y wrappers, y nada más. La metodología llega solo por el proyecto (`init`), así que una sesión en un repo sin `.orca-stack.json` no recibe texto del stack. Si una versión anterior dejó en ese archivo el bloque `orca-stack:begin` / `orca-stack:end` (o el viejo `orca-stack:auto`), `global` lo saca, con respaldo, y lo avisa.
 
-**El bloque de gentle-ai.** `~/.claude/CLAUDE.md` trae el bloque `gentle-ai:sdd-orchestrator` (v2/v3) o `gentle-ai:orchestrator` (v4), unos 16 KB que se cargan en cada sesión. `global` lo achica según `gentle.orchestrator` en `~/.orca-stack/config.json`:
+**El bloque de gentle-ai.** `~/.claude/CLAUDE.md` trae el bloque `gentle-ai:sdd-orchestrator` (v2/v3) o `gentle-ai:orchestrator` (v4 y v5), unos 16 KB que se cargan en cada sesión. `global` lo achica según `gentle.orchestrator` en `~/.orca-stack/config.json`:
 
 - `"lazy"` (por defecto): guarda el bloque completo en `~/.orca-stack/gentle/orchestrator.md` y deja entre los marcadores un puntero corto (con la marca `<!-- orca-stack:gentle-lazy v1 -->`). El puntero dice que ODD es el flujo predeterminado y que la sesión que orquesta (`main`) debe leer la copia completa; también pide presentar completos los menús y pedidos de consentimiento. Hace respaldo, es idempotente, respeta `--dry-run` e imprime los KB ahorrados. Se omite mientras el RDD de gentle-ai esté prendido (el bloque trae su contrato de review): si ya estaba en lazy, `global` lo restaura desde la copia.
 - `"full"`: el bloque queda como lo escribe gentle-ai. Si estaba en lazy, `global` lo restaura desde la copia (con respaldo). Con el RDD de gentle-ai apagado (`gentle-ai review mode status` empieza con `receipt-driven development: off`) también recorta sus secciones de review (unos 26 KB); con RDD prendido o sin gentle-ai, lo omite y dice por qué.
 
 **`gentle-ai sync` reescribe el bloque** (reemplaza lo que hay entre los marcadores), así que después de cada sync corré `orca-stack global` de nuevo: refresca la copia y el puntero. `doctor` avisa si la sync lo reescribió, si falta la copia o si sigue en la ruta antigua. Para volver atrás: `"gentle": { "orchestrator": "full" }` y `orca-stack global`, o `gentle-ai sync`; `orca-stack remove` también restaura el bloque completo. La clave vieja `gentle.sddOrchestrator` se acepta y `doctor` recomienda renombrarla; si aparecen ambas, gana `gentle.orchestrator`. `global` mueve la copia antigua a `orchestrator.md`; si están las dos, conserva la más nueva y respalda la otra.
 
-**Pasar a gentle-ai v4 (Windows).** v4 retiró SDD: ODD es su único flujo, y la sync renombra el bloque a `gentle-ai:orchestrator` (mismas secciones de review). orca-stack trata igual los dos nombres; en v4 el puntero dice que ODD es el flujo predeterminado y que la sesión `main` lee la copia completa. Con Go 1.25.10 o más nuevo en el `PATH`:
+**Instalar gentle-ai v5.1.0 (Windows).** Desde v4 ODD es su único flujo, y la sync renombra el bloque a `gentle-ai:orchestrator` (mismas secciones de review); v5 mantiene ese marcador. orca-stack trata igual los dos nombres; el puntero dice que ODD es el flujo predeterminado y que la sesión `main` lee la copia completa. Si gentle-pi viene de tu fork, seguí el orden de [`UPDATE.md`](../UPDATE.md). Con Go 1.25.10 o más nuevo en el `PATH`:
 
 ```powershell
-go install github.com/gentleman-programming/gentle-ai/v4/cmd/gentle-ai@v4.1.1
+go install github.com/gentleman-programming/gentle-ai/v5/cmd/gentle-ai@v5.1.0
 gentle-ai sync
 npx github:Gagaismo/orca-stack global
 ```
 
-Después de la sync, `doctor` avisa que el bloque quedó completo; `orca-stack global` refresca la copia con el texto de v4 y vuelve a dejar el puntero.
+Después de la sync, `doctor` avisa que el bloque quedó completo; `orca-stack global` refresca la copia con el texto nuevo y vuelve a dejar el puntero.
 
 ### Codex en Windows: acentos rotos
 

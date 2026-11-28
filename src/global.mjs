@@ -355,7 +355,7 @@ const lazyGentleBlock = (ctx, original) => {
   if (rdd.mode !== 'off') {
     ctx.say(`  RDD de gentle-ai ${rdd.mode === 'on' ? 'prendido' : 'en un estado que no pude leer'}: el bloque queda completo (lazy le sacaría el contrato de review)`)
     if (rdd.mode === 'on' && rdd.source === 'default') {
-      ctx.say('  está prendido solo por defecto en gentle-ai v4: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`')
+      ctx.say('  está prendido solo por defecto en gentle-ai: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`')
     }
     restoreGentleBlock(ctx, original)
 
@@ -455,7 +455,7 @@ const trimGentleReview = (ctx, original) => {
   if (rdd.mode !== 'off') {
     ctx.say(`  se omite: el desarrollo guiado por recibos (RDD) está ${rdd.mode === 'on' ? 'prendido' : 'en un estado que no pude leer'}`)
     if (rdd.mode === 'on' && rdd.source === 'default') {
-      ctx.say('  está prendido solo por defecto en gentle-ai v4: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`')
+      ctx.say('  está prendido solo por defecto en gentle-ai: si no lo elegiste, corré `gentle-ai review mode disable` y después `orca-stack global`')
     }
 
     return
