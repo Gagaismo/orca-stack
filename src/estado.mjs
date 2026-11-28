@@ -468,6 +468,26 @@ export const baseConfigOf = (pr, base, root, io) => {
   }
 }
 
+// #520: MAIN.md step 7 single-level web-flow carry-over for heads created by gh pr update-branch.
+const readHeadCommit = (pr, head, root, io) => {
+  const res = io.sh('gh', ['api', `repos/${repoOf(pr)}/commits/${head}`], { cwd: root })
+  if (res.status !== 0) return { ok: false, error: detail(res) || (res.timedOut ? 'timeout' : '') }
+  const data = parse(res)
+  if (
+    !isPlain(data) ||
+    !Array.isArray(data.parents) ||
+    !data.parents.every(parent => isPlain(parent) && typeof parent.sha === 'string') ||
+    typeof data.commit?.verification?.verified !== 'boolean'
+  ) {
+    return { ok: false, error: 'respuesta ilegible de gh api' }
+  }
+  const committer = typeof data.committer?.login === 'string' ? data.committer.login : null
+  const verified = data.commit.verification.verified
+  const firstParent = data.parents.length >= 2 ? data.parents[0].sha.toLowerCase() : undefined
+
+  return { ok: true, committer, verified, firstParent }
+}
+
 const evaluate = (pr, config, root, io, now, ctx, readLogs = false) => {
   const n = pr.number
   const head = String(pr.headRefOid ?? '').toLowerCase()
@@ -498,35 +518,62 @@ const evaluate = (pr, config, root, io, now, ctx, readLogs = false) => {
   const requested = one => one.reviewer === 'pi' && rddRequestsOf(bodies.slice(0, one.at), head).some(lenses => sameLenses(lenses, one.lenses))
   // An RDD review main did not ask for on this head is not a review at all (#391): it neither counts nor blocks.
   const reviews = posted.filter(one => one.lenses === undefined || (rddAllowed && requested(one)))
-  const onHead = reviews.filter(one => namesCommit(one.commit, head))
-  const marks = (marker, enabled = true) => (enabled ? bodies.flatMap((body, at) => (markerValue(body, marker) === undefined ? [] : [{ at, commit: commitOf(body) }])) : [])
+  const marks = (marker, enabled = true) => (enabled ? bodies.flatMap((body, at) => (markerValue(body, marker) === undefined ? [] : [{ marker, at, commit: commitOf(body) }])) : [])
   const mainMarks = [...marks('Verificado por main'), ...marks('Decidido por main')]
-  const mainOnHead = mainMarks.filter(mark => namesCommit(mark.commit, head))
   const sinReview = marks('Sin review', rdd)
   const sinOnHead = sinReview.filter(mark => namesCommit(mark.commit, head))
+  const evidence = /^##\s*Evidencia\b/im.test(normalizeBody(pr.body))
+  // pi's own RDD review counts when main asked for it (only those are in `reviews`); non-RDD reviews on a pi PR must come from a cross-family worker (#488).
+  const isCountingReviewer = one => (implementer === 'pi' ? isCrossFamilyPiReview(config, one.reviewer) : one.reviewer !== implementer)
+
+  let carriedParent
+  let commitCheckFailed = false
+  let commitError = ''
+  if (!waived && implementer !== undefined && FAMILIES.agents.includes(implementer) && risky === undefined) {
+    const directReviews = reviews.filter(one => namesCommit(one.commit, head))
+    const directMain = mainMarks.filter(mark => namesCommit(mark.commit, head))
+    const directUnsettled = directReviews.filter(one => !one.clean && !directMain.some(mark => mark.at > one.at))
+    const directCounted = directReviews.filter(one => one.clean && (one.lenses !== undefined || isCountingReviewer(one)))
+    const directSatisfied = directCounted.some(one => one.covered) || directMain.length > 0 || (sinOnHead.length > 0 && evidence)
+    const hasEligibleStale =
+      reviews.some(one => one.lenses === undefined && one.clean && one.covered && isCountingReviewer(one) && !namesCommit(one.commit, head)) ||
+      mainMarks.some(mark => mark.commit && !namesCommit(mark.commit, head))
+    if (!directSatisfied && directUnsettled.length === 0 && hasEligibleStale) {
+      const origin = readHeadCommit(pr, head, root, io)
+      if (!origin.ok) {
+        commitCheckFailed = true
+        commitError = origin.error
+      } else if (origin.committer === 'web-flow' && origin.verified && origin.firstParent) {
+        carriedParent = origin.firstParent
+      }
+    }
+  }
+
+  const onHead = reviews.filter(one => namesCommit(one.commit, head) || (carriedParent !== undefined && one.lenses === undefined && namesCommit(one.commit, carriedParent)))
+  const mainOnHead = mainMarks.filter(mark => namesCommit(mark.commit, head) || (carriedParent !== undefined && namesCommit(mark.commit, carriedParent)))
 
   // (a) and (b); with #377's waiver only an unsettled blocker on the head and ## Evidencia remain.
   if (waived) {
     for (const one of onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))) falta.push(`(a) el review de ${one.reviewer} sobre ${sha7} ${blockerReason(one)}`)
-    if (!/^##\s*Evidencia\b/im.test(normalizeBody(pr.body))) falta.push('(a) reviewParaMerge: false en la base necesita ## Evidencia en el body del PR')
+    if (!evidence) falta.push('(a) reviewParaMerge: false en la base necesita ## Evidencia en el body del PR')
   } else if (implementer === undefined || !FAMILIES.agents.includes(implementer)) {
     falta.push('(a) el body del PR no tiene una línea Implementador: <agente>')
   } else {
     const unsettled = onHead.filter(one => !one.clean && !mainOnHead.some(mark => mark.at > one.at))
-    for (const one of unsettled) falta.push(`(a) el review de ${one.reviewer} sobre ${sha7} ${blockerReason(one)}`)
-    // pi's own RDD review counts when main asked for it (only those are in `reviews`); non-RDD reviews on a pi PR must come from a cross-family worker (#488).
-    const counted = onHead.filter(one => one.clean && (one.lenses !== undefined || (implementer === 'pi' ? isCrossFamilyPiReview(config, one.reviewer) : one.reviewer !== implementer)))
-    const evidence = /^##\s*Evidencia\b/im.test(normalizeBody(pr.body))
+    for (const one of unsettled) falta.push(`(a) el review de ${one.reviewer} sobre ${one.commit.slice(0, 7)} ${blockerReason(one)}`)
+    const counted = onHead.filter(one => one.clean && (one.lenses !== undefined || isCountingReviewer(one)))
     const satisfied = counted.some(one => one.covered) || mainOnHead.length > 0 || (sinOnHead.length > 0 && evidence)
     if (!satisfied && unsettled.length === 0) {
       const latest = new Map()
       for (const one of reviews) if (one.reviewer !== implementer && !namesCommit(one.commit, head)) latest.set(one.reviewer, one.commit)
       const staleSin = sinReview.filter(mark => mark.commit && !namesCommit(mark.commit, head)).at(-1)
+      const staleMain = mainMarks.filter(mark => mark.commit && !namesCommit(mark.commit, head)).at(-1)
       if (sinOnHead.length > 0) {
         falta.push('(a) el Sin review: necesita ## Evidencia en el body del PR')
-      } else if (latest.size > 0 || staleSin) {
+      } else if (latest.size > 0 || staleSin || staleMain) {
         for (const [reviewer, commit] of latest) falta.push(`(b) el review de ${reviewer} nombra el commit ${commit.slice(0, 7)}, no el head ${sha7}`)
         if (staleSin) falta.push(`(b) el Sin review: nombra el commit ${staleSin.commit.slice(0, 7)}, no el head ${sha7}`)
+        if (latest.size === 0 && !staleSin && staleMain) falta.push(`(b) el ${staleMain.marker}: nombra el commit ${staleMain.commit.slice(0, 7)}, no el head ${sha7}`)
       } else if (rddFallback && !rdd) {
         falta.push(`(a) falta un review RDD limpio de pi sobre ${sha7} (no hay otro agente de otra familia disponible en el roster). Corré \`orca-stack rebote ${n} --rdd risk\` (podés sumar lentes).`)
       } else {
@@ -534,6 +581,7 @@ const evaluate = (pr, config, root, io, now, ctx, readLogs = false) => {
         falta.push(`(a) falta un review sin bloqueos sobre ${sha7} de alguien que no sea ${implementer}${rdd ? ' (o un review RDD pedido con RDD:, o un Sin review:)' : ''}${suggestion ? `. ${suggestion}` : ''}`)
         for (const one of counted) falta.push(`(a) el review de ${one.reviewer} ${coverageOf(one.body, riesgo).why}: no cuenta`)
       }
+      if (commitCheckFailed) falta.push(`(b) no se pudo verificar el origen de ${sha7}${commitError ? `: ${commitError}` : ''}`)
     }
   }
 
@@ -552,8 +600,8 @@ const evaluate = (pr, config, root, io, now, ctx, readLogs = false) => {
   const migrations = migrationsOf(pr, files, pr.baseRefName || config.ramaBase || 'main', config, root, io, ctx)
   falta.push(...migrations.falta)
 
-  const shown = onHead.map(one => `${one.lenses ? `${one.reviewer}(RDD:${[...one.lenses].sort().join(',')})` : one.reviewer}@${sha7}${one.clean ? '' : ':bloquea'}`)
-  if (mainOnHead.length > 0) shown.push(`main@${sha7}`)
+  const shown = onHead.map(one => `${one.lenses ? `${one.reviewer}(RDD:${[...one.lenses].sort().join(',')})` : one.reviewer}@${one.commit.slice(0, 7)}${one.clean ? '' : ':bloquea'}`)
+  if (mainOnHead.length > 0) shown.push(`main@${mainOnHead.some(mark => namesCommit(mark.commit, head)) ? sha7 : mainOnHead.at(-1).commit.slice(0, 7)}`)
   if (sinOnHead.length > 0) shown.push(`sin-review@${sha7}`)
   if (rddAllowed) {
     const asked = bodies.flatMap((body, at) => {
