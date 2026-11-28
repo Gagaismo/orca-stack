@@ -89,7 +89,11 @@ const CLOSED_DISPATCH = new Set(['failed', 'stopped', 'succeeded', 'fenced', 'ca
 // #521: Orca permanently revokes a dispatch capability on worker_done failed; sending a raw line triggers consumer_fenced.
 const closedTerminalDispatch = (io, root, handle) => {
   const current = io.sh('orca', ['orchestration', 'run-current', '--json'], { cwd: root })
-  const runId = current.status === 0 ? parse(current)?.result?.runId ?? parse(current)?.result?.run?.id : undefined
+  const currentBody = current.status === 0 ? parse(current) : undefined
+  if (!currentBody || currentBody.ok === false) {
+    throw new Error(`No pude comprobar el Run actual en Orca (orca orchestration run-current): ${detail(current)}. No envío una línea a la terminal para evitar consumer_fenced.`)
+  }
+  const runId = currentBody?.result?.runId ?? currentBody?.result?.run?.id
   if (typeof runId !== 'string' || runId === '') return undefined
   const listed = io.sh('orca', ['orchestration', 'worker-list', '--run', runId, '--json'], { cwd: root })
   const workers = listed.status === 0 ? parse(listed)?.result?.workers : undefined
@@ -122,19 +126,25 @@ const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, b
 
   const closedDispatch = checkClosed?.()
   const line = answerLine(url, briefPath, isReview)
-  if (closedDispatch) {
-    const title = `#${n} ${target.identity} reanudado`
-    const dryCmd = ['orchestration', 'worker-start', '--run', closedDispatch.runId, '--terminal', handle, '--spec-file', resumeSpecPath, '--task-title', title, '--json']
-    if (flags.dryRun) {
-      if (target.identity === 'agy' && /esc to dismiss/i.test(screen.join('\n'))) io.out(`[simulaci\u{f3}n] cerrar el aviso de agy con Esc en ${handle} antes de abrir el dispatch`)
+  const title = `#${n} ${target.identity} reanudado`
+  if (flags.dryRun) {
+    if (target.identity === 'agy' && /esc to dismiss/i.test(screen.join('\n'))) io.out(`[simulaci\u{f3}n] cerrar el aviso de agy con Esc en ${handle} antes de ${closedDispatch ? 'abrir el dispatch' : 'enviar la l\u{ed}nea'}`)
+    if (closedDispatch) {
+      const dryCmd = ['orchestration', 'worker-start', '--run', closedDispatch.runId, '--terminal', handle, '--spec-file', resumeSpecPath, '--task-title', title, '--json']
       io.out(`[simulaci\u{f3}n] El dispatch ${closedDispatch.dispatchId} de ${handle} est\u{e1} cerrado (${closedDispatch.state}); abrir\u{ed}a un dispatch nuevo en esa terminal.`)
       io.out(`[simulaci\u{f3}n] orca ${dryCmd.map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
-      io.out(`Terminal: ${handle}, worker de #${n} en ${target.worktree}`)
-      io.out(`L\u{ed}nea: ${line}`)
-      return true
+    } else {
+      io.out(`[simulaci\u{f3}n] orca ${lineArgv(handle, line).map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
     }
-    if (target.identity === 'agy') await dismissAgySplash(io, handle, screen, briefPath)
-    beforeSend()
+    io.out(`Terminal: ${handle}, worker de #${n} en ${target.worktree}`)
+    io.out(`L\u{ed}nea: ${line}`)
+    return true
+  }
+
+  // agy's "esc to dismiss" banner or splash (#357): dismissed before anything else reaches the terminal.
+  if (target.identity === 'agy') await dismissAgySplash(io, handle, screen, briefPath)
+  beforeSend()
+  if (closedDispatch) {
     io.mkdirp(path.dirname(resumeSpecPath))
     io.writeFile(resumeSpecPath, `${line}\n`)
     markAttempt()
@@ -149,19 +159,6 @@ const sendToPaused = async (flags, n, url, briefPath, target, io, markAttempt, b
     io.out(`Nuevo dispatch abierto en ${handle} (#${n}, anterior ${closedDispatch.dispatchId} cerrado en ${closedDispatch.state}): ${line}`)
     return true
   }
-
-  const argv = lineArgv(handle, line)
-  if (flags.dryRun) {
-    if (target.identity === 'agy' && /esc to dismiss/i.test(screen.join('\n'))) io.out(`[simulaci\u{f3}n] cerrar el aviso de agy con Esc en ${handle} antes de enviar la l\u{ed}nea`)
-    io.out(`[simulaci\u{f3}n] orca ${argv.map(arg => (/\s|"/.test(arg) ? JSON.stringify(arg) : arg)).join(' ')}`)
-    io.out(`Terminal: ${handle}, worker de #${n} en ${target.worktree}`)
-    io.out(`L\u{ed}nea: ${line}`)
-    return true
-  }
-
-  // agy's "esc to dismiss" banner or splash (#357): dismissed before anything else reaches the terminal.
-  if (target.identity === 'agy') await dismissAgySplash(io, handle, screen, briefPath)
-  beforeSend()
   markAttempt()
   sendLine(io, n, handle, target.identity, line, briefPath)
   return true

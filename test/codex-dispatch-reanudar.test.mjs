@@ -269,15 +269,27 @@ describe('#521 reanudar after worker_done failed (R3, R4)', () => {
     assert.equal(h.sends().length, 0)
   })
 
-  test('R4: if worker-list fails while checking a bound Run, reanudar fails closed without sending a line that risks consumer_fenced', async () => {
-    const h = reanudarHarness({ workerListRes: { status: 1, stdout: '', stderr: 'orca runtime error' } })
-    await assert.rejects(() => reanudarCommand({}, '7', URL, h.io), error => {
+  test('R4: if run-current or worker-list fails while checking a bound Run, reanudar fails closed without sending a line that risks consumer_fenced', async () => {
+    const failedList = reanudarHarness({ workerListRes: { status: 1, stdout: '', stderr: 'orca runtime error' } })
+    await assert.rejects(() => reanudarCommand({}, '7', URL, failedList.io), error => {
       assert.match(error.message, /worker-list/)
       assert.match(error.message, /consumer_fenced/)
       return true
     })
-    assert.equal(h.sends().length, 0)
-    assert.equal(h.starts().length, 0)
+    assert.equal(failedList.sends().length, 0)
+    assert.equal(failedList.starts().length, 0)
+
+    const failedRun = reanudarHarness()
+    const sh = failedRun.io.sh
+    failedRun.io.sh = (cmd, args) => cmd === 'orca' && args[0] === 'orchestration' && args[1] === 'run-current'
+      ? { status: 1, stdout: '', stderr: 'orca down' }
+      : sh(cmd, args)
+    await assert.rejects(() => reanudarCommand({}, '7', URL, failedRun.io), error => {
+      assert.match(error.message, /run-current/)
+      assert.match(error.message, /consumer_fenced/)
+      return true
+    })
+    assert.equal(failedRun.sends().length, 0)
   })
 
   test('R3: when a newer dispatch on the terminal is active above an older closed dispatch, reanudar uses the active dispatch via terminal send', async () => {
@@ -294,11 +306,16 @@ describe('#521 reanudar after worker_done failed (R3, R4)', () => {
 })
 
 describe('#521 PRESERVE: touched public entries', () => {
-  test('PRESERVE despacharCommand and dispatch: healthy codex, agy and pi dispatches keep existing flow', async () => {
-    const env = dispatchHarness()
-    assert.equal(await despacharCommand({}, '7', 'codex', env.io), 0)
-    assert.ok(env.calls.some(c => c[0] === 'orca' && c[1] === 'orchestration' && c[2] === 'worker-start'))
-    assert.ok(env.out.some(line => line.startsWith('✔ codex despachado')))
+  test('PRESERVE despacharCommand and dispatch: healthy codex and agy dispatches keep existing flow', async () => {
+    for (const [issue, agent] of [['7', 'codex'], ['8', 'agy']]) {
+      const env = dispatchHarness({
+        'orca terminal read': () => json({ result: { terminal: { tail: agent === 'agy' ? ['ready', '>'] : ['OpenAI Codex'] } } }),
+        'orca terminal show': () => json({ ok: true, result: { terminal: { handle: 'term_1', agentIdentity: agent === 'agy' ? 'antigravity' : 'codex' } } }),
+      })
+      assert.equal(await despacharCommand({}, issue, agent, env.io), 0, agent)
+      assert.ok(env.calls.some(c => c[0] === 'orca' && c[1] === 'orchestration' && c[2] === 'worker-start'), agent)
+      assert.ok(env.out.some(line => line.startsWith(`✔ ${agent} despachado`)), agent)
+    }
   })
 
   test('PRESERVE launchInWorktree: unsupervised codex launch works without terminal show or worker-start', async () => {

@@ -521,7 +521,7 @@ export const dismissAgySplash = async (io, handle, lines, briefPath) => {
   throw new Error(agyNotDelivered(handle, briefPath))
 }
 
-const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45, { requireRecognized = false, state } = {}) => {
+const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45, { requireRecognized = false } = {}) => {
   let last = null
   let stable = 0
   let enters = 0
@@ -562,13 +562,12 @@ const waitForTui = async (io, handle, agent, root, issue, prompt, tries = 45, { 
       // #476: agy's sign-in screen can stay stable before the TUI is ready; require its empty prompt or dismissible splash.
       const lines = text.split(/\r?\n/)
       if (agent !== 'agy' || readyForInput(lines) || showsSplash(lines)) {
-        if (!requireRecognized || terminalRecognized(io, handle, agent)) return text
+        if (!requireRecognized || terminalRecognized(io, handle, agent)) return { text }
         sawStable = true
       }
     }
   }
-  if (state) state.unrecognized = sawStable
-  return undefined
+  return { text: undefined, unrecognized: sawStable }
 }
 
 const submittedTurn = value => {
@@ -812,13 +811,13 @@ export const launchInWorktree = async ({ agent, mode, worktree, briefPath, brief
     if (!handle) throw new Error('orca terminal create no devolvi\u00f3 el handle de la terminal.')
     onTerminal?.(handle)
     const prompt = `Read and follow the brief in ${briefPath}`
-    const waitState = { unrecognized: false }
-    let before = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt, 45, { requireRecognized: agent === 'codex' && Boolean(supervised || rebind), state: waitState })
+    const requireRecognized = agent === 'codex' && Boolean(supervised || rebind)
+    let { text: before, unrecognized } = await waitForTui(io, handle, agent, repositoryRoot, issue, prompt, 45, { requireRecognized })
     if (!before) {
-      const msg = waitState.unrecognized
+      const msg = unrecognized
         ? `La TUI de ${agent} no apareció a tiempo: la terminal ${handle} no reportó un agente reconocido en Orca (no se ejecutó worker-start). Seguí a mano cuando arranque ("Read and follow the brief in ${briefPath}") o cerrá la terminal y limpiá el worktree.`
         : `La TUI de ${agent} no apareci\u00f3 a tiempo. La terminal ${handle} sigue abierta: mandale a mano "Read and follow the brief in ${briefPath}".`
-      throw Object.assign(new Error(withScreenTail(io, handle, msg)), waitState.unrecognized ? { orchestration: true } : {})
+      throw Object.assign(new Error(withScreenTail(io, handle, msg)), requireRecognized ? { orchestration: true } : {})
     }
     if (agent === 'agy') before = (await dismissAgySplash(io, handle, before.split('\n'), briefPath)).join('\n')
     if (supervised || rebind) {
