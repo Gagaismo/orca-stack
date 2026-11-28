@@ -15,4 +15,4 @@ Todo comentario de código cae en uno de cuatro tipos, y cada tipo dice qué hac
 
 Fuente: Matt Pocock, https://x.com/mattpocockuk/status/2123798388227403983.
 
-El único comentario permitido es un Decision Record que cita un ADR o un issue `#n`. `orca-stack lint` aplica la parte mecánica de esta regla en JavaScript, TypeScript, Go, Python y Shell; lo demás lo aplica quien revisa.
+El único comentario permitido es un Decision Record que cita un ADR o un issue `#n` (o `owner/repo#n` si es de otro repo). `orca-stack lint` aplica la parte mecánica de esta regla en JavaScript, TypeScript, Go, Python y Shell; lo demás lo aplica quien revisa.

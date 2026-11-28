@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { initCommand } from '../src/init.mjs'
+import { languageOf } from '../src/lint-graph.mjs'
 import { ROOT, backups, cleanup, cli, git, read, snapshot, tempDir, write } from './helpers.mjs'
 
 const VERSION = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version
@@ -29,9 +30,9 @@ afterEach(() => {
 
 const run = (...args) => cli(home, ['init', ...args], { cwd: repo })
 const file = rel => path.join(repo, rel)
-const commitAll = () => {
-  git(repo, 'add', '-A')
-  const result = git(repo, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '-q', '-m', 'init')
+const commitAll = (target = repo) => {
+  assert.equal(git(target, 'add', '-A').status, 0)
+  const result = git(target, '-c', 'user.name=t', '-c', 'user.email=t@example.test', 'commit', '-q', '-m', 'init')
   assert.equal(result.status, 0, result.stderr)
 }
 const hooksPath = () => git(repo, 'config', '--get', 'core.hooksPath')
@@ -519,5 +520,52 @@ describe('lint.enabled (#424)', () => {
     assert.match(absent.out, /^long-file big\.txt: 2001 líneas \(máximo 2000\) — dividí el archivo$/m)
     write(file('.orca-stack.json'), '{"lint":{"enabled":true}}')
     assert.equal(lint().out, absent.out)
+  })
+})
+
+describe('init comments pass lint (#517)', () => {
+  const LINT_OK_ZERO = 'lint OK: ninguna violación nueva ni entrada vencida (0 en la Baseline)\n'
+
+  test('R5: init on an empty repo followed by lint reports no comments from init files, makes skipped files explicit, and all generated comments pass when scanned as shell', () => {
+    const emptyRoot = tempDir('empty-init-lint')
+    const emptyHome = tempDir('empty-init-home')
+    try {
+      const emptyRepo = path.join(emptyRoot, 'empty')
+      git(emptyRoot, 'init', '-q', '-b', 'main', emptyRepo)
+
+      const initResult = cli(emptyHome, ['init'], { cwd: emptyRepo })
+      assert.equal(initResult.status, 0, initResult.out)
+      assert.deepEqual(JSON.parse(read(path.join(emptyRepo, BASELINE))), { version: 1, entries: [] })
+
+      commitAll(emptyRepo)
+
+      const lintResult = cli(emptyHome, ['lint'], { cwd: emptyRepo })
+      assert.equal(lintResult.status, 0, lintResult.out)
+      assert.equal(lintResult.stdout, LINT_OK_ZERO)
+
+      const commentedFiles = ['orca.yaml', '.worktreeinclude', HOOK, WORKFLOW]
+      for (const rel of commentedFiles) {
+        assert.equal(languageOf(rel), undefined, `expected ${rel} not to map to a linted comment language`)
+      }
+
+      const generatedComments = commentedFiles.flatMap(rel =>
+        read(path.join(emptyRepo, rel))
+          .split(/\r?\n/)
+          .filter(line => line.startsWith('#') && !line.startsWith('#!')),
+      )
+      assert.equal(generatedComments.length, 5, `expected 5 generated comments, got ${generatedComments.length}`)
+
+      write(
+        path.join(emptyRepo, 'scripts', 'init-comments.sh'),
+        `#!/usr/bin/env bash\nrun_init_comments() {\n${generatedComments.map(line => `  ${line} — temporary workaround`).join('\n')}\n  echo ok\n}\n`,
+      )
+      assert.equal(git(emptyRepo, 'add', 'scripts/init-comments.sh').status, 0)
+      const shellLint = cli(emptyHome, ['lint'], { cwd: emptyRepo })
+      assert.equal(shellLint.status, 0, shellLint.out)
+      assert.equal(shellLint.stdout, LINT_OK_ZERO)
+    } finally {
+      cleanup(emptyHome)
+      cleanup(emptyRoot)
+    }
   })
 })
